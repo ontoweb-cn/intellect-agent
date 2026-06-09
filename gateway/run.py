@@ -7808,11 +7808,12 @@ class GatewayRunner:
         if canonical == "profile":
             return await self._handle_profile_command(event)
 
-        if canonical == "login":
-            return await self._handle_member_login_command(event)
-
-        if canonical == "logout":
-            return await self._handle_member_logout_command(event)
+        if canonical in ("login", "logout"):
+            return await self._reply(
+                event,
+                "Multi-user features (login/logout) were removed in v0.5.0. "
+                "Intellect now operates in single-user mode.",
+            )
 
         if canonical == "whoami":
             return await self._handle_whoami_command(event)
@@ -7876,23 +7877,13 @@ class GatewayRunner:
         if canonical == "sethome":
             return await self._handle_set_home_command(event)
 
-        if canonical == "team":
-            return await self._handle_team_command(event)
-
-        if canonical == "teams":
-            return await self._handle_teams_list_command(event)
-
-        if canonical == "join":
-            return await self._handle_team_join_command(event)
-
-        if canonical in ("join-project", "join_project"):
-            return await self._handle_project_join_command(event)
-
-        if canonical == "project":
-            return await self._handle_project_command(event)
-
-        if canonical == "projects":
-            return await self._handle_projects_list_command(event)
+        if canonical in ("team", "teams", "join", "join-project", "join_project",
+                         "project", "projects"):
+            return await self._reply(
+                event,
+                "Multi-user features (teams/projects) were removed in v0.5.0. "
+                "Intellect now operates in single-user mode.",
+            )
 
         if canonical == "oauth":
             return await self._handle_oauth_command(event)
