@@ -2181,28 +2181,56 @@ class SessionDB:
             s.pop("_effective_last_active", None)
             sessions.append(s)
 
-        # Project compression roots forward to their tips. Each row whose
-        # end_reason is 'compression' has a continuation child; replace the
-        # surfaced fields (id, message_count, title, last_active, ended_at,
-        # end_reason, preview) with the tip's values so the list entry acts
-        # as the live conversation. Keep the root's started_at to preserve
-        # chronological ordering by original conversation start.
+        # Project compression roots to their tips — batched.
+        # Each compression session previously triggered get_compression_tip()
+        # (now 1 CTE query) + _get_session_rich_row() (1 query + 2 subqueries).
+        # Batch the rich-row fetches into a single query for all tip IDs.
         if project_compression_tips and not include_children:
+            # First pass: resolve tips and collect needed tip IDs
+            tip_targets: dict[str, str] = {}  # root_id -> tip_id
+            for s in sessions:
+                if s.get("end_reason") == "compression":
+                    tip_id = self.get_compression_tip(s["id"])
+                    if tip_id != s["id"]:
+                        tip_targets[s["id"]] = tip_id
+
+            # Batch fetch all tip rich rows in one query
+            tip_rows: dict[str, dict] = {}
+            if tip_targets:
+                unique_tips = list(set(tip_targets.values()))
+                placeholders = ",".join("?" for _ in unique_tips)
+                with self._lock:
+                    cursor = self._conn.execute(
+                        f"""SELECT s.*,
+                            COALESCE(
+                                (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
+                                 FROM messages m WHERE m.session_id = s.id
+                                 AND m.role = 'user' AND m.content IS NOT NULL
+                                 ORDER BY m.timestamp, m.id LIMIT 1), ''
+                            ) AS _preview_raw,
+                            COALESCE(
+                                (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.session_id = s.id),
+                                s.started_at
+                            ) AS last_active
+                        FROM sessions s WHERE s.id IN ({placeholders})""",
+                        unique_tips,
+                    )
+                    for row in cursor.fetchall():
+                        r = dict(row)
+                        raw = r.pop("_preview_raw", "").strip()
+                        r["preview"] = (raw[:60] + "...") if len(raw) > 60 else raw
+                        tip_rows[r["id"]] = r
+
             projected = []
             for s in sessions:
-                if s.get("end_reason") != "compression":
+                tip_id = tip_targets.get(s["id"])
+                if tip_id is None:
                     projected.append(s)
                     continue
-                tip_id = self.get_compression_tip(s["id"])
-                if tip_id == s["id"]:
-                    projected.append(s)
-                    continue
-                tip_row = self._get_session_rich_row(tip_id)
+                tip_row = tip_rows.get(tip_id)
                 if not tip_row:
                     projected.append(s)
                     continue
-                # Preserve the root's started_at for stable sort order, but
-                # surface the tip's identity and activity data.
                 merged = dict(s)
                 for key in (
                     "id", "ended_at", "end_reason", "message_count",
