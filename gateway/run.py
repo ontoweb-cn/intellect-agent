@@ -11780,217 +11780,28 @@ class GatewayRunner:
             db.close()
 
     async def _handle_member_login_command(self, event: MessageEvent) -> str:
-        """Handle /login <login|member_id> — sticky member for this gateway session."""
-        target = event.get_command_args().strip()
-        if not target:
-            return "Usage: /login <login_or_member_id>"
-
-        cfg = _load_gateway_config()
-        from agent.membership import MembershipDB, normalize_member_lookup
-
-        db = MembershipDB(config=cfg)
-        m = normalize_member_lookup(target, db, validate=False)
-        db.close()
-        if not m:
-            return f"Member '{target}' not found."
-
-        session_key = self._resolve_session_key_for_event(event)
-        if not session_key:
-            return "Could not resolve session for this chat."
-
-        try:
-            from intellect_state import SessionDB
-            sdb = SessionDB()
-            sdb.set_meta(f"session:{session_key}:member_id", m["id"])
-            sdb._conn.close()
-        except Exception as exc:
-            return f"Error saving login: {exc}"
-
-        login = m.get("login_name") or m["id"]
-        return f"Logged in as '{login}' for this session."
+        return "Multi-user features (login/logout) were removed in v0.5.0."
 
     async def _handle_member_logout_command(self, event: MessageEvent) -> str:
-        """Handle /logout — clear sticky gateway member (not platform identity)."""
-        session_key = self._resolve_session_key_for_event(event)
-        if not session_key:
-            return "Could not resolve session for this chat."
-
-        try:
-            from intellect_state import SessionDB
-            sdb = SessionDB()
-            sdb._conn.execute(
-                "DELETE FROM state_meta WHERE key = ?",
-                (f"session:{session_key}:member_id",),
-            )
-            sdb._conn.commit()
-            sdb._conn.close()
-        except Exception as exc:
-            return f"Error logging out: {exc}"
-
-        return "Logged out for this session."
+        return "Multi-user features (login/logout) were removed in v0.5.0."
 
     async def _handle_team_command(self, event: MessageEvent) -> str:
-        """Handle /team <id> — set sticky team for this session."""
-        team_id = (event.command_args or "").strip()
-        if not team_id:
-            return "Usage: /team <team_id>\nUse /teams to list your teams."
-
-        cfg = _load_gateway_config()
-        member_id, _ = self._resolve_gateway_member(event)
-        if not member_id:
-            return "Sign in as a member first (/login or bind platform identity)."
-
-        # Verify team exists
-        try:
-            from agent.teams import TeamDB
-            db = TeamDB(config=cfg)
-            team = db.get_team_by_slug(team_id)
-            if not team:
-                db.close()
-                return f"Team '{team_id}' not found."
-            db.close()
-        except Exception as e:
-            return f"Error looking up team: {e}"
-
-        if not self._member_has_active_team(member_id, team_id, cfg):
-            return (
-                f"You are not an active member of team '{team_id}'. "
-                "Use /join <team> to request access."
-            )
-
-        # Store sticky team in state_meta
-        try:
-            from intellect_state import SessionDB
-            sdb = SessionDB()
-            session_key = self._resolve_session_key_for_event(event)
-            if session_key:
-                sdb.set_meta(f"session:{session_key}:team_id", team_id)
-            sdb._conn.close()
-        except Exception as e:
-            return f"Error saving team context: {e}"
-
-        return f"Active team set to '{team_id}'."
+        return "Multi-user features (teams) were removed in v0.5.0."
 
     async def _handle_teams_list_command(self, event: MessageEvent) -> str:
-        """Handle /teams — list active and pending teams."""
-        try:
-            member_id, _ = self._resolve_gateway_member(event)
-            if not member_id:
-                return "Sign in as a member first (/login or bind platform identity)."
-            from agent.membership import MembershipStore
-            cfg = _load_gateway_config()
-            store = MembershipStore(config=cfg)
-            rows = store.list_member_team_memberships(member_id)
-            store.close()
-            if not rows:
-                return "You are not a member of any teams."
-            lines = ["Your teams:"]
-            for row in rows:
-                slug = row.get("slug") or row.get("team_id") or "?"
-                name = row.get("team_display_name") or row.get("display_name") or ""
-                status = row.get("status") or "active"
-                lines.append(f"  • {slug} — {name} [{status}]")
-            return "\n".join(lines)
-        except Exception as e:
-            return f"Error listing teams: {e}"
+        return "Multi-user features (teams) were removed in v0.5.0."
 
     async def _handle_team_join_command(self, event: MessageEvent) -> str:
-        """Handle /join <team_slug> — request membership (pending until approved)."""
-        slug = (event.command_args or "").strip()
-        if not slug:
-            return "Usage: /join <team_id>\nUse /teams to list your teams."
-        try:
-            member_id, _ = self._resolve_gateway_member(event)
-            if not member_id:
-                return "Sign in as a member first (/login or bind platform identity)."
-            from agent.membership import MembershipStore
-            cfg = _load_gateway_config()
-            store = MembershipStore(config=cfg)
-            store.request_team_join(slug, member_id)
-            store.close()
-            return f"Join request submitted for team '{slug}' (pending approval)."
-        except ValueError as exc:
-            return f"Error: {exc}"
-        except Exception as e:
-            return f"Error joining team: {e}"
+        return "Multi-user features (teams) were removed in v0.5.0."
 
     async def _handle_project_join_command(self, event: MessageEvent) -> str:
-        """Handle /join-project <project_slug> — request membership (pending until approved)."""
-        slug = (event.command_args or "").strip()
-        if not slug:
-            return "Usage: /join-project <project_id>\nUse /projects to list your projects."
-        try:
-            member_id, _ = self._resolve_gateway_member(event)
-            if not member_id:
-                return "Sign in as a member first (/login or bind platform identity)."
-            from agent.membership import MembershipStore
-            cfg = _load_gateway_config()
-            store = MembershipStore(config=cfg)
-            store.request_project_join(slug, member_id)
-            store.close()
-            return f"Join request submitted for project '{slug}' (pending approval)."
-        except ValueError as exc:
-            return f"Error: {exc}"
-        except Exception as e:
-            return f"Error joining project: {e}"
+        return "Multi-user features (projects) were removed in v0.5.0."
 
     async def _handle_project_command(self, event: MessageEvent) -> str:
-        """Handle /project <id> — set sticky project for this session."""
-        project_id = (event.command_args or "").strip()
-        if not project_id:
-            return "Usage: /project <project_id>\nUse /projects to list your projects."
-
-        cfg = _load_gateway_config()
-        member_id, _ = self._resolve_gateway_member(event)
-        if not member_id:
-            return "Sign in as a member first (/login or bind platform identity)."
-
-        try:
-            from agent.projects import ProjectDB
-            db = ProjectDB(config=cfg)
-            proj = db.get_project_by_slug(project_id)
-            if not proj:
-                db.close()
-                return f"Project '{project_id}' not found."
-            db.close()
-        except Exception as e:
-            return f"Error looking up project: {e}"
-
-        if not self._member_has_active_project(member_id, project_id, cfg):
-            return (
-                f"You are not an active member of project '{project_id}'. "
-                "Use /join-project <id> to request access."
-            )
-
-        try:
-            from intellect_state import SessionDB
-            sdb = SessionDB()
-            session_key = self._resolve_session_key_for_event(event)
-            if session_key:
-                sdb.set_meta(f"session:{session_key}:project_id", project_id)
-            sdb._conn.close()
-        except Exception as e:
-            return f"Error saving project context: {e}"
-
-        return f"Active project set to '{project_id}'."
+        return "Multi-user features (projects) were removed in v0.5.0."
 
     async def _handle_projects_list_command(self, event: MessageEvent) -> str:
-        """Handle /projects — list active projects."""
-        try:
-            member_id, _ = self._resolve_gateway_member(event)
-            from agent.projects import ProjectDB
-            cfg = _load_gateway_config()
-            db = ProjectDB(config=cfg)
-            projects = db.list_projects(member_id=member_id)
-            db.close()
-            if not projects:
-                return "You are not a member of any projects."
-            lines = ["Your projects:"]
-            for p in projects:
-                lines.append(f"  • {p['slug']} — {p.get('display_name', '')}")
-            return "\n".join(lines)
-        except Exception as e:
-            return f"Error listing projects: {e}"
+        return "Multi-user features (projects) were removed in v0.5.0."
 
     def _resolve_session_key_for_event(self, event: MessageEvent) -> str | None:
         """Get the session key for the current event's chat context."""
