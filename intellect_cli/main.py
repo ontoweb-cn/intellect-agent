@@ -6309,20 +6309,13 @@ def cmd_security(args):
 
 def cmd_members(args):
     """Dispatch ``intellect members <subcmd>``."""
-    from intellect_cli.config import load_config
-    from agent.membership import is_members_enabled, is_projects_enabled
+    print(
+        "Multi-user features (members, teams, projects) were removed in v0.5.0.",
+        file=sys.stderr,
+    )
+    return 1
 
-    config = load_config()
-    if not is_members_enabled(config):
-        print(
-            "Error: Multi-user features are not enabled.\n"
-            "  Run:  intellect config set members.enabled true\n"
-            "  Then: intellect members projects bootstrap",
-            file=sys.stderr,
-        )
-        return 1
-
-    sub = getattr(args, "members_command", None)
+    sub = getattr(args, "members_command", None)  # dead code below
 
     # ── Direct member commands ─────────────────────────────────────────────
     if sub == "bootstrap":
@@ -13818,11 +13811,11 @@ def main():
     _secrets_store.set_defaults(func=_dispatch_secrets_store)
 
     # =========================================================================
-    # members command
+    # members command (deprecated — single-user mode)
     # =========================================================================
     members_parser = subparsers.add_parser(
         "members",
-        help="Manage members, teams, and projects (multi-user features)",
+        help="[DEPRECATED] Multi-user features removed in v0.5.0",
         description=(
             "Member, team, and project management.  Requires members.enabled: true "
             "in config.yaml."
