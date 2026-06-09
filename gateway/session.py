@@ -710,7 +710,14 @@ class SessionStore:
         self._loaded = False
         self._lock = threading.Lock()
         self._has_active_processes_fn = has_active_processes_fn
-        
+
+        # Debounced save: batch rapid entry changes into one disk write.
+        self._dirty = False
+        self._debounce_timer: "threading.Timer | None" = None
+        self._debounce_interval = float(
+            os.environ.get("GATEWAY_SESSION_DEBOUNCE_S", "2.0")
+        )
+
         # Initialize SQLite session database
         self._db = None
         try:
@@ -748,7 +755,33 @@ class SessionStore:
         self._loaded = True
     
     def _save(self) -> None:
-        """Save sessions index to disk (kept for session key -> ID mapping)."""
+        """Mark dirty and schedule a debounced disk write.
+
+        Replaces the old synchronous fsync-per-change with a coalescing
+        debounce: multiple rapid _save() calls within _debounce_interval
+        (default 2s) result in a single disk write. On shutdown, call
+        _flush_save() to force a final synchronous write.
+        """
+        self._dirty = True
+        if self._debounce_timer is not None:
+            return  # already scheduled
+        self._debounce_timer = threading.Timer(
+            self._debounce_interval, self._flush_save
+        )
+        self._debounce_timer.daemon = True
+        self._debounce_timer.start()
+
+    def _flush_save(self) -> None:
+        """Force a synchronous write of the sessions index (called by timer or shutdown)."""
+        with self._lock:
+            if not self._dirty:
+                return
+            self._dirty = False
+            self._debounce_timer = None
+            self._save_impl()
+
+    def _save_impl(self) -> None:
+        """Write sessions index to disk. Must be called with self._lock held."""
         import tempfile
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         sessions_file = self.sessions_dir / "sessions.json"
