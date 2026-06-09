@@ -1,0 +1,144 @@
+# Intellect Agent 核心层 Rust 迁移方案
+
+## Overview
+
+将性能关键的核心层（~30K 行）逐步迁移到 Rust，通过 PyO3 编译为 Python 原生扩展模块，保留 Python 工具层（~270 文件）不动。
+
+## 方案选型：PyO3 嵌入式
+
+```
+┌─────────────────────────────────────────┐
+│  Python 层                               │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ │
+│  │ CLI/TUI  │ │  Tools   │ │ Plugins  │ │
+│  │ (保留)   │ │ (保留)   │ │ (保留)   │ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ │
+│       │             │             │       │
+│  ┌────┴─────────────┴─────────────┴────┐ │
+│  │         Python 适配层 (薄)          │ │
+│  └────────────────┬───────────────────┘ │
+├───────────────────┼─────────────────────┤
+│  Rust 核心层       │ PyO3 FFI           │
+│  ┌─────────────────┴──────────────────┐ │
+│  │ SessionDB │ AIAgent  │ Gateway     │ │
+│  │ Storage   │ Config   │ Session     │ │
+│  │ FTS5      │ Sandbox  │ Crypto      │ │
+│  └────────────────────────────────────┘ │
+└─────────────────────────────────────────┘
+```
+
+## 六阶段迁移
+
+### Stage 1: 存储引擎下沉（1-3 月）
+
+Rust 实现：
+- `SQLiteBackend` — 连接管理、WAL、写重试
+- `SessionDB` — CRUD、schema 管理、FTS5 搜索
+- `SessionStore` — session 索引（已从 JSON 迁到 SQLite）
+- `Config Cache` — mtime 缓存、env var 展开
+
+Python 保留：
+- 所有 270+ 工具
+- 平台适配器
+- CLI/TUI
+
+### Stage 2: 工具执行沙箱（与 Stage 1 并行）
+
+Rust 实现：
+- 文件路径验证（`is_forbidden_path`）
+- URL 安全检查（`is_safe_url`、SSRF 防护）
+- 命令注入检测（`detect_dangerous_command`）
+- 子进程沙箱（`seccomp`/`pledge`）
+
+### Stage 3: Agent 核心循环（3-6 月）
+
+Rust 实现：
+- 消息预处理、工具调用解析
+- 流式响应处理（SSE 解析、token 累积）
+- Fallback/重试逻辑
+- Token 计数与 cost 跟踪
+
+Python 保留：
+- 工具实际执行（PyO3 回调）
+- Memory/RAG provider
+
+### Stage 4: Gateway 事件循环（6-12 月）
+
+Rust 实现（tokio async）：
+- Telegram/Discord/Slack/Matrix 长连接管理
+- 消息队列、重连、限流
+- Kanban 任务调度
+- Session 过期管理
+
+### Stage 5: OAuth + Crypto（与 Stage 4 并行）
+
+Rust 实现：
+- OAuth token 交换（HTTP + crypto）
+- PKCE code verifier/challenge（SHA-256）
+- JWT 验证（ring crate）
+- Fernet 加密存储（AES-128-CBC + HMAC）
+
+Python 保留：
+- OAuth UI 流（浏览器打开、loopback server）
+
+### Stage 6: 终极形态（可选，12 月+）
+
+Rust 作为主进程（`intellectd`），通过 `cpython` crate 内嵌 Python 运行工具层。CLI 通过 Unix Socket 连接。
+
+## 与大文件拆分协同
+
+大文件拆分为 Rust 迁移划分模块边界。先拆后迁：
+
+```
+Phase 1 (已完成)       Phase 2 (拆分)         Phase 3 (Rust 迁移)
+
+dead code 清除         intellect_state.py      Rust Stage 1
+                       → state/               Storage + 搜索
+                       run_agent.py
+                       → agent/               Rust Stage 3
+                       gateway/run.py          Agent 核心循环
+                       → gateway/
+                                              Rust Stage 4
+                      拆出 10-15 个子模块      Gateway
+                      接口稳定、测试覆盖
+```
+
+## 插件策略
+
+Rust 宿主统一管理，插件只需选一种语言：
+
+```
+               Plugin trait (Rust)
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+     Rust Plugin         Python Plugin
+     (直接 impl)      (PyO3 桥接 impl)
+          │                   │
+     .so 动态加载       Python import
+```
+
+| 插件类型 | 语言 | 原因 |
+|----------|------|------|
+| 新存储后端 | Rust | 性能关键 |
+| 安全沙箱扩展 | Rust | 内存安全 |
+| Telegram/Discord | Python | SDK 现成 |
+| RAG/Memory | Python | 生态依赖 |
+| Skills | Python | LLM 驱动 |
+| 自定义工具 | Python | 开发效率 |
+
+## 分层判别标准
+
+| 进 Rust | 留 Python |
+|---------|-----------|
+| 协议解析 | 调用外部 SDK |
+| 密码学计算 | 操作 Python 对象 |
+| 数据结构操作 | LLM prompt 上下文 |
+| 高性能 I/O | 快速迭代功能 |
+| 安全关键路径 | 生态依赖（PIL、BS4、Playwright） |
+
+## 参考
+
+- [PyO3](https://pyo3.rs/) — Rust bindings for Python
+- [maturin](https://www.maturin.rs/) — Build and publish Rust-based Python packages
+- [cpython](https://github.com/dgrunwald/rust-cpython) — Embed Python in Rust
