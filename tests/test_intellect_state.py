@@ -2887,10 +2887,10 @@ class TestVacuum:
 
 class TestOptimizeFts:
     def test_optimize_returns_index_count(self, db):
-        """A fresh DB has both FTS indexes; optimize merges both."""
+        """A fresh DB has one unified FTS index; optimize merges it."""
         db.create_session(session_id="s1", source="cli")
         db.append_message(session_id="s1", role="user", content="hello world")
-        assert db.optimize_fts() == 2
+        assert db.optimize_fts() == 1
 
     def test_optimize_preserves_search_and_snippet(self, db):
         """Optimize is layout-only: MATCH results + snippets are unchanged."""
@@ -2903,7 +2903,7 @@ class TestOptimizeFts:
             )
         before = db.search_messages("needle")
         n = db.optimize_fts()
-        assert n == 2
+        assert n == 1
         after = db.search_messages("needle")
         assert len(after) == len(before)
         assert len(after) > 0
@@ -2914,32 +2914,21 @@ class TestOptimizeFts:
         assert [r["id"] for r in after] == [r["id"] for r in before]
         assert [r["snippet"] for r in after] == [r["snippet"] for r in before]
 
-    def test_optimize_skips_missing_trigram_table(self, db):
-        """When the trigram index is absent, optimize handles only the porter
-        index and does not raise."""
+    def test_optimize_skips_missing_table(self, db):
+        """When the FTS table is absent (manually dropped), optimize returns 0."""
         db.create_session(session_id="s1", source="cli")
         db.append_message(session_id="s1", role="user", content="hello")
-        # Drop the trigram table + triggers to simulate a disabled/absent index.
         with db._lock:
-            for trig in (
-                "messages_fts_trigram_insert",
-                "messages_fts_trigram_delete",
-                "messages_fts_trigram_update",
-            ):
-                db._conn.execute(f"DROP TRIGGER IF EXISTS {trig}")
-            db._conn.execute("DROP TABLE IF EXISTS messages_fts_trigram")
-        assert db._fts_table_exists("messages_fts_trigram") is False
-        assert db._fts_table_exists("messages_fts") is True
-        # Only the porter index remains -> 1 optimized, no error.
-        assert db.optimize_fts() == 1
+            db._conn.execute("DROP TABLE IF EXISTS messages_fts")
+        assert db._fts_table_exists("messages_fts") is False
+        assert db.optimize_fts() == 0
 
     def test_optimize_idempotent(self, db):
         """Running optimize twice is safe (second pass is a no-op merge)."""
         db.create_session(session_id="s1", source="cli")
         db.append_message(session_id="s1", role="user", content="repeat me")
-        assert db.optimize_fts() == 2
-        assert db.optimize_fts() == 2
-        # Search still works after repeated optimization.
+        assert db.optimize_fts() == 1  # single unified messages_fts table
+        assert db.optimize_fts() == 1
         assert len(db.search_messages("repeat")) == 1
 
 

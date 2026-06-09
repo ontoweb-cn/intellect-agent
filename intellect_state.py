@@ -75,14 +75,11 @@ _wal_fallback_warned_lock = threading.Lock()
 # All table/trigger names used in f-string SQL queries MUST be in these sets.
 # Adding a name to _FTS_TRIGGERS or _FTS_TABLES is sufficient to allow it;
 # any value NOT in the whitelist triggers a ValueError before SQL execution.
-_FTS_TABLES = frozenset({"messages_fts", "messages_fts_trigram"})
+_FTS_TABLES = frozenset({"messages_fts"})
 _FTS_TRIGGERS = (
     "messages_fts_insert",
     "messages_fts_delete",
     "messages_fts_update",
-    "messages_fts_trigram_insert",
-    "messages_fts_trigram_delete",
-    "messages_fts_trigram_update",
 )
 _ALLOWED_FTS_TRIGGERS = frozenset(_FTS_TRIGGERS)
 
@@ -676,8 +673,12 @@ def _seed_oauth_providers(cursor) -> None:
 
 
 FTS_SQL = """
+-- Single trigram FTS5 table for both CJK and Latin search.
+-- Trigram handles all scripts natively — eliminates the previous
+-- double-trigger overhead (unicode61 + trigram) per INSERT.
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-    content
+    content,
+    tokenize='trigram'
 );
 
 CREATE TRIGGER IF NOT EXISTS messages_fts_insert AFTER INSERT ON messages BEGIN
@@ -700,35 +701,9 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_update AFTER UPDATE ON messages BEGIN
 END;
 """
 
-# Trigram FTS5 table for CJK substring search.  The default unicode61
-# tokenizer splits CJK characters into individual tokens, breaking phrase
-# matching.  The trigram tokenizer creates overlapping 3-byte sequences so
-# substring queries work natively for any script (CJK, Thai, etc.).
-FTS_TRIGRAM_SQL = """
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts_trigram USING fts5(
-    content,
-    tokenize='trigram'
-);
-
-CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_insert AFTER INSERT ON messages BEGIN
-    INSERT INTO messages_fts_trigram(rowid, content) VALUES (
-        new.id,
-        COALESCE(new.content, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
-    );
-END;
-
-CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_delete AFTER DELETE ON messages BEGIN
-    DELETE FROM messages_fts_trigram WHERE rowid = old.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_update AFTER UPDATE ON messages BEGIN
-    DELETE FROM messages_fts_trigram WHERE rowid = old.id;
-    INSERT INTO messages_fts_trigram(rowid, content) VALUES (
-        new.id,
-        COALESCE(new.content, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
-    );
-END;
-"""
+# Deprecated: merged into FTS_SQL above. Kept as empty string so
+# existing references (FTS_TRIGRAM_SQL) don't break at import time.
+FTS_TRIGRAM_SQL = ""
 
 
 class SessionDB:
@@ -872,19 +847,10 @@ class SessionDB:
 
     @staticmethod
     def _rebuild_fts_indexes(cursor: sqlite3.Cursor) -> None:
-        for table_name in ("messages_fts", "messages_fts_trigram"):
-            _validate_fts_identifier(table_name, _FTS_TABLES)
-            cursor.execute(f"DELETE FROM {table_name}")
+        _validate_fts_identifier("messages_fts", _FTS_TABLES)
+        cursor.execute("DELETE FROM messages_fts")
         cursor.execute(
             "INSERT INTO messages_fts(rowid, content) "
-            "SELECT id, "
-            "COALESCE(content, '') || ' ' || "
-            "COALESCE(tool_name, '') || ' ' || "
-            "COALESCE(tool_calls, '') "
-            "FROM messages"
-        )
-        cursor.execute(
-            "INSERT INTO messages_fts_trigram(rowid, content) "
             "SELECT id, "
             "COALESCE(content, '') || ' ' || "
             "COALESCE(tool_name, '') || ' ' || "
@@ -1131,20 +1097,17 @@ class SessionDB:
             # in a version-gated chain. Column additions are handled by
             # _reconcile_columns() above and no longer need entries here.
             if current_version < 10:
-                # v10: trigram FTS5 table for CJK/substring search. The
-                # virtual table + triggers are created unconditionally via
-                # FTS_TRIGRAM_SQL below, but existing rows need a one-time
-                # backfill into the FTS index.
+                # v10: trigram FTS5 table for CJK/substring search.
+                # Since v0.5.3, messages_fts uses trigram tokenizer natively.
+                # Existing DBs may still have the old messages_fts_trigram table;
+                # migration v11 handles the drop+recreate.
                 if fts5_available:
                     try:
-                        cursor.execute("SELECT * FROM messages_fts_trigram LIMIT 0")
-                        _fts_trigram_exists = True
+                        cursor.execute("SELECT * FROM messages_fts LIMIT 0")
                     except sqlite3.OperationalError:
-                        _fts_trigram_exists = False
-                    if not _fts_trigram_exists:
-                        cursor.executescript(FTS_TRIGRAM_SQL)
+                        cursor.executescript(FTS_SQL)
                         cursor.execute(
-                            "INSERT INTO messages_fts_trigram(rowid, content) "
+                            "INSERT INTO messages_fts(rowid, content) "
                             "SELECT id, content FROM messages WHERE content IS NOT NULL"
                         )
                 else:
@@ -1158,7 +1121,7 @@ class SessionDB:
                 # FTS_TRIGRAM_SQL, then backfill every message row. Fixes #16751.
                 if fts5_available:
                     self._drop_fts_triggers(cursor)
-                    for _tbl in ("messages_fts", "messages_fts_trigram"):
+                    for _tbl in ("messages_fts",):
                         try:
                             cursor.execute(f"DROP TABLE IF EXISTS {_tbl}")
                         except sqlite3.OperationalError as exc:
@@ -1172,23 +1135,10 @@ class SessionDB:
                     if fts5_available:
                         # Recreate virtual tables + triggers with the new inline-mode
                         # schema that indexes content || tool_name || tool_calls.
-                        if (
-                            self._ensure_fts_schema(cursor, "messages_fts", FTS_SQL)
-                            and self._ensure_fts_schema(
-                                cursor, "messages_fts_trigram", FTS_TRIGRAM_SQL
-                            )
-                        ):
-                            # Backfill both indexes from every existing messages row.
+                        if self._ensure_fts_schema(cursor, "messages_fts", FTS_SQL):
+                            # Backfill unified trigram index from every message row.
                             cursor.execute(
                                 "INSERT INTO messages_fts(rowid, content) "
-                                "SELECT id, "
-                                "COALESCE(content, '') || ' ' || "
-                                "COALESCE(tool_name, '') || ' ' || "
-                                "COALESCE(tool_calls, '') "
-                                "FROM messages"
-                            )
-                            cursor.execute(
-                                "INSERT INTO messages_fts_trigram(rowid, content) "
                                 "SELECT id, "
                                 "COALESCE(content, '') || ' ' || "
                                 "COALESCE(tool_name, '') || ' ' || "
@@ -1379,7 +1329,7 @@ class SessionDB:
             # back to LIKE.
             if self._fts_enabled:
                 trigram_enabled = self._ensure_fts_schema(
-                    cursor, "messages_fts_trigram", FTS_TRIGRAM_SQL
+                    cursor, "messages_fts", FTS_SQL
                 )
                 if trigram_enabled and triggers_need_repair:
                     self._rebuild_fts_indexes(cursor)
@@ -3156,7 +3106,7 @@ class SessionDB:
                     else:
                         parts.append('"' + tok.replace('"', '""') + '"')
                 trigram_query = " ".join(parts)
-                tri_where = ["messages_fts_trigram MATCH ?"]
+                tri_where = ["messages_fts MATCH ?"]
                 tri_params: list = [trigram_query]
                 if source_filter is not None:
                     tri_where.append(f"s.source IN ({','.join('?' for _ in source_filter)})")
@@ -3172,15 +3122,15 @@ class SessionDB:
                         m.id,
                         m.session_id,
                         m.role,
-                        snippet(messages_fts_trigram, 0, '>>>', '<<<', '...', 40) AS snippet,
+                        snippet(messages_fts, 0, '>>>', '<<<', '...', 40) AS snippet,
                         m.content,
                         m.timestamp,
                         m.tool_name,
                         s.source,
                         s.model,
                         s.started_at AS session_started
-                    FROM messages_fts_trigram
-                    JOIN messages m ON m.id = messages_fts_trigram.rowid
+                    FROM messages_fts
+                    JOIN messages m ON m.id = messages_fts.rowid
                     JOIN sessions s ON s.id = m.session_id
                     WHERE {' AND '.join(tri_where)}
                     {order_by_sql}
@@ -3985,9 +3935,8 @@ class SessionDB:
     # ── Space reclamation ──
 
     # FTS5 virtual tables whose b-tree segments we merge on optimize. The
-    # trigram table is created lazily / may be disabled, so we probe before
-    # touching it (see optimize_fts).
-    _FTS_TABLES = ("messages_fts", "messages_fts_trigram")
+    # Unified trigram FTS table (see optimize_fts).
+    _FTS_TABLES = ("messages_fts",)
 
     def _fts_table_exists(self, name: str) -> bool:
         """True if an FTS5 virtual table is queryable in this DB."""
