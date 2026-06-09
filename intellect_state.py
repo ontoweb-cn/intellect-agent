@@ -1926,31 +1926,8 @@ class SessionDB:
         return f"{base} #{max_num + 1}"
 
     def get_compression_tip(self, session_id: str) -> Optional[str]:
-        """Walk the compression-continuation chain and return the tip.
-
-        Uses a single WITH RECURSIVE CTE instead of iterative lock/acquire
-        per hop — reduces up to 100 sequential queries to 1.
-        """
-        with self._lock:
-            cursor = self._conn.execute(
-                """WITH RECURSIVE chain AS (
-                    SELECT id, parent_session_id, started_at, 0 AS depth
-                    FROM sessions WHERE id = ?
-                    UNION ALL
-                    SELECT s.id, s.parent_session_id, s.started_at, c.depth + 1
-                    FROM sessions s
-                    JOIN chain c ON s.parent_session_id = c.id
-                    WHERE s.started_at >= (
-                        SELECT ended_at FROM sessions
-                        WHERE id = c.id AND end_reason = 'compression'
-                    )
-                    AND c.depth < 100
-                )
-                SELECT id FROM chain ORDER BY depth DESC LIMIT 1""",
-                (session_id,),
-            )
-            row = cursor.fetchone()
-        return row["id"] if row else session_id
+        from state.compression import get_compression_tip as _get_tip
+        return _get_tip(self._conn, self._lock, session_id)
 
     def list_sessions_rich(
         self,
