@@ -1,0 +1,7 @@
+name: lightrag
+version: 0.3.0
+description: LightRAG document knowledge graph (remote API server). See README.md.
+kind: rag
+hooks:
+  - on_session_end
+  - on_pre_compress

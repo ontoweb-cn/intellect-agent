@@ -1,0 +1,63 @@
+# Three-container overlay: Intellect agent + LightRAG + PostgreSQL (pgvector).
+#
+# Usage (from intellect-webui or local dev):
+#   docker compose -f docker-compose.webui.yml up -d
+#
+# Intellect side: set rag.provider: lightrag and LIGHTRAG_BASE_URL=http://lightrag:9621
+# (or server.base_url in ~/.intellect/lightrag/config.json when agent runs on host).
+
+services:
+  intellect-agent:
+    image: intellect-agent:latest
+    environment:
+      RAG_PROVIDER: lightrag
+      LIGHTRAG_BASE_URL: http://lightrag:9621
+    depends_on:
+      lightrag:
+        condition: service_healthy
+    # profiles: omit if agent runs on host — keep lightrag + postgres only.
+
+  lightrag:
+    image: ghcr.io/hkuds/lightrag:latest
+    ports:
+      - "9621:9621"
+    env_file:
+      - .env
+    environment:
+      WORKSPACE: ""
+    volumes:
+      - lightrag-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9621/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      postgres-lightrag:
+        condition: service_healthy
+
+  postgres-lightrag:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: lightrag
+      POSTGRES_USER: lightrag
+      POSTGRES_PASSWORD: ${LIGHTRAG_PG_PASSWORD:-lightrag}
+    volumes:
+      - lightrag-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lightrag -d lightrag"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: local embedding — uncomment and set EMBEDDING_BINDING=ollama in .env
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+
+volumes:
+  lightrag-data:
+  lightrag-pg-data:
+  # ollama-data:

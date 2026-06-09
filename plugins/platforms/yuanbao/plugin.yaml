@@ -1,0 +1,12 @@
+name: yuanbao-platform
+label: Yuanbao (元宝)
+kind: platform
+version: 1.0.0
+description: >
+  Yuanbao (Tencent Yuanbao) gateway adapter.
+  Supports group and thread-based messaging sessions.
+
+optional_env:
+  - name: YUANBAO_HOME_CHANNEL
+    description: "Default channel ID for cron/notification delivery"
+    password: false

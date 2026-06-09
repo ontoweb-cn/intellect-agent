@@ -1,0 +1,54 @@
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, 'v*']
+  schedule:
+    - cron: '0 9 * * 1'  # weekly Monday 9am
+
+jobs:
+  bandit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install bandit
+        run: pip install bandit[toml]
+      - name: Run bandit
+        run: bandit -c pyproject.toml -r agent tools intellect_cli gateway plugins -f sarif -o bandit-results.sarif || true
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate requirements from pyproject.toml
+        run: |
+          pip install pip-tools
+          pip-compile --output-file=requirements-ci.txt pyproject.toml 2>/dev/null || true
+          pip install -e ".[all]" 2>/dev/null || pip install -e .
+          pip freeze > installed-packages.txt
+      - name: Run pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit -r installed-packages.txt --ignore-vuln PYSEC-2024-999 || true
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2

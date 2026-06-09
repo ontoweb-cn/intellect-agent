@@ -1,0 +1,17 @@
+name: wecom-platform
+label: WeCom (企业微信)
+kind: platform
+version: 1.0.0
+description: >
+  WeCom (Enterprise WeChat) gateway adapter. Supports bot messaging
+  via WebSocket, callback-mode XML parsing, and message encryption.
+
+requires_env:
+  - name: WECOM_BOT_ID
+    description: "WeCom Bot ID (corp_id)"
+    prompt: "WeCom Corp ID"
+    password: false
+  - name: WECOM_SECRET
+    description: "WeCom Bot Secret for API auth"
+    prompt: "WeCom Secret"
+    password: true

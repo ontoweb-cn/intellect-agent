@@ -1,0 +1,18 @@
+name: webhook-platform
+label: Webhook
+kind: platform
+version: 1.0.0
+description: >
+  Generic webhook gateway adapter for Intellect Agent.
+  Receives HTTP POST requests and forwards them to the agent.
+  Supports static routes, secret-based auth, and rate limiting.
+
+optional_env:
+  - name: WEBHOOK_HOST
+    description: "Host to bind (default: 127.0.0.1)"
+    prompt: "Webhook Host"
+    password: false
+  - name: WEBHOOK_PORT
+    description: "Port to bind (default: 8888)"
+    prompt: "Webhook Port"
+    password: false

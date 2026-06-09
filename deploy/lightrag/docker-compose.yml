@@ -1,0 +1,19 @@
+# LightRAG API server — dev single-service template.
+# Pin image digest in production; see README.md.
+services:
+  lightrag:
+    image: ghcr.io/hkuds/lightrag:latest
+    ports:
+      - "9621:9621"
+    volumes:
+      - lightrag_data:/app/data
+    environment:
+      - WORKSPACE=
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9621/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  lightrag_data:

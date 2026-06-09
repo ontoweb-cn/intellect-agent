@@ -1,0 +1,13 @@
+name: msgraph-webhook-platform
+label: Microsoft Graph Webhook
+kind: platform
+version: 1.0.0
+description: >
+  Microsoft Graph webhook gateway adapter.
+  Receives Outlook/Teams notifications via Microsoft Graph API webhooks.
+
+requires_env:
+  - name: MSGRAPH_WEBHOOK_SECRET
+    description: "Webhook validation secret"
+    prompt: "MSGraph Webhook Secret"
+    password: true

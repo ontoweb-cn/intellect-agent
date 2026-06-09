@@ -1,0 +1,1 @@
+# Intellect plugins package

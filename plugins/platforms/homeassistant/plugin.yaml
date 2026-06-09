@@ -1,0 +1,18 @@
+name: homeassistant-platform
+label: Home Assistant
+kind: platform
+version: 1.0.0
+description: >
+  Home Assistant gateway adapter. Connects via WebSocket to a Home
+  Assistant instance for smart home control and automation.
+
+requires_env:
+  - name: HASS_TOKEN
+    description: "Home Assistant long-lived access token"
+    prompt: "Home Assistant Token"
+    url: "https://www.home-assistant.io/docs/authentication/#your-account-profile"
+    password: true
+  - name: HASS_URL
+    description: "Home Assistant instance URL (e.g. http://homeassistant.local:8123)"
+    prompt: "Home Assistant URL"
+    password: false

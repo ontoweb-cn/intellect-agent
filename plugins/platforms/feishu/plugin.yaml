@@ -1,0 +1,22 @@
+name: feishu-platform
+label: Feishu (飞书)
+kind: platform
+version: 1.0.0
+description: >
+  Feishu (Lark) gateway adapter. Supports bot messaging via WebSocket,
+  group message routing, OAuth member login integration, and rich media.
+
+requires_env:
+  - name: FEISHU_APP_ID
+    description: "Feishu application ID"
+    prompt: "Feishu App ID"
+    password: false
+  - name: FEISHU_APP_SECRET
+    description: "Feishu application secret"
+    prompt: "Feishu App Secret"
+    password: true
+
+optional_env:
+  - name: FEISHU_ALLOW_BOTS
+    description: "Allow other bots to trigger responses (default: none)"
+    password: false

@@ -1,0 +1,22 @@
+name: whatsapp-platform
+label: WhatsApp
+kind: platform
+version: 1.0.0
+description: >
+  WhatsApp gateway adapter for Intellect Agent.
+  Connects via a local bridge (baileys/WhatsApp Web) running on the
+  configured port. Supports text, media, groups, and DM policies.
+
+requires_env:
+  - name: WHATSAPP_MODE
+    description: "Bridge mode (self-chat, bot, etc.)"
+    prompt: "WhatsApp bridge mode"
+    password: false
+
+optional_env:
+  - name: WHATSAPP_DM_POLICY
+    description: "DM access policy: open, allowlist, closed (default: open)"
+    password: false
+  - name: WHATSAPP_GROUP_POLICY
+    description: "Group access policy: open, allowlist, closed (default: open)"
+    password: false

@@ -1,0 +1,8 @@
+name: vault-builder
+version: 0.1.0
+description: >
+  Auto-builds Quartz static vault sites when the LLM Wiki is modified.
+  Hooks into on_session_end to detect file changes and trigger incremental
+  Quartz builds with configurable throttling.
+hooks:
+  - on_session_end

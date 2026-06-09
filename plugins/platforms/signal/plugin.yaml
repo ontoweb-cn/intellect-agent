@@ -1,0 +1,32 @@
+name: signal-platform
+label: Signal
+kind: platform
+version: 1.0.0
+description: >
+  Signal gateway adapter for Intellect Agent.
+  Connects via signal-cli REST API (SIGNAL_HTTP_URL).
+  Supports DMs, groups, media, reactions, and typing indicators.
+
+requires_env:
+  - name: SIGNAL_HTTP_URL
+    description: "URL of the signal-cli REST API (e.g. http://127.0.0.1:8080)"
+    prompt: "Signal HTTP URL"
+    password: false
+  - name: SIGNAL_ACCOUNT
+    description: "Signal account phone number (e.g. +1234567890)"
+    prompt: "Signal account number"
+    password: false
+
+optional_env:
+  - name: SIGNAL_ALLOWED_USERS
+    description: "Comma-separated phone numbers allowed to interact (default: *)"
+    password: false
+  - name: SIGNAL_GROUP_ALLOWED_USERS
+    description: "Comma-separated group IDs the bot monitors"
+    password: false
+  - name: SIGNAL_REQUIRE_MENTION
+    description: "Require @mention in groups (default: false)"
+    password: false
+  - name: SIGNAL_REACTIONS
+    description: "Enable emoji reaction status indicators (default: true)"
+    password: false

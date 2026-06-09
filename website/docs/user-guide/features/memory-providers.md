@@ -1,0 +1,623 @@
+---
+sidebar_position: 4
+title: "Memory Providers"
+description: "External memory provider plugins — Honcho, Graphiti, OpenViking, Mem0, Hindsight, Holographic, RetainDB, ByteRover, Supermemory"
+---
+
+# Memory Providers
+
+Intellect Agent ships with 9 external memory provider plugins that give the agent persistent, cross-session knowledge beyond the built-in MEMORY.md and USER.md. Only **one** external provider can be active at a time — the built-in memory is always active alongside it.
+
+## Quick Start
+
+```bash
+intellect memory setup      # interactive picker + configuration
+intellect memory status     # check what's active
+intellect memory off        # disable external provider
+```
+
+You can also select the active memory provider via `intellect plugins` → Provider Plugins → Memory Provider.
+
+Or set manually in `~/.intellect/config.yaml`:
+
+```yaml
+memory:
+  provider: openviking   # or honcho, graphiti, mem0, hindsight, holographic, retaindb, byterover, supermemory
+```
+
+## How It Works
+
+When a memory provider is active, Intellect automatically:
+
+1. **Injects provider context** into the system prompt (what the provider knows)
+2. **Prefetches relevant memories** before each turn (background, non-blocking)
+3. **Syncs conversation turns** to the provider after each response
+4. **Extracts memories on session end** (for providers that support it)
+5. **Mirrors built-in memory writes** to the external provider
+6. **Adds provider-specific tools** so the agent can search, store, and manage memories
+
+The built-in memory (MEMORY.md / USER.md) continues to work exactly as before. The external provider is additive.
+
+## Available Providers
+
+### Honcho
+
+AI-native cross-session user modeling with dialectic reasoning, session-scoped context injection, semantic search, and persistent conclusions. Base context now includes the session summary alongside user representation and peer cards, giving the agent awareness of what has already been discussed.
+
+| | |
+|---|---|
+| **Best for** | Multi-agent systems with cross-session context, user-agent alignment |
+| **Requires** | `pip install honcho-ai` + [API key](https://app.honcho.dev) or self-hosted instance |
+| **Data storage** | Honcho Cloud or self-hosted |
+| **Cost** | Honcho pricing (cloud) / free (self-hosted) |
+
+**Tools (5):** `honcho_profile` (read/update peer card), `honcho_search` (semantic search), `honcho_context` (session context — summary, representation, card, messages), `honcho_reasoning` (LLM-synthesized), `honcho_conclude` (create/delete conclusions)
+
+**Architecture:** Two-layer context injection — a base layer (session summary + representation + peer card, refreshed on `contextCadence`) plus a dialectic supplement (LLM reasoning, refreshed on `dialecticCadence`). The dialectic automatically selects cold-start prompts (general user facts) vs. warm prompts (session-scoped context) based on whether base context exists.
+
+**Three orthogonal config knobs** control cost and depth independently:
+
+- `contextCadence` — how often the base layer refreshes (API call frequency)
+- `dialecticCadence` — how often the dialectic LLM fires (LLM call frequency)
+- `dialecticDepth` — how many `.chat()` passes per dialectic invocation (1–3, depth of reasoning)
+
+**Setup Wizard:**
+```bash
+intellect memory setup        # select "honcho" — runs the Honcho-specific post-setup
+```
+
+On a fresh install, configure Honcho directly with `intellect memory setup honcho`. The legacy `intellect honcho setup` command still works (it now redirects to `intellect memory setup`), but is only registered after Honcho is selected as the active memory provider.
+
+**Config:** `$INTELLECT_HOME/honcho.json` (profile-local) or `~/.honcho/config.json` (global). Resolution order: `$INTELLECT_HOME/honcho.json` > `~/.intellect/honcho.json` > `~/.honcho/config.json`. See the [config reference](https://gitee.com/ontoweb/intellect-agent/blob/main/plugins/memory/honcho/README.md) and the [Honcho integration guide](https://docs.honcho.dev/v3/guides/integrations/intellect).
+
+<details>
+<summary>Full config reference</summary>
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `apiKey` | -- | API key from [app.honcho.dev](https://app.honcho.dev) |
+| `baseUrl` | -- | Base URL for self-hosted Honcho |
+| `peerName` | -- | User peer identity |
+| `aiPeer` | host key | AI peer identity (one per profile) |
+| `workspace` | host key | Shared workspace ID |
+| `contextTokens` | `null` (uncapped) | Token budget for auto-injected context per turn. Truncates at word boundaries |
+| `contextCadence` | `1` | Minimum turns between `context()` API calls (base layer refresh) |
+| `dialecticCadence` | `2` | Minimum turns between `peer.chat()` LLM calls. Recommended 1–5. Only applies to `hybrid`/`context` modes |
+| `dialecticDepth` | `1` | Number of `.chat()` passes per dialectic invocation. Clamped 1–3. Pass 0: cold/warm prompt, pass 1: self-audit, pass 2: reconciliation |
+| `dialecticDepthLevels` | `null` | Optional array of reasoning levels per pass, e.g. `["minimal", "low", "medium"]`. Overrides proportional defaults |
+| `dialecticReasoningLevel` | `'low'` | Base reasoning level: `minimal`, `low`, `medium`, `high`, `max` |
+| `dialecticDynamic` | `true` | When `true`, model can override reasoning level per-call via tool param |
+| `dialecticMaxChars` | `600` | Max chars of dialectic result injected into system prompt |
+| `recallMode` | `'hybrid'` | `hybrid` (auto-inject + tools), `context` (inject only), `tools` (tools only) |
+| `writeFrequency` | `'async'` | When to flush messages: `async` (background thread), `turn` (sync), `session` (batch on end), or integer N |
+| `saveMessages` | `true` | Whether to persist messages to Honcho API |
+| `observationMode` | `'directional'` | `directional` (all on) or `unified` (shared pool). Override with `observation` object |
+| `messageMaxChars` | `25000` | Max chars per message (chunked if exceeded) |
+| `dialecticMaxInputChars` | `10000` | Max chars for dialectic query input to `peer.chat()` |
+| `sessionStrategy` | `'per-directory'` | `per-directory`, `per-repo`, `per-session`, `global` |
+
+</details>
+
+<details>
+<summary>Minimal honcho.json (cloud)</summary>
+
+```json
+{
+  "apiKey": "your-key-from-app.honcho.dev",
+  "hosts": {
+    "intellect": {
+      "enabled": true,
+      "aiPeer": "intellect",
+      "peerName": "your-name",
+      "workspace": "intellect"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Minimal honcho.json (self-hosted)</summary>
+
+```json
+{
+  "baseUrl": "http://localhost:8000",
+  "hosts": {
+    "intellect": {
+      "enabled": true,
+      "aiPeer": "intellect",
+      "peerName": "your-name",
+      "workspace": "intellect"
+    }
+  }
+}
+```
+
+</details>
+
+:::tip Migrating from `intellect honcho`
+If you previously used `intellect honcho setup`, your config and all server-side data are intact. Just re-enable through the setup wizard again or manually set `memory.provider: honcho` to reactivate via the new system.
+:::
+
+**Multi-peer setup:**
+
+Honcho models conversations as peers exchanging messages — one user peer plus one AI peer per Intellect profile, all sharing a workspace. The workspace is the shared environment: the user peer is global across profiles, each AI peer is its own identity. Every AI peer builds an independent representation / card from its own observations, so a `coder` profile stays code-oriented while a `writer` profile stays editorial against the same user.
+
+The mapping:
+
+| Concept | What it is |
+|---------|-----------|
+| **Workspace** | Shared environment. All Intellect profiles under one workspace see the same user identity. |
+| **User peer** (`peerName`) | The human. Shared across profiles in the workspace. |
+| **AI peer** (`aiPeer`) | One per Intellect profile. Host key `intellect` → default; `intellect.<profile>` for others. |
+| **Observation** | Per-peer toggles controlling what Honcho models from whose messages. `directional` (default, all four on) or `unified` (single-observer pool). |
+
+### New profile, fresh Honcho peer
+
+```bash
+intellect profile create coder --clone
+```
+
+`--clone` creates a `intellect.coder` host block in `honcho.json` with `aiPeer: "coder"`, shared `workspace`, inherited `peerName`, `recallMode`, `writeFrequency`, `observation`, etc. The AI peer is eagerly created in Honcho so it exists before the first message.
+
+### Existing profiles, backfill Honcho peers
+
+```bash
+intellect honcho sync
+```
+
+Scans every Intellect profile, creates host blocks for any profile without one, inherits settings from the default `intellect` block, and creates the new AI peers eagerly. Idempotent — skips profiles that already have a host block.
+
+### Per-profile observation
+
+Each host block can override the observation config independently. Example: a code-focused profile where the AI peer observes the user but doesn't self-model:
+
+```json
+"intellect.coder": {
+  "aiPeer": "coder",
+  "observation": {
+    "user": { "observeMe": true, "observeOthers": true },
+    "ai":   { "observeMe": false, "observeOthers": true }
+  }
+}
+```
+
+**Observation toggles (one set per peer):**
+
+| Toggle | Effect |
+|--------|--------|
+| `observeMe` | Honcho builds a representation of this peer from its own messages |
+| `observeOthers` | This peer observes the other peer's messages (feeds cross-peer reasoning) |
+
+Presets via `observationMode`:
+
+- **`"directional"`** (default) — all four flags on. Full mutual observation; enables cross-peer dialectic.
+- **`"unified"`** — user `observeMe: true`, AI `observeOthers: true`, rest false. Single-observer pool; AI models the user but not itself, user peer only self-models.
+
+Server-side toggles set via the [Honcho dashboard](https://app.honcho.dev) win over local defaults — synced back at session init.
+
+See the [Honcho page](./honcho.md#observation-directional-vs-unified) for the full observation reference.
+
+<details>
+<summary>Full honcho.json example (multi-profile)</summary>
+
+```json
+{
+  "apiKey": "your-key",
+  "workspace": "intellect",
+  "peerName": "eri",
+  "hosts": {
+    "intellect": {
+      "enabled": true,
+      "aiPeer": "intellect",
+      "workspace": "intellect",
+      "peerName": "eri",
+      "recallMode": "hybrid",
+      "writeFrequency": "async",
+      "sessionStrategy": "per-directory",
+      "observation": {
+        "user": { "observeMe": true, "observeOthers": true },
+        "ai": { "observeMe": true, "observeOthers": true }
+      },
+      "dialecticReasoningLevel": "low",
+      "dialecticDynamic": true,
+      "dialecticCadence": 2,
+      "dialecticDepth": 1,
+      "dialecticMaxChars": 600,
+      "contextCadence": 1,
+      "messageMaxChars": 25000,
+      "saveMessages": true
+    },
+    "intellect.coder": {
+      "enabled": true,
+      "aiPeer": "coder",
+      "workspace": "intellect",
+      "peerName": "eri",
+      "recallMode": "tools",
+      "observation": {
+        "user": { "observeMe": true, "observeOthers": false },
+        "ai": { "observeMe": true, "observeOthers": true }
+      }
+    },
+    "intellect.writer": {
+      "enabled": true,
+      "aiPeer": "writer",
+      "workspace": "intellect",
+      "peerName": "eri"
+    }
+  },
+  "sessions": {
+    "/home/user/myproject": "myproject-main"
+  }
+}
+```
+
+</details>
+
+See the [config reference](https://gitee.com/ontoweb/intellect-agent/blob/main/plugins/memory/honcho/README.md) and [Honcho integration guide](https://docs.honcho.dev/v3/guides/integrations/intellect).
+
+
+---
+
+### OpenViking
+
+Context database by Volcengine (ByteDance) with filesystem-style knowledge hierarchy, tiered retrieval, and automatic memory extraction into 6 categories.
+
+| | |
+|---|---|
+| **Best for** | Self-hosted knowledge management with structured browsing |
+| **Requires** | `pip install openviking` + running server |
+| **Data storage** | Self-hosted (local or cloud) |
+| **Cost** | Free (open-source, AGPL-3.0) |
+
+**Tools:** `viking_search` (semantic search), `viking_read` (tiered: abstract/overview/full), `viking_browse` (filesystem navigation), `viking_remember` (store facts), `viking_add_resource` (ingest URLs/docs)
+
+**Setup:**
+```bash
+# Start the OpenViking server first
+pip install openviking
+openviking-server
+
+# Then configure Intellect
+intellect memory setup    # select "openviking"
+# Or manually:
+intellect config set memory.provider openviking
+echo "OPENVIKING_ENDPOINT=http://localhost:1933" >> ~/.intellect/.env
+```
+
+**Key features:**
+- Tiered context loading: L0 (~100 tokens) → L1 (~2k) → L2 (full)
+- Automatic memory extraction on session commit (profile, preferences, entities, events, cases, patterns)
+- `viking://` URI scheme for hierarchical knowledge browsing
+
+---
+
+### Mem0
+
+Server-side LLM fact extraction with semantic search, reranking, and automatic deduplication.
+
+| | |
+|---|---|
+| **Best for** | Hands-off memory management — Mem0 handles extraction automatically |
+| **Requires** | `pip install mem0ai` + API key |
+| **Data storage** | Mem0 Cloud |
+| **Cost** | Mem0 pricing |
+
+**Tools:** `mem0_profile` (all stored memories), `mem0_search` (semantic search + reranking), `mem0_conclude` (store verbatim facts)
+
+**Setup:**
+```bash
+intellect memory setup    # select "mem0"
+# Or manually:
+intellect config set memory.provider mem0
+echo "MEM0_API_KEY=your-key" >> ~/.intellect/.env
+```
+
+**Config:** `$INTELLECT_HOME/mem0.json`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `user_id` | `intellect-user` | User identifier |
+| `agent_id` | `intellect` | Agent identifier |
+
+---
+
+### Hindsight
+
+Long-term memory with knowledge graph, entity resolution, and multi-strategy retrieval. The `hindsight_reflect` tool provides cross-memory synthesis that no other provider offers. Automatically retains full conversation turns (including tool calls) with session-level document tracking.
+
+| | |
+|---|---|
+| **Best for** | Knowledge graph-based recall with entity relationships |
+| **Requires** | Cloud: API key from [ui.hindsight.vectorize.io](https://ui.hindsight.vectorize.io). Local: LLM API key (OpenAI, Groq, OpenRouter, etc.) |
+| **Data storage** | Hindsight Cloud or local embedded PostgreSQL |
+| **Cost** | Hindsight pricing (cloud) or free (local) |
+
+**Tools:** `hindsight_retain` (store with entity extraction), `hindsight_recall` (multi-strategy search), `hindsight_reflect` (cross-memory synthesis)
+
+**Setup:**
+```bash
+intellect memory setup    # select "hindsight"
+# Or manually:
+intellect config set memory.provider hindsight
+echo "HINDSIGHT_API_KEY=your-key" >> ~/.intellect/.env
+```
+
+The setup wizard installs dependencies automatically and only installs what's needed for the selected mode (`hindsight-client` for cloud, `hindsight-all` for local). Requires `hindsight-client >= 0.4.22` (auto-upgraded on session start if outdated).
+
+**Local mode UI:** `hindsight-embed -p intellect ui start`
+
+**Config:** `$INTELLECT_HOME/hindsight/config.json`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `mode` | `cloud` | `cloud` or `local` |
+| `bank_id` | `intellect` | Memory bank identifier |
+| `recall_budget` | `mid` | Recall thoroughness: `low` / `mid` / `high` |
+| `memory_mode` | `hybrid` | `hybrid` (context + tools), `context` (auto-inject only), `tools` (tools only) |
+| `auto_retain` | `true` | Automatically retain conversation turns |
+| `auto_recall` | `true` | Automatically recall memories before each turn |
+| `retain_async` | `true` | Process retain asynchronously on the server |
+| `retain_context` | `conversation between Intellect Agent and the User` | Context label for retained memories |
+| `retain_tags` | — | Default tags applied to retained memories; merged with per-call tool tags |
+| `retain_source` | — | Optional `metadata.source` attached to retained memories |
+| `retain_user_prefix` | `User` | Label used before user turns in auto-retained transcripts |
+| `retain_assistant_prefix` | `Assistant` | Label used before assistant turns in auto-retained transcripts |
+| `recall_tags` | — | Tags to filter on recall |
+
+See [plugin README](https://gitee.com/ontoweb/intellect-agent/blob/main/plugins/memory/hindsight/README.md) for the full configuration reference.
+
+---
+
+### Graphiti
+
+Temporal knowledge graph memory with bi-temporal validity (when said vs when true), episode provenance, and hybrid search (semantic + BM25 + graph traversal). Conversation turns can auto-ingest as episodes; compressed history is persisted before context compression runs.
+
+| | |
+|---|---|
+| **Best for** | Conversation memory as a queryable graph — preferences, relationships, decisions, events over time |
+| **Requires** | `pip install 'intellect-agent[graphiti]'` + FalkorDB server (Docker recommended) or Neo4j |
+| **Data storage** | FalkorDB (default) or Neo4j — scope graphs per member / team / project |
+| **Cost** | Free (self-hosted graph) + your LLM API for extraction (or local Ollama via `llm_base_url`) |
+
+**Tools (5):** `graphiti_add_episode` (persist observation), `graphiti_search_facts` (hybrid recall), `graphiti_search_nodes` (entity lookup), `graphiti_get_node_timeline` (bi-temporal history), `graphiti_delete_episode` (audit-logged removal)
+
+**Setup:**
+```bash
+# Start FalkorDB (dev)
+docker run -d --name falkordb -p 6380:6379 falkordb/falkordb:latest
+
+intellect memory setup    # select "graphiti"
+# Or manually:
+intellect config set memory.provider graphiti
+```
+
+When Graphiti is the active provider, `intellect graphiti status` pings FalkorDB per scope graph; `intellect doctor` includes Graphiti health checks.
+
+**CLI (active provider only):** `intellect graphiti setup | status | stats | timeline | dump | rebuild-communities | mcp start | mcp config`
+
+**Config:** `$INTELLECT_HOME/graphiti/config.json`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `backend` | `falkordb` | `falkordb` (recommended) or `neo4j` |
+| `falkordb_host` | `localhost` | FalkorDB host (`falkordb` in Docker compose stacks) |
+| `falkordb_port` | `6380` | Host port (6379 inside containers) |
+| `embedding_provider` | `local` | `local` (fastembed / bge-m3, no API key) or `openai` |
+| `llm_provider` | `openai` | Extraction LLM; set `llm_base_url` for Ollama / vLLM / LiteLLM |
+| `auto_ingest` | `true` | Auto-add each conversation turn as an episode |
+| `ingest_every_n_turns` | `1` | Ingest cadence when `auto_ingest` is on |
+| `default_max_nodes` | `10` | Max facts returned by prefetch / search defaults |
+
+**Unique capabilities:**
+- Bi-temporal facts — track what was known and when it was valid
+- Scoped graphs — member, team, and project graphs with merged search
+- Pre-compress hook — older turns land in the graph before context compression
+- Local embeddings via fastembed (default `bge-m3`) — no embedding API key required
+
+**With document RAG:** Graphiti handles **conversation** memory; pair with [RAG Providers](/user-guide/features/rag-providers) (e.g. `rag.provider: lightrag`) for document corpora. Built-in `memory` tool is unchanged.
+
+---
+
+### Holographic
+
+Local SQLite fact store with FTS5 full-text search, trust scoring, and HRR (Holographic Reduced Representations) for compositional algebraic queries.
+
+| | |
+|---|---|
+| **Best for** | Local-only memory with advanced retrieval, no external dependencies |
+| **Requires** | Nothing (SQLite is always available). NumPy optional for HRR algebra. |
+| **Data storage** | Local SQLite |
+| **Cost** | Free |
+
+**Tools:** `fact_store` (9 actions: add, search, probe, related, reason, contradict, update, remove, list), `fact_feedback` (helpful/unhelpful rating that trains trust scores)
+
+**Setup:**
+```bash
+intellect memory setup    # select "holographic"
+# Or manually:
+intellect config set memory.provider holographic
+```
+
+**Config:** `config.yaml` under `plugins.intellect-memory-store`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `db_path` | `$INTELLECT_HOME/memory_store.db` | SQLite database path |
+| `auto_extract` | `false` | Auto-extract facts at session end |
+| `default_trust` | `0.5` | Default trust score (0.0–1.0) |
+
+**Unique capabilities:**
+- `probe` — entity-specific algebraic recall (all facts about a person/thing)
+- `reason` — compositional AND queries across multiple entities
+- `contradict` — automated detection of conflicting facts
+- Trust scoring with asymmetric feedback (+0.05 helpful / -0.10 unhelpful)
+
+---
+
+### RetainDB
+
+Cloud memory API with hybrid search (Vector + BM25 + Reranking), 7 memory types, and delta compression.
+
+| | |
+|---|---|
+| **Best for** | Teams already using RetainDB's infrastructure |
+| **Requires** | RetainDB account + API key |
+| **Data storage** | RetainDB Cloud |
+| **Cost** | $20/month |
+
+**Tools:** `retaindb_profile` (user profile), `retaindb_search` (semantic search), `retaindb_context` (task-relevant context), `retaindb_remember` (store with type + importance), `retaindb_forget` (delete memories)
+
+**Setup:**
+```bash
+intellect memory setup    # select "retaindb"
+# Or manually:
+intellect config set memory.provider retaindb
+echo "RETAINDB_API_KEY=your-key" >> ~/.intellect/.env
+```
+
+---
+
+### ByteRover
+
+Persistent memory via the `brv` CLI — hierarchical knowledge tree with tiered retrieval (fuzzy text → LLM-driven search). Local-first with optional cloud sync.
+
+| | |
+|---|---|
+| **Best for** | Developers who want portable, local-first memory with a CLI |
+| **Requires** | ByteRover CLI (`npm install -g byterover-cli` or [install script](https://byterover.dev)) |
+| **Data storage** | Local (default) or ByteRover Cloud (optional sync) |
+| **Cost** | Free (local) or ByteRover pricing (cloud) |
+
+**Tools:** `brv_query` (search knowledge tree), `brv_curate` (store facts/decisions/patterns), `brv_status` (CLI version + tree stats)
+
+**Setup:**
+```bash
+# Install the CLI first
+curl -fsSL https://byterover.dev/install.sh | sh
+
+# Then configure Intellect
+intellect memory setup    # select "byterover"
+# Or manually:
+intellect config set memory.provider byterover
+```
+
+**Key features:**
+- Automatic pre-compression extraction (saves insights before context compression discards them)
+- Knowledge tree stored at `$INTELLECT_HOME/byterover/` (profile-scoped)
+- SOC2 Type II certified cloud sync (optional)
+
+---
+
+### Supermemory
+
+Semantic long-term memory with profile recall, semantic search, explicit memory tools, and session-end conversation ingest via the Supermemory graph API.
+
+| | |
+|---|---|
+| **Best for** | Semantic recall with user profiling and session-level graph building |
+| **Requires** | `pip install supermemory` + [API key](https://supermemory.ai) |
+| **Data storage** | Supermemory Cloud |
+| **Cost** | Supermemory pricing |
+
+**Tools:** `supermemory_store` (save explicit memories), `supermemory_search` (semantic similarity search), `supermemory_forget` (forget by ID or best-match query), `supermemory_profile` (persistent profile + recent context)
+
+**Setup:**
+```bash
+intellect memory setup    # select "supermemory"
+# Or manually:
+intellect config set memory.provider supermemory
+echo 'SUPERMEMORY_API_KEY=***' >> ~/.intellect/.env
+```
+
+**Config:** `$INTELLECT_HOME/supermemory.json`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `container_tag` | `intellect` | Container tag used for search and writes. Supports `{identity}` template for profile-scoped tags. |
+| `auto_recall` | `true` | Inject relevant memory context before turns |
+| `auto_capture` | `true` | Store cleaned user-assistant turns after each response |
+| `max_recall_results` | `10` | Max recalled items to format into context |
+| `profile_frequency` | `50` | Include profile facts on first turn and every N turns |
+| `capture_mode` | `all` | Skip tiny or trivial turns by default |
+| `search_mode` | `hybrid` | Search mode: `hybrid`, `memories`, or `documents` |
+| `api_timeout` | `5.0` | Timeout for SDK and ingest requests |
+
+**Environment variables:** `SUPERMEMORY_API_KEY` (required), `SUPERMEMORY_CONTAINER_TAG` (overrides config).
+
+**Key features:**
+- Automatic context fencing — strips recalled memories from captured turns to prevent recursive memory pollution
+- Session-end conversation ingest for richer graph-level knowledge building
+- Profile facts injected on first turn and at configurable intervals
+- Trivial message filtering (skips "ok", "thanks", etc.)
+- **Profile-scoped containers** — use `{identity}` in `container_tag` (e.g. `intellect-{identity}` → `intellect-coder`) to isolate memories per Intellect profile
+- **Multi-container mode** — enable `enable_custom_container_tags` with a `custom_containers` list to let the agent read/write across named containers. Automatic operations (sync, prefetch) stay on the primary container.
+
+<details>
+<summary>Multi-container example</summary>
+
+```json
+{
+  "container_tag": "intellect",
+  "enable_custom_container_tags": true,
+  "custom_containers": ["project-alpha", "shared-knowledge"],
+  "custom_container_instructions": "Use project-alpha for coding context."
+}
+```
+
+</details>
+
+**Support:** [Discord](https://supermemory.link/discord) · [support@supermemory.com](mailto:support@supermemory.com)
+
+### Memori
+
+Structured long-term memory using Memori Cloud, with background completed-turn capture, tool-aware turn context, and explicit recall tools for facts, summaries, quota, signup, and feedback.
+
+| | |
+|---|---|
+| **Best for** | Agent-controlled recall with structured project and session attribution |
+| **Requires** | `pip install intellect-memori` + `intellect-memori install` + [Memori API key](https://app.memorilabs.ai/signup) |
+| **Data storage** | Memori Cloud |
+| **Cost** | Memori pricing |
+
+**Tools:** `memori_recall` (search long-term memory), `memori_recall_summary` (summarized context), `memori_quota` (usage/quota), `memori_signup` (request signup email), `memori_feedback` (send integration feedback)
+
+**Setup:**
+```bash
+pip install intellect-memori
+intellect-memori install
+intellect config set memory.provider memori
+intellect memory setup
+```
+
+---
+
+## Provider Comparison
+
+| Provider | Storage | Cost | Tools | Dependencies | Unique Feature |
+|----------|---------|------|-------|-------------|----------------|
+| **Honcho** | Cloud | Paid | 5 | `honcho-ai` | Dialectic user modeling + session-scoped context |
+| **Graphiti** | Self-hosted | Free | 5 | `graphiti-core` + FalkorDB/Neo4j | Bi-temporal knowledge graph + hybrid search |
+| **OpenViking** | Self-hosted | Free | 5 | `openviking` + server | Filesystem hierarchy + tiered loading |
+| **Mem0** | Cloud | Paid | 3 | `mem0ai` | Server-side LLM extraction |
+| **Hindsight** | Cloud/Local | Free/Paid | 3 | `hindsight-client` | Knowledge graph + reflect synthesis |
+| **Holographic** | Local | Free | 2 | None | HRR algebra + trust scoring |
+| **RetainDB** | Cloud | $20/mo | 5 | `requests` | Delta compression |
+| **ByteRover** | Local/Cloud | Free/Paid | 3 | `brv` CLI | Pre-compression extraction |
+| **Supermemory** | Cloud | Paid | 4 | `supermemory` | Context fencing + session graph ingest + multi-container |
+| **Memori** | Cloud | Free/Paid | 5 | `intellect-memori` | Tool-aware memory + structured recall |
+
+## Profile Isolation
+
+Each provider's data is isolated per [profile](/user-guide/profiles):
+
+- **Local storage providers** (Holographic, ByteRover) use `$INTELLECT_HOME/` paths which differ per profile
+- **Config file providers** (Honcho, Graphiti, Mem0, Hindsight, Supermemory) store config in `$INTELLECT_HOME/` so each profile has its own credentials
+- **Graph-backed providers** (Graphiti) isolate data in per-scope graphs (member / team / project) on the configured FalkorDB or Neo4j backend
+- **Cloud providers** (RetainDB) auto-derive profile-scoped project names
+- **Env var providers** (OpenViking) are configured via each profile's `.env` file
+
+## Building a Memory Provider
+
+See the [Developer Guide: Memory Provider Plugins](/developer-guide/memory-provider-plugin) for how to create your own.

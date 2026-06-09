@@ -1,0 +1,39 @@
+name: Intellect smoke test
+description: >
+  Run the image's built-in entrypoint against `--help`
+  to catch basic runtime regressions before publishing.  Requires the image
+  to already be loaded into the local Docker daemon under `image`.
+
+  Works identically on amd64 and arm64 runners.
+
+inputs:
+  image:
+    description: Fully-qualified image tag (e.g. ontoweb/intellect-agent:test)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure /tmp/intellect-test is intellect-writable
+      shell: bash
+      run: |
+        # The image runs as the intellect user (UID 10000).  GitHub Actions
+        # creates /tmp/intellect-test root-owned by default, which intellect
+        # can't write to — chown it to match the in-container UID before
+        # bind-mounting.  Real users doing `docker run -v ~/.intellect:...`
+        # with their own UID hit the same issue and have their own
+        # remediations (INTELLECT_UID env var, or chown locally).
+        mkdir -p /tmp/intellect-test
+        sudo chown -R 10000:10000 /tmp/intellect-test
+
+    - name: intellect --help
+      shell: bash
+      run: |
+        # Use the image's real ENTRYPOINT (/init + main-wrapper.sh) so
+        # this exercises the actual production startup path. PR #30136
+        # review caught that an --entrypoint override here had been
+        # silently neutered by the s6-overlay migration — stage2-hook
+        # ignores its CMD args, so the smoke test was a no-op.
+        docker run --rm \
+          -v /tmp/intellect-test:/opt/data \
+          "${{ inputs.image }}" --help

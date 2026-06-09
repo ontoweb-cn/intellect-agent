@@ -1,0 +1,772 @@
+{
+  "schema_version": 1,
+  "catalog_id": "intellect-oauth-builtin-v1",
+  "providers": [
+    {
+      "id": "github",
+      "name": "GitHub",
+      "name_i18n": { "zh-Hans": "GitHub", "en": "GitHub" },
+      "usage": "login",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": true,
+      "display_order": 0,
+      "is_builtin": true,
+      "pkce": false,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "scopes": ["read:user", "user:email"],
+      "claim_sub": "id",
+      "claim_email": "email",
+      "claim_name": "login",
+      "endpoints": {
+        "authorize_url": "https://github.com/login/oauth/authorize",
+        "token_url": "https://github.com/login/oauth/access_token",
+        "userinfo_url": "https://api.github.com/user",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/github.svg",
+        "brand_bg": "#24292f"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [
+        { "key": "client_id", "label": "Client ID", "required": true, "db_column": "client_id" },
+        {
+          "key": "client_secret",
+          "label": "Client Secret",
+          "required": true,
+          "secret": true,
+          "db_column": "client_secret_encrypted"
+        }
+      ],
+      "aliases": [],
+      "description": "GitHub OAuth App (client secret flow; PKCE optional for public clients)."
+    },
+    {
+      "id": "google",
+      "name": "Google",
+      "name_i18n": { "zh-Hans": "Google", "en": "Google" },
+      "usage": "login",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": true,
+      "display_order": 1,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "scopes": ["openid", "profile", "email"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "userinfo_url": "https://openidconnect.googleapis.com/v1/userinfo",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": "https://accounts.google.com/.well-known/openid-configuration"
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/google.svg",
+        "brand_bg": "#ffffff"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [
+        { "key": "client_id", "label": "Client ID", "required": true, "db_column": "client_id" },
+        {
+          "key": "client_secret",
+          "label": "Client Secret",
+          "required": false,
+          "secret": true,
+          "db_column": "client_secret_encrypted"
+        }
+      ],
+      "aliases": [],
+      "description": "Google OAuth 2.0 / OpenID Connect."
+    },
+    {
+      "id": "gitee",
+      "name": "Gitee",
+      "name_i18n": { "zh-Hans": "Gitee", "en": "Gitee" },
+      "usage": "login",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": true,
+      "display_order": 2,
+      "is_builtin": true,
+      "pkce": false,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "scopes": ["user_info", "emails"],
+      "claim_sub": "id",
+      "claim_email": "email",
+      "claim_name": "login",
+      "endpoints": {
+        "authorize_url": "https://gitee.com/oauth/authorize",
+        "token_url": "https://gitee.com/oauth/token",
+        "userinfo_url": "https://gitee.com/api/v5/user",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/gitee.svg",
+        "brand_bg": "#c71d23"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [
+        { "key": "client_id", "label": "Client ID", "required": true, "db_column": "client_id" },
+        {
+          "key": "client_secret",
+          "label": "Client Secret",
+          "required": true,
+          "secret": true,
+          "db_column": "client_secret_encrypted"
+        }
+      ],
+      "aliases": [],
+      "description": "Gitee OAuth application."
+    },
+    {
+      "id": "azure_ad",
+      "name": "Azure AD",
+      "name_i18n": { "zh-Hans": "Azure AD", "en": "Azure AD" },
+      "usage": "login",
+      "auth_flow": "oidc_discovery",
+      "enabled_default": false,
+      "display_order": 3,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "tenant_specific": true,
+      "scopes": ["openid", "profile", "email"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        "token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "userinfo_url": "https://graph.microsoft.com/oidc/userinfo",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/azure_ad.svg",
+        "brand_bg": "#0078d4"
+      },
+      "tenant_config_defaults": { "tenant": "common" },
+      "credential_fields": [
+        { "key": "client_id", "label": "Application (client) ID", "required": true, "db_column": "client_id" },
+        {
+          "key": "client_secret",
+          "label": "Client Secret",
+          "required": true,
+          "secret": true,
+          "db_column": "client_secret_encrypted"
+        },
+        { "key": "tenant", "label": "Tenant ID or 'common'", "required": false, "scope": "tenant" }
+      ],
+      "aliases": [],
+      "description": "Microsoft Entra ID (Azure AD) multi-tenant OIDC."
+    },
+    {
+      "id": "wecom",
+      "name": "WeCom",
+      "name_i18n": { "zh-Hans": "企业微信", "en": "WeCom" },
+      "usage": "login",
+      "auth_flow": "oauth2_wecom",
+      "enabled_default": false,
+      "display_order": 10,
+      "is_builtin": true,
+      "pkce": false,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "tenant_specific": true,
+      "scopes": ["snsapi_base"],
+      "claim_sub": "UserId",
+      "claim_email": "",
+      "claim_name": "UserName",
+      "endpoints": {
+        "authorize_url": "https://open.weixin.qq.com/connect/oauth2/authorize",
+        "token_url": "https://qyapi.weixin.qq.com/cgi-bin/gettoken",
+        "userinfo_url": "https://qyapi.weixin.qq.com/cgi-bin/auth/getuserinfo",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/wecom.svg",
+        "brand_bg": "#0082ef"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [
+        { "key": "corp_id", "label": "Corp ID", "required": true, "scope": "tenant" },
+        { "key": "agent_id", "label": "Agent ID", "required": true, "scope": "tenant" },
+        {
+          "key": "client_secret",
+          "label": "Secret",
+          "required": true,
+          "secret": true,
+          "env": "WECOM_OAUTH_CLIENT_SECRET",
+          "db_column": "client_secret_encrypted"
+        }
+      ],
+      "aliases": [],
+      "description": "WeCom (企业微信) OAuth2 — uses corpId + agentId; authorize URL built at runtime."
+    },
+    {
+      "id": "dingtalk",
+      "name": "DingTalk",
+      "name_i18n": { "zh-Hans": "钉钉", "en": "DingTalk" },
+      "usage": "login",
+      "auth_flow": "oauth2_dingtalk",
+      "enabled_default": false,
+      "display_order": 11,
+      "is_builtin": true,
+      "pkce": false,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "scopes": ["openid", "corpid"],
+      "claim_sub": "openid",
+      "claim_email": "",
+      "claim_name": "nick",
+      "endpoints": {
+        "authorize_url": "https://login.dingtalk.com/oauth2/auth",
+        "token_url": "https://api.dingtalk.com/v1.0/oauth2/userAccessToken",
+        "userinfo_url": "",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/dingtalk.svg",
+        "brand_bg": "#0089ff"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [
+        {
+          "key": "client_id",
+          "label": "AppKey (Client ID)",
+          "required": true,
+          "db_column": "client_id",
+          "aliases": ["app_key"]
+        },
+        {
+          "key": "client_secret",
+          "label": "AppSecret",
+          "required": true,
+          "secret": true,
+          "db_column": "client_secret_encrypted"
+        }
+      ],
+      "aliases": [],
+      "description": "DingTalk (钉钉) OAuth2 web login."
+    },
+    {
+      "id": "feishu",
+      "name": "Feishu",
+      "name_i18n": { "zh-Hans": "飞书", "en": "Feishu" },
+      "usage": "login",
+      "auth_flow": "oauth2_feishu",
+      "enabled_default": false,
+      "display_order": 12,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "tenant_specific": true,
+      "scopes": ["contact:user.base:readonly"],
+      "claim_sub": "open_id",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "https://accounts.feishu.cn/open-apis/authen/v1/authorize",
+        "token_url": "https://open.feishu.cn/open-apis/authen/v2/oauth/token",
+        "userinfo_url": "https://open.feishu.cn/open-apis/authen/v1/user_info",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/feishu.svg",
+        "brand_bg": "#ffffff"
+      },
+      "tenant_config_defaults": { "domain": "feishu" },
+      "credential_fields": [
+        { "key": "client_id", "label": "App ID", "required": true, "db_column": "client_id" },
+        {
+          "key": "client_secret",
+          "label": "App Secret",
+          "required": true,
+          "secret": true,
+          "db_column": "client_secret_encrypted"
+        },
+        {
+          "key": "domain",
+          "label": "Domain (feishu | lark)",
+          "required": false,
+          "scope": "tenant"
+        }
+      ],
+      "aliases": ["lark"],
+      "description": "Feishu / Lark Open Platform member login OAuth (oauth2_feishu flow — implement in PR-A2)."
+    },
+    {
+      "id": "gitlab",
+      "name": "GitLab",
+      "name_i18n": { "zh-Hans": "GitLab", "en": "GitLab" },
+      "usage": "login",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": false,
+      "display_order": 20,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "scopes": ["read_user", "openid"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "username",
+      "endpoints": {
+        "authorize_url": "https://gitlab.com/oauth/authorize",
+        "token_url": "https://gitlab.com/oauth/token",
+        "userinfo_url": "https://gitlab.com/api/v4/user",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/gitlab.svg",
+        "brand_bg": "#fc6d26"
+      },
+      "tenant_config_defaults": { "base_url": "https://gitlab.com" },
+      "credential_fields": [
+        { "key": "client_id", "label": "Application ID", "required": true, "db_column": "client_id" },
+        {
+          "key": "client_secret",
+          "label": "Secret",
+          "required": true,
+          "secret": true,
+          "db_column": "client_secret_encrypted"
+        },
+        {
+          "key": "base_url",
+          "label": "GitLab base URL (self-hosted)",
+          "required": false,
+          "scope": "tenant"
+        }
+      ],
+      "aliases": [],
+      "description": "GitLab.com or self-hosted GitLab OAuth (preset in members_oauth; extended seed)."
+    },
+    {
+      "id": "gitea",
+      "name": "Gitea / Forgejo",
+      "name_i18n": { "zh-Hans": "Gitea / Forgejo", "en": "Gitea / Forgejo" },
+      "usage": "login",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": false,
+      "display_order": 21,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "scopes": ["openid", "profile", "email"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "preferred_username",
+      "endpoints": {
+        "authorize_url": "",
+        "token_url": "",
+        "userinfo_url": "",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/gitea.svg",
+        "brand_bg": "#609926"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [
+        { "key": "client_id", "label": "Client ID", "required": true, "db_column": "client_id" },
+        {
+          "key": "client_secret",
+          "label": "Client Secret",
+          "required": true,
+          "secret": true,
+          "db_column": "client_secret_encrypted"
+        },
+        {
+          "key": "base_url",
+          "label": "Instance base URL",
+          "required": true,
+          "scope": "tenant"
+        }
+      ],
+      "aliases": ["forgejo"],
+      "description": "Self-hosted Gitea/Forgejo — endpoints derived from base_url at runtime."
+    },
+    {
+      "id": "azure_devops",
+      "name": "Azure DevOps",
+      "name_i18n": { "zh-Hans": "Azure DevOps", "en": "Azure DevOps" },
+      "usage": "login",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": false,
+      "display_order": 22,
+      "is_builtin": true,
+      "pkce": false,
+      "token_storage": "identities",
+      "platform_bindable": false,
+      "scopes": ["vso.code", "vso.identity"],
+      "claim_sub": "id",
+      "claim_email": "emailAddress",
+      "claim_name": "displayName",
+      "endpoints": {
+        "authorize_url": "https://app.vssps.visualstudio.com/oauth2/authorize",
+        "token_url": "https://app.vssps.visualstudio.com/oauth2/token",
+        "userinfo_url": "",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/azure_devops.svg",
+        "brand_bg": "#0078d4"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [
+        { "key": "client_id", "label": "App ID", "required": true, "db_column": "client_id" },
+        {
+          "key": "client_secret",
+          "label": "Client Secret",
+          "required": true,
+          "secret": true,
+          "db_column": "client_secret_encrypted"
+        }
+      ],
+      "aliases": [],
+      "description": "Azure DevOps OAuth (git host credential mapping to dev.azure.com)."
+    },
+    {
+      "id": "ontoweb",
+      "name": "ONTOWEB Portal",
+      "name_i18n": { "zh-Hans": "ONTOWEB Portal", "en": "ONTOWEB Portal" },
+      "usage": "model",
+      "auth_flow": "device_code",
+      "enabled_default": false,
+      "display_order": 30,
+      "is_builtin": true,
+      "pkce": false,
+      "token_storage": "credential_pool",
+      "platform_bindable": false,
+      "scopes": ["inference:invoke"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "https://portal.ontoweb.cn/oauth/authorize",
+        "token_url": "https://portal.ontoweb.cn/oauth/token",
+        "userinfo_url": "",
+        "device_code_url": "https://portal.ontoweb.cn/oauth/device",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/ontoweb.svg",
+        "brand_bg": "#5b4b8a"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [],
+      "aliases": [],
+      "description": "ONTOWEB inference portal device-code OAuth."
+    },
+    {
+      "id": "openai_codex",
+      "name": "OpenAI Codex",
+      "name_i18n": { "zh-Hans": "OpenAI Codex", "en": "OpenAI Codex" },
+      "usage": "model",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": false,
+      "display_order": 31,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "credential_pool",
+      "platform_bindable": false,
+      "scopes": ["read:user"],
+      "claim_sub": "id",
+      "claim_email": "email",
+      "claim_name": "login",
+      "endpoints": {
+        "authorize_url": "https://github.com/login/device/code",
+        "token_url": "https://auth.openai.com/oauth/token",
+        "userinfo_url": "",
+        "device_code_url": "https://github.com/login/device/code",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/openai_codex.svg",
+        "brand_bg": "#10a37f"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [],
+      "aliases": ["codex", "chatgpt-oauth"],
+      "description": "OpenAI Codex / ChatGPT OAuth (device + PKCE; client id from auth.py CODEX_OAUTH_CLIENT_ID)."
+    },
+    {
+      "id": "xai",
+      "name": "xAI Grok",
+      "name_i18n": { "zh-Hans": "xAI Grok", "en": "xAI Grok" },
+      "usage": "model",
+      "auth_flow": "oidc_discovery",
+      "enabled_default": false,
+      "display_order": 32,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "credential_pool",
+      "platform_bindable": false,
+      "scopes": ["openid", "profile", "email", "offline_access", "grok-cli:access", "api:access"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "https://accounts.x.ai/oauth2/authorize",
+        "token_url": "https://auth.x.ai/oauth2/token",
+        "userinfo_url": "",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": "https://auth.x.ai/.well-known/openid-configuration"
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/xai.svg",
+        "brand_bg": "#0a0a0a"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [],
+      "aliases": ["xai-oauth", "grok"],
+      "description": "xAI Grok OAuth — runtime auth store id xai-oauth; discovery at auth.x.ai."
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini Code Assist",
+      "name_i18n": { "zh-Hans": "Gemini Code Assist", "en": "Gemini Code Assist" },
+      "usage": "model",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": false,
+      "display_order": 33,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "credential_pool",
+      "platform_bindable": false,
+      "scopes": ["openid", "profile", "email"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "userinfo_url": "https://www.googleapis.com/oauth2/v1/userinfo",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/gemini.svg",
+        "brand_bg": "#4285f4"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [],
+      "aliases": ["google-gemini-cli", "gemini-cli", "gemini-oauth"],
+      "description": "Google Gemini CLI / Code Assist OAuth — runtime auth store id google-gemini-cli."
+    },
+    {
+      "id": "qwen",
+      "name": "Qwen OAuth",
+      "name_i18n": { "zh-Hans": "通义千问 OAuth", "en": "Qwen OAuth" },
+      "usage": "model",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": false,
+      "display_order": 34,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "credential_pool",
+      "platform_bindable": false,
+      "scopes": ["openid"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "https://chat.qwen.ai/oauth2/authorize",
+        "token_url": "https://chat.qwen.ai/api/v1/oauth2/token",
+        "userinfo_url": "",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "icons/qwen.svg",
+        "brand_bg": "#615ced"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [],
+      "aliases": ["qwen-oauth", "qwen-portal", "qwen-cli"],
+      "description": "Qwen portal OAuth — runtime auth store id qwen-oauth; CLI creds may live in ~/.qwen/oauth_creds.json."
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic (Claude)",
+      "name_i18n": { "zh-Hans": "Anthropic Claude", "en": "Anthropic (Claude)" },
+      "usage": "model",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": false,
+      "display_order": 35,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "credential_pool",
+      "platform_bindable": false,
+      "scopes": ["user:inference"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "https://claude.ai/oauth/authorize",
+        "token_url": "https://console.anthropic.com/v1/oauth/token",
+        "userinfo_url": "",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "",
+        "brand_bg": "#d97757"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [],
+      "aliases": ["claude", "claude-code"],
+      "description": "Anthropic Claude OAuth / Claude Code linked credentials."
+    },
+    {
+      "id": "minimax_oauth",
+      "name": "MiniMax (OAuth)",
+      "name_i18n": { "zh-Hans": "MiniMax (OAuth)", "en": "MiniMax (OAuth)" },
+      "usage": "model",
+      "auth_flow": "device_code_pkce",
+      "enabled_default": false,
+      "display_order": 36,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "credential_pool",
+      "platform_bindable": false,
+      "scopes": ["group_id", "profile", "model.completion"],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "",
+        "token_url": "https://api.minimax.io",
+        "userinfo_url": "",
+        "device_code_url": "https://api.minimax.io",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "",
+        "brand_bg": "#000000"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [],
+      "aliases": ["minimax-oauth", "minimax-portal", "minimax-global"],
+      "description": "MiniMax OAuth device-code flow — runtime auth store id minimax-oauth."
+    },
+    {
+      "id": "spotify",
+      "name": "Spotify",
+      "name_i18n": { "zh-Hans": "Spotify", "en": "Spotify" },
+      "usage": "model",
+      "auth_flow": "pkce_loopback",
+      "enabled_default": false,
+      "display_order": 37,
+      "is_builtin": true,
+      "pkce": true,
+      "token_storage": "credential_pool",
+      "platform_bindable": false,
+      "scopes": ["user-modify-playback-state", "user-read-playback-state", "user-read-currently-playing"],
+      "claim_sub": "id",
+      "claim_email": "email",
+      "claim_name": "display_name",
+      "endpoints": {
+        "authorize_url": "https://accounts.spotify.com/authorize",
+        "token_url": "https://accounts.spotify.com/api/token",
+        "userinfo_url": "https://api.spotify.com/v1/me",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "",
+        "brand_bg": "#1DB954"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [],
+      "aliases": [],
+      "description": "Spotify OAuth PKCE — runtime auth store id spotify."
+    },
+    {
+      "id": "zai",
+      "name": "Z.AI",
+      "name_i18n": { "zh-Hans": "Z.AI", "en": "Z.AI" },
+      "usage": "model",
+      "auth_flow": "api_key",
+      "enabled_default": false,
+      "display_order": 38,
+      "is_builtin": true,
+      "pkce": false,
+      "token_storage": "credential_pool",
+      "platform_bindable": false,
+      "scopes": [],
+      "claim_sub": "sub",
+      "claim_email": "email",
+      "claim_name": "name",
+      "endpoints": {
+        "authorize_url": "",
+        "token_url": "",
+        "userinfo_url": "",
+        "device_code_url": "",
+        "revoke_url": "",
+        "oidc_discovery_url": ""
+      },
+      "icon": {
+        "type": "svg",
+        "path": "",
+        "brand_bg": "#4A90D9"
+      },
+      "tenant_config_defaults": {},
+      "credential_fields": [],
+      "aliases": ["z-ai", "zai-api", "bigmodel"],
+      "description": "Z.AI (GLM) API-key provider with auto-detected endpoint — extra_metadata caches the detected endpoint."
+    }
+  ]
+}

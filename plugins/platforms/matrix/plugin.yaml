@@ -1,0 +1,27 @@
+name: matrix-platform
+label: Matrix
+kind: platform
+version: 1.0.0
+description: >
+  Matrix gateway adapter for Intellect Agent.
+  Connects via mautrix with optional E2E encryption support.
+
+requires_env:
+  - name: MATRIX_HOMESERVER
+    description: "Matrix homeserver URL (e.g. https://matrix.org)"
+    prompt: "Matrix Homeserver URL"
+    password: false
+
+optional_env:
+  - name: MATRIX_ACCESS_TOKEN
+    description: "Pre-obtained access token (skip password login)"
+    prompt: "Matrix Access Token"
+    password: true
+  - name: MATRIX_PASSWORD
+    description: "Matrix account password (used if no access token)"
+    prompt: "Matrix Password"
+    password: true
+  - name: MATRIX_ENCRYPTION
+    description: "Enable E2E encryption (default: false)"
+    prompt: "Enable encryption"
+    password: false

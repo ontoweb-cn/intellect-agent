@@ -1,0 +1,48 @@
+name: slack-platform
+label: Slack
+kind: platform
+version: 1.0.0
+description: >
+  Slack gateway adapter for Intellect Agent.
+  Uses Socket Mode (SLACK_APP_TOKEN) for real-time messaging and
+  SLACK_BOT_TOKEN for API calls. Supports DMs, channel messages
+  (mention-gated), threads, file/image/audio attachments, slash
+  commands, and multi-workspace.
+
+requires_env:
+  - name: SLACK_BOT_TOKEN
+    description: "Slack Bot User OAuth Token (xoxb-...)"
+    prompt: "Slack Bot Token"
+    url: "https://api.slack.com/apps"
+    password: true
+  - name: SLACK_APP_TOKEN
+    description: "Slack App-Level Token for Socket Mode (xapp-...)"
+    prompt: "Slack App Token"
+    url: "https://api.slack.com/apps"
+    password: true
+
+optional_env:
+  - name: SLACK_ALLOWED_USERS
+    description: "Comma-separated Slack user IDs allowed to interact"
+    password: false
+  - name: SLACK_ALLOWED_CHANNELS
+    description: "Comma-separated channel IDs the bot monitors"
+    password: false
+  - name: SLACK_FREE_RESPONSE_CHANNELS
+    description: "Channels where @mention is NOT required"
+    password: false
+  - name: SLACK_REQUIRE_MENTION
+    description: "Require @mention in channels (default: true)"
+    password: false
+  - name: SLACK_STRICT_MENTION
+    description: "Ignore messages without exact @mention (default: false)"
+    password: false
+  - name: SLACK_REACTIONS
+    description: "Enable emoji reaction status indicators (default: true)"
+    password: false
+  - name: SLACK_ALLOW_BOTS
+    description: "Allow other bots to trigger responses (default: none)"
+    password: false
+  - name: SLACK_HOME_CHANNEL
+    description: "Default channel ID for cron/notification delivery"
+    password: false

@@ -1,0 +1,22 @@
+#
+# docker-compose.windows.yml — Windows Docker Desktop compatible
+#
+# Differences from docker-compose.yml:
+#   - Removes `network_mode: host` (not supported on Docker Desktop for Windows)
+#   - Uses explicit port mappings instead
+#   - Uses Windows-style volume path for ~/.intellect
+#
+# Usage:
+#   docker compose -f docker-compose.windows.yml up -d
+#
+services:
+  gateway:
+    image: ontoweb/intellect-agent:latest
+    container_name: intellect
+    restart: unless-stopped
+    volumes:
+      - ${USERPROFILE}/.intellect:/opt/data
+    environment:
+      - INTELLECT_UID=10000
+      - INTELLECT_GID=10000
+    command: ["gateway", "run"]

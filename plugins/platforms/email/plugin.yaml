@@ -1,0 +1,25 @@
+name: email-platform
+label: Email
+kind: platform
+version: 1.0.0
+description: >
+  Email gateway adapter for Intellect Agent.
+  Connects via IMAP (inbound) + SMTP (outbound).
+
+requires_env:
+  - name: EMAIL_ADDRESS
+    description: "Email address for the bot"
+    prompt: "Email Address"
+    password: false
+  - name: EMAIL_PASSWORD
+    description: "Email account password or app-specific password"
+    prompt: "Email Password"
+    password: true
+  - name: EMAIL_IMAP_HOST
+    description: "IMAP server hostname (e.g. imap.gmail.com)"
+    prompt: "IMAP Host"
+    password: false
+  - name: EMAIL_SMTP_HOST
+    description: "SMTP server hostname (e.g. smtp.gmail.com)"
+    prompt: "SMTP Host"
+    password: false

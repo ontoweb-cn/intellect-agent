@@ -1,0 +1,37 @@
+name: sms-platform
+label: SMS
+kind: platform
+version: 1.0.0
+description: >
+  SMS gateway adapter for Intellect Agent.
+  Uses Twilio for SMS delivery. Requires a Twilio account.
+
+requires_env:
+  - name: TWILIO_ACCOUNT_SID
+    description: "Twilio Account SID"
+    prompt: "Twilio Account SID"
+    url: "https://console.twilio.com"
+    password: false
+  - name: TWILIO_AUTH_TOKEN
+    description: "Twilio Auth Token"
+    prompt: "Twilio Auth Token"
+    url: "https://console.twilio.com"
+    password: true
+  - name: TWILIO_PHONE_NUMBER
+    description: "Twilio phone number for outbound SMS (e.g. +1234567890)"
+    prompt: "Twilio Phone Number"
+    password: false
+
+optional_env:
+  - name: SMS_WEBHOOK_URL
+    description: "SMS gateway webhook URL for inbound delivery"
+    prompt: "SMS Webhook URL"
+    password: false
+  - name: SMS_WEBHOOK_HOST
+    description: "Host to bind the inbound webhook listener (default: 127.0.0.1)"
+    prompt: "SMS Webhook Host"
+    password: false
+  - name: SMS_WEBHOOK_PORT
+    description: "Port for the inbound webhook listener"
+    prompt: "SMS Webhook Port"
+    password: false

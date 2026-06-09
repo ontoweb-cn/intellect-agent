@@ -1,0 +1,17 @@
+name: api-server-platform
+label: API Server
+kind: platform
+version: 1.0.0
+description: >
+  Intellect API Server gateway adapter.
+  Exposes an OpenAI-compatible REST API endpoint for external clients.
+
+optional_env:
+  - name: API_SERVER_HOST
+    description: "Host to bind (default: 127.0.0.1)"
+    prompt: "API Server Host"
+    password: false
+  - name: API_SERVER_PORT
+    description: "Port to bind (default: 8910)"
+    prompt: "API Server Port"
+    password: false

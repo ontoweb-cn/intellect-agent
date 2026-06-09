@@ -1,0 +1,17 @@
+name: dingtalk-platform
+label: DingTalk (钉钉)
+kind: platform
+version: 1.0.0
+description: >
+  DingTalk gateway adapter. Supports bot messaging via OAuth client
+  credentials, card templates, and enterprise messaging.
+
+requires_env:
+  - name: DINGTALK_CLIENT_ID
+    description: "DingTalk OAuth client ID (AppKey)"
+    prompt: "DingTalk Client ID"
+    password: false
+  - name: DINGTALK_CLIENT_SECRET
+    description: "DingTalk OAuth client secret (AppSecret)"
+    prompt: "DingTalk Client Secret"
+    password: true

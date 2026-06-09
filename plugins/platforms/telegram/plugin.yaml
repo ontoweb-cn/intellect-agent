@@ -1,0 +1,27 @@
+name: telegram-platform
+label: Telegram
+kind: platform
+version: 1.0.0
+description: >
+  Telegram gateway adapter for Intellect Agent.
+  Connects via python-telegram-bot with webhook support.
+  Supports DMs, groups, topics, media, reactions, and DM topics
+  for project-scoped conversations.
+
+requires_env:
+  - name: TELEGRAM_BOT_TOKEN
+    description: "Telegram Bot Token from @BotFather"
+    prompt: "Telegram Bot Token"
+    url: "https://t.me/BotFather"
+    password: true
+
+optional_env:
+  - name: TELEGRAM_ALLOWED_USERS
+    description: "Comma-separated Telegram user IDs allowed to interact"
+    password: false
+  - name: intellect_TELEGRAM_MEDIA_BATCH_DELAY_SECONDS
+    description: "Delay between media batch sends (default: 0.8)"
+    password: false
+  - name: intellect_TELEGRAM_DISABLE_FALLBACK_IPS
+    description: "Disable DNS-over-HTTPS fallback IPs (default: false)"
+    password: false

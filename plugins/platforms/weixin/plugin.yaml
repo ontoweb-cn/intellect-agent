@@ -1,0 +1,17 @@
+name: weixin-platform
+label: Weixin (微信)
+kind: platform
+version: 1.0.0
+description: >
+  Weixin (WeChat Official Account) gateway adapter.
+  Connects via the WeChat Official Account API for messaging.
+
+requires_env:
+  - name: WEIXIN_ACCOUNT_ID
+    description: "Weixin Official Account ID"
+    prompt: "Weixin Account ID"
+    password: false
+  - name: WEIXIN_TOKEN
+    description: "Weixin API token for authentication"
+    prompt: "Weixin Token"
+    password: true

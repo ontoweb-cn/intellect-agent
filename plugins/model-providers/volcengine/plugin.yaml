@@ -1,0 +1,5 @@
+name: volcengine-provider
+kind: model-provider
+version: 1.0.0
+description: Volcano Engine (火山引擎) — Doubao models via ark.cn-beijing.volces.com
+author: ONTOWEB

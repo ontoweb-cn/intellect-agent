@@ -1,0 +1,15 @@
+name: graphiti
+version: 0.2.0
+description: >
+  Graphiti — temporal knowledge graph memory with bi-temporal validity,
+  episode provenance, and hybrid search (semantic + BM25 + graph traversal).
+  Requires FalkorDB server (Docker recommended).
+pip_dependencies:
+  - graphiti-core[falkordb]>=1.0.0
+  - falkordb>=0.3.0
+  - mcp>=1.0.0
+  - fastembed>=0.3.0
+hooks:
+  - on_session_end
+  - on_pre_compress
+  - on_session_switch
