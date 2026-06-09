@@ -662,6 +662,36 @@ CREATE TABLE IF NOT EXISTS inference_provider_aliases (
 
 CREATE INDEX IF NOT EXISTS idx_inference_models_provider ON inference_models(provider_id);
 CREATE INDEX IF NOT EXISTS idx_inference_aliases_provider ON inference_provider_aliases(provider_id);
+
+-- Session index: session_key -> session_id mapping (replaces sessions.json).
+-- SessionStore reads this on startup and writes on every state change.
+CREATE TABLE IF NOT EXISTS session_index (
+    session_key     TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL,
+    display_name    TEXT,
+    platform        TEXT,
+    chat_type       TEXT DEFAULT 'dm',
+    input_tokens    INTEGER DEFAULT 0,
+    output_tokens   INTEGER DEFAULT 0,
+    cache_read_tokens  INTEGER DEFAULT 0,
+    cache_write_tokens INTEGER DEFAULT 0,
+    total_tokens    INTEGER DEFAULT 0,
+    estimated_cost_usd REAL DEFAULT 0.0,
+    cost_status     TEXT DEFAULT 'unknown',
+    last_prompt_tokens INTEGER DEFAULT 0,
+    was_auto_reset  INTEGER DEFAULT 0,
+    auto_reset_reason TEXT,
+    reset_had_activity INTEGER DEFAULT 0,
+    is_fresh_reset  INTEGER DEFAULT 0,
+    expiry_finalized INTEGER DEFAULT 0,
+    suspended       INTEGER DEFAULT 0,
+    resume_pending  INTEGER DEFAULT 0,
+    resume_reason   TEXT,
+    last_resume_marked_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_session_index_platform ON session_index(platform);
 """
 
 

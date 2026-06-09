@@ -711,97 +711,145 @@ class SessionStore:
         self._lock = threading.Lock()
         self._has_active_processes_fn = has_active_processes_fn
 
-        # Debounced save: batch rapid entry changes into one disk write.
-        self._dirty = False
-        self._debounce_timer: "threading.Timer | None" = None
-        self._debounce_interval = float(
-            os.environ.get("GATEWAY_SESSION_DEBOUNCE_S", "2.0")
-        )
-
-        # Initialize SQLite session database
+        # Initialize SQLite session database (used for both messages + index)
         self._db = None
         try:
             from intellect_state import SessionDB
             self._db = SessionDB()
         except Exception as e:
             print(f"[gateway] Warning: SQLite session store unavailable, falling back to JSONL: {e}")
-    
+
     def _ensure_loaded(self) -> None:
         """Load sessions index from disk if not already loaded."""
         with self._lock:
             self._ensure_loaded_locked()
 
     def _ensure_loaded_locked(self) -> None:
-        """Load sessions index from disk. Must be called with self._lock held."""
+        """Load sessions index from SQLite. Falls back to legacy JSON migration."""
         if self._loaded:
             return
 
-        self.sessions_dir.mkdir(parents=True, exist_ok=True)
-        sessions_file = self.sessions_dir / "sessions.json"
-
-        if sessions_file.exists():
+        if self._db is not None:
+            # Primary path: load from SQLite session_index table
             try:
-                with open(sessions_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    for key, entry_data in data.items():
-                        try:
-                            self._entries[key] = SessionEntry.from_dict(entry_data)
-                        except (ValueError, KeyError):
-                            # Skip entries with unknown/removed platform values
-                            continue
+                rows = self._db._conn.execute(
+                    "SELECT session_key, session_id, created_at, updated_at, "
+                    "display_name, platform, chat_type, input_tokens, output_tokens, "
+                    "cache_read_tokens, cache_write_tokens, total_tokens, "
+                    "estimated_cost_usd, cost_status, last_prompt_tokens, "
+                    "was_auto_reset, auto_reset_reason, reset_had_activity, "
+                    "is_fresh_reset, expiry_finalized, suspended, "
+                    "resume_pending, resume_reason, last_resume_marked_at "
+                    "FROM session_index"
+                ).fetchall()
+                for row in rows:
+                    self._entries[row["session_key"]] = SessionEntry(
+                        session_key=row["session_key"],
+                        session_id=row["session_id"],
+                        created_at=datetime.fromtimestamp(row["created_at"], tz=timezone.utc),
+                        updated_at=datetime.fromtimestamp(row["updated_at"], tz=timezone.utc),
+                        display_name=row["display_name"],
+                        platform=Platform(row["platform"]) if row["platform"] else None,
+                        chat_type=row["chat_type"] or "dm",
+                        input_tokens=row["input_tokens"] or 0,
+                        output_tokens=row["output_tokens"] or 0,
+                        cache_read_tokens=row["cache_read_tokens"] or 0,
+                        cache_write_tokens=row["cache_write_tokens"] or 0,
+                        total_tokens=row["total_tokens"] or 0,
+                        estimated_cost_usd=row["estimated_cost_usd"] or 0.0,
+                        cost_status=row["cost_status"] or "unknown",
+                        last_prompt_tokens=row["last_prompt_tokens"] or 0,
+                        was_auto_reset=bool(row["was_auto_reset"]),
+                        auto_reset_reason=row["auto_reset_reason"],
+                        reset_had_activity=bool(row["reset_had_activity"]),
+                        is_fresh_reset=bool(row["is_fresh_reset"]),
+                        expiry_finalized=bool(row["expiry_finalized"]),
+                        suspended=bool(row["suspended"]),
+                        resume_pending=bool(row["resume_pending"]),
+                        resume_reason=row["resume_reason"],
+                        last_resume_marked_at=datetime.fromtimestamp(row["last_resume_marked_at"], tz=timezone.utc) if row["last_resume_marked_at"] else None,
+                    )
             except Exception as e:
-                print(f"[gateway] Warning: Failed to load sessions: {e}")
+                logger.warning("Failed to load sessions from SQLite: %s", e)
+
+            # One-time migration: import legacy sessions.json if present and DB is empty
+            if not self._entries:
+                sessions_file = self.sessions_dir / "sessions.json"
+                if sessions_file.exists():
+                    try:
+                        with open(sessions_file, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            for key, entry_data in data.items():
+                                try:
+                                    self._entries[key] = SessionEntry.from_dict(entry_data)
+                                except (ValueError, KeyError):
+                                    continue
+                        # Persist migrated entries to SQLite
+                        self._save_impl()
+                        # Rename legacy file so it's not re-migrated
+                        try:
+                            sessions_file.rename(sessions_file.with_suffix(".json.migrated"))
+                        except OSError:
+                            pass
+                        logger.info("Migrated %d sessions from sessions.json to SQLite", len(self._entries))
+                    except Exception as e:
+                        logger.warning("Failed to migrate sessions.json: %s", e)
+        else:
+            # Fallback: JSON file only (no SQLite available)
+            self.sessions_dir.mkdir(parents=True, exist_ok=True)
+            sessions_file = self.sessions_dir / "sessions.json"
+            if sessions_file.exists():
+                try:
+                    with open(sessions_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        for key, entry_data in data.items():
+                            try:
+                                self._entries[key] = SessionEntry.from_dict(entry_data)
+                            except (ValueError, KeyError):
+                                continue
+                except Exception as e:
+                    print(f"[gateway] Warning: Failed to load sessions: {e}")
 
         self._loaded = True
-    
+
     def _save(self) -> None:
-        """Mark dirty and schedule a debounced disk write.
-
-        Replaces the old synchronous fsync-per-change with a coalescing
-        debounce: multiple rapid _save() calls within _debounce_interval
-        (default 2s) result in a single disk write. On shutdown, call
-        _flush_save() to force a final synchronous write.
-        """
-        self._dirty = True
-        if self._debounce_timer is not None:
-            return  # already scheduled
-        self._debounce_timer = threading.Timer(
-            self._debounce_interval, self._flush_save
-        )
-        self._debounce_timer.daemon = True
-        self._debounce_timer.start()
-
-    def _flush_save(self) -> None:
-        """Force a synchronous write of the sessions index (called by timer or shutdown)."""
+        """Write sessions index to SQLite (immediate — WAL-backed, no fsync needed)."""
         with self._lock:
-            if not self._dirty:
-                return
-            self._dirty = False
-            self._debounce_timer = None
-            self._save_impl()
+            if self._db is not None:
+                self._save_impl()
 
     def _save_impl(self) -> None:
-        """Write sessions index to disk. Must be called with self._lock held."""
-        import tempfile
-        self.sessions_dir.mkdir(parents=True, exist_ok=True)
-        sessions_file = self.sessions_dir / "sessions.json"
-
-        data = {key: entry.to_dict() for key, entry in self._entries.items()}
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(self.sessions_dir), suffix=".tmp", prefix=".sessions_"
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            atomic_replace(tmp_path, sessions_file)
-        except BaseException:
-            try:
-                os.unlink(tmp_path)
-            except OSError as e:
-                logger.debug("Could not remove temp file %s: %s", tmp_path, e)
-            raise
+        """Write all entries to SQLite session_index table. Lock held by caller."""
+        if self._db is None:
+            return
+        conn = self._db._conn
+        now = datetime.now(timezone.utc).timestamp()
+        for entry in self._entries.values():
+            conn.execute(
+                "INSERT OR REPLACE INTO session_index "
+                "(session_key, session_id, created_at, updated_at, display_name, "
+                "platform, chat_type, input_tokens, output_tokens, "
+                "cache_read_tokens, cache_write_tokens, total_tokens, "
+                "estimated_cost_usd, cost_status, last_prompt_tokens, "
+                "was_auto_reset, auto_reset_reason, reset_had_activity, "
+                "is_fresh_reset, expiry_finalized, suspended, "
+                "resume_pending, resume_reason, last_resume_marked_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    entry.session_key, entry.session_id,
+                    entry.created_at.timestamp(), entry.updated_at.timestamp(),
+                    entry.display_name,
+                    entry.platform.value if entry.platform else None,
+                    entry.chat_type, entry.input_tokens, entry.output_tokens,
+                    entry.cache_read_tokens, entry.cache_write_tokens, entry.total_tokens,
+                    entry.estimated_cost_usd, entry.cost_status, entry.last_prompt_tokens,
+                    int(entry.was_auto_reset), entry.auto_reset_reason,
+                    int(entry.reset_had_activity), int(entry.is_fresh_reset),
+                    int(entry.expiry_finalized), int(entry.suspended),
+                    int(entry.resume_pending), entry.resume_reason,
+                    entry.last_resume_marked_at.timestamp() if entry.last_resume_marked_at else None,
+                ),
+            )
     
     def _generate_session_key(self, source: SessionSource) -> str:
         """Generate a session key from a source."""
@@ -909,8 +957,8 @@ class SessionStore:
                 return self._db.session_count() > 1
             except Exception:
                 pass  # fall through to heuristic
-        # Fallback: check if sessions.json was loaded with existing data.
-        # This covers the rare case where the DB is unavailable.
+        # Fallback: check if session index was loaded with existing data.
+        # Covers the rare case where the DB is unavailable.
         with self._lock:
             self._ensure_loaded_locked()
             return len(self._entries) > 1
