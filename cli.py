@@ -983,6 +983,36 @@ def _run_cleanup():
         pass
 
 
+def _signal_interrupt_agent(agent, signum, *, agent_running=True, logger=None):
+    """Shared signal-handler core: interrupt agent + grace window.
+
+    Used by both interactive (IntellectCLI.run) and single-query mode so
+    the grace-window + interrupt logic is not duplicated. Worker threads
+    polling every 200 ms detect the interrupt, kill tool subprocesses via
+    os.killpg, and return from _wait_for_process during the grace window.
+
+    Safe to call from a signal handler: logging is guarded against CPython's
+    reentrancy bug (KeyError inside Logger._cache), and all exceptions are
+    caught so the handler can never raise through.
+    """
+    if agent is not None and agent_running:
+        try:
+            if logger is not None:
+                try:
+                    logger.debug("signal %s: interrupting agent", signum)
+                except Exception:
+                    pass
+            agent.interrupt(f"received signal {signum}")
+            try:
+                _grace = float(os.getenv("intellect_SIGTERM_GRACE", "1.5"))
+            except (TypeError, ValueError):
+                _grace = 1.5
+            if _grace > 0:
+                time.sleep(_grace)
+        except Exception:
+            pass  # never block signal handling
+
+
 # =============================================================================
 # Git Worktree Isolation (#652)
 # =============================================================================
@@ -14857,66 +14887,21 @@ class IntellectCLI:
         
         # Register atexit cleanup so resources are freed even on unexpected exit
         atexit.register(_run_cleanup)
-        
+
         # Register signal handlers for graceful shutdown on SSH disconnect / SIGTERM
         def _signal_handler(signum, frame):
             """Handle SIGHUP/SIGTERM by triggering graceful cleanup.
 
-            Calls ``self.agent.interrupt()`` first so the agent daemon
-            thread's poll loop sees the per-thread interrupt and kills the
-            tool's subprocess group via ``_kill_process`` (os.killpg).
-            Without this, the main thread dies from KeyboardInterrupt and
-            the daemon thread is killed with it — before it can run one
-            more poll iteration to clean up the subprocess, which was
-            spawned with ``os.setsid`` and therefore survives as an orphan
-            with PPID=1.
-
-            Grace window (``intellect_SIGTERM_GRACE``, default 1.5 s) gives
-            the daemon time to: detect the interrupt (next 200 ms poll) →
-            call _kill_process (SIGTERM + 1 s wait + SIGKILL if needed) →
-            return from _wait_for_process.  ``time.sleep`` releases the
-            GIL so the daemon actually runs during the window.
-
-            Guarded ``logger.debug``: CPython's ``logging`` module is not
-            reentrant-safe.  ``Logger.isEnabledFor`` caches level results
-            in ``Logger._cache``; under shutdown races the cache can be
-            cleared (``_clear_cache``) or mid-mutation when the signal
-            fires, raising ``KeyError: <level_int>`` (e.g. ``KeyError: 10``
-            for DEBUG) inside the handler.  That KeyError then escapes
-            before ``raise KeyboardInterrupt()`` can fire, which bypasses
-            prompt_toolkit's normal interrupt unwind and surfaces as the
-            EIO cascade from issue #13710.  Wrap the log in a bare
-            ``try/except`` so the handler can never raise through it.
+            Calls ``_signal_interrupt_agent`` (shared with single-query mode)
+            then attempts a clean prompt_toolkit exit via ``app.exit()``.
+            Falls back to KeyboardInterrupt if no PT app is running.
             """
-            try:
-                logger.debug("Received signal %s, triggering graceful shutdown", signum)
-            except Exception:
-                pass  # never let logging raise from a signal handler (#13710 regression)
-            try:
-                if getattr(self, "agent", None) and getattr(self, "_agent_running", False):
-                    self.agent.interrupt(f"received signal {signum}")
-                    try:
-                        _grace = float(os.getenv("intellect_SIGTERM_GRACE", "1.5"))
-                    except (TypeError, ValueError):
-                        _grace = 1.5
-                    if _grace > 0:
-                        time.sleep(_grace)
-            except Exception:
-                pass  # never block signal handling
-            # Prefer a clean prompt_toolkit exit over `raise KeyboardInterrupt()`.
-            # Raising KBI from a signal handler unwinds into whatever Python
-            # frame the interpreter happens to be running — typically an
-            # `await asyncio.sleep()` inside prompt_toolkit's
-            # `_poll_output_size` coroutine.  The KBI becomes a Task
-            # exception, prompt_toolkit's `_handle_exception` prints
-            # "Unhandled exception in event loop" + the full traceback, and
-            # parks the terminal on "Press ENTER to continue..." (#13710
-            # variant — same root cause, different surface).
-            #
-            # `app.exit()` scheduled via `call_soon_threadsafe` lets the
-            # event loop unwind normally; `app.run()` returns and our
-            # existing `except (EOFError, KeyboardInterrupt, BrokenPipeError)`
-            # block at the bottom of the input loop handles the rest.
+            _signal_interrupt_agent(
+                getattr(self, "agent", None), signum,
+                agent_running=getattr(self, "_agent_running", False),
+                logger=logger,
+            )
+            # Prefer a clean prompt_toolkit exit (avoids traceback + ENTER pause)
             try:
                 from prompt_toolkit.application.current import get_app_or_none
                 _app = get_app_or_none()
@@ -14924,7 +14909,7 @@ class IntellectCLI:
                     _loop = getattr(_app, "loop", None)
                     if _loop is not None:
                         _loop.call_soon_threadsafe(_app.exit)
-                        return  # clean unwind — no traceback, no ENTER pause
+                        return
             except Exception:
                 pass
             raise KeyboardInterrupt()  # fallback for non-prompt_toolkit contexts
@@ -15433,37 +15418,17 @@ def main(
     # so main unwinds normally.  intellect_SIGTERM_GRACE overrides the 1.5 s
     # default for debugging.
     def _signal_handler_q(signum, frame):
-        logger.debug("Received signal %s in single-query mode", signum)
-        try:
-            _agent = getattr(cli, "agent", None)
-            if _agent is not None:
-                _agent.interrupt(f"received signal {signum}")
-                try:
-                    _grace = float(os.getenv("intellect_SIGTERM_GRACE", "1.5"))
-                except (TypeError, ValueError):
-                    _grace = 1.5
-                if _grace > 0:
-                    time.sleep(_grace)
-        except Exception:
-            pass  # never block signal handling
+        _signal_interrupt_agent(
+            getattr(cli, "agent", None), signum,
+            agent_running=True, logger=logger,
+        )
         # Kanban worker exit path (#28181): SIGTERM hits a dispatcher-spawned
-        # worker that's likely in a non-daemon thread waiting on a child
-        # subprocess in _wait_for_process. Raising KeyboardInterrupt only
-        # unwinds the main thread; the worker thread keeps running, the
-        # process gets reparented to init, and the dispatcher's _pid_alive
-        # check returns True forever — task stuck in 'running' indefinitely.
-        # Skip the controlled-unwind dance and call os._exit(0) so the kernel
-        # reclaims the PID immediately and detect_crashed_workers can reclaim
-        # the stale claim on the next tick. Flush logging + stdout/stderr
-        # first so the final debug trace isn't lost; SIGALRM deadman guards
-        # the flush against any rare blocking-I/O case (the reporter measured
-        # flush in <1ms; the alarm is a failsafe, not the common path).
+        # worker in a non-daemon thread. os._exit(0) reclaims the PID
+        # immediately so detect_crashed_workers can reclaim the stale claim.
         if os.environ.get("INTELLECT_KANBAN_TASK"):
             try:
                 import signal as _sig_mod
                 if hasattr(_sig_mod, "SIGALRM"):
-                    # Cancel any pre-existing alarm to avoid colliding with
-                    # caller-installed timers.
                     _sig_mod.signal(_sig_mod.SIGALRM, lambda *_: os._exit(0))
                     _sig_mod.alarm(2)
             except Exception:
