@@ -741,7 +741,7 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
     console.print()
     term_width = shutil.get_terminal_size().columns
     if term_width >= 95:
-        _logo = intellect_AGENT_LOGO
-        console.print(_logo)
+#        _logo = intellect_AGENT_LOGO
+#        console.print(_logo)
         console.print()
     console.print(outer_panel)
