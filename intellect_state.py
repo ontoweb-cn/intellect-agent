@@ -71,27 +71,12 @@ _last_init_error_lock = threading.Lock()
 _wal_fallback_warned_paths: set[str] = set()
 _wal_fallback_warned_lock = threading.Lock()
 
-# ── FTS identifier whitelist ──────────────────────────────────────────────
-# All table/trigger names used in f-string SQL queries MUST be in these sets.
-# Adding a name to _FTS_TRIGGERS or _FTS_TABLES is sufficient to allow it;
-# any value NOT in the whitelist triggers a ValueError before SQL execution.
-_FTS_TABLES = frozenset({"messages_fts"})
-_FTS_TRIGGERS = (
-    "messages_fts_insert",
-    "messages_fts_delete",
-    "messages_fts_update",
+from state.schema import (  # noqa: E402
+    _FTS_TABLES,
+    _FTS_TRIGGERS,
+    _ALLOWED_FTS_TRIGGERS,
+    validate_fts_identifier as _validate_fts_identifier,
 )
-_ALLOWED_FTS_TRIGGERS = frozenset(_FTS_TRIGGERS)
-
-
-def _validate_fts_identifier(name: str, allowed: frozenset) -> str:
-    """Reject unexpected FTS identifiers before they reach an f-string SQL query."""
-    if name not in allowed:
-        raise ValueError(
-            f"Unexpected FTS identifier {name!r}; "
-            f"expected one of {sorted(allowed)}"
-        )
-    return name
 
 
 def allow_explicit_session_db_path() -> bool:
@@ -257,7 +242,10 @@ def _log_wal_fallback_once(db_label: str, exc: Exception) -> None:
         exc,
     )
 
-SCHEMA_SQL = """
+from state.schema import SCHEMA_SQL, FTS_SQL, FTS_TRIGRAM_SQL  # noqa: E402
+
+# Legacy schema reference (kept for docstring introspectability)
+_SCHEMA_REF = """
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER NOT NULL
 );
@@ -712,38 +700,9 @@ def _seed_oauth_providers(cursor) -> None:
     seed_builtin_oauth_providers(cursor)
 
 
-FTS_SQL = """
--- Single trigram FTS5 table for both CJK and Latin search.
--- Trigram handles all scripts natively — eliminates the previous
--- double-trigger overhead (unicode61 + trigram) per INSERT.
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-    content,
-    tokenize='trigram'
-);
-
-CREATE TRIGGER IF NOT EXISTS messages_fts_insert AFTER INSERT ON messages BEGIN
-    INSERT INTO messages_fts(rowid, content) VALUES (
-        new.id,
-        COALESCE(new.content, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
-    );
-END;
-
-CREATE TRIGGER IF NOT EXISTS messages_fts_delete AFTER DELETE ON messages BEGIN
-    DELETE FROM messages_fts WHERE rowid = old.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS messages_fts_update AFTER UPDATE ON messages BEGIN
-    DELETE FROM messages_fts WHERE rowid = old.id;
-    INSERT INTO messages_fts(rowid, content) VALUES (
-        new.id,
-        COALESCE(new.content, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
-    );
-END;
-"""
 
 # Deprecated: merged into FTS_SQL above. Kept as empty string so
 # existing references (FTS_TRIGRAM_SQL) don't break at import time.
-FTS_TRIGRAM_SQL = ""
 
 
 class SessionDB:
