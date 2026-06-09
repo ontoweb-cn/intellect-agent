@@ -89,6 +89,13 @@ from typing import Any, Iterable, Optional
 
 from toolsets import get_toolset_names
 
+# ── Connection pool (thread-local, per-path) ──────────────────────────────
+# kanban_db.connect() is called ~30 times per operation cycle (one per
+# read/write). Reusing connections within a thread avoids repeated
+# open/close + WAL setup overhead.
+_KANBAN_CONN_POOL: dict[str, sqlite3.Connection] = {}
+_KANBAN_POOL_LOCK = threading.Lock()
+
 _log = logging.getLogger(__name__)
 
 
@@ -1399,6 +1406,19 @@ def connect(
             pass
         path = kanban_db_path(board=board)
     path.parent.mkdir(parents=True, exist_ok=True)
+    resolved = str(path.resolve())
+
+    # Fast path: return cached connection if healthy
+    with _KANBAN_POOL_LOCK:
+        cached = _KANBAN_CONN_POOL.get(resolved)
+    if cached is not None:
+        try:
+            cached.execute("SELECT 1")
+            return cached
+        except sqlite3.Error:
+            with _KANBAN_POOL_LOCK:
+                _KANBAN_CONN_POOL.pop(resolved, None)
+
     with _cross_process_init_lock(path):
         # Cheap byte-level check first — catches the #29507 TLS-overwrite shape
         # and other invalid-header cases without opening a sqlite connection.
@@ -1445,6 +1465,9 @@ def connect(
         except Exception:
             conn.close()
             raise
+    # Cache in pool for reuse
+    with _KANBAN_POOL_LOCK:
+        _KANBAN_CONN_POOL[resolved] = conn
     return conn
 
 
