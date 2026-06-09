@@ -2117,10 +2117,14 @@ class SessionDB:
                     SELECT
                         root_id,
                         MAX(COALESCE(
-                            (SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = cur_id),
+                            msg_ts.last_ts,
                             (SELECT started_at FROM sessions ss WHERE ss.id = cur_id)
                         )) AS effective_last_active
                     FROM chain
+                    LEFT JOIN (
+                        SELECT session_id, MAX(timestamp) AS last_ts
+                        FROM messages GROUP BY session_id
+                    ) msg_ts ON msg_ts.session_id = chain.cur_id
                     GROUP BY root_id
                 )
                 SELECT s.*,
@@ -2131,18 +2135,19 @@ class SessionDB:
                          ORDER BY m.timestamp, m.id LIMIT 1),
                         ''
                     ) AS _preview_raw,
-                    COALESCE(
-                        (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.session_id = s.id),
-                        s.started_at
-                    ) AS last_active,
+                    COALESCE(msg.last_ts, s.started_at) AS last_active,
                     COALESCE(cm.effective_last_active, s.started_at) AS _effective_last_active
                 FROM sessions s
                 LEFT JOIN chain_max cm ON cm.root_id = s.id
+                LEFT JOIN (
+                    SELECT session_id, MAX(timestamp) AS last_ts
+                    FROM messages GROUP BY session_id
+                ) msg ON msg.session_id = s.id
                 {where_sql}
                 ORDER BY _effective_last_active DESC, s.started_at DESC, s.id DESC
                 LIMIT ? OFFSET ?
             """
-            # WHERE params apply twice (CTE seed + outer select).
+            # WHERE params apply twice (CTE seed + outer select and inner chain_max).
             params = params + params + [limit, offset]
         else:
             query = f"""
@@ -2154,11 +2159,12 @@ class SessionDB:
                          ORDER BY m.timestamp, m.id LIMIT 1),
                         ''
                     ) AS _preview_raw,
-                    COALESCE(
-                        (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.session_id = s.id),
-                        s.started_at
-                    ) AS last_active
+                    COALESCE(msg.last_ts, s.started_at) AS last_active
                 FROM sessions s
+                LEFT JOIN (
+                    SELECT session_id, MAX(timestamp) AS last_ts
+                    FROM messages GROUP BY session_id
+                ) msg ON msg.session_id = s.id
                 {where_sql}
                 ORDER BY s.started_at DESC
                 LIMIT ? OFFSET ?
