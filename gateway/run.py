@@ -11157,7 +11157,7 @@ class GatewayRunner:
                 if result.base_url:
                     model_cfg["base_url"] = result.base_url
                 from intellect_cli.config import save_config
-                save_config(cfg)
+                save_config(cfg, only_keys=["model"])
             except Exception as e:
                 logger.warning("Failed to persist model switch: %s", e)
 

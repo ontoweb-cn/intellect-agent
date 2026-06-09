@@ -4964,8 +4964,13 @@ _COMMENTED_SECTIONS = """
 """
 
 
-def save_config(config: Dict[str, Any]):
-    """Save configuration to ~/.intellect/config.yaml."""
+def save_config(config: Dict[str, Any], *, only_keys: list[str] | None = None):
+    """Save configuration to ~/.intellect/config.yaml.
+
+    When *only_keys* is provided, merges those keys into the existing config
+    and writes only the delta — avoids full normalization/comment-generation
+    overhead for single-key updates like ``/model --global``.
+    """
     with _CONFIG_LOCK:
         if is_managed():
             managed_error("save configuration")
@@ -4974,6 +4979,15 @@ def save_config(config: Dict[str, Any]):
 
         ensure_intellect_home()
         config_path = get_config_path()
+
+        if only_keys is not None:
+            # Fast path: merge delta into existing config, write directly.
+            existing = read_raw_config()
+            for key in only_keys:
+                if key in config:
+                    existing[key] = config[key]
+            atomic_yaml_write(existing, config_path)
+            return
         current_normalized = _normalize_root_model_keys(_normalize_max_turns_config(config))
         normalized = current_normalized
         raw_existing = _normalize_root_model_keys(_normalize_max_turns_config(read_raw_config()))
