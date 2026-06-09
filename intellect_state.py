@@ -780,9 +780,10 @@ class SessionDB:
     # ── FTS5 helpers ──
 
     @staticmethod
+    @staticmethod
     def _is_fts5_unavailable_error(exc: sqlite3.OperationalError) -> bool:
-        err = str(exc).lower()
-        return "no such module" in err and "fts5" in err
+        from state.fts import is_fts5_unavailable_error
+        return is_fts5_unavailable_error(exc)
 
     def _warn_fts5_unavailable(self, exc: sqlite3.OperationalError) -> None:
         self._fts_enabled = False
@@ -827,35 +828,18 @@ class SessionDB:
 
     @staticmethod
     def _drop_fts_triggers(cursor: sqlite3.Cursor) -> None:
-        for trigger in _FTS_TRIGGERS:
-            try:
-                _validate_fts_identifier(trigger, _ALLOWED_FTS_TRIGGERS)
-                cursor.execute(f"DROP TRIGGER IF EXISTS {trigger}")
-            except sqlite3.OperationalError:
-                pass
+        from state.fts import drop_fts_triggers
+        drop_fts_triggers(cursor)
 
     @staticmethod
     def _fts_trigger_count(cursor: sqlite3.Cursor) -> int:
-        placeholders = ",".join("?" for _ in _FTS_TRIGGERS)
-        row = cursor.execute(
-            f"SELECT COUNT(*) FROM sqlite_master "
-            f"WHERE type = 'trigger' AND name IN ({placeholders})",
-            _FTS_TRIGGERS,
-        ).fetchone()
-        return int(row[0] if not isinstance(row, sqlite3.Row) else row[0])
+        from state.fts import fts_trigger_count
+        return fts_trigger_count(cursor)
 
     @staticmethod
     def _rebuild_fts_indexes(cursor: sqlite3.Cursor) -> None:
-        _validate_fts_identifier("messages_fts", _FTS_TABLES)
-        cursor.execute("DELETE FROM messages_fts")
-        cursor.execute(
-            "INSERT INTO messages_fts(rowid, content) "
-            "SELECT id, "
-            "COALESCE(content, '') || ' ' || "
-            "COALESCE(tool_name, '') || ' ' || "
-            "COALESCE(tool_calls, '') "
-            "FROM messages"
-        )
+        from state.fts import rebuild_fts_indexes
+        rebuild_fts_indexes(cursor)
 
     def _fts_table_probe(self, cursor: sqlite3.Cursor, table_name: str) -> Optional[bool]:
         try:
