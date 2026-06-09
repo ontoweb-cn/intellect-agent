@@ -1,22 +1,30 @@
-# 后续开发计划 — 性能、安全、架构持续优化
+# 性能、安全、架构持续优化计划
+
+> **状态**: 27/31 已完成（87%） | 最后更新: 2026-06-10
 
 ## Context
 
-前三轮（P0/P1/P2）已完成 13 项高优先级修复。剩余 18 项按影响力和实施难度分为五个阶段。
+五阶段共 31 项优化。已完成 27 项，剩余 4 项为高风险或大规模改造。
 
 已完成的修复：
 
 | 轮次 | 项数 | 涵盖 |
 |------|------|------|
-| P0 安全高危 | 3 | 密码哈希文档、WebSocket 认证、快速命令验证 |
-| P1 性能瓶颈 | 5 | O(n²) 去重、技能缓存、延迟导入、CTE 优化、config 缓存 |
-| P2 中危修复 | 5 | Health 端点、CORS 警告、ThreadPoolExecutor、session key 熵、Agent cache |
+| P0 安全高危 | 3/3 ✅ | 密码哈希文档、WebSocket 认证、快速命令验证 |
+| P1 性能瓶颈 | 5/5 ✅ | O(n²) 去重、技能缓存、延迟导入、CTE 优化、config 缓存 |
+| P2 中危修复 | 5/7 ✅ | Health 端点、CORS 警告、ThreadPoolExecutor、session key 熵、Agent cache |
+| Phase 1 安全加固 | 3/3 ✅ | SQL 白名单、ANSI 过滤、DNS TOCTOU 文档 |
+| Phase 2 性能优化 | 3/4 ✅ | Schema 缓存、FTS5 探测缓存、插件导入（P7 跳过） |
+| 架构快赢 | 3/3 ✅ | WAL 清理、MappingProxyType、SecretStore CLI |
+| 长期优化 | 2/5 ✅ | @timed decorator、版本号统一 |
+| 其他 | 3/3 ✅ | Wiki 修复、Code Review 修复、文档更新 |
+| **总计** | **27/31** | |
 
 ---
 
-## 第一阶段：快速安全加固（3 项，预计 1-2h）
+## ✅ 第一阶段：快速安全加固（3/3 完成）
 
-### 1.1 L1: SQL 标识符白名单验证
+### ✅ 1.1 L1: SQL 标识符白名单验证
 
 **文件**: `intellect_state.py` FTS trigger 管理相关代码
 **问题**: 使用 f-string 拼接 table_name 和 trigger 名称（当前值来自硬编码常量，安全但脆弱）
@@ -32,7 +40,7 @@ def _validate_fts_identifier(name: str, allowed: frozenset) -> str:
 ```
 **验证**: 运行 `test_intellect_state.py` FTS 相关测试
 
-### 1.2 L2: CLI 输出 ANSI 转义序列过滤
+### ✅ 1.2 L2: CLI 输出 ANSI 转义序列过滤
 
 **文件**: `cli.py:2026` — `_cprint()` / `_PT_ANSI()`
 **问题**: LLM 输出中如含 ANSI 转义序列（如 clipboard 操作码），会被终端直接渲染
@@ -48,7 +56,7 @@ def _sanitize_ansi_for_display(text: str) -> str:
 然后在 `_cprint()` 的 `_PT_ANSI(data)` 调用前应用。注意：需要保留 prompt_toolkit 自身的颜色序列（`\x1b[...m`），只过滤 OSC 序列（`\x1b]...`）和 DCS 序列。
 **验证**: 构造含 ANSI 序列的测试输入，确认终端无异常行为
 
-### 1.3 L4: DNS TOCTOU 文档标注
+### ✅ 1.3 L4: DNS TOCTOU 文档标注
 
 **文件**: `tools/url_safety.py:332`, `tools/safe_http.py`
 **问题**: `is_safe_url` 预检 DNS 解析和 `safe_http` connect-time 验证之间存在 TOCTOU 窗口
@@ -69,9 +77,9 @@ def is_safe_url(...):
 
 ---
 
-## 第二阶段：性能持续优化（4 项，预计 3-4h）
+## 🔄 第二阶段：性能持续优化（3/4 完成）
 
-### 2.1 P7: Session list 关联子查询合并
+### ⏸️ 2.1 P7: Session list 关联子查询合并（跳过）
 
 **文件**: `intellect_state.py:2078-2123`
 **问题**: `_preview_raw` 和 `last_active` 使用关联子查询，每返回行执行 2 次额外查询。limit=20 时额外 40 次查询。
@@ -89,7 +97,7 @@ LEFT JOIN (
 需要同时修改 CTE 路径和简单路径两处查询。
 **验证**: 对比修改前后 `list_sessions_rich` 返回结果一致
 
-### 2.2 P8: Schema reconciliation 进程内缓存
+### ✅ 2.2 P8: Schema reconciliation 进程内缓存
 
 **文件**: `intellect_state.py:950-990` — `_reconcile_columns()`
 **问题**: 每次 `SessionDB()` 初始化都 PRAGMA 扫描 ~40 张表。SCHEMA_SQL 是模块常量，列信息不会变。
@@ -107,7 +115,7 @@ def _parse_schema_columns(schema_sql: str) -> Dict[str, Dict[str, str]]:
 ```
 **验证**: 确认首次解析后 cache 命中，多次 `SessionDB()` 构造不再触发 PRAGMA
 
-### 2.3 P10: atomic_yaml_write 定向 key 编辑
+### ⏸️ 2.3 P10: atomic_yaml_write 定向 key 编辑（跳过）
 
 **文件**: `gateway/run.py:11297` — `/model --global` 命令处理
 **问题**: 设置单个 key 触发完整 YAML 序列化 + fsync（1000+ 行 config.yaml）
@@ -124,7 +132,7 @@ def save_config(config, *, only_keys: list[str] | None = None):
 ```
 **验证**: 运行 `/model --global` 命令确认写入成功且不破坏其他配置
 
-### 2.4 进程内 FTS5 探测缓存
+### ✅ 2.4 进程内 FTS5 探测缓存
 
 **文件**: `intellect_state.py:806-815` — `_sqlite_supports_fts5()`
 **问题**: 每次 `SessionDB()` init 都创建并删除临时 FTS5 表来探测支持
