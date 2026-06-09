@@ -385,8 +385,11 @@ try:
     from intellect_logging import setup_logging as _setup_logging
 
     _setup_logging(mode="cli")
-except Exception:
-    pass  # best-effort — don't crash the CLI if logging setup fails
+except Exception as _log_exc:
+    # Best-effort: print to stderr so the user sees the failure reason.
+    # Don't crash the CLI on logging setup failure, but don't hide it either.
+    import traceback as _tb
+    _tb.print_exception(type(_log_exc), _log_exc, _log_exc.__traceback__, file=sys.stderr)
 
 # Apply IPv4 preference early, before any HTTP clients are created.
 # We already determined whether to force IPv4 from the raw yaml read above —

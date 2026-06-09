@@ -70,7 +70,11 @@ def _warn_config_parse_failure(config_path: Path, exc: Exception) -> None:
         sys.stderr.write(f"⚠️  intellect config: {msg}\n")
         sys.stderr.flush()
     except Exception:
-        pass
+        # Last resort: print() may work when stderr is unavailable
+        try:
+            print(f"⚠️  intellect config: {msg}")
+        except Exception:
+            pass
 
 _IS_WINDOWS = platform.system() == "Windows"
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")

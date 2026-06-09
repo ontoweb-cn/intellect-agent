@@ -781,8 +781,8 @@ class AIAgent:
         """Emit a lifecycle status message to both CLI and gateway channels.
 
         CLI users see the message via ``_vprint(force=True)`` so it is always
-        visible regardless of verbose/quiet mode.  Gateway consumers receive
-        it through ``status_callback("lifecycle", ...)``.
+        visible regardless of verbose/quiet mode.  Falls back to stderr if
+        the primary output path fails.
 
         This helper never raises — exceptions are swallowed so it cannot
         interrupt the retry/fallback logic.
@@ -790,7 +790,12 @@ class AIAgent:
         try:
             self._vprint(f"{self.log_prefix}{message}", force=True)
         except Exception:
-            pass
+            try:
+                import sys as _sys
+                _sys.stderr.write(f"{self.log_prefix}{message}\n")
+                _sys.stderr.flush()
+            except Exception:
+                pass
         if self.status_callback:
             try:
                 self.status_callback("lifecycle", message)
@@ -807,7 +812,12 @@ class AIAgent:
         try:
             self._vprint(f"{self.log_prefix}{message}", force=True)
         except Exception:
-            pass
+            try:
+                import sys as _sys
+                _sys.stderr.write(f"{self.log_prefix}{message}\n")
+                _sys.stderr.flush()
+            except Exception:
+                pass
         if self.status_callback:
             try:
                 self.status_callback("warn", message)
