@@ -332,7 +332,13 @@ CREATE TABLE IF NOT EXISTS compression_locks (
     expires_at REAL NOT NULL
 );
 
--- Members (people) — multi-user foundation
+-- =========================================================================
+-- DEPRECATED (v0.5.0): Multi-user tables below are kept for backward
+-- compatibility with existing databases. New installs create empty tables
+-- that are never populated. Future versions may drop them via migration.
+-- =========================================================================
+
+-- Members (people) — multi-user foundation (deprecated)
 CREATE TABLE IF NOT EXISTS members (
     id TEXT PRIMARY KEY,
     display_name TEXT,
@@ -614,6 +620,10 @@ CREATE TABLE IF NOT EXISTS oauth_pending_states (
 
 CREATE INDEX IF NOT EXISTS idx_oauth_pending_expires
     ON oauth_pending_states(expires_at);
+
+-- =========================================================================
+-- END DEPRECATED MULTI-USER TABLES
+-- =========================================================================
 
 CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);
 CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id);
