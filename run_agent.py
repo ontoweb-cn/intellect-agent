@@ -4530,6 +4530,7 @@ class AIAgent:
             parent_agent=self,
         )
 
+    @timed(label="tool_invoke")
     def _invoke_tool(self, function_name: str, function_args: dict, effective_task_id: str,
                      tool_call_id: Optional[str] = None, messages: list = None,
                      pre_tool_block_checked: bool = False) -> str:
