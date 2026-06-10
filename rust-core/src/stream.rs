@@ -119,6 +119,56 @@ impl StreamAccumulator {
         self.finish_reason = Some(reason.to_string());
     }
 
+    /// Repair malformed JSON tool call arguments.
+    /// Mirrors Python's agent/message_sanitization.py:_repair_tool_call_arguments.
+    fn repair_arguments(&self, raw: &str) -> String {
+        let raw = raw.trim();
+        if raw.is_empty() || raw == "None" {
+            return "{}".to_string();
+        }
+
+        // Pass 0: strict=false — accept control characters, re-serialize clean
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) {
+            return serde_json::to_string(&parsed).unwrap_or_else(|_| "{}".to_string());
+        }
+
+        // Pass 1: strip trailing commas before } or ]
+        let re = fancy_regex::Regex::new(r",\s*([}\]])").unwrap();
+        let mut fixed = re.replace_all(raw, "${1}").to_string();
+
+        // Pass 2: close unclosed structures
+        let open_curly = fixed.matches('{').count().saturating_sub(fixed.matches('}').count());
+        let open_bracket = fixed.matches('[').count().saturating_sub(fixed.matches(']').count());
+        if open_curly > 0 {
+            fixed.push_str(&"}".repeat(open_curly));
+        }
+        if open_bracket > 0 {
+            fixed.push_str(&"]".repeat(open_bracket));
+        }
+
+        // Pass 3: remove excess closing braces/brackets (max 50 iterations)
+        for _ in 0..50 {
+            if serde_json::from_str::<serde_json::Value>(&fixed).is_ok() {
+                return fixed;
+            }
+            if fixed.ends_with('}') && fixed.matches('}').count() > fixed.matches('{').count() {
+                fixed.pop();
+            } else if fixed.ends_with(']') && fixed.matches(']').count() > fixed.matches('[').count() {
+                fixed.pop();
+            } else {
+                break;
+            }
+        }
+
+        // Last chance: try parsing the repaired result
+        if serde_json::from_str::<serde_json::Value>(&fixed).is_ok() {
+            return fixed;
+        }
+
+        // All repairs failed — return empty object (like Python's fallback)
+        "{}".to_string()
+    }
+
     /// Finalize and return the assembled result as a 5-tuple:
     /// (full_content, tool_calls_json, reasoning, finish_reason, model_name)
     /// tool_calls_json is a valid JSON string built with serde_json.
@@ -137,16 +187,7 @@ impl StreamAccumulator {
                 .filter_map(|s| self.tool_calls_map.get(s))
                 .filter(|e| !e.name.is_empty() || !e.arguments.is_empty())
                 .map(|e| {
-                    // Validate/repair arguments JSON — default to "{}" if unparseable
-                    let args = if e.arguments.is_empty() {
-                        "{}".to_string()
-                    } else if serde_json::from_str::<serde_json::Value>(&e.arguments).is_ok() {
-                        e.arguments.clone()
-                    } else {
-                        // Unparseable arguments — treat as truncated, wrap as-is
-                        // (matches Python's _repair_tool_call_arguments fallback)
-                        e.arguments.clone()
-                    };
+                    let args = self.repair_arguments(&e.arguments);
                     let name = if e.name.is_empty() { "?" } else { &e.name };
                     serde_json::json!({
                         "id": e.id,
