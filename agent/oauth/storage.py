@@ -13,6 +13,14 @@ import os
 from pathlib import Path
 from typing import Any
 
+# ── Stage 5b: Rust Fernet ──────────────────────────────────────────────────
+try:
+    from intellect_core import fernet_encrypt as _rust_fernet_encrypt  # type: ignore[import-not-found]
+    from intellect_core import fernet_decrypt as _rust_fernet_decrypt
+    _HAS_RUST_FERNET = True
+except (ImportError, AttributeError):
+    _HAS_RUST_FERNET = False
+
 
 def _get_or_create_key() -> bytes:
     """Return the Fernet key, creating it if it doesn't exist."""
@@ -56,18 +64,20 @@ def _get_or_create_key() -> bytes:
 
 def encrypt_token(plaintext: str) -> str:
     """Encrypt an OAuth token. Returns base64 ciphertext."""
+    key_bytes = _get_or_create_key()
+    if _HAS_RUST_FERNET:
+        return _rust_fernet_encrypt(key_bytes.decode(), plaintext)
     from cryptography.fernet import Fernet
-
-    f = Fernet(_get_or_create_key())
-    return f.encrypt(plaintext.encode()).decode()
+    return Fernet(key_bytes).encrypt(plaintext.encode()).decode()
 
 
 def decrypt_token(ciphertext: str) -> str:
     """Decrypt an OAuth token. Returns plaintext."""
+    key_bytes = _get_or_create_key()
+    if _HAS_RUST_FERNET:
+        return _rust_fernet_decrypt(key_bytes.decode(), ciphertext)
     from cryptography.fernet import Fernet
-
-    f = Fernet(_get_or_create_key())
-    return f.decrypt(ciphertext.encode()).decode()
+    return Fernet(key_bytes).decrypt(ciphertext.encode()).decode()
 
 
 def store_oauth_token(
