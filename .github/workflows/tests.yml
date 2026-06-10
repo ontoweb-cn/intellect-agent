@@ -303,6 +303,13 @@ jobs:
           cd rust-core
           maturin develop
 
+      - name: Build wheel (verify release packaging)
+        run: |
+          source .venv/bin/activate
+          cd rust-core
+          maturin build --release
+          echo "Wheel built: $(ls target/wheels/*.whl)"
+
       - name: Run Rust parity tests
         run: |
           source .venv/bin/activate
