@@ -387,16 +387,16 @@ class SessionDB:
             return False
 
     @staticmethod
-    def _drop_fts_triggers(cursor: sqlite3.Cursor) -> None:
-        drop_fts_triggers(cursor)
+    def _drop_fts_triggers(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> None:
+        drop_fts_triggers(cursor, db_path=db_path)
 
     @staticmethod
-    def _fts_trigger_count(cursor: sqlite3.Cursor) -> int:
-        return fts_trigger_count(cursor)
+    def _fts_trigger_count(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> int:
+        return fts_trigger_count(cursor, db_path=db_path)
 
     @staticmethod
-    def _rebuild_fts_indexes(cursor: sqlite3.Cursor) -> None:
-        rebuild_fts_indexes(cursor)
+    def _rebuild_fts_indexes(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> None:
+        rebuild_fts_indexes(cursor, db_path=db_path)
 
     def _fts_table_probe(self, cursor: sqlite3.Cursor, table_name: str) -> Optional[bool]:
         try:
@@ -621,7 +621,7 @@ class SessionDB:
             # tables they target. Drop only the triggers so core persistence
             # continues; if a future runtime has FTS5, _ensure_fts_schema()
             # recreates them.
-            self._drop_fts_triggers(cursor)
+            self._drop_fts_triggers(cursor, db_path=str(self.db_path))
 
         cursor.execute("SELECT version FROM schema_version LIMIT 1")
         row = cursor.fetchone()
@@ -660,7 +660,7 @@ class SessionDB:
                 # existence checks (below) recreate them from FTS_SQL /
                 # FTS_TRIGRAM_SQL, then backfill every message row. Fixes #16751.
                 if fts5_available:
-                    self._drop_fts_triggers(cursor)
+                    self._drop_fts_triggers(cursor, db_path=str(self.db_path))
                     for _tbl in ("messages_fts",):
                         try:
                             cursor.execute(f"DROP TABLE IF EXISTS {_tbl}")
@@ -861,7 +861,7 @@ class SessionDB:
             # FTS5 setup. Run the DDL even when the virtual table exists so
             # CREATE TRIGGER IF NOT EXISTS repairs trigger-only degradation from
             # an earlier no-FTS5 runtime.
-            triggers_need_repair = self._fts_trigger_count(cursor) < len(_FTS_TRIGGERS)
+            triggers_need_repair = self._fts_trigger_count(cursor, db_path=str(self.db_path)) < len(_FTS_TRIGGERS)
             self._fts_enabled = self._ensure_fts_schema(cursor, "messages_fts", FTS_SQL)
 
             # Trigram FTS5 for CJK/substring search. This is optional relative
@@ -872,7 +872,7 @@ class SessionDB:
                     cursor, "messages_fts", FTS_SQL
                 )
                 if trigram_enabled and triggers_need_repair:
-                    self._rebuild_fts_indexes(cursor)
+                    self._rebuild_fts_indexes(cursor, db_path=str(self.db_path))
 
         self._conn.commit()
 
@@ -1483,7 +1483,7 @@ class SessionDB:
         return f"{base} #{max_num + 1}"
 
     def get_compression_tip(self, session_id: str) -> Optional[str]:
-        return _get_tip(self._conn, self._lock, session_id)
+        return _get_tip(self._conn, self._lock, session_id, db_path=str(self.db_path))
 
     def list_sessions_rich(
         self,

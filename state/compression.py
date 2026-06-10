@@ -9,7 +9,7 @@ from typing import Optional
 # ── Opt-in Rust acceleration ────────────────────────────────────────────────
 try:
     from intellect_core import (  # type: ignore[import-not-found]
-        get_compression_tip_py as _rust_get_compression_tip,
+        get_compression_tip_rs as _rust_get_compression_tip,
     )
     _HAS_RUST = True
 except ImportError:
@@ -37,14 +37,17 @@ def get_compression_tip(
     conn: sqlite3.Connection,
     lock: threading.Lock,
     session_id: str,
+    *,
+    db_path: str | None = None,
 ) -> Optional[str]:
     """Walk the compression-continuation chain and return the tip.
 
     Uses a single WITH RECURSIVE CTE instead of iterative lock/acquire
     per hop — reduces up to 100 sequential queries to 1.
     """
-    if _HAS_RUST:
-        return _rust_get_compression_tip(conn, lock, session_id)
+    if _HAS_RUST and db_path is not None:
+        # Rust path opens its own read-only connection — no lock needed.
+        return _rust_get_compression_tip(db_path, session_id)
     with lock:
         cursor = conn.execute(_COMPRESSION_TIP_SQL, (session_id,))
         row = cursor.fetchone()

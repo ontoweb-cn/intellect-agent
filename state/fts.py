@@ -16,9 +16,9 @@ from state.schema import (
 try:
     from intellect_core import (  # type: ignore[import-not-found]
         is_fts5_unavailable_error as _rust_is_fts5_unavailable_error,
-        drop_fts_triggers_py as _rust_drop_fts_triggers,
-        fts_trigger_count_py as _rust_fts_trigger_count,
-        rebuild_fts_indexes_py as _rust_rebuild_fts_indexes,
+        drop_fts_triggers_rs as _rust_drop_fts_triggers,
+        fts_trigger_count_rs as _rust_fts_trigger_count,
+        rebuild_fts_indexes_rs as _rust_rebuild_fts_indexes,
     )
     _HAS_RUST = True
 except ImportError:
@@ -33,10 +33,10 @@ def is_fts5_unavailable_error(exc: sqlite3.OperationalError) -> bool:
     return "no such module" in err and "fts5" in err
 
 
-def drop_fts_triggers(cursor: sqlite3.Cursor) -> None:
+def drop_fts_triggers(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> None:
     """Drop all known FTS triggers (idempotent)."""
-    if _HAS_RUST:
-        _rust_drop_fts_triggers(cursor)
+    if _HAS_RUST and db_path is not None:
+        _rust_drop_fts_triggers(db_path)
         return
     for trigger in _FTS_TRIGGERS:
         try:
@@ -46,10 +46,10 @@ def drop_fts_triggers(cursor: sqlite3.Cursor) -> None:
             pass
 
 
-def fts_trigger_count(cursor: sqlite3.Cursor) -> int:
+def fts_trigger_count(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> int:
     """Count how many of the expected FTS triggers exist."""
-    if _HAS_RUST:
-        return _rust_fts_trigger_count(cursor)
+    if _HAS_RUST and db_path is not None:
+        return _rust_fts_trigger_count(db_path)
     placeholders = ",".join("?" for _ in _FTS_TRIGGERS)
     row = cursor.execute(
         f"SELECT COUNT(*) FROM sqlite_master "
@@ -59,10 +59,10 @@ def fts_trigger_count(cursor: sqlite3.Cursor) -> int:
     return int(row[0] if not isinstance(row, sqlite3.Row) else row[0])
 
 
-def rebuild_fts_indexes(cursor: sqlite3.Cursor) -> None:
+def rebuild_fts_indexes(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> None:
     """Delete and re-populate the messages_fts index from messages table."""
-    if _HAS_RUST:
-        _rust_rebuild_fts_indexes(cursor)
+    if _HAS_RUST and db_path is not None:
+        _rust_rebuild_fts_indexes(db_path)
         return
     validate_fts_identifier("messages_fts", _FTS_TABLES)
     cursor.execute("DELETE FROM messages_fts")

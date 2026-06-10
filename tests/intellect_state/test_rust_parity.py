@@ -7,7 +7,9 @@ function must behave exactly like its pure-Python counterpart.
 from __future__ import annotations
 
 import importlib
+import os
 import sqlite3
+import tempfile
 import threading
 import unittest.mock
 
@@ -24,9 +26,15 @@ def _enable_rust(module):
     module._HAS_RUST = True
 
 
-def _fresh_db() -> sqlite3.Connection:
-    """Return an in-memory SQLite database with FTS5 enabled."""
-    conn = sqlite3.connect(":memory:")
+def _fresh_db() -> tuple[sqlite3.Connection, str]:
+    """Return a temp-file SQLite database with FTS5 enabled, plus its path.
+
+    Uses a temp file (not :memory:) so the Rust rusqlite connection
+    to the same path shares the same database.
+    """
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("CREATE VIRTUAL TABLE messages_fts USING fts5(content, tokenize='trigram')")
     conn.execute(
@@ -52,12 +60,14 @@ def _fresh_db() -> sqlite3.Connection:
         );
     END;
     """)
-    return conn
+    return conn, path
 
 
-def _fresh_sessions_db() -> sqlite3.Connection:
-    """Return an in-memory SQLite database with sessions table."""
-    conn = sqlite3.connect(":memory:")
+def _fresh_sessions_db() -> tuple[sqlite3.Connection, str]:
+    """Return a temp-file SQLite database with sessions table, plus its path."""
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute(
         "CREATE TABLE sessions ("
@@ -68,7 +78,7 @@ def _fresh_sessions_db() -> sqlite3.Connection:
         "end_reason TEXT"
         ")"
     )
-    return conn
+    return conn, path
 
 
 # ── is_fts5_unavailable_error ────────────────────────────────────────────────
@@ -124,9 +134,9 @@ class TestDropFtsTriggers:
     def test_drop_all_triggers(self):
         from state import fts
 
-        conn = _fresh_db()
+        conn, db_path = _fresh_db()
         # Verify triggers exist
-        count_before = fts.fts_trigger_count(conn.cursor())
+        count_before = fts.fts_trigger_count(conn.cursor(), db_path=db_path)
 
         _disable_rust(fts)
         py_cursor = conn.cursor()
@@ -134,7 +144,7 @@ class TestDropFtsTriggers:
 
         _enable_rust(fts)
         # Triggers should be gone (py already dropped them)
-        count_after = fts.fts_trigger_count(conn.cursor())
+        count_after = fts.fts_trigger_count(conn.cursor(), db_path=db_path)
 
         assert count_before == 3  # insert, delete, update
         assert count_after == 0
@@ -142,13 +152,13 @@ class TestDropFtsTriggers:
     def test_drop_triggers_idempotent(self):
         from state import fts
 
-        conn = _fresh_db()
+        conn, db_path = _fresh_db()
         cursor = conn.cursor()
         # Drop twice — no error
-        fts.drop_fts_triggers(cursor)
-        fts.drop_fts_triggers(cursor)  # second call should be fine
+        fts.drop_fts_triggers(cursor, db_path=db_path)
+        fts.drop_fts_triggers(cursor, db_path=db_path)  # second call should be fine
 
-        assert fts.fts_trigger_count(conn.cursor()) == 0
+        assert fts.fts_trigger_count(conn.cursor(), db_path=db_path) == 0
 
 
 # ── fts_trigger_count ────────────────────────────────────────────────────────
@@ -160,25 +170,27 @@ class TestFtsTriggerCount:
     def test_py_and_rust_agree(self):
         from state import fts
 
-        conn = _fresh_db()
+        conn, db_path = _fresh_db()
 
         _disable_rust(fts)
         py_count = fts.fts_trigger_count(conn.cursor())
         _enable_rust(fts)
-        rust_count = fts.fts_trigger_count(conn.cursor())
+        rust_count = fts.fts_trigger_count(conn.cursor(), db_path=db_path)
 
         assert py_count == rust_count == 3
 
     def test_zero_triggers(self):
         from state import fts
 
-        conn = sqlite3.connect(":memory:")
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = sqlite3.connect(path)
         conn.row_factory = sqlite3.Row
 
         _disable_rust(fts)
         py_count = fts.fts_trigger_count(conn.cursor())
         _enable_rust(fts)
-        rust_count = fts.fts_trigger_count(conn.cursor())
+        rust_count = fts.fts_trigger_count(conn.cursor(), db_path=path)
 
         assert py_count == rust_count == 0
 
@@ -192,7 +204,7 @@ class TestRebuildFtsIndexes:
     def test_rebuild_populates_fts(self):
         from state import fts
 
-        conn = _fresh_db()
+        conn, db_path = _fresh_db()
         # Insert some messages
         conn.execute(
             "INSERT INTO messages (id, content, tool_name, tool_calls) "
@@ -205,7 +217,7 @@ class TestRebuildFtsIndexes:
         conn.commit()
 
         # Rebuild to ensure FTS is populated
-        fts.rebuild_fts_indexes(conn.cursor())
+        fts.rebuild_fts_indexes(conn.cursor(), db_path=db_path)
         conn.commit()
 
         # Search should find results
@@ -217,7 +229,7 @@ class TestRebuildFtsIndexes:
     def test_rebuild_idempotent(self):
         from state import fts
 
-        conn = _fresh_db()
+        conn, db_path = _fresh_db()
         conn.execute(
             "INSERT INTO messages (id, content, tool_name, tool_calls) "
             "VALUES (1, 'test', NULL, NULL)"
@@ -225,9 +237,9 @@ class TestRebuildFtsIndexes:
         conn.commit()
 
         # Rebuild twice — no error
-        fts.rebuild_fts_indexes(conn.cursor())
+        fts.rebuild_fts_indexes(conn.cursor(), db_path=db_path)
         conn.commit()
-        fts.rebuild_fts_indexes(conn.cursor())
+        fts.rebuild_fts_indexes(conn.cursor(), db_path=db_path)
         conn.commit()
 
         # Verify data is correct (not duplicated)
@@ -244,13 +256,13 @@ class TestGetCompressionTip:
     def test_no_chain_returns_self(self):
         from state import compression
 
-        conn = _fresh_sessions_db()
+        conn, db_path = _fresh_sessions_db()
         lock = threading.Lock()
 
         _disable_rust(compression)
         py_result = compression.get_compression_tip(conn, lock, "session-1")
         _enable_rust(compression)
-        rust_result = compression.get_compression_tip(conn, lock, "session-1")
+        rust_result = compression.get_compression_tip(conn, lock, "session-1", db_path=db_path)
 
         # No sessions in db, so should return the input session_id
         assert py_result == rust_result == "session-1"
@@ -258,7 +270,7 @@ class TestGetCompressionTip:
     def test_chain_follows_parent(self):
         from state import compression
 
-        conn = _fresh_sessions_db()
+        conn, db_path = _fresh_sessions_db()
         lock = threading.Lock()
         now = 1000.0
 
@@ -285,7 +297,7 @@ class TestGetCompressionTip:
         _disable_rust(compression)
         py_result = compression.get_compression_tip(conn, lock, "s1")
         _enable_rust(compression)
-        rust_result = compression.get_compression_tip(conn, lock, "s1")
+        rust_result = compression.get_compression_tip(conn, lock, "s1", db_path=db_path)
 
         # Chain: s1 → s2 (compression) → s3. Tip should be s3.
         assert py_result == rust_result == "s3"
@@ -300,10 +312,10 @@ class TestRustAvailability:
     def test_rust_is_importable(self):
         import intellect_core
         assert hasattr(intellect_core, "is_fts5_unavailable_error")
-        assert hasattr(intellect_core, "drop_fts_triggers_py")
-        assert hasattr(intellect_core, "fts_trigger_count_py")
-        assert hasattr(intellect_core, "rebuild_fts_indexes_py")
-        assert hasattr(intellect_core, "get_compression_tip_py")
+        assert hasattr(intellect_core, "drop_fts_triggers_rs")
+        assert hasattr(intellect_core, "fts_trigger_count_rs")
+        assert hasattr(intellect_core, "rebuild_fts_indexes_rs")
+        assert hasattr(intellect_core, "get_compression_tip_rs")
 
     def test_has_rust_flag_is_true(self):
         from state import fts, compression
