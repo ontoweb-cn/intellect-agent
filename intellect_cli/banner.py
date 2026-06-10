@@ -744,3 +744,50 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
         console.print(_logo)
         console.print()
     console.print(outer_panel)
+
+def build_compact_banner() -> str:
+    """Build a compact banner that fits the current terminal width."""
+    try:
+        from intellect_cli.skin_engine import get_active_skin
+        _skin = get_active_skin()
+    except Exception:
+        _skin = None
+
+    skin_name = getattr(_skin, "name", "default") if _skin else "default"
+    border_color = _skin.get_color("banner_border", "#FFD700") if _skin else "#FFD700"
+    title_color = _skin.get_color("banner_title", "#FFBF00") if _skin else "#FFBF00"
+    dim_color = _skin.get_color("banner_dim", "#B8860B") if _skin else "#B8860B"
+
+    if skin_name == "default":
+        line1 = "⚕ ONTOWEB INTELLECT - AI Agent Framework"
+        tiny_line = "⚕ ONTOWEB INTELLECT"
+    else:
+        agent_name = _skin.get_branding("agent_name", "Intellect Agent") if _skin else "Intellect Agent"
+        line1 = f"{agent_name} - AI Agent Framework"
+        tiny_line = agent_name
+
+    import os as _os
+    if _os.environ.get("INTELLECT_FAST_STARTUP_BANNER") == "1":
+        from intellect_cli import __release_date__ as _release_date
+        from intellect_cli import __version__ as _version
+        version_line = f"Intellect Agent v{_version} ({_release_date})"
+    else:
+        version_line = format_banner_version_label()
+
+    import shutil as _shutil
+    w = min(_shutil.get_terminal_size().columns - 2, 88)
+    if w < 30:
+        return f"\n[{title_color}]{tiny_line}[/] [dim {dim_color}]- ONTOWEB[/]\n"
+
+    inner = w - 2
+    bar = "═" * w
+    content_width = inner - 2
+    line1 = line1[:content_width].ljust(content_width)
+    line2 = version_line[:content_width].ljust(content_width)
+
+    return (
+        f"\n[bold {border_color}]╔{bar}╗[/]\n"
+        f"[bold {border_color}]║[/] [{title_color}]{line1}[/] [bold {border_color}]║[/]\n"
+        f"[bold {border_color}]║[/] [dim {dim_color}]{line2}[/] [bold {border_color}]║[/]\n"
+        f"[bold {border_color}]╚{bar}╝[/]\n"
+    )
