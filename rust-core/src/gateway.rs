@@ -150,6 +150,86 @@ fn is_daily_reset(updated_at: f64, now: f64, at_hour: u32) -> bool {
     updated_at < reset_deadline
 }
 
+// ── Exponential backoff (Stage 4c) ──────────────────────────────────────────
+
+/// Compute the next retry delay using exponential backoff with jitter.
+/// Returns seconds as f64.
+/// `attempt`: zero-based attempt number
+/// `base_seconds`: initial delay
+/// `max_seconds`: cap
+#[pyfunction]
+pub fn backoff_delay_rs(attempt: u32, base_seconds: f64, max_seconds: f64) -> f64 {
+    let raw = base_seconds * (2u64.pow(attempt) as f64);
+    let capped = raw.min(max_seconds);
+    // Add ±25% jitter
+    let jitter = capped * 0.25;
+    let lo = capped - jitter;
+    let hi = capped + jitter;
+    // Use a simple deterministic jitter based on attempt for reproducibility
+    let frac = (attempt as f64).sin().abs();
+    lo + (hi - lo) * frac
+}
+
+// ── Rate limiter: token bucket (Stage 4d) ───────────────────────────────────
+
+use std::sync::Mutex;
+use std::time::Instant;
+
+/// Simple token bucket rate limiter for gateway message throttling.
+#[pyclass]
+pub struct TokenBucket {
+    rate: f64,          // tokens per second
+    capacity: f64,      // max burst
+    tokens: Mutex<f64>,
+    last_refill: Mutex<Instant>,
+}
+
+#[pymethods]
+impl TokenBucket {
+    /// Create a new token bucket.
+    /// `rate`: tokens per second (sustained rate)
+    /// `capacity`: max burst size
+    #[new]
+    fn new(rate: f64, capacity: f64) -> Self {
+        TokenBucket {
+            rate,
+            capacity,
+            tokens: Mutex::new(capacity),
+            last_refill: Mutex::new(Instant::now()),
+        }
+    }
+
+    /// Try to consume `n` tokens. Returns true if allowed, false if rate-limited.
+    fn consume(&self, n: f64) -> bool {
+        let now = Instant::now();
+        let mut tokens = self.tokens.lock().unwrap();
+        let mut last = self.last_refill.lock().unwrap();
+        let elapsed = now.duration_since(*last).as_secs_f64();
+        *last = now;
+
+        // Refill
+        *tokens = (*tokens + elapsed * self.rate).min(self.capacity);
+
+        if *tokens >= n {
+            *tokens -= n;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Current token count (for diagnostics).
+    fn available(&self) -> f64 {
+        let mut tokens = self.tokens.lock().unwrap();
+        let mut last = self.last_refill.lock().unwrap();
+        let now = Instant::now();
+        let elapsed = now.duration_since(*last).as_secs_f64();
+        *last = now;
+        *tokens = (*tokens + elapsed * self.rate).min(self.capacity);
+        *tokens
+    }
+}
+
 // ── Rust unit tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]
