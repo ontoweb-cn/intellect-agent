@@ -66,6 +66,13 @@ from .whatsapp_identity import (
 )
 from utils import atomic_replace
 
+# ── Stage 4a: Rust session key builder ─────────────────────────────────────
+try:
+    from intellect_core import build_session_key_rs as _rust_build_key  # type: ignore[import-not-found]
+    _HAS_RUST_GATEWAY = True
+except (ImportError, AttributeError):
+    _HAS_RUST_GATEWAY = False
+
 
 @dataclass
 class SessionSource:
@@ -635,6 +642,25 @@ def build_session_key(
       All extensions are additive and backward-compatible — omitting them
       produces the identical key as before.
     """
+    # ── Stage 4a: Rust session key builder ──────────────────────────────
+    if _HAS_RUST_GATEWAY:
+        chat_id = source.chat_id or ""
+        if source.chat_type == "dm" and source.platform == Platform.WHATSAPP:
+            chat_id = canonical_whatsapp_identifier(source.chat_id) or ""
+        participant = ""
+        if source.chat_type != "dm":
+            p = source.user_id_alt or source.user_id or ""
+            if p and source.platform == Platform.WHATSAPP:
+                p = canonical_whatsapp_identifier(str(p)) or p
+            participant = str(p)
+        return _rust_build_key(
+            source.platform.value, source.chat_type, chat_id,
+            source.thread_id or "", source.user_id or "",
+            source.user_id_alt or "" if source.chat_type == "dm" else participant,
+            group_sessions_per_user, thread_sessions_per_user,
+            member_id or "", team_id or "", project_id or "",
+        )
+
     platform = source.platform.value
     if source.chat_type == "dm":
         dm_chat_id = source.chat_id

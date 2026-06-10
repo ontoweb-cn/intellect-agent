@@ -8,6 +8,7 @@ pub mod compression;
 pub mod connection;
 pub mod crypto;
 pub mod fts;
+pub mod gateway;
 pub mod sandbox;
 pub mod schema;
 pub mod stream;
@@ -53,6 +54,9 @@ fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crypto::fernet_encrypt, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::fernet_decrypt, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::generate_fernet_key, m)?)?;
+
+    // ── Stage 4a: Gateway utilities ────────────────────────────────────
+    m.add_function(wrap_pyfunction!(gateway::build_session_key_rs, m)?)?;
 
     Ok(())
 }
