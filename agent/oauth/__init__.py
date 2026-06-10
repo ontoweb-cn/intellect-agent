@@ -13,6 +13,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote as _url_quote, urlencode as _url_encode
 
+# ── Stage 5: Rust crypto acceleration ──────────────────────────────────────
+try:
+    from intellect_core import (  # type: ignore[import-not-found]
+        pkce_challenge as _rust_pkce_challenge,
+        secure_token_hex as _rust_secure_hex,
+    )
+    _HAS_RUST_CRYPTO = True
+except (ImportError, AttributeError):
+    _HAS_RUST_CRYPTO = False
+
 logger = logging.getLogger(__name__)
 
 # ── Core types ──────────────────────────────────────────────────────────────
@@ -540,13 +550,21 @@ class OAuthEngine:
     def _start_pkce_loopback(
         self, provider: OAuthProviderConfig, usage: str, **kwargs
     ) -> tuple[OAuthSession | None, str | None]:
-        verifier = self._secrets.token_urlsafe(64)[:64] if provider.pkce else ""
-        challenge = ""
-        if verifier:
-            import hashlib, base64
-            digest = hashlib.sha256(verifier.encode()).digest()
-            challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-        state = self._secrets.token_hex(16)
+        if provider.pkce:
+            if _HAS_RUST_CRYPTO:
+                verifier, challenge = _rust_pkce_challenge()
+            else:
+                import hashlib, base64
+                verifier = self._secrets.token_urlsafe(64)[:64]
+                digest = hashlib.sha256(verifier.encode()).digest()
+                challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+        else:
+            verifier = ""
+            challenge = ""
+        state = (
+            _rust_secure_hex(16) if _HAS_RUST_CRYPTO
+            else self._secrets.token_hex(16)
+        )
         redirect_uri = kwargs.get("redirect_uri", "http://127.0.0.1:18923/callback")
 
         params = {
