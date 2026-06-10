@@ -1,0 +1,17 @@
+[package]
+name = "intellect-core"
+version = "0.1.0"
+edition = "2021"
+description = "Intellect Agent core layer — Rust (PyO3) native extension"
+
+[lib]
+name = "intellect_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21", features = ["extension-module"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
