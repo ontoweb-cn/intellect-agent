@@ -16,6 +16,7 @@ extension-module = ["pyo3/extension-module"]
 pyo3 = { version = "0.21" }
 rusqlite = { version = "0.31", features = ["bundled"] }
 rand = "0.8"
+fancy-regex = "0.14"
 
 [profile.release]
 opt-level = 3

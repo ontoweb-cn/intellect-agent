@@ -7,6 +7,7 @@ pub mod backend;
 pub mod compression;
 pub mod connection;
 pub mod fts;
+pub mod sandbox;
 pub mod schema;
 
 use pyo3::prelude::*;
@@ -25,6 +26,11 @@ fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<backend::SQLiteBackend>()?;
     m.add_class::<connection::RustConnection>()?;
     m.add_class::<connection::RustCursor>()?;
+
+    // ── Stage 2: Sandbox / security ─────────────────────────────────────
+    m.add_function(wrap_pyfunction!(sandbox::detect_hardline_command_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(sandbox::detect_dangerous_command_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(sandbox::check_sudo_stdin_guard_rs, m)?)?;
 
     Ok(())
 }
