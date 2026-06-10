@@ -137,6 +137,33 @@ Rust 宿主统一管理，插件只需选一种语言：
 | 高性能 I/O | 快速迭代功能 |
 | 安全关键路径 | 生态依赖（PIL、BS4、Playwright） |
 
+## Progress (2026-06-10)
+
+### ✅ Completed: Large-File Split
+
+| Source | Lines Before | Lines After | Modules Created |
+|--------|-------------|-------------|-----------------|
+| `intellect_state.py` | 4,238 | 3,712 | `state/schema.py`, `state/fts.py`, `state/compression.py`, `state/__init__.py` |
+| `cli.py` | 15,664 | 15,521 | `intellect_cli/chat_console.py`, `intellect_cli/text_utils.py` |
+| `run_agent.py` | 4,838 | 4,784 | `agent/timing.py`, `agent/errors.py` |
+| `gateway/run.py` | 20,063 | 19,763 | `gateway/routing.py`, `gateway/helpers.py` |
+
+New package structure ready for Rust Stage 1 migration.
+
+### ✅ Completed: Performance & Security
+
+- FTS5 unified trigram table (-50% write amplification)
+- SessionStore JSON → SQLite migration
+- O(n²) dedup → O(n) hash-set
+- Skills scan mtime cache
+- Config mtime cache for gateway hot path
+- 119 bare `except:pass` → `logger.debug(exc_info=True)`
+- WebSocket auth (`TUI_AUTH_TOKEN`)
+- Health endpoint info leak fixed
+- CORS wildcard warning
+- ThreadPoolExecutor for agent eviction
+- Session key entropy: 24 → 128 bits
+
 ## 参考
 
 - [PyO3](https://pyo3.rs/) — Rust bindings for Python
