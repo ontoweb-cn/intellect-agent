@@ -2,6 +2,8 @@
 
 > Updated 2026-06-10 | 49 documents (28 archived to `archive/`)
 
+See also: [WebUI Documentation](../webui/) — user guide and architecture overview.
+
 ## Status Key
 - ✅ Complete (archived) | 📋 Planned | 📦 Archive
 

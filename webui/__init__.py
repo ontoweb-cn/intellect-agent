@@ -5,6 +5,8 @@ into the intellect-agent project as the ``webui/`` subdirectory. It provides
 a web-based dashboard for managing agent sessions, viewing conversations,
 and configuring settings.
 
+Documentation: ``docs/webui/``
+
 Start the WebUI server:
     intellect webui start         # Start in background
     intellect webui stop          # Stop the server

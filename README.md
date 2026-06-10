@@ -69,6 +69,7 @@ intellect model        # Choose your LLM provider and model
 intellect tools        # Configure which tools are enabled
 intellect config set   # Set individual config values
 intellect gateway      # Start the messaging gateway (Telegram, Discord, etc.)
+intellect webui start  # Start the WebUI dashboard in background
 intellect setup        # Run the full setup wizard (configures everything at once)
 intellect claw migrate # Migrate from OpenClaw (if coming from OpenClaw)
 intellect update       # Update to the latest version
@@ -132,6 +133,7 @@ All documentation lives at **[intellect-agent.ontoweb.cn/docs](https://intellect
 | [Tools & Toolsets](https://intellect-agent.ontoweb.cn/docs/user-guide/features/tools) | 40+ tools, toolset system, terminal backends |
 | [Skills System](https://intellect-agent.ontoweb.cn/docs/user-guide/features/skills) | Procedural memory, Skills Hub, creating skills |
 | [Memory](https://intellect-agent.ontoweb.cn/docs/user-guide/features/memory) | Persistent memory, user profiles, best practices |
+| [WebUI Dashboard](https://intellect-agent.ontoweb.cn/docs/user-guide/features/webui) | Browser-based session management, real-time streaming, settings |
 | [MCP Integration](https://intellect-agent.ontoweb.cn/docs/user-guide/features/mcp) | Connect any MCP server for extended capabilities |
 | [Cron Scheduling](https://intellect-agent.ontoweb.cn/docs/user-guide/features/cron) | Scheduled tasks with platform delivery |
 | [Context Files](https://intellect-agent.ontoweb.cn/docs/user-guide/features/context-files) | Project context that shapes every conversation |
