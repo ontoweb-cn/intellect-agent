@@ -1762,6 +1762,11 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         role = "assistant"
         reasoning_parts: list = []
         usage_obj = None
+
+        # ── Stage 3d: Rust StreamAccumulator (parallel accumulation) ─────
+        _rust_acc = None
+        if _HAS_RUST_STREAM:
+            _rust_acc = _StreamAccumulator()
         for chunk in stream:
             last_chunk_time["t"] = time.time()
             agent._touch_activity("receiving stream response")
@@ -1798,17 +1803,23 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             delta = chunk.choices[0].delta
             if hasattr(chunk, "model") and chunk.model:
                 model_name = chunk.model
+                if _rust_acc is not None:
+                    _rust_acc.set_model(chunk.model)
 
             # Accumulate reasoning content
             reasoning_text = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
             if reasoning_text:
                 reasoning_parts.append(reasoning_text)
+                if _rust_acc is not None:
+                    _rust_acc.add_reasoning(reasoning_text)
                 _fire_first_delta()
                 agent._fire_reasoning_delta(reasoning_text)
 
             # Accumulate text content — fire callback only when no tool calls
             if delta and delta.content:
                 content_parts.append(delta.content)
+                if _rust_acc is not None:
+                    _rust_acc.add_content(delta.content)
                 if not tool_calls_acc:
                     _fire_first_delta()
                     agent._fire_stream_delta(delta.content)
@@ -1875,6 +1886,13 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                             entry["function"]["name"] = tc_delta.function.name
                         if tc_delta.function.arguments:
                             entry["function"]["arguments"] += tc_delta.function.arguments
+                        # ── Stage 3d: Rust parallel accumulation ────────
+                        if _rust_acc is not None:
+                            _rust_acc.add_tool_delta(
+                                raw_idx, delta_id,
+                                tc_delta.function.name or None,
+                                tc_delta.function.arguments or None,
+                            )
                     extra = getattr(tc_delta, "extra_content", None)
                     if extra is None and hasattr(tc_delta, "model_extra"):
                         extra = (tc_delta.model_extra or {}).get("extra_content")
@@ -1899,6 +1917,8 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
 
             if chunk.choices[0].finish_reason:
                 finish_reason = chunk.choices[0].finish_reason
+                if _rust_acc is not None:
+                    _rust_acc.set_finish_reason(finish_reason)
 
             # Usage in the final chunk
             if hasattr(chunk, "usage") and chunk.usage:
