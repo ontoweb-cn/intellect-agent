@@ -23,39 +23,36 @@ def float_env(name: str, default: float) -> float:
 
 
 def coerce_gateway_timestamp(value: Any) -> Optional[float]:
-    """Coerce various timestamp representations to a float (epoch seconds).
+    """Best-effort conversion of stored gateway timestamps to epoch seconds.
 
-    Handles: int/float epoch, datetime, ISO-8601 string, None, empty.
-    Returns None when the input cannot be interpreted as a timestamp.
+    Missing/unparseable timestamps return None so legacy transcripts keep the
+    historical auto-continue behaviour instead of being silently dropped.
+    Accepts: datetime, epoch seconds (int/float), epoch milliseconds (when
+    the magnitude exceeds year-2286), ISO-8601 strings (with or without a
+    trailing ``Z``), and numeric strings.
     """
     from datetime import datetime as _datetime
 
     if value is None:
         return None
-    if isinstance(value, (int, float)):
-        return float(value)
     if isinstance(value, _datetime):
         return value.timestamp()
+    if isinstance(value, bool):  # bool is a subclass of int — skip it
+        return None
+    if isinstance(value, (int, float)):
+        # Some platform events use milliseconds; Intellect state rows use seconds.
+        return float(value) / 1000.0 if float(value) > 10_000_000_000 else float(value)
     if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
+        text = value.strip()
+        if not text:
             return None
-        from datetime import timezone as _timezone
-
-        for fmt in (
-            "%Y-%m-%dT%H:%M:%S.%fZ",
-            "%Y-%m-%dT%H:%M:%S.%f%z",
-            "%Y-%m-%dT%H:%M:%S%z",
-            "%Y-%m-%dT%H:%M:%SZ",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%d %H:%M:%S.%f",
-            "%Y-%m-%d %H:%M:%S",
-        ):
-            try:
-                dt = _datetime.strptime(stripped, fmt)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=_timezone.utc)
-                return dt.timestamp()
-            except ValueError:
-                continue
+        try:
+            numeric = float(text)
+            return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
+        except ValueError:
+            pass
+        try:
+            return _datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
     return None

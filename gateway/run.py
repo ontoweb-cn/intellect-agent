@@ -377,38 +377,7 @@ def _telegramize_command_mentions(text: str, platform: Any) -> str:
 _AUTO_CONTINUE_FRESHNESS_SECS_DEFAULT = 60 * 60
 
 
-def _coerce_gateway_timestamp(value: Any) -> Optional[float]:
-    """Best-effort conversion of stored gateway timestamps to epoch seconds.
-
-    Missing/unparseable timestamps return None so legacy transcripts keep the
-    historical auto-continue behaviour instead of being silently dropped.
-    Accepts: datetime, epoch seconds (int/float), epoch milliseconds (when
-    the magnitude exceeds year-2286), ISO-8601 strings (with or without a
-    trailing ``Z``), and numeric strings.
-    """
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.timestamp()
-    if isinstance(value, bool):  # bool is a subclass of int — skip it
-        return None
-    if isinstance(value, (int, float)):
-        # Some platform events use milliseconds; Intellect state rows use seconds.
-        return float(value) / 1000.0 if float(value) > 10_000_000_000 else float(value)
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        try:
-            numeric = float(text)
-            return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
-        except ValueError:
-            pass
-        try:
-            return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
-        except ValueError:
-            return None
-    return None
+from gateway.helpers import coerce_gateway_timestamp as _coerce_gateway_timestamp  # noqa: E402
 
 
 def _auto_continue_freshness_window() -> float:
