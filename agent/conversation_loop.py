@@ -1854,9 +1854,17 @@ def run_conversation(
                     agent.session_cache_write_tokens += canonical_usage.cache_write_tokens
                     agent.session_reasoning_tokens += canonical_usage.reasoning_tokens
 
-                    # ── Stage 3b: Rust TokenAccumulator ──────────────────
-                    if getattr(agent, '_token_acc', None) is not None:
-                        agent._token_acc.add(
+                    # ── Stage 3b: Rust TokenAccumulator (lazy init) ─────
+                    acc = getattr(agent, '_token_acc', None)
+                    if acc is None:
+                        # Lazy-init for programmatic API usage that skips
+                        # reset_session_state (e.g. direct run_conversation)
+                        from run_agent import _HAS_TOKEN_ACC, _TokenAccumulator
+                        if _HAS_TOKEN_ACC:
+                            agent._token_acc = _TokenAccumulator()
+                            acc = agent._token_acc
+                    if acc is not None:
+                        acc.add(
                             canonical_usage.input_tokens,
                             canonical_usage.output_tokens,
                             canonical_usage.cache_read_tokens,

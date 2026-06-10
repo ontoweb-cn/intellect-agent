@@ -122,32 +122,44 @@ impl StreamAccumulator {
 
     /// Finalize and return the assembled result as a 5-tuple:
     /// (full_content, tool_calls_json, reasoning, finish_reason, model_name)
-    /// tool_calls_json is a JSON string of [{id, type:"function", function:{name,arguments}}]
+    /// tool_calls_json is a valid JSON string built with serde_json.
     fn finalize(&self) -> (String, String, String, Option<String>, Option<String>) {
         let full_content = if self.has_content {
             self.content_parts.join("")
-        } else if self.has_tool_calls {
-            String::new()
         } else {
             String::new()
         };
 
         let tool_calls_json = if self.has_tool_calls {
-            // Sort by slot, build JSON manually
             let mut slots: Vec<usize> = self.tool_calls_map.keys().copied().collect();
             slots.sort();
-            let entries: Vec<String> = slots
+            let entries: Vec<serde_json::Value> = slots
                 .iter()
                 .filter_map(|s| self.tool_calls_map.get(s))
-                .filter(|e| !e.name.is_empty())
+                .filter(|e| !e.name.is_empty() || !e.arguments.is_empty())
                 .map(|e| {
-                    format!(
-                        r#"{{"id":"{}","type":"function","function":{{"name":"{}","arguments":"{}"}}}}"#,
-                        e.id, e.name, e.arguments
-                    )
+                    // Validate/repair arguments JSON — default to "{}" if unparseable
+                    let args = if e.arguments.is_empty() {
+                        "{}".to_string()
+                    } else if serde_json::from_str::<serde_json::Value>(&e.arguments).is_ok() {
+                        e.arguments.clone()
+                    } else {
+                        // Unparseable arguments — treat as truncated, wrap as-is
+                        // (matches Python's _repair_tool_call_arguments fallback)
+                        e.arguments.clone()
+                    };
+                    let name = if e.name.is_empty() { "?" } else { &e.name };
+                    serde_json::json!({
+                        "id": e.id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": args,
+                        }
+                    })
                 })
                 .collect();
-            format!("[{}]", entries.join(","))
+            serde_json::Value::Array(entries).to_string()
         } else {
             String::new()
         };

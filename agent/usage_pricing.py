@@ -729,9 +729,22 @@ def normalize_usage(
 
     # ── Stage 3a: Rust fast path ─────────────────────────────────────────
     if _HAS_RUST_USAGE:
-        details_input = getattr(response_usage, "input_tokens_details", None)
+        in_details = getattr(response_usage, "input_tokens_details", None)
         prompt_details = getattr(response_usage, "prompt_tokens_details", None)
-        output_details = getattr(response_usage, "output_tokens_details", None)
+        out_details = getattr(response_usage, "output_tokens_details", None)
+
+        # Cached tokens: OpenAI uses prompt_tokens_details, Codex uses
+        # input_tokens_details.  Read both and take the non-zero one.
+        cached_detail = max(
+            _to_int(getattr(prompt_details, "cached_tokens", 0) if prompt_details else 0),
+            _to_int(getattr(in_details, "cached_tokens", 0) if in_details else 0),
+        )
+        # Cache writes: OpenAI uses prompt_tokens_details.cache_write_tokens,
+        # Codex uses input_tokens_details.cache_creation_tokens.
+        cache_write_detail = max(
+            _to_int(getattr(prompt_details, "cache_write_tokens", 0) if prompt_details else 0),
+            _to_int(getattr(in_details, "cache_creation_tokens", 0) if in_details else 0),
+        )
 
         result = _rust_normalize(
             mode,
@@ -742,9 +755,9 @@ def normalize_usage(
             _to_int(getattr(response_usage, "completion_tokens", 0)),
             _to_int(getattr(response_usage, "cache_read_input_tokens", 0)),
             _to_int(getattr(response_usage, "cache_creation_input_tokens", 0)),
-            _to_int(getattr(details_input, "cached_tokens", 0) if details_input else 0),
-            _to_int(getattr(prompt_details, "cache_write_tokens", 0) if prompt_details else 0),
-            _to_int(getattr(output_details, "reasoning_tokens", 0) if output_details else 0),
+            cached_detail,
+            cache_write_detail,
+            _to_int(getattr(out_details, "reasoning_tokens", 0) if out_details else 0),
         )
         return CanonicalUsage(
             input_tokens=result[0], output_tokens=result[1],
