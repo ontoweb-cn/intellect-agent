@@ -746,11 +746,17 @@ fn apply_wal(conn: &Connection) -> bool {
         }
     }
 
-    // Try setting WAL
-    match conn.execute_batch("PRAGMA journal_mode=WAL") {
-        Ok(()) => true,
-        Err(_) => {
-            // Fall back to DELETE on WAL-incompatible filesystems (NFS, SMB, FUSE)
+    // Try setting WAL, then verify it was actually applied.
+    // execute_batch discards PRAGMA return values; we must query the
+    // resulting journal mode explicitly to avoid false positives on
+    // WAL-incompatible filesystems (NFS, SMB, FUSE).
+    let _ = conn.execute_batch("PRAGMA journal_mode=WAL");
+    let mode: Result<String, _> =
+        conn.query_row("PRAGMA journal_mode", [], |row| row.get(0));
+    match mode {
+        Ok(ref m) if m == "wal" => true,
+        _ => {
+            // Fall back to DELETE on WAL-incompatible filesystems
             let _ = conn.execute_batch("PRAGMA journal_mode=DELETE");
             false
         }

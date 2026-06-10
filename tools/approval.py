@@ -29,7 +29,7 @@ try:
         check_sudo_stdin_guard_rs as _rust_check_sudo_stdin,
     )
     _HAS_RUST_SANDBOX = True
-except ImportError:
+except (ImportError, AttributeError):
     _HAS_RUST_SANDBOX = False
 
 logger = logging.getLogger(__name__)

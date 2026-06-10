@@ -25,21 +25,27 @@ fn hardline_patterns() -> &'static PatternList {
             (r">\s*/dev/(sd|nvme|hd|mmcblk|vd|xvd)[a-z0-9]*\b", "redirect to raw block device"),
             (r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:", "fork bomb"),
             (r"\bkill\s+(-[^\s]+\s+)*-1\b", "kill all processes"),
-            (r"(?:^|[;&|\n`]|\$\(\))\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*(shutdown|reboot|halt|poweroff)\b", "system shutdown/reboot"),
-            (r"(?:^|[;&|\n`]|\$\(\))\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*init\s+[06]\b", "init 0/6 (shutdown/reboot)"),
-            (r"(?:^|[;&|\n`]|\$\(\))\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*systemctl\s+(poweroff|reboot|halt|kexec)\b", "systemctl poweroff/reboot"),
-            (r"(?:^|[;&|\n`]|\$\(\))\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*telinit\s+[06]\b", "telinit 0/6 (shutdown/reboot)"),
+            (r"(?:^|[;&|\n`]|\$\()\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*(shutdown|reboot|halt|poweroff)\b", "system shutdown/reboot"),
+            (r"(?:^|[;&|\n`]|\$\()\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*init\s+[06]\b", "init 0/6 (shutdown/reboot)"),
+            (r"(?:^|[;&|\n`]|\$\()\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*systemctl\s+(poweroff|reboot|halt|kexec)\b", "systemctl poweroff/reboot"),
+            (r"(?:^|[;&|\n`]|\$\()\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*telinit\s+[06]\b", "telinit 0/6 (shutdown/reboot)"),
         ];
-        patterns.into_iter().map(|(p, d)| (Regex::new(&format!("(?i){}", p)).unwrap(), d)).collect()
+        patterns.into_iter().map(|(p, d)| (Regex::new(&format!("(?is){}", p)).unwrap(), d)).collect()
     })
 }
 
 fn dangerous_patterns() -> &'static PatternList {
     static P: OnceLock<PatternList> = OnceLock::new();
     P.get_or_init(|| {
-        let sys_cfg = "/etc|/private/etc|/usr/local/etc|/opt/local/etc";
-        let proj_sensitive = "\\.env|\\.envrc|config\\.yaml|config\\.yml|secrets\\.yaml|secrets\\.yml|credentials|\\.netrc|auth\\.json|members\\.json";
-        let cmd_tail = "(\\s|$|;|&&|\\|\\||\\||&|>>|>)";
+        // Mirrors Python's _SYSTEM_CONFIG_PATH: (?:/etc/|/private/(?:etc|var|tmp|home)/)
+        let sys_cfg = "(?:/etc/|/private/(?:etc|var|tmp|home)/)";
+        // Mirrors Python's _PROJECT_SENSITIVE_WRITE_TARGET:
+        //   (?:(?:_PROJECT_ENV_PATH)|(?:_PROJECT_CONFIG_PATH))
+        let proj_env = "(?:(?:/|\\.{1,2}/)?(?:[^\\s/\"'`]+/)*\\.env(?:\\.[^/\\s\"'`]+)*)";
+        let proj_cfg = "(?:(?:/|\\.{1,2}/)?(?:[^\\s/\"'`]+/)*config\\.yaml)";
+        let proj_sensitive = format!("(?:{}|{})", proj_env, proj_cfg);
+        // Mirrors Python's _COMMAND_TAIL: (?:\s*(?:&&|\|\||;).*)?$
+        let cmd_tail = r"(?:\s*(?:&&|\|\||;).*)?$";
 
         let patterns: Vec<(String, &str)> = vec![
             (r"\brm\s+(-[^\s]*\s+)*/".into(), "delete in root path"),
@@ -97,22 +103,29 @@ fn dangerous_patterns() -> &'static PatternList {
             (r"\bsudo\b[^;|&\n]*?\s+(?:-s\b|--stdin\b|-a\b|--askpass\b)".into(), "sudo with privilege flag (stdin/askpass/shell/list)"),
             (r"\bsudo\b[^;|&\n]*?\s+-[a-z]*[sa][a-z]*\b".into(), "sudo with combined-flag privilege escalation"),
         ];
-        patterns.into_iter().map(|(p, d)| (Regex::new(&format!("(?i){}", p)).unwrap(), d)).collect()
+        patterns.into_iter().map(|(p, d)| (Regex::new(&format!("(?is){}", p)).unwrap(), d)).collect()
     })
 }
 
 fn sudo_stdin_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"(?i)(?:^|[;&|`\n]|&&|\|\||\$\(\))\s*sudo\s+-S\b").unwrap())
+    R.get_or_init(|| Regex::new(r"(?is)(?:^|[;&|`\n]|&&|\|\||\$\()\s*sudo\s+-S\b").unwrap())
 }
 
 // ── Detection functions ─────────────────────────────────────────────────────
 
 /// Pattern match helper — returns the description of the first match.
+/// On regex runtime error, fail-closed: treat as a match (block the command).
 fn first_match(normalized: &str, patterns: &'static PatternList) -> Option<String> {
     for (re, desc) in patterns {
-        if re.is_match(normalized).unwrap_or(false) {
-            return Some(desc.to_string());
+        match re.is_match(normalized) {
+            Ok(true) => return Some(desc.to_string()),
+            Err(e) => {
+                // Runtime regex error — fail closed to avoid silently allowing
+                // dangerous commands through. Logging goes through Python.
+                return Some(format!("sandbox regex error (blocked): {}", e));
+            }
+            _ => {}
         }
     }
     None
@@ -128,8 +141,12 @@ fn detect_hardline_impl(normalized: &str) -> Option<String> {
 /// Returns (pattern_key, description) if matched, None otherwise.
 fn detect_dangerous_impl(normalized: &str) -> Option<(String, String)> {
     for (re, desc) in dangerous_patterns() {
-        if re.is_match(normalized).unwrap_or(false) {
-            return Some((desc.to_string(), desc.to_string()));
+        match re.is_match(normalized) {
+            Ok(true) => return Some((desc.to_string(), desc.to_string())),
+            Err(e) => {
+                return Some((format!("sandbox regex error: {}", e), format!("sandbox regex error: {}", e)));
+            }
+            _ => {}
         }
     }
     None
@@ -138,10 +155,10 @@ fn detect_dangerous_impl(normalized: &str) -> Option<(String, String)> {
 /// Check for sudo -S password guessing via stdin.
 /// Returns description if blocked, None otherwise.
 fn check_sudo_stdin_impl(normalized: &str) -> Option<String> {
-    if sudo_stdin_re().is_match(normalized).unwrap_or(false) {
-        Some("sudo password guessing via stdin (sudo -S)".to_string())
-    } else {
-        None
+    match sudo_stdin_re().is_match(normalized) {
+        Ok(true) => Some("sudo password guessing via stdin (sudo -S)".to_string()),
+        Err(_) => Some("sandbox regex error: sudo stdin check failed (blocked)".to_string()),
+        Ok(false) => None,
     }
 }
 
