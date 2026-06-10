@@ -62,6 +62,19 @@ intellect webui stop       # 停止服务
 
 浏览器打开 `http://127.0.0.1:9119`。
 
+### 平台兼容性
+
+所有 `intellect webui` 命令在 **Windows**、**macOS** 和 **Linux** 上行为一致，底层自动适配：
+
+| 操作 | POSIX (macOS / Linux) | Windows |
+|------|----------------------|---------|
+| 进程存活检测 | `os.kill(pid, 0)` | `psutil.pid_exists()` (OpenProcess + GetExitCodeProcess) |
+| 优雅关闭 | `SIGTERM` (5s 超时) | `taskkill /T /F` |
+| 强制关闭 | `SIGKILL` | `taskkill /T /F` |
+| 后台进程启动 | `start_new_session=True` (os.setsid) | `CREATE_NEW_PROCESS_GROUP \| DETACHED_PROCESS \| CREATE_NO_WINDOW` |
+| 命令行获取 | `/proc/<pid>/cmdline` → `ps` | `psutil.Process.cmdline()` |
+| 日志查看 | `tail -f` (实时) / Python (回退) | Python 读取（无外部命令依赖） |
+
 ## CLI 命令参考
 
 | 命令 | 说明 | 参数 |
@@ -86,9 +99,23 @@ intellect webui stop       # 停止服务
 
 WebUI 默认绑定 `127.0.0.1`，仅供本机访问。远程访问推荐通过 SSH 隧道：
 
+**macOS / Linux：**
+
 ```bash
 ssh -N -L 9119:127.0.0.1:9119 user@your-server
 ```
+
+**Windows（PowerShell，Win10+ 内置 OpenSSH）：**
+
+```powershell
+ssh -N -L 9119:127.0.0.1:9119 user@your-server
+```
+
+**Windows（PuTTY）：**
+
+1. Connection → SSH → Tunnels
+2. Source port: `9119`, Destination: `127.0.0.1:9119`
+3. 点击 Add，然后 Open 连接
 
 然后浏览器打开 `http://localhost:9119`。
 
@@ -101,6 +128,8 @@ intellect webui start --host 0.0.0.0
 
 ## 文件布局
 
+**macOS / Linux：**
+
 ```
 ~/.intellect/
 ├── webui.pid          # 服务 PID
@@ -110,6 +139,19 @@ intellect webui start --host 0.0.0.0
 │   ├── sessions/      # WebUI 管理的 session 存储
 │   ├── settings.json  # WebUI 界面设置和置顶
 │   └── state.db       # 成员、认证等持久化状态
+```
+
+**Windows（`%USERPROFILE%\.intellect\`）：**
+
+```
+C:\Users\<用户名>\.intellect\
+├── webui.pid
+├── webui.log
+├── webui.ctl.env
+├── webui\
+│   ├── sessions\
+│   ├── settings.json
+│   └── state.db
 ```
 
 ## 开发

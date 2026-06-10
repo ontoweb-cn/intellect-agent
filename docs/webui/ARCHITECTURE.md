@@ -82,13 +82,14 @@ WebUI 使用 Python 标准库 `http.server.ThreadingHTTPServer`，而非 FastAPI
 
 ### 4. 进程管理
 
-WebUI 作为独立后台进程运行，由 `intellect webui` CLI 命令管理：
+WebUI 作为独立后台进程运行，由 `intellect webui` CLI 命令管理。所有命令在 Windows / macOS / Linux 上行为一致，底层自动适配：
 
-- **PID 文件** (`~/.intellect/webui.pid`) — 进程标识
+- **PID 文件** (`~/.intellect/webui.pid`，Windows: `%USERPROFILE%\.intellect\webui.pid`) — 进程标识
 - **状态文件** (`~/.intellect/webui.ctl.env`) — 运行时元数据
 - **日志文件** (`~/.intellect/webui.log`) — 标准输出/错误重定向
 - **健康检查** — `GET /health` 返回 JSON `{"status":"ok","sessions":N,"active_streams":M}`
-- **优雅关闭** — SIGTERM (5s grace) → SIGKILL
+- **优雅关闭** — POSIX: SIGTERM (5s grace) → SIGKILL；Windows: `taskkill /T /F`
+- **后台启动** — POSIX: `start_new_session=True` (os.setsid)；Windows: `CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW` creationflags
 
 ## API 模块一览
 
