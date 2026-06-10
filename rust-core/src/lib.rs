@@ -6,6 +6,7 @@
 pub mod backend;
 pub mod compression;
 pub mod connection;
+pub mod crypto;
 pub mod fts;
 pub mod sandbox;
 pub mod schema;
@@ -40,6 +41,13 @@ fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // ── Stage 3d: Stream delta accumulator ──────────────────────────────
     m.add_class::<stream::StreamAccumulator>()?;
+
+    // ── Stage 5a/5e: Crypto — PKCE + secure random ──────────────────────
+    m.add_function(wrap_pyfunction!(crypto::secure_random_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(crypto::secure_token_urlsafe, m)?)?;
+    m.add_function(wrap_pyfunction!(crypto::secure_token_hex, m)?)?;
+    m.add_function(wrap_pyfunction!(crypto::pkce_challenge, m)?)?;
+    m.add_function(wrap_pyfunction!(crypto::pkce_challenge_from_verifier, m)?)?;
 
     Ok(())
 }
