@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh" dir="ltr"><head><title>Skill Engineering for LLM Agents — Research Survey</title><meta charset="utf-8"/><link rel="preload" href="../index-47d9ba67.css" as="style"/><link rel="preload" href="../prescript-2bfc6315.js" as="script"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted Grotesk:wght@400;700&amp;family=Source Sans Pro:ital,wght@0,400;0,600;1,400;1,600&amp;family=IBM Plex Mono:wght@400;600&amp;display=swap"/><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin="anonymous"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="og:site_name" content="LLM Wiki"/><meta property="og:title" content="Skill Engineering for LLM Agents — Research Survey"/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="Skill Engineering for LLM Agents — Research Survey"/><meta name="twitter:description" content="Skill Engineering for LLM Agents: 研究现状、问题与方向 基于 2025-2026 年 28 篇相关论文的综合调查 1."/><meta property="og:description" content="Skill Engineering for LLM Agents: 研究现状、问题与方向 基于 2025-2026 年 28 篇相关论文的综合调查 1."/><meta property="og:image:alt" content="Skill Engineering for LLM Agents: 研究现状、问题与方向 基于 2025-2026 年 28 篇相关论文的综合调查 1."/><meta property="og:image" content="https://localhost:8787/static/vault/static/og-image.png"/><meta property="og:image:url" content="https://localhost:8787/static/vault/static/og-image.png"/><meta name="twitter:image" content="https://localhost:8787/static/vault/static/og-image.png"/><meta property="og:image:type" content="image/.png"/><meta property="twitter:domain" content="localhost:8787/static/vault"/><meta property="og:url" content="https://localhost:8787/static/vault/comparisons/skill-engineering-survey-2026"/><meta property="twitter:url" content="https://localhost:8787/static/vault/comparisons/skill-engineering-survey-2026"/><link rel="icon" href="../static/icon.png"/><meta name="description" content="Skill Engineering for LLM Agents: 研究现状、问题与方向 基于 2025-2026 年 28 篇相关论文的综合调查 1."/><meta name="generator" content="Quartz"/><link href="../index-47d9ba67.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-735924e0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-589c1cea.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-bbc3f7c0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-2911f5d1.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-e427079e.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-53b25b2b.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-c93c6a44.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-8a06014f.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-77d6a441.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-6ee21cee.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-1ea6ad18.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-34bdfded.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-788c9ca3.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-642859cd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-4abc06bd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-274a3dfe.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-94cb6c84.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-58d5ff56.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-7262b5a7.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../static/resource-style-a5c806d2.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../static/resource-style-6bd36952.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet" type="text/css" data-persist="true"/><script src="../prescript-2bfc6315.js" type="application/javascript" data-persist="true"></script><script type="application/javascript" data-persist="true">const fetchData = fetch("../static/contentIndex.json").then(data => data.json())</script></head><body data-slug="comparisons/skill-engineering-survey-2026" data-basepath="/static/vault"><div id="quartz-root" class="page" data-frame="default"><div id="quartz-body"><div class="left sidebar"><h2 class="page-title"><a href="..">LLM Wiki</a></h2><div class="mobile-only"><div class="spacer"></div></div><div class="flex-component" style="flex-direction: row; flex-wrap: nowrap; gap: 0.5rem;"><div style="flex-grow: 1; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><div class="search"><button class="search-button" aria-label="搜索" aria-expanded="false"><svg role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.9 19.7"><title>Search</title><g class="search-path" fill="none"><path stroke-linecap="square" d="M18.5 18.3l-5.4-5.4"></path><circle cx="8" cy="8" r="7"></circle></g></svg><p>搜索</p></button><div class="search-container"><div class="search-space"><input autocomplete="off" class="search-bar" name="search" type="text" aria-label="搜索内容..." placeholder="搜索内容..."/><div class="search-layout" data-preview="true" data-field-priority="[&quot;title&quot;,&quot;content&quot;,&quot;tags&quot;]"></div></div></div></div></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="darkmode" aria-label="暗色模式"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="dayIcon" x="0px" y="0px" viewBox="0 0 35 35" style="enable-background:new 0 0 35 35" xml:space="preserve" aria-label="暗色模式"><title>暗色模式</title><path d="M6,17.5C6,16.672,5.328,16,4.5,16h-3C0.672,16,0,16.672,0,17.5    S0.672,19,1.5,19h3C5.328,19,6,18.328,6,17.5z M7.5,26c-0.414,0-0.789,0.168-1.061,0.439l-2,2C4.168,28.711,4,29.086,4,29.5    C4,30.328,4.671,31,5.5,31c0.414,0,0.789-0.168,1.06-0.44l2-2C8.832,28.289,9,27.914,9,27.5C9,26.672,8.329,26,7.5,26z M17.5,6    C18.329,6,19,5.328,19,4.5v-3C19,0.672,18.329,0,17.5,0S16,0.672,16,1.5v3C16,5.328,16.671,6,17.5,6z M27.5,9    c0.414,0,0.789-0.168,1.06-0.439l2-2C30.832,6.289,31,5.914,31,5.5C31,4.672,30.329,4,29.5,4c-0.414,0-0.789,0.168-1.061,0.44    l-2,2C26.168,6.711,26,7.086,26,7.5C26,8.328,26.671,9,27.5,9z M6.439,8.561C6.711,8.832,7.086,9,7.5,9C8.328,9,9,8.328,9,7.5    c0-0.414-0.168-0.789-0.439-1.061l-2-2C6.289,4.168,5.914,4,5.5,4C4.672,4,4,4.672,4,5.5c0,0.414,0.168,0.789,0.439,1.06    L6.439,8.561z M33.5,16h-3c-0.828,0-1.5,0.672-1.5,1.5s0.672,1.5,1.5,1.5h3c0.828,0,1.5-0.672,1.5-1.5S34.328,16,33.5,16z     M28.561,26.439C28.289,26.168,27.914,26,27.5,26c-0.828,0-1.5,0.672-1.5,1.5c0,0.414,0.168,0.789,0.439,1.06l2,2    C28.711,30.832,29.086,31,29.5,31c0.828,0,1.5-0.672,1.5-1.5c0-0.414-0.168-0.789-0.439-1.061L28.561,26.439z M17.5,29    c-0.829,0-1.5,0.672-1.5,1.5v3c0,0.828,0.671,1.5,1.5,1.5s1.5-0.672,1.5-1.5v-3C19,29.672,18.329,29,17.5,29z M17.5,7    C11.71,7,7,11.71,7,17.5S11.71,28,17.5,28S28,23.29,28,17.5S23.29,7,17.5,7z M17.5,25c-4.136,0-7.5-3.364-7.5-7.5    c0-4.136,3.364-7.5,7.5-7.5c4.136,0,7.5,3.364,7.5,7.5C25,21.636,21.636,25,17.5,25z"></path></svg><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="nightIcon" x="0px" y="0px" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve" aria-label="亮色模式"><title>亮色模式</title><path d="M96.76,66.458c-0.853-0.852-2.15-1.064-3.23-0.534c-6.063,2.991-12.858,4.571-19.655,4.571  C62.022,70.495,50.88,65.88,42.5,57.5C29.043,44.043,25.658,23.536,34.076,6.47c0.532-1.08,0.318-2.379-0.534-3.23  c-0.851-0.852-2.15-1.064-3.23-0.534c-4.918,2.427-9.375,5.619-13.246,9.491c-9.447,9.447-14.65,22.008-14.65,35.369  c0,13.36,5.203,25.921,14.65,35.368s22.008,14.65,35.368,14.65c13.361,0,25.921-5.203,35.369-14.65  c3.872-3.871,7.064-8.328,9.491-13.246C97.826,68.608,97.611,67.309,96.76,66.458z"></path></svg></button></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="readermode" aria-label="阅读模式"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="readerIcon" fill="currentColor" stroke="currentColor" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" width="64px" height="64px" viewBox="0 0 24 24" aria-label="阅读模式"><title>阅读模式</title><g transform="translate(-1.8, -1.8) scale(1.15, 1.2)"><path d="M8.9891247,2.5 C10.1384702,2.5 11.2209868,2.96705384 12.0049645,3.76669482 C12.7883914,2.96705384 13.8709081,2.5 15.0202536,2.5 L18.7549359,2.5 C19.1691495,2.5 19.5049359,2.83578644 19.5049359,3.25 L19.5046891,4.004 L21.2546891,4.00457396 C21.6343849,4.00457396 21.9481801,4.28672784 21.9978425,4.6528034 L22.0046891,4.75457396 L22.0046891,20.25 C22.0046891,20.6296958 21.7225353,20.943491 21.3564597,20.9931534 L21.2546891,21 L2.75468914,21 C2.37499337,21 2.06119817,20.7178461 2.01153575,20.3517706 L2.00468914,20.25 L2.00468914,4.75457396 C2.00468914,4.37487819 2.28684302,4.061083 2.65291858,4.01142057 L2.75468914,4.00457396 L4.50368914,4.004 L4.50444233,3.25 C4.50444233,2.87030423 4.78659621,2.55650904 5.15267177,2.50684662 L5.25444233,2.5 L8.9891247,2.5 Z M4.50368914,5.504 L3.50468914,5.504 L3.50468914,19.5 L10.9478955,19.4998273 C10.4513189,18.9207296 9.73864328,18.5588115 8.96709342,18.5065584 L8.77307039,18.5 L5.25444233,18.5 C4.87474657,18.5 4.56095137,18.2178461 4.51128895,17.8517706 L4.50444233,17.75 L4.50368914,5.504 Z M19.5049359,17.75 C19.5049359,18.1642136 19.1691495,18.5 18.7549359,18.5 L15.2363079,18.5 C14.3910149,18.5 13.5994408,18.8724714 13.0614828,19.4998273 L20.5046891,19.5 L20.5046891,5.504 L19.5046891,5.504 L19.5049359,17.75 Z M18.0059359,3.999 L15.0202536,4 L14.8259077,4.00692283 C13.9889509,4.06666544 13.2254227,4.50975805 12.7549359,5.212 L12.7549359,17.777 L12.7782651,17.7601316 C13.4923805,17.2719483 14.3447024,17 15.2363079,17 L18.0059359,16.999 L18.0056891,4.798 L18.0033792,4.75457396 L18.0056891,4.71 L18.0059359,3.999 Z M8.9891247,4 L6.00368914,3.999 L6.00599909,4.75457396 L6.00599909,4.75457396 L6.00368914,4.783 L6.00368914,16.999 L8.77307039,17 C9.57551536,17 10.3461406,17.2202781 11.0128313,17.6202194 L11.2536891,17.776 L11.2536891,5.211 C10.8200889,4.56369974 10.1361548,4.13636104 9.37521067,4.02745763 L9.18347055,4.00692283 L8.9891247,4 Z"></path></g></svg></button></div></div><div class="explorer nav-files-container" data-behavior="link" data-collapsed="collapsed" data-savestate="true" data-data-fns="{&quot;order&quot;:[&quot;filter&quot;,&quot;map&quot;,&quot;sort&quot;],&quot;sortFn&quot;:&quot;(a2, b2) => {\n    if (!a2.isFolder &amp;&amp; !b2.isFolder || a2.isFolder &amp;&amp; b2.isFolder) {\n      return (a2.displayName || \&quot;\&quot;).localeCompare(b2.displayName || \&quot;\&quot;, void 0, {\n        numeric: true,\n        sensitivity: \&quot;base\&quot;\n      });\n    }\n    if (!a2.isFolder &amp;&amp; b2.isFolder) {\n      return 1;\n    }\n    return -1;\n  }&quot;,&quot;filterFn&quot;:&quot;(node) => node.slugSegment !== \&quot;tags\&quot;&quot;,&quot;mapFn&quot;:&quot;(node) => {\n    return node;\n  }&quot;}"><button type="button" class="explorer-toggle mobile-explorer hide-until-loaded" data-mobile="true" aria-controls="explorer-5" aria-label="Explorer"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide-menu"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button><button type="button" class="title-button explorer-toggle desktop-explorer" data-mobile="false" aria-expanded="true"><h2>Explorer</h2><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div id="explorer-5" class="explorer-content" aria-expanded="false" role="group"><ul class="explorer-ul overflow" id="list-0"><li class="overflow-end"></li></ul></div><template id="template-file"><li><a href="#" class="nav-file-title tree-item-self"></a></li></template><template id="template-folder"><li><div class="folder-container nav-folder-title tree-item-self"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon nav-folder-collapse-indicator collapse-icon"><polyline points="6 9 12 15 18 9"></polyline></svg><div><button class="folder-button"><span class="folder-title"></span></button></div></div><div class="folder-outer"><ul class="content tree-item-children"></ul></div></li></template></div></div><div class="center"><div class="page-header"><div class="popover-hint"><nav class="breadcrumb-container" aria-label="breadcrumbs"><div class="breadcrumb-element"><a href="../">Home</a><p> ❯ </p></div><div class="breadcrumb-element"><a href="../comparisons/">comparisons</a><p> ❯ </p></div><div class="breadcrumb-element"><a href>Skill Engineering for LLM Agents — Research Survey</a></div></nav><h1 class="article-title">Skill Engineering for LLM Agents — Research Survey</h1><details class="note-properties metadata-container" open data-collapsed="false"><summary class="note-properties-header"><span class="note-properties-title">Properties</span><span class="note-properties-count">1</span></summary><table class="note-properties-table"><tbody><tr class="note-properties-row metadata-property"><td class="note-properties-key metadata-property-key">tags</td><td class="note-properties-value metadata-property-value"><span class="note-properties-tags"><a href="../tags/llm-agents" class="internal internal-link tag-link">llm-agents</a><span class="note-properties-separator">, </span><a href="../tags/survey" class="internal internal-link tag-link">survey</a><span class="note-properties-separator">, </span><a href="../tags/skill-representation" class="internal internal-link tag-link">skill-representation</a></span></td></tr></tbody></table></details><p show-comma="true" class="content-meta"><time datetime="2026-05-09T16:00:00.000Z">2026年5月10日</time><span>18分钟阅读</span></p></div></div><article class="popover-hint"><div class="markdown-preview-view markdown-rendered"><h1 id="skill-engineering-for-llm-agents-研究现状问题与方向">Skill Engineering for LLM Agents: 研究现状、问题与方向<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#skill-engineering-for-llm-agents-研究现状问题与方向" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h1>
+<blockquote>
+<p>基于 2025-2026 年 28 篇相关论文的综合调查</p>
+</blockquote>
+<h2 id="1-引言agent-skill-成为第一类部署工件">1. 引言：Agent Skill 成为第一类部署工件<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#1-引言agent-skill-成为第一类部署工件" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>“Agent skills”——打包了过程性知识、可执行资源和触发条件的自包含模块——已从便捷工具演化为 LLM Agent 系统的<strong>核心抽象</strong>。如 Xu et al. (2026) 所言，从单体语言模型到模块化、技能装备的 Agent 的转变，标志着 LLM 部署方式的决定性转变。</p>
+<p><strong>Skill Engineering</strong> 作为一个新兴研究领域，涵盖技能的<strong>表示</strong>（representation）、<strong>获取</strong>（acquisition）、<strong>组织</strong>（organization）、<strong>选择</strong>（selection）、<strong>进化</strong>（evolution）、<strong>安全</strong>（security）和<strong>组合</strong>（composition）等全生命周期问题。</p>
+<hr/>
+<h2 id="2-skill-engineering-子领域概览">2. Skill Engineering 子领域概览<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#2-skill-engineering-子领域概览" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<pre><code>                      ┌──────────────────────────┐
+                      │   Skill 表示与标准化       │
+                      │  SSL, SkCC, Verifiable    │
+                      │  Artifacts, SKILL.md      │
+                      └────────────┬─────────────┘
+                                   │
+        ┌──────────────┬───────────┼───────────┬──────────────┐
+        ▼              ▼           ▼           ▼              ▼
+   ┌─────────┐  ┌──────────┐ ┌──────────┐ ┌────────┐  ┌──────────┐
+   │Skill    │  │Skill     │ │Skill     │ │Skill   │  │Skill     │
+   │获取     │  │组织      │ │选择      │ │进化    │  │安全      │
+   │Skill1   │  │SkillNet  │ │SkillRouter│ │SkillFlow│ │SkillScope│
+   │SKILL0   │  │SkillGraph│ │SkillRet  │ │SKILL0   │ │RouteGuard│
+   │EvoSkill │  │GraSP     │ │          │ │Skill1   │ │ClawGuard │
+   │CODE-SHARP│ │AgentSkill│ │          │ │         │ │Semia    │
+   └─────────┘  └──────────┘ └──────────┘ └────────┘  └──────────┘
+</code></pre>
+<hr/>
+<h2 id="3-研究现状">3. 研究现状<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#3-研究现状" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<h3 id="31-技能表示skill-representation">3.1 技能表示（Skill Representation）<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#31-技能表示skill-representation" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>技能表示是 Skill Engineering 的基础问题——如何编码可复用的 Agent 能力。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>方法</th><th>代表工作</th><th>核心思想</th><th>优势</th><th>局限</th></tr></thead><tbody><tr><td><strong>Text-heavy</strong></td><td>SKILL.md (Hermes), ClawHub</td><td>自然语言 Markdown 文档</td><td>人类可读、易编辑</td><td>信号纠缠在单一文本表面</td></tr><tr><td><strong>结构化</strong></td><td>SSL (Liang et al., 2026)</td><td>调度-结构-逻辑三层解耦</td><td>提升技能发现 +12% MRR，风险评估 +24% F1</td><td>需要额外标注</td></tr><tr><td><strong>可验证工件</strong></td><td>Metere et al. (2026)</td><td>双向正确性准则 + 信任模式</td><td>形式化验证技能行为</td><td>增加设计和验证成本</td></tr><tr><td><strong>跨框架编译</strong></td><td>SkCC (Ouyang et al., 2026)</td><td>SKILL.md → 跨框架可移植编译</td><td>解决框架锁定问题</td><td>编译器本身需维护</td></tr><tr><td><strong>约束引导审计</strong></td><td>Semia (Wen et al., 2026)</td><td>约束引导的表示合成</td><td>自动检测技能安全隐患</td><td>约束定义需要领域知识</td></tr></tbody></table></div>
+<p><strong>现状总结</strong>：社区正从非结构化的文本技能向结构化、可验证的表示迁移，但尚缺乏统一标准。</p>
+<h3 id="32-技能获取skill-acquisition">3.2 技能获取（Skill Acquisition）<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#32-技能获取skill-acquisition" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>如何让 Agent 获得新技能？三条主要路径：</p>
+<p><strong>路径 A：技能库 + 检索</strong>（推理时加载）</p>
+<ul>
+<li><strong>SkillSynth</strong> (Fan et al., 2026)：从 ClawHub + GitHub 构建场景中介技能图，多智能体装配线合成终端任务，3,560 个已验证任务实例</li>
+<li><strong>EvoSkill</strong> (Alzubi et al., 2026)：多智能体系统的自动化技能发现，将可复用工作流转化为技能</li>
+<li><strong>CODE-SHARP</strong> (Bornemann et al., 2026)：作为分层奖励程序的连续开放技能发现</li>
+</ul>
+<p><strong>路径 B：强化学习内化</strong>（训练进权重）</p>
+<ul>
+<li><strong>SKILL0</strong> (Lu et al., 2026)：动态课程渐进撤回技能上下文，实现零样本自主行为。ALFWorld +9.7%，Search-QA +6.6%，每步 &lt;0.5K tokens</li>
+<li><strong>Skill1</strong> (Shi et al., 2026)：单一策略联合优化技能选择、使用、蒸馏，单一奖励信号驱动，频率分解信用分配</li>
+</ul>
+<p><strong>路径 C：终身学习</strong>（任务序列中积累）</p>
+<ul>
+<li><strong>SkillFlow</strong> (Zhang et al., 2026)：166 任务/20 族系基准，Agent 从零技能开始，通过轨迹驱动和评分驱动的技能补丁逐步积累</li>
+<li><strong>Experience Compression Spectrum</strong> (Zhang et al., 2026)：统一记忆、技能、规则的压缩谱系</li>
+</ul>
+<p><strong>关键争议</strong>：技能应该存储在外部库中（推理时检索）还是内化到模型权重中（训练时获取）？SKILL0 展示了内化的有效性，但 Skill1 展示了库方法的可扩展性。目前尚无明确答案。</p>
+<h3 id="33-技能组织skill-organization">3.3 技能组织（Skill Organization）<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#33-技能组织skill-organization" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>大规模技能库需要有效的组织结构。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>方法</th><th>代表工作</th><th>结构</th><th>规模</th></tr></thead><tbody><tr><td><strong>场景中介图</strong></td><td>SkillSynth</td><td>场景节点 + 技能有向边</td><td>82K 节点, 57K 边, 185K 桥接</td></tr><tr><td><strong>关系图</strong></td><td>SkillNet (Liang et al., 2026)</td><td>技能节点 + 关系边</td><td>—</td></tr><tr><td><strong>能力树</strong></td><td>AgentSkillOS (Li et al., 2026)</td><td>层级能力树 + DAG 编排</td><td>—</td></tr><tr><td><strong>图结构组合</strong></td><td>GraSP (Xia et al., 2026)</td><td>Graph-structured skill compositions</td><td>—</td></tr><tr><td><strong>开放注册表</strong></td><td>ClawHub (OpenClaw, 2026)</td><td>扁平仓库 + 元数据检索</td><td>—</td></tr></tbody></table></div>
+<p><strong>GraSP 的关键发现</strong>：给 Agent 提供过多技能不会单调提升性能——2-3 个技能的聚焦集合优于全面文档。这挑战了”技能越多越好”的假设。</p>
+<h3 id="34-技能选择与路由skill-selection--routing">3.4 技能选择与路由（Skill Selection &amp; Routing）<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#34-技能选择与路由skill-selection--routing" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>当技能注册表达 80K+ 规模时，如何在推理时高效选择相关技能？</p>
+<ul>
+<li><strong>SkillRouter</strong> (Zheng et al., 2026)：1.2B 全文检索重排管线，74.0% Hit@1，13× 更少参数，5.8× 更快。<strong>核心发现</strong>：隐藏技能实现体导致路由准确率下降 31-44pp——全文是关键信号，而非次要元数据</li>
+<li><strong>SkillRet</strong> (Cho et al., 2026)：大规模技能检索基准，验证了大库中选择技能的系统性挑战</li>
+</ul>
+<p><strong>现状</strong>：技能路由正从简单的 BM25/向量检索向专门的轻量级重排管线演进。全文信号的重要性是被低估的关键发现。</p>
+<h3 id="35-技能进化skill-evolution">3.5 技能进化（Skill Evolution）<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#35-技能进化skill-evolution" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>技能不是静态的——需要发现、修补、维护。</p>
+<ul>
+<li><strong>SkillFlow 核心发现</strong>：技能使用率 ≠ 效用。Claude Opus 4.6 从 62.65% → 71.08%（+8.43）；Kimi K2.5 尽管 66.87% 技能使用率，仅 +0.60；Qwen-Coder-Next 甚至退化</li>
+<li><strong>SKILL0</strong>：技能内化作为进化的替代路径——不维护外部库，直接训练进权重</li>
+<li><strong>Skill1</strong>：选择+使用+蒸馏的协同进化，验证了三者联合优化的必要性</li>
+</ul>
+<p><strong>存在的能力鸿沟</strong>：弱模型可以创建和使用技能，但无法从中提取价值。技能工程不仅关乎技能本身，更关乎 Agent 的能力水平。</p>
+<h3 id="36-技能安全skill-security-快速涌现的子领域">3.6 技能安全（Skill Security）— 快速涌现的子领域<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#36-技能安全skill-security-快速涌现的子领域" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>技能作为可执行工件引入了新的攻击面。2026 年 4-5 月间密集出现了多篇安全方向论文：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>工作</th><th>威胁模型</th><th>核心方法</th></tr></thead><tbody><tr><td><strong>SkillScope</strong> (Wu et al., 2026)</td><td>权限滥用</td><td>细粒度最小权限执行</td></tr><tr><td><strong>RouteGuard</strong> (Xiao et al., 2026)</td><td>技能投毒</td><td>内部信号检测（比间接注入更隐蔽）</td></tr><tr><td><strong>ClawGuard</strong> (Gan et al., 2026)</td><td>工作流劫持</td><td>EM 侧信道检测（不依赖主机遥测）</td></tr><tr><td><strong>Semia</strong> (Wen et al., 2026)</td><td>配置漏洞</td><td>约束引导的表示合成审计</td></tr><tr><td><strong>Structured Security Auditing</strong> (Lv et al., 2026)</td><td>跨文件攻击</td><td>SKILL.md + 脚本 + 参考文档联合安全审查</td></tr><tr><td><strong>Skills as Verifiable Artifacts</strong> (Metere et al., 2026)</td><td>信任缺失</td><td>双向正确性准则 + 人工在环运行时</td></tr></tbody></table></div>
+<p><strong>趋势</strong>：技能安全正从”信任但验证”向”不信任且强制”演进。传统 prompt injection 防御不足以应对技能特有的攻击向量（动作导向、跨文件、可执行）。</p>
+<h3 id="37-领域应用">3.7 领域应用<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#37-领域应用" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>Healthcare</strong> (Xu et al., 2026)：医疗自动化的技能实践、空白与治理——指出医疗程序和组织约束导致技能难以跨机构迁移</li>
+<li><strong>LEGO</strong> (Lou et al., 2026)：基于技能的统一前端设计平台，将可复用策略应用于 EDA 工作流</li>
+<li><strong>ClawTrace</strong> (Yuan et al., 2026)：成本感知的技能蒸馏轨迹追踪，区分”修复 bug 的缺失步骤”和”移除昂贵步骤”</li>
+</ul>
+<hr/>
+<h2 id="4-目前存在的问题">4. 目前存在的问题<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#4-目前存在的问题" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<h3 id="41-表示碎片化">4.1 表示碎片化<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#41-表示碎片化" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>26+ 个 Agent 框架，各自定义技能的格式和约定。SKILL.md 正成为事实标准（SkCC，2026），但仍缺乏：</p>
+<ul>
+<li>跨框架的正式语义定义</li>
+<li>版本控制和向后兼容机制</li>
+<li>技能依赖的声明式管理</li>
+</ul>
+<h3 id="42-内化-vs-外部库的权衡未解决">4.2 内化 vs 外部库的权衡未解决<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#42-内化-vs-外部库的权衡未解决" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>维度</th><th>外部技能库</th><th>技能内化</th></tr></thead><tbody><tr><td>更新灵活性</td><td>高（替换文件即可）</td><td>低（需重新训练）</td></tr><tr><td>上下文成本</td><td>高（完整技能文本）</td><td>无</td></tr><tr><td>泛化能力</td><td>限于检索到的技能</td><td>可能产生新组合</td></tr><tr><td>遗忘风险</td><td>无</td><td>有（灾难性遗忘）</td></tr><tr><td>可审计性</td><td>高（文件即真相）</td><td>低（权重不可解释）</td></tr></tbody></table></div>
+<p>**技能”蒸馏-检索谱系”**尚未被充分研究——何时蒸馏进权重，何时留在外部库？</p>
+<h3 id="43-技能效用鸿沟">4.3 技能效用鸿沟<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#43-技能效用鸿沟" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>SkillFlow 揭示的核心悖论：Agent 可以高频率使用技能但无法从中受益。问题可能出在：</p>
+<ul>
+<li><strong>技能质量评估缺乏</strong>：没有标准化的技能质量度量</li>
+<li><strong>选择-执行不匹配</strong>：检索到正确技能不等于正确执行</li>
+<li><strong>能力依赖</strong>：技能效用在很大程度上取决于 Agent 的基线能力</li>
+</ul>
+<h3 id="44-规模化挑战">4.4 规模化挑战<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#44-规模化挑战" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>SkillRouter</strong> 发现 80K 技能时路由准确率对全文信号极其敏感</li>
+<li><strong>GraSP</strong> 发现技能数量与性能非单调——存在”过度技能”问题</li>
+<li><strong>SkillRet</strong> 的检索基准显示现有方法在大库上表现不佳</li>
+</ul>
+<h3 id="45-安全攻击面扩展">4.5 安全攻击面扩展<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#45-安全攻击面扩展" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>技能引入了传统 prompt 注入无法覆盖的新型攻击：</p>
+<ul>
+<li><strong>技能投毒</strong>（RouteGuard）：恶意指令隐藏在动作导向的技能体中</li>
+<li><strong>工作流劫持</strong>（ClawGuard）：篡改工具和技能调用顺序</li>
+<li><strong>跨文件攻击</strong>：SKILL.md + 脚本 + 引用文档的联合利用</li>
+</ul>
+<h3 id="46-评测基准碎片化">4.6 评测基准碎片化<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#46-评测基准碎片化" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>现有基准各自测试技能能力的一个侧面：</p>
+<ul>
+<li>Terminal-Bench：终端 Agent 任务执行</li>
+<li>SkillFlow：终身技能发现和进化</li>
+<li>SkillRet：大规模技能检索</li>
+<li>ALFWorld/WebShop：传统 Agent 任务（不专为技能设计）</li>
+</ul>
+<p><strong>缺乏统一的 Skill Engineering benchmark suite</strong>。</p>
+<hr/>
+<h2 id="5-可能的研究方向">5. 可能的研究方向<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#5-可能的研究方向" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<h3 id="51-技能表示的形式化语义">5.1 技能表示的形式化语义<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#51-技能表示的形式化语义" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>统一技能中间表示（IR）</strong>：借鉴编译器 IR 思想，定义跨框架的通用技能语义模型</li>
+<li><strong>技能类型系统</strong>：为技能定义形式化的输入/输出契约（pre/post-conditions），参考 SkillSynth 的场景中介模型</li>
+<li><strong>技能版本语义</strong>：类似 Semantic Versioning，定义技能变更的兼容性规则</li>
+</ul>
+<h3 id="52-自适应技能选择">5.2 自适应技能选择<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#52-自适应技能选择" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>上下文感知路由</strong>：结合任务上下文、Agent 能力剖面和历史成功率动态选择技能</li>
+<li><strong>能力校准</strong>：根据 Agent 能力自动决定何时使用技能（弱 Agent 受益更多？还是强 Agent？——SkillFlow 的数据暗示是后者）</li>
+<li><strong>多技能组合优化</strong>：GraSP 提出聚焦的 2-3 技能集合效果最好——如何自动确定最优子集？</li>
+</ul>
+<h3 id="53-混合技能架构库--内化">5.3 混合技能架构（库 + 内化）<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#53-混合技能架构库--内化" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>频谱式部署</strong>：常用技能内化到权重，长尾技能保留在库中</li>
+<li><strong>频率驱动蒸馏</strong>：技能使用频率超过阈值自动触发内化流程</li>
+<li><strong>反向操作</strong>：内化技能失效时从库中重新加载（解决遗忘问题）</li>
+</ul>
+<h3 id="54-技能质量评估与治理">5.4 技能质量评估与治理<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#54-技能质量评估与治理" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>标准化技能质量度量</strong>：代码覆盖、测试充分性、文档完整性、安全审计状态的综合评分</li>
+<li><strong>技能效用预测</strong>：在部署前预测技能对特定 Agent 的实际效用（SkillFlow 发现是关键空白）</li>
+<li><strong>技能注册表治理</strong>：类似包管理器的审查机制（安全扫描、质量门控、信任评分）</li>
+</ul>
+<h3 id="55-终身技能进化系统">5.5 终身技能进化系统<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#55-终身技能进化系统" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>自动化技能修补</strong>：失败轨迹驱动的自动技能修复和升级</li>
+<li><strong>技能合并与去重</strong>：大规模技能库的语义去重和合并策略</li>
+<li><strong>负迁移检测</strong>：自动识别和隔离对后续任务有害的技能</li>
+</ul>
+<h3 id="56-技能安全纵深防御">5.6 技能安全纵深防御<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#56-技能安全纵深防御" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>编译时安全</strong>：技能加载前的静态分析和形式化验证</li>
+<li><strong>运行时沙箱</strong>：类似 SkillScope 的最小权限执行框架</li>
+<li><strong>行为监控</strong>：ClawGuard 的 EM 侧信道方法展示了 OS 级遥测之外的检测可能性</li>
+<li><strong>技能溯源链</strong>：类似供应链安全的 SBOM，记录技能的来源、依赖和变更历史</li>
+</ul>
+<h3 id="57-统一评测框架">5.7 统一评测框架<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#57-统一评测框架" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>Skill Engineering Benchmark Suite</strong>：覆盖表示、检索、选择、执行、进化、安全的综合评测</li>
+<li><strong>技能-能力对比</strong>：比较同一技能对不同能力水平 Agent 的效用差异</li>
+<li><strong>长期技能维护评测</strong>：模拟技能版本变更和库增长对 Agent 性能的影响</li>
+</ul>
+<hr/>
+<h2 id="6-参考文献">6. 参考文献<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#6-参考文献" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<h3 id="核心论文已收录-wiki">核心论文（已收录 Wiki）<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#核心论文已收录-wiki" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol>
+<li>Fan et al. (2026). “Toward Scalable Terminal Task Synthesis via Skill Graphs.” arXiv:2604.25727. <strong>(SkillSynth)</strong></li>
+<li>Shi et al. (2026). “Skill1: Unified Evolution of Skill-Augmented Agents via RL.” arXiv:2605.06130. <strong>(Skill1)</strong></li>
+<li>Lu et al. (2026). “SKILL0: In-Context Agentic RL for Skill Internalization.” arXiv:2604.02268. <strong>(SKILL0)</strong></li>
+<li>Zhang et al. (2026). “SkillFlow: Benchmarking Lifelong Skill Discovery and Evolution.” arXiv:2604.17308. <strong>(SkillFlow)</strong></li>
+<li>Zheng et al. (2026). “SkillRouter: Skill Routing for LLM Agents at Scale.” arXiv:2603.22455. <strong>(SkillRouter)</strong></li>
+<li>Liang et al. (2026). “From Skill Text to Skill Structure: The SSL Representation for Agent Skills.” arXiv:2604.24026. <strong>(SSL)</strong></li>
+<li>Liang et al. (2026). “SkillNet: Create, Evaluate, and Connect AI Skills.” arXiv:2603.04448. <strong>(SkillNet)</strong></li>
+<li>Li et al. (2026). “Organizing, Orchestrating, and Benchmarking Agent Skills at Ecosystem Scale.” arXiv:2603.02176. <strong>(AgentSkillOS)</strong></li>
+</ol>
+<h3 id="技能表示与标准化">技能表示与标准化<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#技能表示与标准化" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol start="9">
+<li>Ouyang et al. (2026). “SkCC: Portable and Secure Skill Compilation for Cross-Framework LLM Agents.” arXiv, May 2026.</li>
+<li>Metere et al. (2026). “Skills as Verifiable Artifacts: A Trust Schema and a Biconditional Correctness Criterion.” arXiv, May 2026.</li>
+<li>Wen et al. (2026). “Semia: Auditing Agent Skills via Constraint-Guided Representation Synthesis.” arXiv, May 2026.</li>
+</ol>
+<h3 id="技能安全">技能安全<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#技能安全" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol start="12">
+<li>Wu et al. (2026). “SkillScope: Toward Fine-Grained Least-Privilege Enforcement for Agent Skills.” arXiv, May 2026.</li>
+<li>Xiao et al. (2026). “RouteGuard: Internal-Signal Detection of Skill Poisoning in LLM Agents.” arXiv, April 2026.</li>
+<li>Gan et al. (2026). “ClawGuard: Out-of-Band Detection of LLM Agent Workflow Hijacking via EM Side Channel.” arXiv, May 2026.</li>
+<li>Lv et al. (2026). “Structured Security Auditing and Robustness Enhancement for Untrusted Agent Skills.” arXiv, April 2026.</li>
+</ol>
+<h3 id="技能获取与发现">技能获取与发现<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#技能获取与发现" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol start="16">
+<li>Alzubi et al. (2026). “EvoSkill: Automated Skill Discovery for Multi-Agent Systems.” arXiv:2603.03.</li>
+<li>Bornemann et al. (2026). “CODE-SHARP: Continuous Open-ended Discovery and Evolution of Skills.” arXiv, February 2026.</li>
+<li>Hussonnois et al. (2026). “Leveraging Human Feedback for Semantically-Relevant Skill Discovery.” arXiv, April 2026.</li>
+</ol>
+<h3 id="技能组合与编排">技能组合与编排<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#技能组合与编排" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol start="19">
+<li>Xia et al. (2026). “GraSP: Graph-Structured Skill Compositions for LLM Agents.” arXiv, April 2026.</li>
+<li>Zhang et al. (2026). “Experience Compression Spectrum: Unifying Memory, Skills, and Rules in LLM Agents.” arXiv, April 2026.</li>
+</ol>
+<h3 id="技能检索">技能检索<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#技能检索" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol start="21">
+<li>Cho et al. (2026). “SkillRet: A Large-Scale Benchmark for Skill Retrieval in LLM Agents.” arXiv, May 2026.</li>
+</ol>
+<h3 id="综述与定位论文">综述与定位论文<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#综述与定位论文" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol start="22">
+<li>Xu et al. (2026). “Agent Skills for Large Language Models: Architecture, Acquisition, Security, and the Path Forward.” arXiv, February 2026.</li>
+</ol>
+<h3 id="领域应用">领域应用<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#领域应用" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol start="23">
+<li>Xu et al. (2026). “An Empirical Study of Agent Skills for Healthcare: Practice, Gaps, and Governance.” arXiv, May 2026.</li>
+<li>Lou et al. (2026). “LEGO: An LLM Skill-Based Front-End Design Generation Platform.” arXiv, April 2026.</li>
+<li>Yuan et al. (2026). “ClawTrace: Cost-Aware Tracing for LLM Agent Skill Distillation.” arXiv, April 2026.</li>
+</ol>
+<h3 id="相关系统与基础设施">相关系统与基础设施<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#相关系统与基础设施" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol start="26">
+<li>Wang et al. (2023). “Voyager: An Open-Ended Embodied Agent with Large Language Models.” arXiv:2305.16291.</li>
+<li>OpenClaw (2026). “ClawHub: Open Skill Registry for AI Agents.”</li>
+<li>Merrill et al. (2026). “Terminal-Bench: Benchmarking Agents on Hard, Realistic Tasks in CLI.” arXiv:2601.11868.</li>
+</ol></div></article><hr/><div class="page-footer"></div></div><div class="right sidebar"><div class="graph"><h3>Graph View</h3><div class="graph-outer"><div class="graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:1,&quot;scale&quot;:1.1,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.3,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:false,&quot;enableRadial&quot;:false}"></div><button class="global-graph-icon" aria-label="Global Graph"><svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 55 55" fill="currentColor" xml:space="preserve"><path d="M49,0c-3.309,0-6,2.691-6,6c0,1.035,0.263,2.009,0.726,2.86l-9.829,9.829C32.542,17.634,30.846,17,29,17
+                s-3.542,0.634-4.898,1.688l-7.669-7.669C16.785,10.424,17,9.74,17,9c0-2.206-1.794-4-4-4S9,6.794,9,9s1.794,4,4,4
+                c0.74,0,1.424-0.215,2.019-0.567l7.669,7.669C21.634,21.458,21,23.154,21,25s0.634,3.542,1.688,4.897L10.024,42.562
+                C8.958,41.595,7.549,41,6,41c-3.309,0-6,2.691-6,6s2.691,6,6,6s6-2.691,6-6c0-1.035-0.263-2.009-0.726-2.86l12.829-12.829
+                c1.106,0.86,2.44,1.436,3.898,1.619v10.16c-2.833,0.478-5,2.942-5,5.91c0,3.309,2.691,6,6,6s6-2.691,6-6c0-2.967-2.167-5.431-5-5.91
+                v-10.16c1.458-0.183,2.792-0.759,3.898-1.619l7.669,7.669C41.215,39.576,41,40.26,41,41c0,2.206,1.794,4,4,4s4-1.794,4-4
+                s-1.794-4-4-4c-0.74,0-1.424,0.215-2.019,0.567l-7.669-7.669C36.366,28.542,37,26.846,37,25s-0.634-3.542-1.688-4.897l9.665-9.665
+                C46.042,11.405,47.451,12,49,12c3.309,0,6-2.691,6-6S52.309,0,49,0z M11,9c0-1.103,0.897-2,2-2s2,0.897,2,2s-0.897,2-2,2
+                S11,10.103,11,9z M6,51c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S8.206,51,6,51z M33,49c0,2.206-1.794,4-4,4s-4-1.794-4-4
+                s1.794-4,4-4S33,46.794,33,49z M29,31c-3.309,0-6-2.691-6-6s2.691-6,6-6s6,2.691,6,6S32.309,31,29,31z M47,41c0,1.103-0.897,2-2,2
+                s-2-0.897-2-2s0.897-2,2-2S47,39.897,47,41z M49,10c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S51.206,10,49,10z"></path></svg></button></div><div class="global-graph-outer"><div class="global-graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:-1,&quot;scale&quot;:0.9,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.2,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:true,&quot;enableRadial&quot;:true}"></div></div></div><div class="toc"><button type="button" class="toc-header" aria-controls="toc-5" aria-expanded="true"><h3>目录</h3><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul id="list-0" class="toc-content overflow"><li class="depth-0"><a href="#skill-engineering-for-llm-agents-研究现状问题与方向" data-for="skill-engineering-for-llm-agents-研究现状问题与方向">Skill Engineering for LLM Agents: 研究现状、问题与方向</a></li><li class="depth-1"><a href="#1-引言agent-skill-成为第一类部署工件" data-for="1-引言agent-skill-成为第一类部署工件">1. 引言：Agent Skill 成为第一类部署工件</a></li><li class="depth-1"><a href="#2-skill-engineering-子领域概览" data-for="2-skill-engineering-子领域概览">2. Skill Engineering 子领域概览</a></li><li class="depth-1"><a href="#3-研究现状" data-for="3-研究现状">3. 研究现状</a></li><li class="depth-2"><a href="#31-技能表示skill-representation" data-for="31-技能表示skill-representation">3.1 技能表示（Skill Representation）</a></li><li class="depth-2"><a href="#32-技能获取skill-acquisition" data-for="32-技能获取skill-acquisition">3.2 技能获取（Skill Acquisition）</a></li><li class="depth-2"><a href="#33-技能组织skill-organization" data-for="33-技能组织skill-organization">3.3 技能组织（Skill Organization）</a></li><li class="depth-2"><a href="#34-技能选择与路由skill-selection--routing" data-for="34-技能选择与路由skill-selection--routing">3.4 技能选择与路由（Skill Selection &amp; Routing）</a></li><li class="depth-2"><a href="#35-技能进化skill-evolution" data-for="35-技能进化skill-evolution">3.5 技能进化（Skill Evolution）</a></li><li class="depth-2"><a href="#36-技能安全skill-security-快速涌现的子领域" data-for="36-技能安全skill-security-快速涌现的子领域">3.6 技能安全（Skill Security）— 快速涌现的子领域</a></li><li class="depth-2"><a href="#37-领域应用" data-for="37-领域应用">3.7 领域应用</a></li><li class="depth-1"><a href="#4-目前存在的问题" data-for="4-目前存在的问题">4. 目前存在的问题</a></li><li class="depth-2"><a href="#41-表示碎片化" data-for="41-表示碎片化">4.1 表示碎片化</a></li><li class="depth-2"><a href="#42-内化-vs-外部库的权衡未解决" data-for="42-内化-vs-外部库的权衡未解决">4.2 内化 vs 外部库的权衡未解决</a></li><li class="depth-2"><a href="#43-技能效用鸿沟" data-for="43-技能效用鸿沟">4.3 技能效用鸿沟</a></li><li class="depth-2"><a href="#44-规模化挑战" data-for="44-规模化挑战">4.4 规模化挑战</a></li><li class="depth-2"><a href="#45-安全攻击面扩展" data-for="45-安全攻击面扩展">4.5 安全攻击面扩展</a></li><li class="depth-2"><a href="#46-评测基准碎片化" data-for="46-评测基准碎片化">4.6 评测基准碎片化</a></li><li class="depth-1"><a href="#5-可能的研究方向" data-for="5-可能的研究方向">5. 可能的研究方向</a></li><li class="depth-2"><a href="#51-技能表示的形式化语义" data-for="51-技能表示的形式化语义">5.1 技能表示的形式化语义</a></li><li class="depth-2"><a href="#52-自适应技能选择" data-for="52-自适应技能选择">5.2 自适应技能选择</a></li><li class="depth-2"><a href="#53-混合技能架构库--内化" data-for="53-混合技能架构库--内化">5.3 混合技能架构（库 + 内化）</a></li><li class="depth-2"><a href="#54-技能质量评估与治理" data-for="54-技能质量评估与治理">5.4 技能质量评估与治理</a></li><li class="depth-2"><a href="#55-终身技能进化系统" data-for="55-终身技能进化系统">5.5 终身技能进化系统</a></li><li class="depth-2"><a href="#56-技能安全纵深防御" data-for="56-技能安全纵深防御">5.6 技能安全纵深防御</a></li><li class="depth-2"><a href="#57-统一评测框架" data-for="57-统一评测框架">5.7 统一评测框架</a></li><li class="depth-1"><a href="#6-参考文献" data-for="6-参考文献">6. 参考文献</a></li><li class="depth-2"><a href="#核心论文已收录-wiki" data-for="核心论文已收录-wiki">核心论文（已收录 Wiki）</a></li><li class="depth-2"><a href="#技能表示与标准化" data-for="技能表示与标准化">技能表示与标准化</a></li><li class="depth-2"><a href="#技能安全" data-for="技能安全">技能安全</a></li><li class="depth-2"><a href="#技能获取与发现" data-for="技能获取与发现">技能获取与发现</a></li><li class="depth-2"><a href="#技能组合与编排" data-for="技能组合与编排">技能组合与编排</a></li><li class="depth-2"><a href="#技能检索" data-for="技能检索">技能检索</a></li><li class="depth-2"><a href="#综述与定位论文" data-for="综述与定位论文">综述与定位论文</a></li><li class="depth-2"><a href="#领域应用" data-for="领域应用">领域应用</a></li><li class="depth-2"><a href="#相关系统与基础设施" data-for="相关系统与基础设施">相关系统与基础设施</a></li><li class="overflow-end"></li></ul></div></div><footer class><p>Created with <a href="https://quartz.jzhao.xyz/">Quartz v5.0.0</a> © 2026</p><ul><li><a href="https://intellect.ontoweb.cn">Intellect Agent</a></li></ul></footer></div></div></body><script src="../static/resource-after-e13fffa1.js" type="application/javascript" data-persist="true"></script><script src="../static/resource-after-8b336f9a.js" type="application/javascript" data-persist="true"></script><script src="../static/resource-after-baba652b.js" type="application/javascript" data-persist="true"></script><script src="../static/resource-after-5eb75950.js" type="module" data-persist="true"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" type="application/javascript" data-persist="true"></script><script src="../postscript-e6daf1aa.js" type="module" data-persist="true"></script></html>

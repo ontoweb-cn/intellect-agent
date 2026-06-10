@@ -58,9 +58,15 @@ Examples:
     intellect config edit            Edit config in $EDITOR
     intellect config set model gpt-4 Set a config value
     intellect gateway                Run messaging gateway
+    intellect gateway install        Install gateway background service
+    intellect webui start            Start WebUI server in background
+    intellect webui stop             Stop WebUI server
+    intellect webui restart          Restart WebUI server
+    intellect webui status           Show WebUI server status
+    intellect webui logs             View WebUI server logs (last 100 lines)
+    intellect webui logs -f          Follow WebUI log in real time
     intellect -s intellect-agent-dev,github-auth
     intellect -w                     Start in isolated git worktree
-    intellect gateway install        Install gateway background service
     intellect sessions list          List past sessions
     intellect sessions browse        Interactive session picker
     intellect sessions rename ID T   Rename/title a session

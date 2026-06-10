@@ -187,6 +187,12 @@ youtube = [
   # at first invocation with ModuleNotFoundError (issue #22243).
   "youtube-transcript-api==1.2.4",
 ]
+webui = [
+  # WebUI — browser-based dashboard for agent sessions and settings.
+  # cryptography is required for optional WebAuthn/passkey authentication
+  # support. PyYAML is already a core dependency.
+  "cryptography>=42.0",
+]
 all = [
   # Policy (2026-05-12): `[all]` includes only extras that genuinely
   # CAN'T be lazy-installed via `tools/lazy_deps.py` — i.e. things every
@@ -219,6 +225,7 @@ all = [
   "intellect-agent[acp]",
   "intellect-agent[google]",
   "intellect-agent[youtube]",
+  "intellect-agent[webui]",
 ]
 
 [project.scripts]
@@ -233,6 +240,7 @@ py-modules = ["run_agent", "model_tools", "toolsets", "batch_runner", "trajector
 agent = ["oauth/catalog/**/*"]
 intellect_cli = ["tui_dist/**/*", "scripts/install.sh", "scripts/install.ps1"]
 gateway = ["assets/**/*"]
+webui = ["static/**/*", "default-home/**/*"]
 plugins = [
   # Plugin discovery (intellect_cli/plugins.py) reads a plugin.yaml/plugin.yml
   # manifest from each bundled plugin directory to register it. Wheels only
@@ -245,7 +253,7 @@ plugins = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["agent", "agent.*", "tools", "tools.*", "intellect_cli", "intellect_cli.*", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "providers", "providers.*"]
+include = ["agent", "agent.*", "tools", "tools.*", "intellect_cli", "intellect_cli.*", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "providers", "providers.*", "webui", "webui.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

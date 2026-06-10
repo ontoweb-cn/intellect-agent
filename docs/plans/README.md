@@ -1,6 +1,6 @@
 # Plans Index & Status
 
-> Updated 2026-06-06 | 48 documents (28 archived to `archive/`)
+> Updated 2026-06-10 | 49 documents (28 archived to `archive/`)
 
 ## Status Key
 - ✅ Complete (archived) | 📋 Planned | 📦 Archive
@@ -9,6 +9,7 @@
 
 | Status | Date | Document | Topic |
 |--------|------|----------|-------|
+| 📋 | 2026-06-10 | `rag-memory-collaboration-architecture.md` | RAG+Memory 协同架构 |
 | 📋 | 2026-06-02 | `2026-06-02-model-registry-agent-implementation.md` | Agent-side registry design |
 | 📋 | 2026-06-02 | `2026-06-02-provider-registry-db-unification-design.md` | Provider registry design |
 | 📋 | 2026-06-01 | `2026-06-01-release-summary.md` | v0.4.2 release summary |

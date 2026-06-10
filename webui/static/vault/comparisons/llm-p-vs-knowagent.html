@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh" dir="ltr"><head><title>LLM+P vs KnowAgent — Classical Planner 与 Action KB 深度对比</title><meta charset="utf-8"/><link rel="preload" href="../index-47d9ba67.css" as="style"/><link rel="preload" href="../prescript-2bfc6315.js" as="script"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted Grotesk:wght@400;700&amp;family=Source Sans Pro:ital,wght@0,400;0,600;1,400;1,600&amp;family=IBM Plex Mono:wght@400;600&amp;display=swap"/><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin="anonymous"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="og:site_name" content="LLM Wiki"/><meta property="og:title" content="LLM+P vs KnowAgent — Classical Planner 与 Action KB 深度对比"/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="LLM+P vs KnowAgent — Classical Planner 与 Action KB 深度对比"/><meta name="twitter:description" content="LLM+P vs KnowAgent — 深度对比 两条路线解决同一个问题（LLM 规划不可靠），但走了完全相反的路：LLM+P 让 LLM 完全不参与规划计算，KnowAgent 用结构化知识约束 LLM 的规划过程。 一、架构对比 LLM+P：LLM 不碰规划 ┌────────────┐ ┌──────────────────┐ ┌────────────┐ │ 用户 NL │ ──→ │ LLM (翻译器) │ ──→ │ PDDL │ │ &quot;整理积木&quot; │ │ NL → PDDL problem │ │ 形式化问题 │ └────────────┘ └──────..."/><meta property="og:description" content="LLM+P vs KnowAgent — 深度对比 两条路线解决同一个问题（LLM 规划不可靠），但走了完全相反的路：LLM+P 让 LLM 完全不参与规划计算，KnowAgent 用结构化知识约束 LLM 的规划过程。 一、架构对比 LLM+P：LLM 不碰规划 ┌────────────┐ ┌──────────────────┐ ┌────────────┐ │ 用户 NL │ ──→ │ LLM (翻译器) │ ──→ │ PDDL │ │ &quot;整理积木&quot; │ │ NL → PDDL problem │ │ 形式化问题 │ └────────────┘ └──────..."/><meta property="og:image:alt" content="LLM+P vs KnowAgent — 深度对比 两条路线解决同一个问题（LLM 规划不可靠），但走了完全相反的路：LLM+P 让 LLM 完全不参与规划计算，KnowAgent 用结构化知识约束 LLM 的规划过程。 一、架构对比 LLM+P：LLM 不碰规划 ┌────────────┐ ┌──────────────────┐ ┌────────────┐ │ 用户 NL │ ──→ │ LLM (翻译器) │ ──→ │ PDDL │ │ &quot;整理积木&quot; │ │ NL → PDDL problem │ │ 形式化问题 │ └────────────┘ └──────..."/><meta property="og:image" content="https://localhost:8787/static/vault/static/og-image.png"/><meta property="og:image:url" content="https://localhost:8787/static/vault/static/og-image.png"/><meta name="twitter:image" content="https://localhost:8787/static/vault/static/og-image.png"/><meta property="og:image:type" content="image/.png"/><meta property="twitter:domain" content="localhost:8787/static/vault"/><meta property="og:url" content="https://localhost:8787/static/vault/comparisons/llm-p-vs-knowagent"/><meta property="twitter:url" content="https://localhost:8787/static/vault/comparisons/llm-p-vs-knowagent"/><link rel="icon" href="../static/icon.png"/><meta name="description" content="LLM+P vs KnowAgent — 深度对比 两条路线解决同一个问题（LLM 规划不可靠），但走了完全相反的路：LLM+P 让 LLM 完全不参与规划计算，KnowAgent 用结构化知识约束 LLM 的规划过程。 一、架构对比 LLM+P：LLM 不碰规划 ┌────────────┐ ┌──────────────────┐ ┌────────────┐ │ 用户 NL │ ──→ │ LLM (翻译器) │ ──→ │ PDDL │ │ &quot;整理积木&quot; │ │ NL → PDDL problem │ │ 形式化问题 │ └────────────┘ └──────..."/><meta name="generator" content="Quartz"/><link href="../index-47d9ba67.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-735924e0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-589c1cea.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-bbc3f7c0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-2911f5d1.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-e427079e.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-53b25b2b.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-c93c6a44.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-8a06014f.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-77d6a441.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-6ee21cee.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-1ea6ad18.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-34bdfded.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-788c9ca3.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-642859cd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-4abc06bd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-274a3dfe.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-94cb6c84.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-58d5ff56.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../component-7262b5a7.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../static/resource-style-a5c806d2.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="../static/resource-style-6bd36952.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet" type="text/css" data-persist="true"/><script src="../prescript-2bfc6315.js" type="application/javascript" data-persist="true"></script><script type="application/javascript" data-persist="true">const fetchData = fetch("../static/contentIndex.json").then(data => data.json())</script></head><body data-slug="comparisons/llm-p-vs-knowagent" data-basepath="/static/vault"><div id="quartz-root" class="page" data-frame="default"><div id="quartz-body"><div class="left sidebar"><h2 class="page-title"><a href="..">LLM Wiki</a></h2><div class="mobile-only"><div class="spacer"></div></div><div class="flex-component" style="flex-direction: row; flex-wrap: nowrap; gap: 0.5rem;"><div style="flex-grow: 1; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><div class="search"><button class="search-button" aria-label="搜索" aria-expanded="false"><svg role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.9 19.7"><title>Search</title><g class="search-path" fill="none"><path stroke-linecap="square" d="M18.5 18.3l-5.4-5.4"></path><circle cx="8" cy="8" r="7"></circle></g></svg><p>搜索</p></button><div class="search-container"><div class="search-space"><input autocomplete="off" class="search-bar" name="search" type="text" aria-label="搜索内容..." placeholder="搜索内容..."/><div class="search-layout" data-preview="true" data-field-priority="[&quot;title&quot;,&quot;content&quot;,&quot;tags&quot;]"></div></div></div></div></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="darkmode" aria-label="暗色模式"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="dayIcon" x="0px" y="0px" viewBox="0 0 35 35" style="enable-background:new 0 0 35 35" xml:space="preserve" aria-label="暗色模式"><title>暗色模式</title><path d="M6,17.5C6,16.672,5.328,16,4.5,16h-3C0.672,16,0,16.672,0,17.5    S0.672,19,1.5,19h3C5.328,19,6,18.328,6,17.5z M7.5,26c-0.414,0-0.789,0.168-1.061,0.439l-2,2C4.168,28.711,4,29.086,4,29.5    C4,30.328,4.671,31,5.5,31c0.414,0,0.789-0.168,1.06-0.44l2-2C8.832,28.289,9,27.914,9,27.5C9,26.672,8.329,26,7.5,26z M17.5,6    C18.329,6,19,5.328,19,4.5v-3C19,0.672,18.329,0,17.5,0S16,0.672,16,1.5v3C16,5.328,16.671,6,17.5,6z M27.5,9    c0.414,0,0.789-0.168,1.06-0.439l2-2C30.832,6.289,31,5.914,31,5.5C31,4.672,30.329,4,29.5,4c-0.414,0-0.789,0.168-1.061,0.44    l-2,2C26.168,6.711,26,7.086,26,7.5C26,8.328,26.671,9,27.5,9z M6.439,8.561C6.711,8.832,7.086,9,7.5,9C8.328,9,9,8.328,9,7.5    c0-0.414-0.168-0.789-0.439-1.061l-2-2C6.289,4.168,5.914,4,5.5,4C4.672,4,4,4.672,4,5.5c0,0.414,0.168,0.789,0.439,1.06    L6.439,8.561z M33.5,16h-3c-0.828,0-1.5,0.672-1.5,1.5s0.672,1.5,1.5,1.5h3c0.828,0,1.5-0.672,1.5-1.5S34.328,16,33.5,16z     M28.561,26.439C28.289,26.168,27.914,26,27.5,26c-0.828,0-1.5,0.672-1.5,1.5c0,0.414,0.168,0.789,0.439,1.06l2,2    C28.711,30.832,29.086,31,29.5,31c0.828,0,1.5-0.672,1.5-1.5c0-0.414-0.168-0.789-0.439-1.061L28.561,26.439z M17.5,29    c-0.829,0-1.5,0.672-1.5,1.5v3c0,0.828,0.671,1.5,1.5,1.5s1.5-0.672,1.5-1.5v-3C19,29.672,18.329,29,17.5,29z M17.5,7    C11.71,7,7,11.71,7,17.5S11.71,28,17.5,28S28,23.29,28,17.5S23.29,7,17.5,7z M17.5,25c-4.136,0-7.5-3.364-7.5-7.5    c0-4.136,3.364-7.5,7.5-7.5c4.136,0,7.5,3.364,7.5,7.5C25,21.636,21.636,25,17.5,25z"></path></svg><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="nightIcon" x="0px" y="0px" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve" aria-label="亮色模式"><title>亮色模式</title><path d="M96.76,66.458c-0.853-0.852-2.15-1.064-3.23-0.534c-6.063,2.991-12.858,4.571-19.655,4.571  C62.022,70.495,50.88,65.88,42.5,57.5C29.043,44.043,25.658,23.536,34.076,6.47c0.532-1.08,0.318-2.379-0.534-3.23  c-0.851-0.852-2.15-1.064-3.23-0.534c-4.918,2.427-9.375,5.619-13.246,9.491c-9.447,9.447-14.65,22.008-14.65,35.369  c0,13.36,5.203,25.921,14.65,35.368s22.008,14.65,35.368,14.65c13.361,0,25.921-5.203,35.369-14.65  c3.872-3.871,7.064-8.328,9.491-13.246C97.826,68.608,97.611,67.309,96.76,66.458z"></path></svg></button></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="readermode" aria-label="阅读模式"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="readerIcon" fill="currentColor" stroke="currentColor" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" width="64px" height="64px" viewBox="0 0 24 24" aria-label="阅读模式"><title>阅读模式</title><g transform="translate(-1.8, -1.8) scale(1.15, 1.2)"><path d="M8.9891247,2.5 C10.1384702,2.5 11.2209868,2.96705384 12.0049645,3.76669482 C12.7883914,2.96705384 13.8709081,2.5 15.0202536,2.5 L18.7549359,2.5 C19.1691495,2.5 19.5049359,2.83578644 19.5049359,3.25 L19.5046891,4.004 L21.2546891,4.00457396 C21.6343849,4.00457396 21.9481801,4.28672784 21.9978425,4.6528034 L22.0046891,4.75457396 L22.0046891,20.25 C22.0046891,20.6296958 21.7225353,20.943491 21.3564597,20.9931534 L21.2546891,21 L2.75468914,21 C2.37499337,21 2.06119817,20.7178461 2.01153575,20.3517706 L2.00468914,20.25 L2.00468914,4.75457396 C2.00468914,4.37487819 2.28684302,4.061083 2.65291858,4.01142057 L2.75468914,4.00457396 L4.50368914,4.004 L4.50444233,3.25 C4.50444233,2.87030423 4.78659621,2.55650904 5.15267177,2.50684662 L5.25444233,2.5 L8.9891247,2.5 Z M4.50368914,5.504 L3.50468914,5.504 L3.50468914,19.5 L10.9478955,19.4998273 C10.4513189,18.9207296 9.73864328,18.5588115 8.96709342,18.5065584 L8.77307039,18.5 L5.25444233,18.5 C4.87474657,18.5 4.56095137,18.2178461 4.51128895,17.8517706 L4.50444233,17.75 L4.50368914,5.504 Z M19.5049359,17.75 C19.5049359,18.1642136 19.1691495,18.5 18.7549359,18.5 L15.2363079,18.5 C14.3910149,18.5 13.5994408,18.8724714 13.0614828,19.4998273 L20.5046891,19.5 L20.5046891,5.504 L19.5046891,5.504 L19.5049359,17.75 Z M18.0059359,3.999 L15.0202536,4 L14.8259077,4.00692283 C13.9889509,4.06666544 13.2254227,4.50975805 12.7549359,5.212 L12.7549359,17.777 L12.7782651,17.7601316 C13.4923805,17.2719483 14.3447024,17 15.2363079,17 L18.0059359,16.999 L18.0056891,4.798 L18.0033792,4.75457396 L18.0056891,4.71 L18.0059359,3.999 Z M8.9891247,4 L6.00368914,3.999 L6.00599909,4.75457396 L6.00599909,4.75457396 L6.00368914,4.783 L6.00368914,16.999 L8.77307039,17 C9.57551536,17 10.3461406,17.2202781 11.0128313,17.6202194 L11.2536891,17.776 L11.2536891,5.211 C10.8200889,4.56369974 10.1361548,4.13636104 9.37521067,4.02745763 L9.18347055,4.00692283 L8.9891247,4 Z"></path></g></svg></button></div></div><div class="explorer nav-files-container" data-behavior="link" data-collapsed="collapsed" data-savestate="true" data-data-fns="{&quot;order&quot;:[&quot;filter&quot;,&quot;map&quot;,&quot;sort&quot;],&quot;sortFn&quot;:&quot;(a2, b2) => {\n    if (!a2.isFolder &amp;&amp; !b2.isFolder || a2.isFolder &amp;&amp; b2.isFolder) {\n      return (a2.displayName || \&quot;\&quot;).localeCompare(b2.displayName || \&quot;\&quot;, void 0, {\n        numeric: true,\n        sensitivity: \&quot;base\&quot;\n      });\n    }\n    if (!a2.isFolder &amp;&amp; b2.isFolder) {\n      return 1;\n    }\n    return -1;\n  }&quot;,&quot;filterFn&quot;:&quot;(node) => node.slugSegment !== \&quot;tags\&quot;&quot;,&quot;mapFn&quot;:&quot;(node) => {\n    return node;\n  }&quot;}"><button type="button" class="explorer-toggle mobile-explorer hide-until-loaded" data-mobile="true" aria-controls="explorer-2" aria-label="Explorer"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide-menu"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button><button type="button" class="title-button explorer-toggle desktop-explorer" data-mobile="false" aria-expanded="true"><h2>Explorer</h2><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div id="explorer-2" class="explorer-content" aria-expanded="false" role="group"><ul class="explorer-ul overflow" id="list-0"><li class="overflow-end"></li></ul></div><template id="template-file"><li><a href="#" class="nav-file-title tree-item-self"></a></li></template><template id="template-folder"><li><div class="folder-container nav-folder-title tree-item-self"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon nav-folder-collapse-indicator collapse-icon"><polyline points="6 9 12 15 18 9"></polyline></svg><div><button class="folder-button"><span class="folder-title"></span></button></div></div><div class="folder-outer"><ul class="content tree-item-children"></ul></div></li></template></div></div><div class="center"><div class="page-header"><div class="popover-hint"><nav class="breadcrumb-container" aria-label="breadcrumbs"><div class="breadcrumb-element"><a href="../">Home</a><p> ❯ </p></div><div class="breadcrumb-element"><a href="../comparisons/">comparisons</a><p> ❯ </p></div><div class="breadcrumb-element"><a href>LLM+P vs KnowAgent — Classical Planner 与 Action KB 深度对比</a></div></nav><h1 class="article-title">LLM+P vs KnowAgent — Classical Planner 与 Action KB 深度对比</h1><details class="note-properties metadata-container" open data-collapsed="false"><summary class="note-properties-header"><span class="note-properties-title">Properties</span><span class="note-properties-count">1</span></summary><table class="note-properties-table"><tbody><tr class="note-properties-row metadata-property"><td class="note-properties-key metadata-property-key">tags</td><td class="note-properties-value metadata-property-value"><span class="note-properties-tags"><a href="../tags/planning" class="internal internal-link tag-link">planning</a><span class="note-properties-separator">, </span><a href="../tags/workflow-generation" class="internal internal-link tag-link">workflow-generation</a><span class="note-properties-separator">, </span><a href="../tags/comparison" class="internal internal-link tag-link">comparison</a><span class="note-properties-separator">, </span><a href="../tags/classical-planner" class="internal internal-link tag-link">classical-planner</a><span class="note-properties-separator">, </span><a href="../tags/action-kb" class="internal internal-link tag-link">action-kb</a><span class="note-properties-separator">, </span><a href="../tags/hybrid-system" class="internal internal-link tag-link">hybrid-system</a></span></td></tr></tbody></table></details><p show-comma="true" class="content-meta"><time datetime="2026-05-22T16:00:00.000Z">2026年5月23日</time><span>14分钟阅读</span></p></div></div><article class="popover-hint"><div class="markdown-preview-view markdown-rendered"><h1 id="llmp-vs-knowagent--深度对比">LLM+P vs KnowAgent — 深度对比<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#llmp-vs-knowagent--深度对比" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h1>
+<blockquote>
+<p>两条路线解决同一个问题（LLM 规划不可靠），但走了完全相反的路：LLM+P 让 LLM 完全不参与规划计算，KnowAgent 用结构化知识约束 LLM 的规划过程。</p>
+</blockquote>
+<hr/>
+<h2 id="一架构对比">一、架构对比<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#一架构对比" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<h3 id="llmpllm-不碰规划">LLM+P：LLM 不碰规划<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#llmpllm-不碰规划" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<pre><code>┌────────────┐     ┌──────────────────┐     ┌────────────┐
+│   用户 NL   │ ──→ │    LLM (翻译器)   │ ──→ │   PDDL     │
+│ &quot;整理积木&quot;  │     │ NL → PDDL problem │     │ 形式化问题  │
+└────────────┘     └──────────────────┘     └─────┬──────┘
+                                                   │
+                                          ┌────────▼──────┐
+                                          │ Fast Downward │
+                                          │  (Planner)    │
+                                          │ 状态空间搜索   │
+                                          └────────┬──────┘
+                                                   │
+┌────────────┐     ┌──────────────────┐     ┌─────▼──────┐
+│  可执行计划 │ ←── │    LLM (翻译器)   │ ←── │  符号计划   │
+│ 自然语言    │     │ PDDL plan → NL   │     │ [A,B,C,D]  │
+└────────────┘     └──────────────────┘     └────────────┘
+</code></pre>
+<p>LLM 的两端是<strong>翻译</strong>，中间的计算完全交给 Classical Planner。LLM 不参与任何规划推理。</p>
+<h3 id="knowagentllm-仍在规划但被约束">KnowAgent：LLM 仍在规划，但被约束<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#knowagentllm-仍在规划但被约束" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<pre><code>                    ┌─────────────────────┐
+                    │   Action KB          │
+                    │ ┌─────────────────┐  │
+                    │ │ search:          │  │
+                    │ │  pre: entity_type│  │
+                    │ │  post: candidates│  │
+                    │ │  next: [lookup]  │  │
+                    │ ├─────────────────┤  │
+                    │ │ lookup:          │  │
+                    │ │  pre: searched   │  │
+                    │ │  post: details   │  │
+                    │ │  next: [pick]    │  │
+                    │ └─────────────────┘  │
+                    └──────────┬──────────┘
+                               │ 过滤合法后继
+                               ▼
+┌────────────┐     ┌──────────────────────┐     ┌────────────┐
+│   用户 NL   │ ──→ │    LLM (规划 + KB约束) │ ──→ │ TAO 轨迹   │
+│ &quot;找苹果捡起来&quot;│     │ Thought→Action→Obs   │     │ 可执行序列  │
+└────────────┘     └──────────────────────┘     └────────────┘
+</code></pre>
+<p>LLM 全程参与规划，但每一步都从 Action KB 获取合法候选项，在受限空间内做选择。</p>
+<hr/>
+<h2 id="二llmp-详细机制">二、LLM+P 详细机制<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#二llmp-详细机制" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<h3 id="核心思想">核心思想<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#核心思想" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>LLM 擅长语言理解和转换，但不擅长可靠搜索；Classical Planner 擅长在形式化状态空间中求解计划，但需要结构化输入——取长补短，各司其职。</strong></p>
+<h3 id="pddl规划的数学语言">PDDL：规划的”数学语言”<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#pddl规划的数学语言" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Planning Domain Definition Language，用谓词逻辑精确描述动作的前置条件与效果。</p>
+<h4 id="domain-pddl世界的物理规则">Domain PDDL（“世界的物理规则”）<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#domain-pddl世界的物理规则" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h4>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="lisp" data-theme="github-light github-dark"><code data-language="lisp" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">(define (domain household-tasks)</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">  (</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">:requirements</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function"> :strips</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function"> :typing</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">)</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">  (</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">:types</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> location object)</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">  (</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">:predicates</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">    (at ?obj </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> object ?loc </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> location)</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">    (holding ?obj </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> object)</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">    (handempty)</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">    (container-open ?obj </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> object)</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">    (inside ?obj1 </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> object ?obj2 </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> object))</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">  ;; 走过去</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">  (</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">:action</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> goto</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :parameters</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (?loc </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> location)</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :precondition</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> ()</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :effect</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (at-agent ?loc))</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">  ;; 打开容器</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">  (</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">:action</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function"> open</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :parameters</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (?obj </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> object)</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :precondition</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (at-agent ?loc)</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :effect</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (container-open ?obj))</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">  ;; 拿出物品</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">  (</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">:action</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> take-out</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :parameters</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (?obj1 </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> object ?obj2 </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> object)</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :precondition</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">and</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (container-open ?obj2) (inside ?obj1 ?obj2) (handempty))</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :effect</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">and</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (holding ?obj1) (</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">not</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (inside ?obj1 ?obj2))))</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">  ;; 放下物品</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">  (</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">:action</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> put-down</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :parameters</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (?obj </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">-</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> object)</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :precondition</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (holding ?obj)</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">    :effect</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">and</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="function">not</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;"> (holding ?obj)) (handempty)))</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">)</span></span></code></pre></figure>
+<h4 id="problem-pddl初始状态--目标">Problem PDDL（“初始状态 + 目标”）<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#problem-pddl初始状态--目标" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h4>
+<pre><code>用户: &quot;从冰箱里拿一瓶牛奶放到桌上&quot;
+
+LLM 翻译 →
+(define (problem fetch-milk)
+  (:domain household-tasks)
+  (:objects
+    fridge table - location
+    milk - object)
+  (:init
+    (inside milk fridge)
+    (not (container-open fridge))
+    (handempty))
+  (:goal
+    (at milk table)))
+</code></pre>
+<h3 id="三步流水线">三步流水线<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#三步流水线" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Step 1: LLM 将 NL 翻译为 Problem PDDL</strong></p>
+<p>LLM 读入已知的 domain PDDL，将自然语言问题翻译为结构化的初始状态和目标状态。</p>
+<p><strong>Step 2: Classical Planner 搜索</strong></p>
+<p>Fast Downward 读取 domain + problem，在状态空间中执行 A* / 启发式搜索：</p>
+<pre><code>状态 S0: milk在冰箱里, 冰箱关着, 手空
+  │
+  ├── goto(fridge) → S1: 在冰箱前
+  │     ├── open(fridge) → S2: 冰箱开着
+  │     │     └── take-out(milk, fridge) → S3: 拿着牛奶
+  │     │           └── goto(table) → S4: 在桌前
+  │     │                 └── put-down(milk) → S5: 牛奶在桌上 ✓ 目标达成！
+  │     │
+  │     └── ... (其他分支被剪枝)
+
+输出: [goto(fridge), open(fridge), take-out(milk,fridge), goto(table), put-down(milk)]
+</code></pre>
+<p><strong>Step 3: LLM 翻译回自然语言</strong></p>
+<pre><code>Planner 输出符号计划 → LLM 翻译 →
+&quot;1. 走到冰箱前
+ 2. 打开冰箱门
+ 3. 从冰箱里拿出牛奶
+ 4. 走到桌前
+ 5. 把牛奶放在桌上&quot;
+</code></pre>
+<h3 id="关键特性">关键特性<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#关键特性" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Planner 保证找到的计划是 <strong>(1) 可执行的、(2) 最优的（最短步数/最小代价）、(3) 数学上正确的（Sound + Complete）</strong>。</p>
+<hr/>
+<h2 id="三knowagent-详细机制">三、KnowAgent 详细机制<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#三knowagent-详细机制" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<h3 id="核心思想-1">核心思想<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#核心思想-1" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>LLM 规划时犯错是因为不知道动作之间的约束关系。给它一张”动作地图”——显式编码每个动作的前置条件、后置效果、合法后继——LLM 在受限的合法空间内推理，显著减少 invalid action 和 misordered action。</strong></p>
+<h3 id="action-kb-结构">Action KB 结构<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#action-kb-结构" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="json" data-theme="github-light github-dark"><code data-language="json" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">{</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">  &quot;actions&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: {</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">    &quot;search&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: {</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;params&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;entity_type&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;pre&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;entity_type ∈ known_domains&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;post&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;获得 entity 候选列表&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;valid_next&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;lookup&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;filter&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;parallel_with&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;search(other_entity)&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">]</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">    },</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">    &quot;pick&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: {</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;params&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;entity_id&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;location&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;pre&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span></span>
+<span data-line><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">        &quot;已执行 lookup 确认存在&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">,</span></span>
+<span data-line><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">        &quot;agent 在目标位置&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">,</span></span>
+<span data-line><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">        &quot;handempty = true&quot;</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">      ],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;post&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;holding(entity_id)&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;handempty = false&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;valid_next&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;put_down&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;use&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;conflicts_with&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;pick(any_other)&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">]</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">    },</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">    &quot;navigate_to&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: {</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;params&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;location&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;pre&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;post&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;agent 到达目标位置&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">],</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">      &quot;valid_next&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;pick&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;open&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">&quot;search_in&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">]</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">    }</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">  },</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="punctuation">  &quot;global_constraints&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">: [</span></span>
+<span data-line><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">    &quot;同一时刻 agent 只能在一个位置&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">,</span></span>
+<span data-line><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">    &quot;同一时刻最多持有一个物品&quot;</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">,</span></span>
+<span data-line><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">    &quot;不可对未确认存在的对象执行操作&quot;</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">  ]</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">}</span></span></code></pre></figure>
+<h3 id="tao-生成过程">TAO 生成过程<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#tao-生成过程" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<blockquote>
+<p>以”从冰箱拿牛奶放到桌上”为例</p>
+</blockquote>
+<pre><code>═══════════ Turn 1 ═══════════
+Action KB 注入 → &quot;初始状态：handempty=true。可用动作：[search, navigate_to]&quot;
+
+Thought: 先找到牛奶。冰箱应该在厨房。
+Action: search(&quot;milk&quot;)
+  ├── KB 检查: search 前置条件通过 ✓
+  └── KB 记录: 合法后继 = [lookup, filter]
+Observation: 找到 &quot;milk_01&quot; 在 fridge_01 中
+
+═══════════ Turn 2 ═══════════
+Action KB 注入 → &quot;已搜索到 milk_01 ∈ fridge_01。合法动作：[lookup(milk_01), navigate_to(fridge_01)]&quot;
+
+Thought: 确认牛奶确实在冰箱里，然后过去。
+Action: lookup(&quot;milk_01&quot;)
+  ├── KB 检查: lookup 前置条件通过 ✓
+  └── KB 记录: lookup 后可执行 pick
+Observation: milk_01 是 500ml 全脂牛奶，在 fridge_01
+
+═══════════ Turn 3 ═══════════
+Action KB 注入 → &quot;已确认 milk_01 在 fridge_01。
+  ⚠ pick 前置条件：agent 必须在目标位置 &amp;&amp; 容器必须打开&quot;
+
+Thought: 还不在冰箱前，冰箱也没开。先去冰箱那里。
+Action: navigate_to(&quot;fridge_01&quot;)
+  ├── KB 检查: 不在 fridge_01，navigate_to 合法 ✓
+  └── KB 更新: 位置 = fridge_01
+Observation: 已到达冰箱前
+
+═══════════ Turn 4 ═══════════
+Action KB 注入 → &quot;位置=fridge_01。已知 fridge_01 是容器，container-open=false。
+                   合法动作: [open(fridge_01)] ← 只有这一个&quot;
+
+Thought: 冰箱关着，先打开。
+Action: open(&quot;fridge_01&quot;)
+  ├── KB 检查: fridge_01 是容器 ✓
+  └── KB 更新: container-open(fridge_01)=true
+Observation: 冰箱已打开
+
+═══════════ Turn 5 ═══════════
+Action KB 注入 → &quot;位置=fridge_01, holding=none, container-open=true。
+                   合法动作: [pick(milk_01, fridge_01)]&quot;
+
+Thought: 拿出牛奶。
+Action: pick(&quot;milk_01&quot;, &quot;fridge_01&quot;)
+  ├── KB 检查: 所有前置条件满足 ✓
+  └── KB 更新: holding=milk_01, handempty=false
+Observation: 拿到了牛奶
+
+═══════════ Turn 6-7 ═══════════
+→ navigate_to(&quot;table&quot;) → put_down(&quot;milk_01&quot;, &quot;table&quot;)
+→ ✓ 牛奶已在桌上，任务完成
+</code></pre>
+<h3 id="action-kb-的三个介入点">Action KB 的三个介入点<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#action-kb-的三个介入点" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol>
+<li><strong>Planning 阶段</strong>：过滤非法候选项，LLM 只能从合法后继中选</li>
+<li><strong>Generation 阶段</strong>：在 prompt 中注入当前可用 action 的约束描述</li>
+<li><strong>Verification 阶段</strong>：检查生成的 action 序列是否满足全局约束</li>
+</ol>
+<hr/>
+<h2 id="四核心差异全景">四、核心差异全景<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#四核心差异全景" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>维度</th><th>KnowAgent (Action KB)</th><th>LLM+P (Classical Planner)</th></tr></thead><tbody><tr><td><strong>规划者</strong></td><td>LLM (被 KB 约束)</td><td>Classical Planner (Fast Downward)</td></tr><tr><td><strong>LLM 角色</strong></td><td>每一步推理 + 选择</td><td>纯翻译 (NL ↔ PDDL)</td></tr><tr><td><strong>知识形式</strong></td><td>Action KB (前置/后置条件)</td><td>Domain PDDL (STRIPS 谓词)</td></tr><tr><td><strong>正确性</strong></td><td>概率性 (KB 减少但未消除错误)</td><td>证明性 (Sound + Complete)</td></tr><tr><td><strong>知识获取</strong></td><td>半自动 / LLM 辅助构建</td><td>需要人类专家手写</td></tr><tr><td><strong>实时约束</strong></td><td>每一步注入 KB</td><td>一次性翻译后全部交给 Planner</td></tr><tr><td><strong>适应范围</strong></td><td>开放域、难以形式化</td><td>可形式化为 PDDL 的经典问题</td></tr><tr><td><strong>出错模式</strong></td><td>KB 不完整 → 漏掉约束</td><td>翻译错误 → Planner 做”精确的错事”</td></tr></tbody></table></div>
+<h3 id="哲学分歧">哲学分歧<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#哲学分歧" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<pre><code>KnowAgent: &quot;LLM 规划不好是因为它不知道规则，
+           给它规则就行——它仍然是最佳推理引擎。&quot;
+
+LLM+P:     &quot;LLM 规划不好是因为它天生不适合搜索，
+           别让它规划——让它做它擅长的翻译。&quot;
+</code></pre>
+<hr/>
+<h2 id="五致命弱点">五、致命弱点<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#五致命弱点" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<h3 id="knowagent">KnowAgent<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#knowagent" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>问题</th><th>表现</th></tr></thead><tbody><tr><td><strong>KB 覆盖率</strong></td><td>Action KB 漏掉一个约束 = LLM 照样犯错。例如 KB 没写”拿冷冻物品前要戴手套”，LLM 会直接伸手。</td></tr><tr><td><strong>状态爆炸</strong></td><td>真实环境的状态空间远超 KB 能编码。一个酒店预订 API 可能有 30+ 参数组合约束。</td></tr><tr><td><strong>KB 构建成本</strong></td><td>每次增加新动作/新领域都要更新 KB。</td></tr><tr><td><strong>无全局最优保证</strong></td><td>LLM 每步选合法的，但可能走入局部最优（贪心）。Planner 做全局搜索，保证最优。</td></tr></tbody></table></div>
+<h3 id="llmp">LLM+P<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#llmp" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>问题</th><th>表现</th></tr></thead><tbody><tr><td><strong>PDDL 表达力天花板</strong></td><td>许多真实问题写不成 PDDL。模糊目标、软约束无法形式化。</td></tr><tr><td><strong>翻译质量是瓶颈</strong></td><td>LLM 把 “找最近的面包店” 翻译成错误的 PDDL 谓词和对象，Planner 给出精确但完全错误的计划。</td></tr><tr><td><strong>Domain PDDL 必须预知</strong></td><td>每个新领域需要人类专家编写 domain 文件。</td></tr><tr><td><strong>丢弃 LLM 世界知识</strong></td><td>Planner 只知道 PDDL 里的规则。LLM 知道”冰箱通常在厨房”、“牛奶会坏要冷藏”，这些常识被完全丢弃。</td></tr></tbody></table></div>
+<hr/>
+<h2 id="六场景选择指南">六、场景选择指南<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#六场景选择指南" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>场景</th><th>推荐</th><th>理由</th></tr></thead><tbody><tr><td>物流调度、路径规划</td><td><strong>LLM+P</strong></td><td>经典 PDDL 领域，Planner 有最优解</td></tr><tr><td>API 编排（Dify/Coze workflow）</td><td><strong>KnowAgent</strong></td><td>API 参数约束复杂，但可以写成 KB</td></tr><tr><td>积木世界、棋盘游戏</td><td><strong>LLM+P</strong></td><td>天然适合 PDDL</td></tr><tr><td>客服对话流程</td><td><strong>KnowAgent</strong></td><td>对话状态难以形式化为 PDDL 谓词</td></tr><tr><td>机器人任务规划（结构化环境）</td><td><strong>LLM+P</strong></td><td>经典 Planning 领域</td></tr><tr><td>机器人任务规划（开放环境）</td><td><strong>KnowAgent</strong></td><td>物品、位置不固定，依赖 LLM 常识</td></tr></tbody></table></div>
+<h3 id="决策树">决策树<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#决策树" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<pre><code>问题可以精确形式化？
+  ├── 是 → 动作空间有限、依赖关系清晰？
+  │        ├── 是 → 用 LLM+P（Planner 保证最优）
+  │        └── 否 → 用 KnowAgent（KB 约束 + LLM 常识补充）
+  │
+  └── 否 → 动作是自然语言、软约束、模糊目标？
+           └── 用 KnowAgent（KB 约束 + LLM 灵活推理）
+</code></pre>
+<hr/>
+<h2 id="七第三条路llm-modulo">七、第三条路：LLM-Modulo<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#七第三条路llm-modulo" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Critical Investigation (NeurIPS 2023) 提出的 LLM-Modulo 框架是两者的折中：</p>
+<pre><code>LLM-Modulo:
+  LLM 生成候选计划
+       ↓
+  Verifier 检查可执行性  ← 类似 Action KB 的约束检查
+       ↓ (如果失败)
+  Planner 修复           ← 类似 LLM+P 的符号修复
+
+vs KnowAgent: LLM-Modulo 是&quot;先出计划再修&quot;，KnowAgent 是&quot;每一步约束着出&quot;
+vs LLM+P:     LLM-Modulo 中 LLM 仍然生成初始计划，LLM+P 中 LLM 完全不碰规划
+</code></pre>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>方法</th><th>LLM 参与度</th><th>外部符号系统角色</th><th>保证级别</th></tr></thead><tbody><tr><td><strong>LLM+P</strong></td><td>零（纯翻译）</td><td>全部规划计算</td><td>数学证明</td></tr><tr><td><strong>KnowAgent</strong></td><td>高（约束下推理）</td><td>提供约束</td><td>概率性减少错误</td></tr><tr><td><strong>LLM-Modulo</strong></td><td>中（生成候选）</td><td>验证 + 修复</td><td>最终计划可执行</td></tr></tbody></table></div>
+<hr/>
+<h2 id="八趋势与融合方向">八、趋势与融合方向<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#八趋势与融合方向" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>现实中最优解很可能是两者的混合：</p>
+<ol>
+<li><strong>用 Action KB 约束 LLM 生成候选计划</strong>：降低非法动作，保留 LLM 常识</li>
+<li><strong>用 Classical Planner 验证关键路径</strong>：对可形式化的子问题提供数学保证</li>
+<li><strong>用执行反馈闭环修正</strong>：类似 LLM-Modulo 的 Verifier 环节，用实际执行结果验证</li>
+</ol>
+<hr/>
+<h2 id="相关页面">相关页面<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#相关页面" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<ul>
+<li><a href="../comparisons/workflow-llm-comparison" class="internal internal-link" data-slug="comparisons/workflow-llm-comparison">workflow-llm-comparison</a> — 9 篇 Workflow LLM 论文系统对比</li>
+<li><a href="../concepts/workflow-generation" class="internal internal-link" data-slug="concepts/workflow-generation">workflow-generation</a> — Workflow Generation 概念综述</li>
+<li><a href="../entities/knowagent" class="internal internal-link" data-slug="entities/knowagent">knowagent</a> — KnowAgent 实体页</li>
+<li><a href="../entities/llm-p" class="internal internal-link" data-slug="entities/llm-p">llm-p</a> — LLM+P 实体页</li>
+<li><a href="../entities/critical-investigation" class="internal internal-link" data-slug="entities/critical-investigation">critical-investigation</a> — Critical Investigation / LLM-Modulo</li>
+<li><a href="../entities/opus" class="internal internal-link" data-slug="entities/opus">opus</a> — Opus (Work KG)</li>
+</ul></div></article><hr/><div class="page-footer"></div></div><div class="right sidebar"><div class="graph"><h3>Graph View</h3><div class="graph-outer"><div class="graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:1,&quot;scale&quot;:1.1,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.3,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:false,&quot;enableRadial&quot;:false}"></div><button class="global-graph-icon" aria-label="Global Graph"><svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 55 55" fill="currentColor" xml:space="preserve"><path d="M49,0c-3.309,0-6,2.691-6,6c0,1.035,0.263,2.009,0.726,2.86l-9.829,9.829C32.542,17.634,30.846,17,29,17
+                s-3.542,0.634-4.898,1.688l-7.669-7.669C16.785,10.424,17,9.74,17,9c0-2.206-1.794-4-4-4S9,6.794,9,9s1.794,4,4,4
+                c0.74,0,1.424-0.215,2.019-0.567l7.669,7.669C21.634,21.458,21,23.154,21,25s0.634,3.542,1.688,4.897L10.024,42.562
+                C8.958,41.595,7.549,41,6,41c-3.309,0-6,2.691-6,6s2.691,6,6,6s6-2.691,6-6c0-1.035-0.263-2.009-0.726-2.86l12.829-12.829
+                c1.106,0.86,2.44,1.436,3.898,1.619v10.16c-2.833,0.478-5,2.942-5,5.91c0,3.309,2.691,6,6,6s6-2.691,6-6c0-2.967-2.167-5.431-5-5.91
+                v-10.16c1.458-0.183,2.792-0.759,3.898-1.619l7.669,7.669C41.215,39.576,41,40.26,41,41c0,2.206,1.794,4,4,4s4-1.794,4-4
+                s-1.794-4-4-4c-0.74,0-1.424,0.215-2.019,0.567l-7.669-7.669C36.366,28.542,37,26.846,37,25s-0.634-3.542-1.688-4.897l9.665-9.665
+                C46.042,11.405,47.451,12,49,12c3.309,0,6-2.691,6-6S52.309,0,49,0z M11,9c0-1.103,0.897-2,2-2s2,0.897,2,2s-0.897,2-2,2
+                S11,10.103,11,9z M6,51c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S8.206,51,6,51z M33,49c0,2.206-1.794,4-4,4s-4-1.794-4-4
+                s1.794-4,4-4S33,46.794,33,49z M29,31c-3.309,0-6-2.691-6-6s2.691-6,6-6s6,2.691,6,6S32.309,31,29,31z M47,41c0,1.103-0.897,2-2,2
+                s-2-0.897-2-2s0.897-2,2-2S47,39.897,47,41z M49,10c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S51.206,10,49,10z"></path></svg></button></div><div class="global-graph-outer"><div class="global-graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:-1,&quot;scale&quot;:0.9,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.2,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:true,&quot;enableRadial&quot;:true}"></div></div></div><div class="toc"><button type="button" class="toc-header" aria-controls="toc-2" aria-expanded="true"><h3>目录</h3><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul id="list-0" class="toc-content overflow"><li class="depth-0"><a href="#llmp-vs-knowagent--深度对比" data-for="llmp-vs-knowagent--深度对比">LLM+P vs KnowAgent — 深度对比</a></li><li class="depth-1"><a href="#一架构对比" data-for="一架构对比">一、架构对比</a></li><li class="depth-2"><a href="#llmpllm-不碰规划" data-for="llmpllm-不碰规划">LLM+P：LLM 不碰规划</a></li><li class="depth-2"><a href="#knowagentllm-仍在规划但被约束" data-for="knowagentllm-仍在规划但被约束">KnowAgent：LLM 仍在规划，但被约束</a></li><li class="depth-1"><a href="#二llmp-详细机制" data-for="二llmp-详细机制">二、LLM+P 详细机制</a></li><li class="depth-2"><a href="#核心思想" data-for="核心思想">核心思想</a></li><li class="depth-2"><a href="#pddl规划的数学语言" data-for="pddl规划的数学语言">PDDL：规划的”数学语言”</a></li><li class="depth-2"><a href="#三步流水线" data-for="三步流水线">三步流水线</a></li><li class="depth-2"><a href="#关键特性" data-for="关键特性">关键特性</a></li><li class="depth-1"><a href="#三knowagent-详细机制" data-for="三knowagent-详细机制">三、KnowAgent 详细机制</a></li><li class="depth-2"><a href="#核心思想-1" data-for="核心思想-1">核心思想</a></li><li class="depth-2"><a href="#action-kb-结构" data-for="action-kb-结构">Action KB 结构</a></li><li class="depth-2"><a href="#tao-生成过程" data-for="tao-生成过程">TAO 生成过程</a></li><li class="depth-2"><a href="#action-kb-的三个介入点" data-for="action-kb-的三个介入点">Action KB 的三个介入点</a></li><li class="depth-1"><a href="#四核心差异全景" data-for="四核心差异全景">四、核心差异全景</a></li><li class="depth-2"><a href="#哲学分歧" data-for="哲学分歧">哲学分歧</a></li><li class="depth-1"><a href="#五致命弱点" data-for="五致命弱点">五、致命弱点</a></li><li class="depth-2"><a href="#knowagent" data-for="knowagent">KnowAgent</a></li><li class="depth-2"><a href="#llmp" data-for="llmp">LLM+P</a></li><li class="depth-1"><a href="#六场景选择指南" data-for="六场景选择指南">六、场景选择指南</a></li><li class="depth-2"><a href="#决策树" data-for="决策树">决策树</a></li><li class="depth-1"><a href="#七第三条路llm-modulo" data-for="七第三条路llm-modulo">七、第三条路：LLM-Modulo</a></li><li class="depth-1"><a href="#八趋势与融合方向" data-for="八趋势与融合方向">八、趋势与融合方向</a></li><li class="depth-1"><a href="#相关页面" data-for="相关页面">相关页面</a></li><li class="overflow-end"></li></ul></div><div class="backlinks"><h3>反向链接</h3><ul id="list-0" class="overflow"><li><a href="../" class="internal">index</a></li><li class="overflow-end"></li></ul></div></div><footer class><p>Created with <a href="https://quartz.jzhao.xyz/">Quartz v5.0.0</a> © 2026</p><ul><li><a href="https://intellect.ontoweb.cn">Intellect Agent</a></li></ul></footer></div></div></body><script src="../static/resource-after-e13fffa1.js" type="application/javascript" data-persist="true"></script><script src="../static/resource-after-8b336f9a.js" type="application/javascript" data-persist="true"></script><script src="../static/resource-after-baba652b.js" type="application/javascript" data-persist="true"></script><script src="../static/resource-after-5eb75950.js" type="module" data-persist="true"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" type="application/javascript" data-persist="true"></script><script src="../postscript-e6daf1aa.js" type="module" data-persist="true"></script></html>

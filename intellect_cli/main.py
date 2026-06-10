@@ -6287,6 +6287,13 @@ def cmd_hooks(args):
     hooks_command(args)
 
 
+def cmd_webui(args):
+    """WebUI server management."""
+    from intellect_cli.webui import webui_command
+
+    webui_command(args)
+
+
 def cmd_doctor(args):
     """Check configuration and dependencies."""
     from intellect_cli.doctor import run_doctor
@@ -13899,6 +13906,52 @@ def main():
     )
 
     hooks_parser.set_defaults(func=cmd_hooks)
+
+    # =========================================================================
+    # webui command — webui server management
+    # =========================================================================
+    webui_parser = subparsers.add_parser(
+        "webui",
+        help="Manage the Intellect WebUI server",
+        description="Start, stop, restart, status, and logs for the WebUI server",
+    )
+    webui_subparsers = webui_parser.add_subparsers(dest="webui_command")
+
+    webui_start = webui_subparsers.add_parser("start", help="Start WebUI server in background")
+    webui_start.add_argument(
+        "--host", default=None, metavar="HOST",
+        help=f"Bind address (default: {os.getenv('INTELLECT_WEBUI_HOST', '127.0.0.1')})",
+    )
+    webui_start.add_argument(
+        "--port", type=int, default=None, metavar="PORT",
+        help=f"Listen port (default: {os.getenv('INTELLECT_WEBUI_PORT', '9119')})",
+    )
+
+    webui_subparsers.add_parser("stop", help="Stop WebUI server")
+
+    webui_restart = webui_subparsers.add_parser("restart", help="Restart WebUI server")
+    webui_restart.add_argument(
+        "--host", default=None, metavar="HOST",
+        help=f"Bind address (default: {os.getenv('INTELLECT_WEBUI_HOST', '127.0.0.1')})",
+    )
+    webui_restart.add_argument(
+        "--port", type=int, default=None, metavar="PORT",
+        help=f"Listen port (default: {os.getenv('INTELLECT_WEBUI_PORT', '9119')})",
+    )
+
+    webui_subparsers.add_parser("status", help="Show WebUI server status")
+
+    webui_logs_parser = webui_subparsers.add_parser("logs", help="View WebUI server logs")
+    webui_logs_parser.add_argument(
+        "--lines", "-n", type=int, default=100, metavar="N",
+        help="Number of lines to show (default: 100)",
+    )
+    webui_logs_parser.add_argument(
+        "--follow", "-f", action="store_true",
+        help="Follow log output in real time",
+    )
+
+    webui_parser.set_defaults(func=cmd_webui)
 
     # =========================================================================
     # doctor command
