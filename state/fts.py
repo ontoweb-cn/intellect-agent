@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Optional
+from typing import Any, Optional
 
 from state.schema import (
     _FTS_TABLES,
@@ -16,9 +16,6 @@ from state.schema import (
 try:
     from intellect_core import (  # type: ignore[import-not-found]
         is_fts5_unavailable_error as _rust_is_fts5_unavailable_error,
-        drop_fts_triggers_rs as _rust_drop_fts_triggers,
-        fts_trigger_count_rs as _rust_fts_trigger_count,
-        rebuild_fts_indexes_rs as _rust_rebuild_fts_indexes,
     )
     _HAS_RUST = True
 except ImportError:
@@ -33,10 +30,19 @@ def is_fts5_unavailable_error(exc: sqlite3.OperationalError) -> bool:
     return "no such module" in err and "fts5" in err
 
 
-def drop_fts_triggers(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> None:
+def drop_fts_triggers(
+    cursor: sqlite3.Cursor, *, db_path: str | None = None, backend: Any = None
+) -> None:
     """Drop all known FTS triggers (idempotent)."""
+    if _HAS_RUST and backend is not None:
+        backend.drop_fts_triggers()
+        return
     if _HAS_RUST and db_path is not None:
-        _rust_drop_fts_triggers(db_path)
+        # Legacy path: standalone function (new connection per call).
+        # Prefer the backend path above — it uses a persistent connection
+        # that shares WAL visibility with the Python connection.
+        from intellect_core import drop_fts_triggers_rs as _rust_fn
+        _rust_fn(db_path)
         return
     for trigger in _FTS_TRIGGERS:
         try:
@@ -46,10 +52,15 @@ def drop_fts_triggers(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> 
             pass
 
 
-def fts_trigger_count(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> int:
+def fts_trigger_count(
+    cursor: sqlite3.Cursor, *, db_path: str | None = None, backend: Any = None
+) -> int:
     """Count how many of the expected FTS triggers exist."""
+    if _HAS_RUST and backend is not None:
+        return backend.fts_trigger_count()
     if _HAS_RUST and db_path is not None:
-        return _rust_fts_trigger_count(db_path)
+        from intellect_core import fts_trigger_count_rs as _rust_fn
+        return _rust_fn(db_path)
     placeholders = ",".join("?" for _ in _FTS_TRIGGERS)
     row = cursor.execute(
         f"SELECT COUNT(*) FROM sqlite_master "
@@ -59,10 +70,16 @@ def fts_trigger_count(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> 
     return int(row[0] if not isinstance(row, sqlite3.Row) else row[0])
 
 
-def rebuild_fts_indexes(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> None:
+def rebuild_fts_indexes(
+    cursor: sqlite3.Cursor, *, db_path: str | None = None, backend: Any = None
+) -> None:
     """Delete and re-populate the messages_fts index from messages table."""
+    if _HAS_RUST and backend is not None:
+        backend.rebuild_fts_indexes()
+        return
     if _HAS_RUST and db_path is not None:
-        _rust_rebuild_fts_indexes(db_path)
+        from intellect_core import rebuild_fts_indexes_rs as _rust_fn
+        _rust_fn(db_path)
         return
     validate_fts_identifier("messages_fts", _FTS_TABLES)
     cursor.execute("DELETE FROM messages_fts")

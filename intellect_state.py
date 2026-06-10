@@ -299,10 +299,9 @@ class SessionDB:
         self._fts_unavailable_warned = False
         self._storage_backend = None
         try:
-            from agent.storage.sqlite_backend import SQLiteBackend
+            from agent.storage.sqlite_backend import create_backend
 
-            self._storage_backend = SQLiteBackend(db_path=self.db_path)
-
+            self._storage_backend = create_backend(self.db_path)
             self._storage_backend.initialize()
             self._conn = self._storage_backend.connection
             self._lock = getattr(
@@ -386,17 +385,21 @@ class SessionDB:
             SessionDB._fts5_support_cached = False
             return False
 
-    @staticmethod
-    def _drop_fts_triggers(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> None:
-        drop_fts_triggers(cursor, db_path=db_path)
+    def _rust_backend(self):
+        """Return the Rust SQLiteBackend if available, else None."""
+        sb = self._storage_backend
+        if sb is not None:
+            return getattr(sb, '_backend', None)
+        return None
 
-    @staticmethod
-    def _fts_trigger_count(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> int:
-        return fts_trigger_count(cursor, db_path=db_path)
+    def _drop_fts_triggers(self, cursor: sqlite3.Cursor) -> None:
+        drop_fts_triggers(cursor, backend=self._rust_backend())
 
-    @staticmethod
-    def _rebuild_fts_indexes(cursor: sqlite3.Cursor, *, db_path: str | None = None) -> None:
-        rebuild_fts_indexes(cursor, db_path=db_path)
+    def _fts_trigger_count(self, cursor: sqlite3.Cursor) -> int:
+        return fts_trigger_count(cursor, backend=self._rust_backend())
+
+    def _rebuild_fts_indexes(self, cursor: sqlite3.Cursor) -> None:
+        rebuild_fts_indexes(cursor, backend=self._rust_backend())
 
     def _fts_table_probe(self, cursor: sqlite3.Cursor, table_name: str) -> Optional[bool]:
         try:
@@ -621,7 +624,7 @@ class SessionDB:
             # tables they target. Drop only the triggers so core persistence
             # continues; if a future runtime has FTS5, _ensure_fts_schema()
             # recreates them.
-            self._drop_fts_triggers(cursor, db_path=str(self.db_path))
+            self._drop_fts_triggers(cursor)
 
         cursor.execute("SELECT version FROM schema_version LIMIT 1")
         row = cursor.fetchone()
@@ -660,7 +663,7 @@ class SessionDB:
                 # existence checks (below) recreate them from FTS_SQL /
                 # FTS_TRIGRAM_SQL, then backfill every message row. Fixes #16751.
                 if fts5_available:
-                    self._drop_fts_triggers(cursor, db_path=str(self.db_path))
+                    self._drop_fts_triggers(cursor)
                     for _tbl in ("messages_fts",):
                         try:
                             cursor.execute(f"DROP TABLE IF EXISTS {_tbl}")
@@ -861,7 +864,7 @@ class SessionDB:
             # FTS5 setup. Run the DDL even when the virtual table exists so
             # CREATE TRIGGER IF NOT EXISTS repairs trigger-only degradation from
             # an earlier no-FTS5 runtime.
-            triggers_need_repair = self._fts_trigger_count(cursor, db_path=str(self.db_path)) < len(_FTS_TRIGGERS)
+            triggers_need_repair = self._fts_trigger_count(cursor) < len(_FTS_TRIGGERS)
             self._fts_enabled = self._ensure_fts_schema(cursor, "messages_fts", FTS_SQL)
 
             # Trigram FTS5 for CJK/substring search. This is optional relative
@@ -872,7 +875,7 @@ class SessionDB:
                     cursor, "messages_fts", FTS_SQL
                 )
                 if trigram_enabled and triggers_need_repair:
-                    self._rebuild_fts_indexes(cursor, db_path=str(self.db_path))
+                    self._rebuild_fts_indexes(cursor)
 
         self._conn.commit()
 
@@ -893,23 +896,26 @@ class SessionDB:
         team_id: str = None,
     ) -> None:
         """Shared INSERT OR IGNORE for session rows."""
+        params = (
+            session_id, source, user_id, member_id, team_id,
+            model, json.dumps(model_config) if model_config else None,
+            system_prompt, parent_session_id, time.time(),
+        )
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(
+                "INSERT OR IGNORE INTO sessions (id, source, user_id, member_id, team_id, model, \
+                 model_config, system_prompt, parent_session_id, started_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                list(params),
+            )
+
         def _do(conn):
             conn.execute(
                 """INSERT OR IGNORE INTO sessions (id, source, user_id, member_id, team_id, model,
                    model_config, system_prompt, parent_session_id, started_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    session_id,
-                    source,
-                    user_id,
-                    member_id,
-                    team_id,
-                    model,
-                    json.dumps(model_config) if model_config else None,
-                    system_prompt,
-                    parent_session_id,
-                    time.time(),
-                ),
+                params,
             )
         self._execute_write(_do)
 
@@ -927,21 +933,24 @@ class SessionDB:
         with a different reason. Use ``reopen_session()`` first if you
         intentionally need to re-end a closed session with a new reason.
         """
+        sql = "UPDATE sessions SET ended_at = ?1, end_reason = ?2 WHERE id = ?3 AND ended_at IS NULL"
+        params = [time.time(), end_reason, session_id]
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(sql, params)
         def _do(conn):
-            conn.execute(
-                "UPDATE sessions SET ended_at = ?, end_reason = ? "
-                "WHERE id = ? AND ended_at IS NULL",
-                (time.time(), end_reason, session_id),
-            )
+            conn.execute(sql, (params[0], params[1], params[2]))
         self._execute_write(_do)
 
     def reopen_session(self, session_id: str) -> None:
         """Clear ended_at/end_reason so a session can be resumed."""
+        sql = "UPDATE sessions SET ended_at = NULL, end_reason = NULL WHERE id = ?1"
+        params = [session_id]
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(sql, params)
         def _do(conn):
-            conn.execute(
-                "UPDATE sessions SET ended_at = NULL, end_reason = NULL WHERE id = ?",
-                (session_id,),
-            )
+            conn.execute("UPDATE sessions SET ended_at = NULL, end_reason = NULL WHERE id = ?", (session_id,),)
         self._execute_write(_do)
 
     # ──────────────────────────────────────────────────────────────────────
@@ -1038,6 +1047,16 @@ class SessionDB:
         if not session_id:
             return
 
+        sql = "DELETE FROM compression_locks WHERE session_id = ?1 AND holder = ?2"
+        params = [session_id, holder]
+        rust = self._rust_backend()
+        if rust is not None:
+            try:
+                rust.execute_simple_write(sql, params)
+            except Exception as exc:
+                logger.warning("release_compression_lock(%s) rust failed: %s", session_id, exc)
+            return
+
         def _do(conn):
             conn.execute(
                 "DELETE FROM compression_locks "
@@ -1073,25 +1092,24 @@ class SessionDB:
 
     def update_system_prompt(self, session_id: str, system_prompt: str) -> None:
         """Store the full assembled system prompt snapshot."""
+        sql = "UPDATE sessions SET system_prompt = ?1 WHERE id = ?2"
+        params = [system_prompt, session_id]
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(sql, params)
         def _do(conn):
-            conn.execute(
-                "UPDATE sessions SET system_prompt = ? WHERE id = ?",
-                (system_prompt, session_id),
-            )
+            conn.execute(sql, (system_prompt, session_id))
         self._execute_write(_do)
 
     def update_session_model(self, session_id: str, model: str) -> None:
-        """Update the model for a session after a mid-session switch.
-
-        Unlike ``update_token_counts`` which uses ``COALESCE(model, ?)``
-        (only filling in NULL), this unconditionally sets the model column
-        so that the TUI reflects the user's latest /model choice.
-        """
+        """Update the model for a session after a mid-session switch."""
+        sql = "UPDATE sessions SET model = ?1 WHERE id = ?2"
+        params = [model, session_id]
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(sql, params)
         def _do(conn):
-            conn.execute(
-                "UPDATE sessions SET model = ? WHERE id = ?",
-                (model, session_id),
-            )
+            conn.execute(sql, (model, session_id))
         self._execute_write(_do)
 
     def update_token_counts(
@@ -1483,7 +1501,7 @@ class SessionDB:
         return f"{base} #{max_num + 1}"
 
     def get_compression_tip(self, session_id: str) -> Optional[str]:
-        return _get_tip(self._conn, self._lock, session_id, db_path=str(self.db_path))
+        return _get_tip(self._conn, self._lock, session_id)
 
     def list_sessions_rich(
         self,
@@ -1851,6 +1869,22 @@ class SessionDB:
         if tool_calls is not None:
             num_tool_calls = len(tool_calls) if isinstance(tool_calls, list) else 1
 
+        # ── Rust fast path (Stage 1d): direct method, no Python callback ──
+        rust = self._rust_backend()
+        if rust is not None:
+            # Convert bytes content to str (PyO3 can't bind bytes to &str)
+            if isinstance(stored_content, bytes):
+                stored_content = stored_content.decode("utf-8", errors="replace")
+            return rust.append_message(
+                session_id, role, stored_content, tool_call_id,
+                tool_calls_json, tool_name, time.time(), token_count,
+                finish_reason, reasoning, reasoning_content,
+                reasoning_details_json, codex_items_json,
+                codex_message_items_json, platform_message_id,
+                observed, num_tool_calls,
+            )
+
+        # ── Python fallback ──────────────────────────────────────────────
         def _do(conn):
             cursor = conn.execute(
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
@@ -1903,6 +1937,72 @@ class SessionDB:
         mid-rewrite failure does not leave SQLite with a partial transcript.
         """
 
+        # ── Rust fast path (Stage 1f): batch insert in Rust ──────────────
+        rust = self._rust_backend()
+        if rust is not None:
+            # Pre-compute all values outside the transaction
+            now_ts = time.time()
+            roles: list = []
+            contents: list = []
+            tool_call_ids: list = []
+            tool_calls_jsons: list = []
+            tool_names: list = []
+            timestamps: list = []
+            token_counts: list = []
+            finish_reasons: list = []
+            reasonings: list = []
+            reasoning_contents: list = []
+            reasoning_details_jsons: list = []
+            codex_items_jsons: list = []
+            codex_message_items_jsons: list = []
+            platform_msg_ids: list = []
+            observed_flags: list = []
+            num_tool_calls: list = []
+
+            for msg in messages:
+                role = msg.get("role", "unknown")
+                tool_calls = msg.get("tool_calls")
+                ntc = 0
+                if tool_calls is not None:
+                    ntc = len(tool_calls) if isinstance(tool_calls, list) else 1
+                reasoning_details = msg.get("reasoning_details") if role == "assistant" else None
+                codex_reasoning_items = (
+                    msg.get("codex_reasoning_items") if role == "assistant" else None
+                )
+                codex_message_items = (
+                    msg.get("codex_message_items") if role == "assistant" else None
+                )
+
+                roles.append(role)
+                c = self._encode_content(msg.get("content"))
+                if isinstance(c, bytes):
+                    c = c.decode("utf-8", errors="replace")
+                contents.append(c)
+                tool_call_ids.append(msg.get("tool_call_id"))
+                tool_calls_jsons.append(json.dumps(tool_calls) if tool_calls else None)
+                tool_names.append(msg.get("tool_name"))
+                timestamps.append(now_ts)
+                token_counts.append(msg.get("token_count"))
+                finish_reasons.append(msg.get("finish_reason"))
+                reasonings.append(msg.get("reasoning") if role == "assistant" else None)
+                reasoning_contents.append(msg.get("reasoning_content") if role == "assistant" else None)
+                reasoning_details_jsons.append(json.dumps(reasoning_details) if reasoning_details else None)
+                codex_items_jsons.append(json.dumps(codex_reasoning_items) if codex_reasoning_items else None)
+                codex_message_items_jsons.append(json.dumps(codex_message_items) if codex_message_items else None)
+                platform_msg_ids.append(msg.get("platform_message_id") or msg.get("message_id"))
+                observed_flags.append(1 if msg.get("observed") else 0)
+                num_tool_calls.append(ntc)
+                now_ts += 1e-6
+
+            return rust.replace_messages(
+                session_id, roles, contents, tool_call_ids, tool_calls_jsons,
+                tool_names, timestamps, token_counts, finish_reasons, reasonings,
+                reasoning_contents, reasoning_details_jsons, codex_items_jsons,
+                codex_message_items_jsons, platform_msg_ids, observed_flags,
+                num_tool_calls,
+            )
+
+        # ── Python fallback ──────────────────────────────────────────────
         def _do(conn):
             conn.execute(
                 "DELETE FROM messages WHERE session_id = ?", (session_id,)
@@ -1936,8 +2036,6 @@ class SessionDB:
                     json.dumps(codex_message_items) if codex_message_items else None
                 )
                 tool_calls_json = json.dumps(tool_calls) if tool_calls else None
-                # Accept either `platform_message_id` (new explicit name) or
-                # `message_id` (yuanbao's existing convention on message dicts).
                 platform_msg_id = (
                     msg.get("platform_message_id") or msg.get("message_id")
                 )
@@ -2717,50 +2815,21 @@ class SessionDB:
                 else:
                     matches = [dict(row) for row in cursor.fetchall()]
 
-        # Add surrounding context (1 message before + after each match).
-        # Done outside the lock so we don't hold it across N sequential queries.
-        for match in matches:
+        # ── Context window extraction ────────────────────────────────────
+        # Stage 1e: Rust batch context replaces N+1 CTE queries.
+        rust = self._rust_backend()
+        if rust is not None and matches:
+            match_ids = [m["id"] for m in matches]
             try:
-                with self._lock:
-                    ctx_cursor = self._query_conn.execute(
-                        """WITH target AS (
-                               SELECT session_id, timestamp, id
-                               FROM messages
-                               WHERE id = ?
-                           )
-                           SELECT role, content
-                           FROM (
-                               SELECT m.id, m.timestamp, m.role, m.content
-                               FROM messages m
-                               JOIN target t ON t.session_id = m.session_id
-                               WHERE (m.timestamp < t.timestamp)
-                                  OR (m.timestamp = t.timestamp AND m.id < t.id)
-                               ORDER BY m.timestamp DESC, m.id DESC
-                               LIMIT 1
-                           )
-                           UNION ALL
-                           SELECT role, content
-                           FROM messages
-                           WHERE id = ?
-                           UNION ALL
-                           SELECT role, content
-                           FROM (
-                               SELECT m.id, m.timestamp, m.role, m.content
-                               FROM messages m
-                               JOIN target t ON t.session_id = m.session_id
-                               WHERE (m.timestamp > t.timestamp)
-                                  OR (m.timestamp = t.timestamp AND m.id > t.id)
-                               ORDER BY m.timestamp ASC, m.id ASC
-                               LIMIT 1
-                           )""",
-                        (match["id"], match["id"]),
-                    )
+                batch_contexts = rust.get_message_context_batch(match_ids)
+                for match, ctx_list in zip(matches, batch_contexts):
+                    # ctx_list is a Python list of {role, content} dicts.
+                    # Post-process: decode content + truncate (Python-side).
                     context_msgs = []
-                    for r in ctx_cursor.fetchall():
-                        raw = r["content"]
+                    for entry in ctx_list if isinstance(ctx_list, list) else []:
+                        role = entry.get("role", "") if hasattr(entry, 'get') else ""
+                        raw = entry.get("content", "") if hasattr(entry, 'get') else ""
                         decoded = self._decode_content(raw)
-                        # Multimodal context: render a compact text-only
-                        # summary for search previews.
                         if isinstance(decoded, list):
                             text_parts = [
                                 p.get("text", "") for p in decoded
@@ -2772,12 +2841,70 @@ class SessionDB:
                             preview = decoded
                         else:
                             preview = ""
-                        context_msgs.append(
-                            {"role": r["role"], "content": preview[:200]}
-                        )
-                match["context"] = context_msgs
+                        context_msgs.append({"role": role, "content": preview[:200]})
+                    match["context"] = context_msgs
             except Exception:
-                match["context"] = []
+                for match in matches:
+                    match["context"] = []
+        else:
+            # ── Python fallback: N+1 CTE context queries ──────────────────
+            for match in matches:
+                try:
+                    with self._lock:
+                        ctx_cursor = self._query_conn.execute(
+                            """WITH target AS (
+                                   SELECT session_id, timestamp, id
+                                   FROM messages
+                                   WHERE id = ?
+                               )
+                               SELECT role, content
+                               FROM (
+                                   SELECT m.id, m.timestamp, m.role, m.content
+                                   FROM messages m
+                                   JOIN target t ON t.session_id = m.session_id
+                                   WHERE (m.timestamp < t.timestamp)
+                                      OR (m.timestamp = t.timestamp AND m.id < t.id)
+                                   ORDER BY m.timestamp DESC, m.id DESC
+                                   LIMIT 1
+                               )
+                               UNION ALL
+                               SELECT role, content
+                               FROM messages
+                               WHERE id = ?
+                               UNION ALL
+                               SELECT role, content
+                               FROM (
+                                   SELECT m.id, m.timestamp, m.role, m.content
+                                   FROM messages m
+                                   JOIN target t ON t.session_id = m.session_id
+                                   WHERE (m.timestamp > t.timestamp)
+                                      OR (m.timestamp = t.timestamp AND m.id > t.id)
+                                   ORDER BY m.timestamp ASC, m.id ASC
+                                   LIMIT 1
+                               )""",
+                            (match["id"], match["id"]),
+                        )
+                        context_msgs = []
+                        for r in ctx_cursor.fetchall():
+                            raw = r["content"]
+                            decoded = self._decode_content(raw)
+                            if isinstance(decoded, list):
+                                text_parts = [
+                                    p.get("text", "") for p in decoded
+                                    if isinstance(p, dict) and p.get("type") == "text"
+                                ]
+                                text = " ".join(t for t in text_parts if t).strip()
+                                preview = text or "[multimodal content]"
+                            elif isinstance(decoded, str):
+                                preview = decoded
+                            else:
+                                preview = ""
+                            context_msgs.append(
+                                {"role": r["role"], "content": preview[:200]}
+                            )
+                    match["context"] = context_msgs
+                except Exception:
+                    match["context"] = []
 
         # Remove full content from result (snippet is enough, saves tokens)
         for match in matches:

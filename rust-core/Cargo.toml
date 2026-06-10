@@ -6,11 +6,16 @@ description = "Intellect Agent core layer — Rust (PyO3) native extension"
 
 [lib]
 name = "intellect_core"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.21" }
 rusqlite = { version = "0.31", features = ["bundled"] }
+rand = "0.8"
 
 [profile.release]
 opt-level = 3

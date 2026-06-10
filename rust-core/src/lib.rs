@@ -1,9 +1,11 @@
 //! Intellect Agent core layer — Rust (PyO3) native extension.
 //!
-//! Stage 1b: Storage engine — FTS5 utilities, compression, schema constants.
-//! Uses rusqlite (bundled SQLite) for direct database access.
+//! Stage 1c: SQLiteBackend with managed connection, write retry, WAL.
+//! Includes RustConnection/RustCursor for Python callback compatibility.
 
+pub mod backend;
 pub mod compression;
+pub mod connection;
 pub mod fts;
 pub mod schema;
 
@@ -12,14 +14,17 @@ use pyo3::prelude::*;
 /// Python module: `import intellect_core`
 #[pymodule]
 fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // FTS5 utilities (rusqlite-backed)
+    // ── Standalone functions (Stage 1b compat — pass db_path) ────────────
     m.add_function(wrap_pyfunction!(fts::is_fts5_unavailable_error, m)?)?;
     m.add_function(wrap_pyfunction!(fts::drop_fts_triggers_rs, m)?)?;
     m.add_function(wrap_pyfunction!(fts::fts_trigger_count_rs, m)?)?;
     m.add_function(wrap_pyfunction!(fts::rebuild_fts_indexes_rs, m)?)?;
-
-    // Compression (rusqlite-backed — no lock needed)
     m.add_function(wrap_pyfunction!(compression::get_compression_tip_rs, m)?)?;
+
+    // ── Stage 1c: Managed backend ────────────────────────────────────────
+    m.add_class::<backend::SQLiteBackend>()?;
+    m.add_class::<connection::RustConnection>()?;
+    m.add_class::<connection::RustCursor>()?;
 
     Ok(())
 }
