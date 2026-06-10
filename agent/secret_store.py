@@ -35,6 +35,14 @@ from typing import Any
 
 from intellect_constants import get_intellect_home
 
+# ── Stage 5b: Rust Fernet ──────────────────────────────────────────────────
+try:
+    from intellect_core import fernet_encrypt as _rust_fernet_encrypt  # type: ignore[import-not-found]
+    from intellect_core import fernet_decrypt as _rust_fernet_decrypt
+    _HAS_RUST_FERNET = True
+except (ImportError, AttributeError):
+    _HAS_RUST_FERNET = False
+
 logger = logging.getLogger(__name__)
 
 # Sentinel prefix written at the head of every encrypted file so we can
@@ -337,6 +345,9 @@ def _generate_key() -> bytes:
 
 def _encrypt_bytes(plaintext: bytes, key: bytes) -> bytes:
     """Encrypt *plaintext* with the given Fernet *key*."""
+    if _HAS_RUST_FERNET:
+        token = _rust_fernet_encrypt(key.decode(), plaintext.decode())
+        return (token + "=").encode()  # Fernet tokens may need padding
     from cryptography.fernet import Fernet
     return Fernet(key).encrypt(plaintext)
 
@@ -351,10 +362,14 @@ def _decrypt_bytes(raw: bytes, key: bytes | None = None) -> str:
         # Legacy plaintext — return as-is for transparent reads during migration
         return raw.decode("utf-8")
     payload = raw[len(_ENCRYPTION_HEADER):]
-    from cryptography.fernet import Fernet
     if key is None:
         from intellect_constants import get_intellect_home
         key = _get_or_create_key(get_intellect_home())
+    if _HAS_RUST_FERNET:
+        token_str = payload.decode()
+        # Strip header padding if present
+        return _rust_fernet_decrypt(key.decode(), token_str)
+    from cryptography.fernet import Fernet
     return Fernet(key).decrypt(payload).decode("utf-8")
 
 
