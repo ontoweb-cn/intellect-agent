@@ -2706,47 +2706,10 @@ def _collect_query_images(query: str | None, image_arg: str | None = None) -> tu
     return message, deduped
 
 
-class ChatConsole:
-    """Rich Console adapter for prompt_toolkit's patch_stdout context.
+from intellect_cli.chat_console import ChatConsole as _ChatConsole  # noqa: E402
 
-    Captures Rich's rendered ANSI output and routes it through _cprint
-    so colors and markup render correctly inside the interactive chat loop.
-    Drop-in replacement for Rich Console — just pass this to any function
-    that expects a console.print() interface.
-    """
-
-    def __init__(self):
-        from io import StringIO
-        self._buffer = StringIO()
-        self._inner = Console(
-            file=self._buffer,
-            force_terminal=True,
-            color_system="truecolor",
-            highlight=False,
-        )
-
-    def print(self, *args, **kwargs):
-        self._buffer.seek(0)
-        self._buffer.truncate()
-        # Read terminal width at render time so panels adapt to current size
-        self._inner.width = shutil.get_terminal_size((80, 24)).columns
-        self._inner.print(*args, **kwargs)
-        output = self._buffer.getvalue()
-        for line in output.rstrip("\n").split("\n"):
-            _cprint(line)
-
-    @contextmanager
-    def status(self, *_args, **_kwargs):
-        """Provide a no-op Rich-compatible status context.
-
-        Some slash command helpers use ``console.status(...)`` when running in
-        the standalone CLI. Interactive chat routes those helpers through
-        ``ChatConsole()``, which historically only implemented ``print()``.
-        Returning a silent context manager keeps slash commands compatible
-        without duplicating the higher-level busy indicator already shown by
-        ``IntellectCLI._busy_command()``.
-        """
-        yield self
+# Backward-compatible ChatConsole pre-wired with cli's _cprint.
+ChatConsole = lambda: _ChatConsole(cprint_fn=_cprint)  # noqa: E731
 
 # ASCII Art - INTELLECT-AGENT logo (full width, single line - requires ~95 char terminal)
 intellect_AGENT_LOGO = """[bold #FFD700]██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
