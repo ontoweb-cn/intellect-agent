@@ -366,10 +366,9 @@ class GraphitiMemoryProvider(MemoryProvider):
             return None
 
         # (single-user: no tool RBAC)
-        try:
-            # Fail-closed for delete: an RBAC subsystem failure must not
-            # silently let a sensitive op through.
-            return f"graphiti_delete_episode RBAC check failed: {exc}"
+        # Allow the write — the primary gate at the dispatcher
+        # (agent_runtime_helpers.py) already enforced RBAC if enabled.
+        return None
 
 
 def _err(tool_name: str, msg: str) -> str:

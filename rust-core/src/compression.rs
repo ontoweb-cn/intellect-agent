@@ -1,7 +1,7 @@
 //! Compression chain traversal — equivalent to Python's `state/compression.py`.
 
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyString};
+use pyo3::types::PyAnyMethods;
 
 /// SQL for walking compression-continuation chains.
 const COMPRESSION_TIP_SQL: &str = "\
@@ -26,22 +26,22 @@ SELECT id FROM chain ORDER BY depth DESC LIMIT 1";
 /// Mirrors Python's `get_compression_tip()`.
 #[pyfunction]
 pub fn get_compression_tip_py(
-    conn: &PyAny,
-    lock: &PyAny,
+    conn: &Bound<'_, PyAny>,
+    lock: &Bound<'_, PyAny>,
     session_id: &str,
 ) -> PyResult<Option<String>> {
     // Acquire the Python lock (lock.__enter__())
     let _guard = lock.call_method0("__enter__")?;
 
-    let cursor = conn.call_method1("execute", (COMPRESSION_TIP_SQL, (session_id,)))?;
-    let row: Option<&PyAny> = cursor.call_method0("fetchone")?.extract()?;
+    let cursor = conn.call_method("execute", (COMPRESSION_TIP_SQL, (session_id,)), None::<&Bound<'_, pyo3::types::PyDict>>)?;
+    let row: Option<Bound<'_, PyAny>> = cursor.call_method0("fetchone")?.extract()?;
 
     // Release lock
     let _ = lock.call_method0("__exit__");
 
     match row {
         Some(r) => {
-            let id: String = r.getattr("id")?.extract()?;
+            let id: String = r.get_item("id")?.extract()?;
             Ok(Some(id))
         }
         None => Ok(Some(session_id.to_string())),
