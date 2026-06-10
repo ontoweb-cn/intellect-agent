@@ -33,8 +33,9 @@ fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sandbox::detect_dangerous_command_rs, m)?)?;
     m.add_function(wrap_pyfunction!(sandbox::check_sudo_stdin_guard_rs, m)?)?;
 
-    // ── Stage 3a: Usage normalization ───────────────────────────────────
+    // ── Stage 3a/3b: Usage normalization + accumulation ─────────────────
     m.add_function(wrap_pyfunction!(usage::normalize_usage_rs, m)?)?;
+    m.add_class::<usage::TokenAccumulator>()?;
 
     Ok(())
 }

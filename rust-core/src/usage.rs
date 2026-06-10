@@ -1,7 +1,9 @@
-//! Token usage normalization — port of `agent/usage_pricing.py:normalize_usage`.
+//! Token usage normalization + accumulation — port of `agent/usage_pricing.py`.
 //!
-//! Normalizes 3 API response shapes (Anthropic, Codex, OpenAI/generic)
-//! into canonical token buckets.  Pure computation — no I/O, no side effects.
+//! Stage 3a: normalize_usage_rs — 3 API shapes into canonical buckets.
+//! Stage 3b: TokenAccumulator — atomic per-session token counter.
+
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use pyo3::prelude::*;
 
@@ -173,5 +175,151 @@ mod tests {
             "", "", 0, 0, 100, 50, 0, 0, 0, 0, 42,
         );
         assert_eq!(reasoning, 42);
+    }
+}
+
+// ── TokenAccumulator (Stage 3b) ─────────────────────────────────────────────
+
+/// Thread-safe per-session token counter backed by AtomicI64 fields.
+/// Replaces the Python `session_input_tokens += ...` pattern.
+#[pyclass]
+pub struct TokenAccumulator {
+    input_tokens: AtomicI64,
+    output_tokens: AtomicI64,
+    cache_read_tokens: AtomicI64,
+    cache_write_tokens: AtomicI64,
+    reasoning_tokens: AtomicI64,
+    api_calls: AtomicI64,
+    estimated_cost_usd: AtomicI64,  // stored as micro-dollars (×1e6)
+}
+
+#[pymethods]
+impl TokenAccumulator {
+    #[new]
+    fn new() -> Self {
+        TokenAccumulator {
+            input_tokens: AtomicI64::new(0),
+            output_tokens: AtomicI64::new(0),
+            cache_read_tokens: AtomicI64::new(0),
+            cache_write_tokens: AtomicI64::new(0),
+            reasoning_tokens: AtomicI64::new(0),
+            api_calls: AtomicI64::new(0),
+            estimated_cost_usd: AtomicI64::new(0),
+        }
+    }
+
+    /// Add a usage delta. `cost_micro_usd` is cost in millionths of a dollar
+    /// (multiply float USD by 1_000_000 and truncate to i64).
+    #[pyo3(signature = (input_tokens, output_tokens, cache_read_tokens,
+                         cache_write_tokens, reasoning_tokens, api_calls=1,
+                         cost_micro_usd=0))]
+    fn add(
+        &self,
+        input_tokens: i64,
+        output_tokens: i64,
+        cache_read_tokens: i64,
+        cache_write_tokens: i64,
+        reasoning_tokens: i64,
+        api_calls: i64,
+        cost_micro_usd: i64,
+    ) {
+        self.input_tokens.fetch_add(input_tokens, Ordering::Relaxed);
+        self.output_tokens.fetch_add(output_tokens, Ordering::Relaxed);
+        self.cache_read_tokens.fetch_add(cache_read_tokens, Ordering::Relaxed);
+        self.cache_write_tokens.fetch_add(cache_write_tokens, Ordering::Relaxed);
+        self.reasoning_tokens.fetch_add(reasoning_tokens, Ordering::Relaxed);
+        self.api_calls.fetch_add(api_calls, Ordering::Relaxed);
+        if cost_micro_usd != 0 {
+            self.estimated_cost_usd.fetch_add(cost_micro_usd, Ordering::Relaxed);
+        }
+    }
+
+    /// Reset all counters to zero (for session reset).
+    fn reset(&self) {
+        self.input_tokens.store(0, Ordering::Relaxed);
+        self.output_tokens.store(0, Ordering::Relaxed);
+        self.cache_read_tokens.store(0, Ordering::Relaxed);
+        self.cache_write_tokens.store(0, Ordering::Relaxed);
+        self.reasoning_tokens.store(0, Ordering::Relaxed);
+        self.api_calls.store(0, Ordering::Relaxed);
+        self.estimated_cost_usd.store(0, Ordering::Relaxed);
+    }
+
+    // ── Getters ─────────────────────────────────────────────────────────
+
+    #[getter]
+    fn input_tokens(&self) -> i64 { self.input_tokens.load(Ordering::Relaxed) }
+
+    #[getter]
+    fn output_tokens(&self) -> i64 { self.output_tokens.load(Ordering::Relaxed) }
+
+    #[getter]
+    fn cache_read_tokens(&self) -> i64 { self.cache_read_tokens.load(Ordering::Relaxed) }
+
+    #[getter]
+    fn cache_write_tokens(&self) -> i64 { self.cache_write_tokens.load(Ordering::Relaxed) }
+
+    #[getter]
+    fn reasoning_tokens(&self) -> i64 { self.reasoning_tokens.load(Ordering::Relaxed) }
+
+    #[getter]
+    fn api_calls(&self) -> i64 { self.api_calls.load(Ordering::Relaxed) }
+
+    /// Return cost as float USD (convert from micro-dollars).
+    #[getter]
+    fn estimated_cost_usd(&self) -> f64 {
+        self.estimated_cost_usd.load(Ordering::Relaxed) as f64 / 1_000_000.0
+    }
+
+    /// Return all counters as a (input, output, cache_read, cache_write,
+    /// reasoning, api_calls, cost_usd) tuple.
+    fn snapshot(&self) -> (i64, i64, i64, i64, i64, i64, f64) {
+        (
+            self.input_tokens(),
+            self.output_tokens(),
+            self.cache_read_tokens(),
+            self.cache_write_tokens(),
+            self.reasoning_tokens(),
+            self.api_calls(),
+            self.estimated_cost_usd(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod acc_tests {
+    use super::*;
+
+    #[test]
+    fn test_accumulator_add_and_read() {
+        let acc = TokenAccumulator::new();
+        acc.add(100, 50, 20, 10, 5, 1, 3141592);  // $3.141592
+        assert_eq!(acc.input_tokens(), 100);
+        assert_eq!(acc.output_tokens(), 50);
+        assert_eq!(acc.cache_read_tokens(), 20);
+        assert_eq!(acc.cache_write_tokens(), 10);
+        assert_eq!(acc.reasoning_tokens(), 5);
+        assert_eq!(acc.api_calls(), 1);
+        assert!((acc.estimated_cost_usd() - 3.141592).abs() < 0.000001);
+    }
+
+    #[test]
+    fn test_accumulator_multiple_adds() {
+        let acc = TokenAccumulator::new();
+        acc.add(10, 5, 0, 0, 0, 1, 0);
+        acc.add(20, 10, 0, 0, 0, 1, 0);
+        assert_eq!(acc.input_tokens(), 30);
+        assert_eq!(acc.output_tokens(), 15);
+        assert_eq!(acc.api_calls(), 2);
+    }
+
+    #[test]
+    fn test_accumulator_reset() {
+        let acc = TokenAccumulator::new();
+        acc.add(100, 50, 0, 0, 0, 1, 0);
+        acc.reset();
+        assert_eq!(acc.input_tokens(), 0);
+        assert_eq!(acc.output_tokens(), 0);
+        assert_eq!(acc.api_calls(), 0);
     }
 }
