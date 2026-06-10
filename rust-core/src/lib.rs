@@ -49,5 +49,10 @@ fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crypto::pkce_challenge, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::pkce_challenge_from_verifier, m)?)?;
 
+    // ── Stage 5b: Fernet encryption ────────────────────────────────────
+    m.add_function(wrap_pyfunction!(crypto::fernet_encrypt, m)?)?;
+    m.add_function(wrap_pyfunction!(crypto::fernet_decrypt, m)?)?;
+    m.add_function(wrap_pyfunction!(crypto::generate_fernet_key, m)?)?;
+
     Ok(())
 }

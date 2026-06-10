@@ -6,6 +6,7 @@
 use pyo3::prelude::*;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
+use base64::Engine;
 
 // ── Secure random (Stage 5e) ────────────────────────────────────────────────
 
@@ -64,12 +65,139 @@ pub fn pkce_challenge_from_verifier(verifier: &str) -> String {
     base64_url(&digest)
 }
 
+// ── Fernet (Stage 5b) ──────────────────────────────────────────────────────
+
+use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use hmac::{Hmac, Mac};
+use sha2::Sha256 as Sha2_256;
+
+type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
+type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
+type HmacSha256 = Hmac<Sha2_256>;
+
+/// Encrypt plaintext using Fernet (AES-128-CBC + HMAC-SHA256).
+/// `key_b64` is a 32-byte base64url-encoded key.
+/// Returns the Fernet token as a base64url string.
+#[pyfunction]
+pub fn fernet_encrypt(key_b64: &str, plaintext: &str) -> PyResult<String> {
+    let key_bytes = base64_url_decode(key_b64)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("invalid key: {}", e)))?;
+    if key_bytes.len() != 32 {
+        return Err(pyo3::exceptions::PyValueError::new_err("key must be 32 bytes"));
+    }
+    let signing_key = &key_bytes[..16];
+    let encryption_key = &key_bytes[16..];
+
+    // Version (0x80) + big-endian u64 timestamp
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut prefix = Vec::with_capacity(1 + 8 + 16);
+    prefix.push(0x80);
+    prefix.extend_from_slice(&now.to_be_bytes());
+
+    // Random IV
+    let mut iv = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut iv);
+    prefix.extend_from_slice(&iv);
+
+    // AES-128-CBC encrypt
+    let plaintext_bytes = plaintext.as_bytes();
+    let buf_len = plaintext_bytes.len() + 16; // room for padding
+    let mut ciphertext = vec![0u8; buf_len];
+    ciphertext[..plaintext_bytes.len()].copy_from_slice(plaintext_bytes);
+    let ct_len = Aes128CbcEnc::new(encryption_key.into(), &iv.into())
+        .encrypt_padded_mut::<Pkcs7>(&mut ciphertext, plaintext_bytes.len())
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("encrypt failed: {}", e)))?
+        .len();
+    ciphertext.truncate(ct_len);
+
+    // HMAC-SHA256: sign(version || timestamp || IV || ciphertext)
+    let mut mac = HmacSha256::new_from_slice(signing_key)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("hmac init: {}", e)))?;
+    mac.update(&prefix);
+    mac.update(&ciphertext);
+    let hmac_bytes = mac.finalize().into_bytes();
+
+    // Assemble token: version || timestamp || IV || ciphertext || HMAC
+    let mut token = prefix;
+    token.extend_from_slice(&ciphertext);
+    token.extend_from_slice(&hmac_bytes);
+
+    Ok(base64_url(&token))
+}
+
+/// Decrypt a Fernet token. Returns the plaintext string.
+#[pyfunction]
+pub fn fernet_decrypt(key_b64: &str, token: &str) -> PyResult<String> {
+    let key_bytes = base64_url_decode(key_b64)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("invalid key: {}", e)))?;
+    if key_bytes.len() != 32 {
+        return Err(pyo3::exceptions::PyValueError::new_err("key must be 32 bytes"));
+    }
+    let signing_key = &key_bytes[..16];
+    let encryption_key = &key_bytes[16..];
+
+    // Decode token
+    let data = base64_url_decode(token)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("invalid token: {}", e)))?;
+
+    if data.len() < 57 {
+        // 1 (version) + 8 (timestamp) + 16 (IV) + 32 (HMAC) = 57 minimum
+        return Err(pyo3::exceptions::PyValueError::new_err("token too short"));
+    }
+
+    let version = data[0];
+    let hmac_received = &data[data.len() - 32..];
+    let payload = &data[..data.len() - 32];
+
+    // Verify HMAC
+    let mut mac = HmacSha256::new_from_slice(signing_key)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("hmac init: {}", e)))?;
+    mac.update(payload);
+    mac.verify_slice(hmac_received)
+        .map_err(|_| pyo3::exceptions::PyValueError::new_err("invalid token: HMAC mismatch"))?;
+
+    // Extract IV and ciphertext
+    let iv = &data[9..25]; // skip version(1) + timestamp(8)
+    let ciphertext = &data[25..data.len() - 32];
+
+    // AES-128-CBC decrypt
+    let mut buf = ciphertext.to_vec();
+    let pt = Aes128CbcDec::new(encryption_key.into(), iv.into())
+        .decrypt_padded_mut::<Pkcs7>(&mut buf)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("decrypt failed: {}", e)))?;
+
+    String::from_utf8(pt.to_vec())
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("invalid utf-8: {}", e)))
+}
+
+/// Generate a new Fernet key (32 random bytes, base64url-encoded with padding).
+/// Compatible with Python's cryptography.fernet.Fernet.generate_key().
+#[pyfunction]
+pub fn generate_fernet_key() -> String {
+    let mut buf = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut buf);
+    base64::engine::general_purpose::URL_SAFE.encode(&buf)
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Base64 URL-safe encoding without padding (RFC 4648 §5).
 fn base64_url(bytes: &[u8]) -> String {
-    use base64::Engine;
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// Decode a base64url string that may or may not have padding.
+fn base64_url_decode(s: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    // Add padding if needed (base64 requires length % 4 == 0)
+    let padded = match s.len() % 4 {
+        2 => format!("{}==", s),
+        3 => format!("{}=", s),
+        _ => s.to_string(),
+    };
+    base64::engine::general_purpose::URL_SAFE.decode(&padded)
 }
 
 // ── Rust unit tests ─────────────────────────────────────────────────────────
