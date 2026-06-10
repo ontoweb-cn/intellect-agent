@@ -283,7 +283,9 @@ jobs:
       - name: Run Rust unit tests
         run: |
           cd rust-core
-          cargo test --no-default-features
+          # extension-module feature is required for #[pyclass] types.
+          # PYO3_PYTHON tells pyo3-build-config which interpreter to link against.
+          PYO3_PYTHON=$(which python3) cargo test
 
       - name: Install uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
