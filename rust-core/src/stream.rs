@@ -15,7 +15,6 @@ struct ToolCallEntry {
     id: String,
     name: String,
     arguments: String,
-    extra_content: String,
 }
 
 // ── StreamAccumulator ───────────────────────────────────────────────────────

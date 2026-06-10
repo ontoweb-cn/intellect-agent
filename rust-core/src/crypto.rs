@@ -148,7 +148,7 @@ pub fn fernet_decrypt(key_b64: &str, token: &str) -> PyResult<String> {
         return Err(pyo3::exceptions::PyValueError::new_err("token too short"));
     }
 
-    let version = data[0];
+    let _version = data[0];
     let hmac_received = &data[data.len() - 32..];
     let payload = &data[..data.len() - 32];
 
