@@ -50,6 +50,13 @@ import logging
 import os
 import secrets
 import stat
+
+# ── Stage 5: Rust crypto ───────────────────────────────────────────────────
+try:
+    from intellect_core import pkce_challenge as _rust_pkce_challenge  # type: ignore[import-not-found]
+    _HAS_RUST_CRYPTO_GOOGLE = True
+except (ImportError, AttributeError):
+    _HAS_RUST_CRYPTO_GOOGLE = False
 import threading
 import time
 import urllib.error
@@ -379,6 +386,8 @@ def _require_client_id() -> str:
 
 def _generate_pkce_pair() -> Tuple[str, str]:
     """Generate a (verifier, challenge) pair using S256."""
+    if _HAS_RUST_CRYPTO_GOOGLE:
+        return _rust_pkce_challenge()
     verifier = secrets.token_urlsafe(64)
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")

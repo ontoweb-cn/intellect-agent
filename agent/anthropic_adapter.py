@@ -21,6 +21,13 @@ import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
+# ── Stage 5: Rust crypto ───────────────────────────────────────────────────
+try:
+    from intellect_core import pkce_challenge as _rust_pkce  # type: ignore[import-not-found]
+    _HAS_RUST_CRYPTO_ANTH = True
+except (ImportError, AttributeError):
+    _HAS_RUST_CRYPTO_ANTH = False
+
 from intellect_constants import get_intellect_home
 from typing import Any, Dict, List, Optional, Tuple
 from utils import base_url_host_matches, normalize_proxy_env_vars
@@ -1224,6 +1231,8 @@ _intellect_OAUTH_FILE = get_intellect_home() / ".anthropic_oauth.json"
 
 def _generate_pkce() -> tuple:
     """Generate PKCE code_verifier and code_challenge (S256)."""
+    if _HAS_RUST_CRYPTO_ANTH:
+        return _rust_pkce()
     import base64
     import hashlib
     import secrets
