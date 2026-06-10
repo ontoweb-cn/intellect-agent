@@ -3140,12 +3140,13 @@ class SessionDB:
 
     def set_meta(self, key: str, value: str) -> None:
         """Write a value to the state_meta key/value store."""
+        sql = "INSERT INTO state_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+        params = [key, value]
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(sql, params)
         def _do(conn):
-            conn.execute(
-                "INSERT INTO state_meta (key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (key, value),
-            )
+            conn.execute(sql, (key, value))
         self._execute_write(_do)
 
     def apply_telegram_topic_migration(self) -> None:
@@ -3752,19 +3753,20 @@ class SessionDB:
     # watcher transitions pending→running→{completed,failed}.
 
     def request_handoff(self, session_id: str, platform: str) -> bool:
-        """Mark a session as pending handoff to the given platform.
-
-        Returns True if the row was found and not already in flight; False if
-        the session is already in a non-terminal handoff state.
-        """
+        """Mark a session as pending handoff to the given platform."""
+        sql = ("UPDATE sessions SET handoff_state = 'pending', handoff_platform = ?1, "
+               "handoff_error = NULL WHERE id = ?2 AND (handoff_state IS NULL "
+               "OR handoff_state IN ('completed', 'failed'))")
+        params = [platform, session_id]
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(sql, params) > 0
         def _do(conn):
             cur = conn.execute(
-                "UPDATE sessions "
-                "SET handoff_state = 'pending', "
-                "    handoff_platform = ?, "
-                "    handoff_error = NULL "
+                "UPDATE sessions SET handoff_state = 'pending', "
+                "handoff_platform = ?, handoff_error = NULL "
                 "WHERE id = ? AND (handoff_state IS NULL "
-                "                  OR handoff_state IN ('completed', 'failed'))",
+                "OR handoff_state IN ('completed', 'failed'))",
                 (platform, session_id),
             )
             return cur.rowcount > 0
@@ -3810,32 +3812,35 @@ class SessionDB:
 
     def claim_handoff(self, session_id: str) -> bool:
         """Atomically transition pending → running. Returns True if claimed."""
+        sql = "UPDATE sessions SET handoff_state = 'running' WHERE id = ?1 AND handoff_state = 'pending'"
+        params = [session_id]
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(sql, params) > 0
         def _do(conn):
-            cur = conn.execute(
-                "UPDATE sessions SET handoff_state = 'running' "
-                "WHERE id = ? AND handoff_state = 'pending'",
-                (session_id,),
-            )
+            cur = conn.execute(sql, (session_id,))
             return cur.rowcount > 0
         return self._execute_write(_do)
 
     def complete_handoff(self, session_id: str) -> None:
         """Mark a handoff as completed."""
+        sql = "UPDATE sessions SET handoff_state = 'completed', handoff_error = NULL WHERE id = ?1"
+        params = [session_id]
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(sql, params)
         def _do(conn):
-            conn.execute(
-                "UPDATE sessions SET handoff_state = 'completed', "
-                "handoff_error = NULL WHERE id = ?",
-                (session_id,),
-            )
+            conn.execute(sql, (session_id,))
         self._execute_write(_do)
 
     def fail_handoff(self, session_id: str, error: str) -> None:
         """Mark a handoff as failed and record the reason."""
+        sql = "UPDATE sessions SET handoff_state = 'failed', handoff_error = ?1 WHERE id = ?2"
+        params = [error[:500], session_id]
+        rust = self._rust_backend()
+        if rust is not None:
+            return rust.execute_simple_write(sql, params)
         def _do(conn):
-            conn.execute(
-                "UPDATE sessions SET handoff_state = 'failed', "
-                "handoff_error = ? WHERE id = ?",
-                (error[:500], session_id),
-            )
+            conn.execute(sql, (error[:500], session_id))
         self._execute_write(_do)
 
