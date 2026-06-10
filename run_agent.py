@@ -119,6 +119,15 @@ from agent.model_metadata import (
     is_local_endpoint,
 )
 from agent.usage_pricing import normalize_usage
+
+# ── Stage 3b: Rust TokenAccumulator ─────────────────────────────────────────
+try:
+    from intellect_core import TokenAccumulator as _TokenAccumulator  # type: ignore[import-not-found]
+    _HAS_TOKEN_ACC = True
+except (ImportError, AttributeError):
+    _TokenAccumulator = None
+    _HAS_TOKEN_ACC = False
+
 # Re-exported for tests that monkeypatch these symbols on run_agent.
 from agent.context_compressor import ContextCompressor  # noqa: F401
 from agent.retry_utils import jittered_backoff  # noqa: F401
@@ -594,6 +603,14 @@ class AIAgent:
         self.session_estimated_cost_usd = 0.0
         self.session_cost_status = "unknown"
         self.session_cost_source = "none"
+
+        # ── Stage 3b: Rust TokenAccumulator (reset or create) ────────────
+        if _HAS_TOKEN_ACC:
+            acc = getattr(self, '_token_acc', None)
+            if acc is not None:
+                acc.reset()
+            else:
+                self._token_acc = _TokenAccumulator()
         
         # Turn counter (added after reset_session_state was first written — #2635)
         self._user_turn_count = 0

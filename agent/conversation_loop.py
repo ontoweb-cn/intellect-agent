@@ -1854,6 +1854,18 @@ def run_conversation(
                     agent.session_cache_write_tokens += canonical_usage.cache_write_tokens
                     agent.session_reasoning_tokens += canonical_usage.reasoning_tokens
 
+                    # ── Stage 3b: Rust TokenAccumulator ──────────────────
+                    if getattr(agent, '_token_acc', None) is not None:
+                        agent._token_acc.add(
+                            canonical_usage.input_tokens,
+                            canonical_usage.output_tokens,
+                            canonical_usage.cache_read_tokens,
+                            canonical_usage.cache_write_tokens,
+                            canonical_usage.reasoning_tokens,
+                            1,  # api_calls
+                            0,  # cost added below
+                        )
+
                     # Log API call details for debugging/observability
                     _cache_pct = ""
                     if canonical_usage.cache_read_tokens and prompt_tokens:
@@ -1873,7 +1885,13 @@ def run_conversation(
                         api_key=getattr(agent, "api_key", ""),
                     )
                     if cost_result.amount_usd is not None:
-                        agent.session_estimated_cost_usd += float(cost_result.amount_usd)
+                        cost_val = float(cost_result.amount_usd)
+                        agent.session_estimated_cost_usd += cost_val
+                        # ── Stage 3b: add cost to Rust accumulator ──────
+                        acc = getattr(agent, '_token_acc', None)
+                        if acc is not None:
+                            cost_micro = int(cost_val * 1_000_000)
+                            acc.add(0, 0, 0, 0, 0, 0, cost_micro)
                     agent.session_cost_status = cost_result.status
                     agent.session_cost_source = cost_result.source
 
