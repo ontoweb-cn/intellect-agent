@@ -4654,19 +4654,24 @@ def run_conversation(
         "model": agent.model,
         "provider": agent.provider,
         "base_url": agent.base_url,
-        "input_tokens": agent.session_input_tokens,
-        "output_tokens": agent.session_output_tokens,
-        "cache_read_tokens": agent.session_cache_read_tokens,
-        "cache_write_tokens": agent.session_cache_write_tokens,
-        "reasoning_tokens": agent.session_reasoning_tokens,
-        "prompt_tokens": agent.session_prompt_tokens,
-        "completion_tokens": agent.session_completion_tokens,
-        "total_tokens": agent.session_total_tokens,
-        "last_prompt_tokens": getattr(agent.context_compressor, "last_prompt_tokens", 0) or 0,
-        "estimated_cost_usd": agent.session_estimated_cost_usd,
-        "cost_status": agent.session_cost_status,
-        "cost_source": agent.session_cost_source,
-        "session_id": agent.session_id,
+        # ── Stage 3b: prefer Rust TokenAccumulator when available ────────
+        _acc = getattr(agent, '_token_acc', None)
+        if _acc is not None and _acc.api_calls() > 0:
+            _snap = _acc.snapshot()
+            _in, _out, _cr, _cw, _rsn, _api, _cost = _snap
+            result["input_tokens"] = _in
+            result["output_tokens"] = _out
+            result["cache_read_tokens"] = _cr
+            result["cache_write_tokens"] = _cw
+            result["reasoning_tokens"] = _rsn
+            result["prompt_tokens"] = _in + _cr + _cw
+            result["completion_tokens"] = _out
+            result["total_tokens"] = _in + _cr + _cw + _out
+            result["estimated_cost_usd"] = _cost
+        result["last_prompt_tokens"] = getattr(agent.context_compressor, "last_prompt_tokens", 0) or 0
+        result["cost_status"] = agent.session_cost_status
+        result["cost_source"] = agent.session_cost_source
+        result["session_id"] = agent.session_id
     }
     if agent._tool_guardrail_halt_decision is not None:
         result["guardrail"] = agent._tool_guardrail_halt_decision.to_metadata()
