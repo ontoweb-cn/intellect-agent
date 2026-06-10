@@ -258,3 +258,68 @@ jobs:
           pct = data['totals']['percent_covered']
           print(f'## Coverage: {pct:.1f}%')
           " >> $GITHUB_STEP_SUMMARY
+
+  # ── Rust extension build + test ──────────────────────────────────────────
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust-core/target
+          key: rust-${{ runner.os }}-${{ hashFiles('rust-core/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Run Rust unit tests
+        run: |
+          cd rust-core
+          cargo test --no-default-features
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install Python dependencies
+        run: |
+          uv venv .venv --python 3.11
+          source .venv/bin/activate
+          uv pip install maturin pyyaml python-dotenv
+
+      - name: Build and install Rust extension
+        run: |
+          source .venv/bin/activate
+          cd rust-core
+          maturin develop
+
+      - name: Run Rust parity tests
+        run: |
+          source .venv/bin/activate
+          cd rust-core/..
+          PYTHONPATH=. python -m pytest tests/intellect_state/test_rust_parity.py -v
+
+      - name: Verify sandbox patterns
+        run: |
+          source .venv/bin/activate
+          cd rust-core/..
+          PYTHONPATH=. python -c "
+          from tools.approval import _normalize_command_for_detection, _HAS_RUST_SANDBOX
+          assert _HAS_RUST_SANDBOX, 'Rust sandbox not loaded'
+          import intellect_core
+          n = _normalize_command_for_detection('rm -rf /').lower()
+          assert intellect_core.detect_hardline_command_rs(n) is not None
+          n = _normalize_command_for_detection('echo hello').lower()
+          assert intellect_core.detect_dangerous_command_rs(n) is None
+          print('Sandbox patterns OK')
+          "
