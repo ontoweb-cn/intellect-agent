@@ -141,9 +141,7 @@ _GATEWAY_SECRET_PATTERNS = (
 )
 
 
-def _gateway_platform_value(platform: Any) -> str:
-    """Return a normalized gateway platform value for enums or raw strings."""
-    return str(getattr(platform, "value", platform) or "").strip().lower()
+from gateway.helpers import gateway_platform_value as _gateway_platform_value  # noqa: E402
 
 
 def _is_transient_network_error(exc: BaseException) -> bool:
@@ -432,19 +430,7 @@ def _auto_continue_freshness_window() -> float:
         return float(_AUTO_CONTINUE_FRESHNESS_SECS_DEFAULT)
 
 
-def _float_env(name: str, default: float) -> float:
-    """Read an env var as float, falling back to ``default`` on typos/empty.
-
-    A misconfigured env var (e.g. ``intellect_AGENT_TIMEOUT=abc``) must not
-    crash the gateway or an agent turn.  Unset/empty also falls back.
-    """
-    raw = os.environ.get(name)
-    if raw is None or raw == "":
-        return float(default)
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return float(default)
+from gateway.helpers import float_env as _float_env  # noqa: E402
 
 
 def _is_fresh_gateway_interruption(
