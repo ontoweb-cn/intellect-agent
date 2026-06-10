@@ -9,6 +9,13 @@ from typing import Any, Dict, Literal, Optional
 from agent.model_metadata import fetch_endpoint_model_metadata, fetch_model_metadata
 from utils import base_url_host_matches
 
+# ── Stage 3a: Rust usage normalization ──────────────────────────────────────
+try:
+    from intellect_core import normalize_usage_rs as _rust_normalize  # type: ignore[import-not-found]
+    _HAS_RUST_USAGE = True
+except (ImportError, AttributeError):
+    _HAS_RUST_USAGE = False
+
 DEFAULT_PRICING = {"input": 0.0, "output": 0.0}
 
 _ZERO = Decimal("0")
@@ -719,6 +726,31 @@ def normalize_usage(
 
     provider_name = (provider or "").strip().lower()
     mode = (api_mode or "").strip().lower()
+
+    # ── Stage 3a: Rust fast path ─────────────────────────────────────────
+    if _HAS_RUST_USAGE:
+        details_input = getattr(response_usage, "input_tokens_details", None)
+        prompt_details = getattr(response_usage, "prompt_tokens_details", None)
+        output_details = getattr(response_usage, "output_tokens_details", None)
+
+        result = _rust_normalize(
+            mode,
+            provider_name,
+            _to_int(getattr(response_usage, "input_tokens", 0)),
+            _to_int(getattr(response_usage, "output_tokens", 0)),
+            _to_int(getattr(response_usage, "prompt_tokens", 0)),
+            _to_int(getattr(response_usage, "completion_tokens", 0)),
+            _to_int(getattr(response_usage, "cache_read_input_tokens", 0)),
+            _to_int(getattr(response_usage, "cache_creation_input_tokens", 0)),
+            _to_int(getattr(details_input, "cached_tokens", 0) if details_input else 0),
+            _to_int(getattr(prompt_details, "cache_write_tokens", 0) if prompt_details else 0),
+            _to_int(getattr(output_details, "reasoning_tokens", 0) if output_details else 0),
+        )
+        return CanonicalUsage(
+            input_tokens=result[0], output_tokens=result[1],
+            cache_read_tokens=result[2], cache_write_tokens=result[3],
+            reasoning_tokens=result[4],
+        )
 
     if mode == "anthropic_messages" or provider_name == "anthropic":
         input_tokens = _to_int(getattr(response_usage, "input_tokens", 0))

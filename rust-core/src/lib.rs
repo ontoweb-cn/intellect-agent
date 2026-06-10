@@ -9,6 +9,7 @@ pub mod connection;
 pub mod fts;
 pub mod sandbox;
 pub mod schema;
+pub mod usage;
 
 use pyo3::prelude::*;
 
@@ -31,6 +32,9 @@ fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sandbox::detect_hardline_command_rs, m)?)?;
     m.add_function(wrap_pyfunction!(sandbox::detect_dangerous_command_rs, m)?)?;
     m.add_function(wrap_pyfunction!(sandbox::check_sudo_stdin_guard_rs, m)?)?;
+
+    // ── Stage 3a: Usage normalization ───────────────────────────────────
+    m.add_function(wrap_pyfunction!(usage::normalize_usage_rs, m)?)?;
 
     Ok(())
 }
