@@ -11,11 +11,17 @@ PID / log / state files live under ~/.intellect/:
     ~/.intellect/webui.pid         PID file
     ~/.intellect/webui.log         Server log
     ~/.intellect/webui.ctl.env     Runtime state (host, port, started_at)
+
+Cross-platform support (Linux, macOS, Windows):
+    - pid_exists via psutil (core dependency) — avoids the Windows
+      ``os.kill(pid, 0)`` footgun documented in gateway/status.py:338.
+    - Process termination via gateway.status.terminate_pid().
+    - Process detachment via intellect_cli._subprocess_compat.
+    - Log viewing uses pure-Python reads (no ``tail`` dependency).
 """
 
 import logging
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -36,6 +42,8 @@ _LOG_FILE = _INTELLECT_HOME / "webui.log"
 _STATE_FILE = _INTELLECT_HOME / "webui.ctl.env"
 
 
+# ── Cross-platform PID helpers ─────────────────────────────────────────────
+
 def _pid_from_file() -> int | None:
     """Read the PID from the PID file, validating format."""
     try:
@@ -48,24 +56,66 @@ def _pid_from_file() -> int | None:
 
 
 def _is_pid_alive(pid: int) -> bool:
-    """Check whether a process with the given PID is alive."""
+    """Cross-platform "is this PID alive?" check.
+
+    Uses psutil (core dependency) which correctly handles Windows via
+    OpenProcess + GetExitCodeProcess, avoiding the dangerous
+    ``os.kill(pid, 0)`` quirk on Windows (see gateway/status.py:338).
+    """
     try:
-        os.kill(pid, 0)
+        import psutil  # type: ignore[import-not-found]
+        return bool(psutil.pid_exists(int(pid)))
+    except ImportError:
+        pass
+
+    # psutil unavailable — fall back to os.kill(pid, 0) which is safe on
+    # POSIX but NOT on Windows.  On Windows this code path should never
+    # be reached because psutil is a core dependency.
+    try:
+        os.kill(int(pid), 0)  # windows-footgun: safe only on POSIX
         return True
     except (ProcessLookupError, PermissionError, OSError):
         return False
 
 
 def _proc_args(pid: int) -> str:
-    """Return the command-line arguments of a process as a string."""
+    """Return the process command line, cross-platform.
+
+    Prefers psutil (works on all platforms) with fallbacks to /proc
+    (Linux) and ``ps`` (POSIX).  Never shells out to a missing command
+    on Windows.
+    """
+    # 1. psutil — canonical cross-platform answer
+    try:
+        import psutil  # type: ignore[import-not-found]
+        proc = psutil.Process(pid)
+        cmdline = proc.cmdline()
+        if cmdline:
+            return " ".join(cmdline)
+    except Exception:
+        pass
+
+    # 2. /proc/<pid>/cmdline — Linux fast path (no subprocess)
+    cmdline_path = Path(f"/proc/{pid}/cmdline")
+    try:
+        raw = cmdline_path.read_bytes()
+        if raw:
+            return raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore").strip()
+    except (FileNotFoundError, PermissionError, OSError):
+        pass
+
+    # 3. ps — macOS / other POSIX fallback; does not exist on Windows
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "args="],
             capture_output=True, text=True, timeout=5,
         )
-        return result.stdout.strip()
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return ""
+        pass
+
+    return ""
 
 
 def _is_webui_process(pid: int) -> bool:
@@ -73,7 +123,12 @@ def _is_webui_process(pid: int) -> bool:
     args = _proc_args(pid)
     if not args:
         return False
-    return ("webui/server.py" in args or "webui.server" in args)
+    # Check for both POSIX and Windows path separators
+    return (
+        "webui/server.py" in args
+        or "webui\\server.py" in args
+        or "webui.server" in args
+    )
 
 
 def _get_running_pid() -> int | None:
@@ -96,6 +151,8 @@ def _clear_stale_files() -> None:
         except (FileNotFoundError, OSError):
             pass
 
+
+# ── State file helpers ─────────────────────────────────────────────────────
 
 def _write_state(pid: int, host: str, port: int) -> None:
     """Write runtime state file for status display."""
@@ -129,6 +186,8 @@ def _now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+# ── Health check ───────────────────────────────────────────────────────────
+
 def _health_check(host: str, port: int, timeout: float = 2.0) -> str:
     """Perform a lightweight health check against the webui /health endpoint."""
     import json as _json
@@ -147,22 +206,56 @@ def _health_check(host: str, port: int, timeout: float = 2.0) -> str:
         return f"unreachable ({url})"
 
 
+# ── Uptime ─────────────────────────────────────────────────────────────────
+
 def _uptime(pid: int) -> str:
-    """Return the elapsed time for a process, or 'unknown'."""
+    """Return the human-readable uptime for a process, cross-platform.
+
+    Uses psutil.create_time() on all platforms; falls back to ``ps`` on
+    POSIX.  Returns "unknown" when the process can't be queried.
+    """
+    try:
+        import psutil  # type: ignore[import-not-found]
+        proc = psutil.Process(pid)
+        create_time = proc.create_time()
+        if create_time:
+            elapsed = int(time.time() - create_time)
+            if elapsed < 60:
+                return f"00:{elapsed:02d}"
+            elif elapsed < 3600:
+                return f"{elapsed // 60:02d}:{elapsed % 60:02d}"
+            else:
+                hours = elapsed // 3600
+                minutes = (elapsed % 3600) // 60
+                seconds = elapsed % 60
+                return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    except Exception:
+        pass
+
+    # POSIX fallback: ps -p <pid> -o etime=
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "etime="],
             capture_output=True, text=True, timeout=5,
         )
-        return result.stdout.strip() or "unknown"
+        if result.returncode == 0:
+            return result.stdout.strip() or "unknown"
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return "unknown"
+        pass
+
+    return "unknown"
 
 
 # ── Start ──────────────────────────────────────────────────────────────────
 
 def webui_start(args) -> None:
-    """Start the webui server as a background daemon."""
+    """Start the webui server as a background daemon.
+
+    On POSIX, detaches via ``start_new_session=True`` (os.setsid).  On
+    Windows, uses ``CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS |
+    CREATE_NO_WINDOW`` creationflags so the child survives console close
+    without flashing a cmd window.
+    """
     host = getattr(args, "host", None) or DEFAULT_HOST
     port = getattr(args, "port", None) or DEFAULT_PORT
 
@@ -180,11 +273,15 @@ def webui_start(args) -> None:
     # Touch log file
     _LOG_FILE.touch(exist_ok=True)
 
-    # Launch server as background process
-    # Use sys.executable so it runs in the same venv as the CLI
+    # Launch server as background process.
+    # Use sys.executable so it runs in the same venv as the CLI.
     env = os.environ.copy()
     env["INTELLECT_WEBUI_HOST"] = host
     env["INTELLECT_WEBUI_PORT"] = str(port)
+
+    # Cross-platform detach: POSIX uses start_new_session; Windows uses
+    # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW.
+    from intellect_cli._subprocess_compat import windows_detach_popen_kwargs
 
     with open(_LOG_FILE, "a", encoding="utf-8") as log_fp:
         process = subprocess.Popen(
@@ -193,7 +290,8 @@ def webui_start(args) -> None:
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             env=env,
-            start_new_session=True,  # detach from terminal
+            close_fds=True,
+            **windows_detach_popen_kwargs(),
         )
 
     pid = process.pid
@@ -216,7 +314,14 @@ def webui_start(args) -> None:
 # ── Stop ───────────────────────────────────────────────────────────────────
 
 def webui_stop(args) -> None:  # noqa: ARG001
-    """Stop a running webui server gracefully."""
+    """Stop a running webui server gracefully.
+
+    On POSIX, sends SIGTERM with a 5-second grace period then SIGKILL.
+    On Windows, uses ``taskkill /T /F`` for a true tree-killing hard stop
+    (os.kill with SIGTERM is not equivalent on Windows).
+    """
+    from gateway.status import terminate_pid
+
     pid = _pid_from_file()
 
     if pid is None:
@@ -231,9 +336,9 @@ def webui_stop(args) -> None:  # noqa: ARG001
 
     print(f"[webui] Stopping (PID {pid})")
 
-    # Graceful shutdown: SIGTERM
+    # Graceful shutdown via platform-appropriate mechanism
     try:
-        os.kill(pid, signal.SIGTERM)
+        terminate_pid(pid, force=False)
     except (ProcessLookupError, PermissionError, OSError):
         _clear_stale_files()
         print("[webui] Stopped")
@@ -249,9 +354,9 @@ def webui_stop(args) -> None:  # noqa: ARG001
         time.sleep(0.2)
 
     # Force kill if still alive
-    print("[webui] Not responding to SIGTERM; sending SIGKILL", file=sys.stderr)
+    print("[webui] Not responding; forcing termination", file=sys.stderr)
     try:
-        os.kill(pid, signal.SIGKILL)
+        terminate_pid(pid, force=True)
     except (ProcessLookupError, PermissionError, OSError):
         pass
 
@@ -300,27 +405,38 @@ def webui_status(args) -> None:  # noqa: ARG001
 # ── Logs ───────────────────────────────────────────────────────────────────
 
 def webui_logs(args) -> None:
-    """Show the webui server log file."""
+    """Show the webui server log file.
+
+    Uses a pure-Python read (no ``tail`` dependency) so it works on
+    every platform without an external command.  The ``--follow`` mode
+    uses ``tail -f`` when available (POSIX) and falls back to a one-shot
+    read on Windows.
+    """
     lines = getattr(args, "lines", 100) or 100
     follow = getattr(args, "follow", False)
 
     _LOG_FILE.touch(exist_ok=True)
 
-    cmd = ["tail", "-n", str(lines)]
     if follow:
-        cmd.append("-f")
-    cmd.append(str(_LOG_FILE))
+        # Try tail -f for live following (POSIX); fall back to one-shot
+        try:
+            subprocess.run(["tail", "-n", str(lines), "-f", str(_LOG_FILE)])
+            return
+        except FileNotFoundError:
+            print("[webui] tail -f not available; showing last lines only", file=sys.stderr)
+        except KeyboardInterrupt:
+            return
 
+    # Pure-Python read: works on all platforms
     try:
-        subprocess.run(cmd)
-    except FileNotFoundError:
-        # Fallback: read last N lines manually
         content = _LOG_FILE.read_text(encoding="utf-8", errors="replace")
-        content_lines = content.splitlines()
-        for line in content_lines[-lines:]:
-            print(line)
-    except KeyboardInterrupt:
-        pass
+    except (FileNotFoundError, OSError):
+        print("[webui] Log file not found or unreadable", file=sys.stderr)
+        return
+
+    content_lines = content.splitlines()
+    for line in content_lines[-lines:]:
+        print(line)
 
 
 # ── Command dispatch ───────────────────────────────────────────────────────
