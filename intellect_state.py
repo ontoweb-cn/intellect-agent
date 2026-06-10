@@ -243,6 +243,13 @@ def _log_wal_fallback_once(db_label: str, exc: Exception) -> None:
     )
 
 from state.schema import SCHEMA_SQL, FTS_SQL, FTS_TRIGRAM_SQL  # noqa: E402
+from state.fts import (  # noqa: E402
+    drop_fts_triggers,
+    fts_trigger_count,
+    is_fts5_unavailable_error,
+    rebuild_fts_indexes,
+)
+from state.compression import get_compression_tip as _get_tip  # noqa: E402
 
 # =========================================================================
 # SessionDB
@@ -336,7 +343,6 @@ class SessionDB:
 
     @staticmethod
     def _is_fts5_unavailable_error(exc: sqlite3.OperationalError) -> bool:
-        from state.fts import is_fts5_unavailable_error
         return is_fts5_unavailable_error(exc)
 
     def _warn_fts5_unavailable(self, exc: sqlite3.OperationalError) -> None:
@@ -382,17 +388,14 @@ class SessionDB:
 
     @staticmethod
     def _drop_fts_triggers(cursor: sqlite3.Cursor) -> None:
-        from state.fts import drop_fts_triggers
         drop_fts_triggers(cursor)
 
     @staticmethod
     def _fts_trigger_count(cursor: sqlite3.Cursor) -> int:
-        from state.fts import fts_trigger_count
         return fts_trigger_count(cursor)
 
     @staticmethod
     def _rebuild_fts_indexes(cursor: sqlite3.Cursor) -> None:
-        from state.fts import rebuild_fts_indexes
         rebuild_fts_indexes(cursor)
 
     def _fts_table_probe(self, cursor: sqlite3.Cursor, table_name: str) -> Optional[bool]:
@@ -1480,7 +1483,6 @@ class SessionDB:
         return f"{base} #{max_num + 1}"
 
     def get_compression_tip(self, session_id: str) -> Optional[str]:
-        from state.compression import get_compression_tip as _get_tip
         return _get_tip(self._conn, self._lock, session_id)
 
     def list_sessions_rich(
