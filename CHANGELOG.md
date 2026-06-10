@@ -8,6 +8,10 @@ roadmap.
 
 | Date | Highlights |
 |------|------------|
+| **2026-06-10** | **v0.6.1 — WebUI 控制台 + Rust 完善** |
+|                | WebUI: 浏览器端会话管理仪表盘 (53 API 模块 + SPA 前端) |
+|                | Rust: Stage 5c JWT, StreamAccumulator JSON 修复, 编译警告清理 |
+|                | 文档: WebUI 用户指南 + 架构设计, 2 份记忆方案设计文档 |
 | **2026-06-10** | **v0.6.0 — Rust 核心层迁移** |
 |                | 11 个 Rust 源文件 (~3,170 行), 20+ Python 集成点 |
 |                | Stage 1: SQLiteBackend + 10 写操作 |
