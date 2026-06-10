@@ -55,8 +55,9 @@ fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crypto::fernet_decrypt, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::generate_fernet_key, m)?)?;
 
-    // ── Stage 4a: Gateway utilities ────────────────────────────────────
+    // ── Stage 4a/4b: Gateway utilities ─────────────────────────────────
     m.add_function(wrap_pyfunction!(gateway::build_session_key_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(gateway::evaluate_reset_policy_rs, m)?)?;
 
     Ok(())
 }

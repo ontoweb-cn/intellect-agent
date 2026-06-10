@@ -89,6 +89,67 @@ pub fn build_session_key_rs(
     key
 }
 
+// ── Session reset policy (Stage 4b) ────────────────────────────────────────
+
+/// Evaluate whether a session should be reset based on policy.
+/// Returns the reason string ("idle" or "daily") or None.
+/// All timestamps are Unix seconds (f64, as used by Python's time.time()).
+#[pyfunction]
+pub fn evaluate_reset_policy_rs(
+    mode: &str,
+    idle_minutes: f64,
+    at_hour: u32,
+    updated_at: f64,
+    now: f64,
+) -> Option<String> {
+    match mode {
+        "none" => None,
+        "idle" => {
+            let idle_secs = idle_minutes * 60.0;
+            if now > updated_at + idle_secs {
+                Some("idle".to_string())
+            } else {
+                None
+            }
+        }
+        "daily" => {
+            if is_daily_reset(updated_at, now, at_hour) {
+                Some("daily".to_string())
+            } else {
+                None
+            }
+        }
+        "both" => {
+            let idle_secs = idle_minutes * 60.0;
+            if now > updated_at + idle_secs {
+                return Some("idle".to_string());
+            }
+            if is_daily_reset(updated_at, now, at_hour) {
+                return Some("daily".to_string());
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn is_daily_reset(updated_at: f64, now: f64, at_hour: u32) -> bool {
+    // Compute the Unix timestamp of today's reset hour in local time.
+    // Python's .replace(hour=..., minute=0, second=0, microsecond=0) on a
+    // datetime.  We approximate using Unix epoch day alignment.
+    let seconds_per_day: f64 = 86400.0;
+    let days_since_epoch = (now / seconds_per_day).floor();
+    let today_reset = days_since_epoch * seconds_per_day + (at_hour as f64) * 3600.0;
+
+    let reset_deadline = if now < today_reset {
+        today_reset - seconds_per_day // use yesterday's reset
+    } else {
+        today_reset
+    };
+
+    updated_at < reset_deadline
+}
+
 // ── Rust unit tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]
