@@ -36,6 +36,13 @@ from agent.message_sanitization import (
 from tools.terminal_tool import is_persistent_env
 from utils import base_url_host_matches, base_url_hostname
 
+# ── Stage 3d: Rust StreamAccumulator ────────────────────────────────────────
+try:
+    from intellect_core import StreamAccumulator as _StreamAccumulator  # type: ignore[import-not-found]
+    _HAS_RUST_STREAM = True
+except (ImportError, AttributeError):
+    _HAS_RUST_STREAM = False
+
 logger = logging.getLogger(__name__)
 
 

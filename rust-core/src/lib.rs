@@ -9,6 +9,7 @@ pub mod connection;
 pub mod fts;
 pub mod sandbox;
 pub mod schema;
+pub mod stream;
 pub mod usage;
 
 use pyo3::prelude::*;
@@ -36,6 +37,9 @@ fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── Stage 3a/3b: Usage normalization + accumulation ─────────────────
     m.add_function(wrap_pyfunction!(usage::normalize_usage_rs, m)?)?;
     m.add_class::<usage::TokenAccumulator>()?;
+
+    // ── Stage 3d: Stream delta accumulator ──────────────────────────────
+    m.add_class::<stream::StreamAccumulator>()?;
 
     Ok(())
 }
