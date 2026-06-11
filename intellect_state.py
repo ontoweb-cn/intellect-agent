@@ -329,7 +329,7 @@ class SessionDB:
                 try:
                     self._storage_backend.close()
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
             self._conn = None
             raise
 
@@ -3663,7 +3663,7 @@ class SessionDB:
             try:
                 self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             self._conn.execute("VACUUM")
         return optimized
 

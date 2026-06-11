@@ -397,7 +397,7 @@ def run_conversation(
             api_mode=getattr(agent, "api_mode", "") or "",
         )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Tag all log records on this thread with the session ID so
     # ``intellect logs --session <id>`` can filter a single conversation.
@@ -469,7 +469,7 @@ def run_conversation(
                     "connection."
                 )
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
     # Replay compression warning through status_callback for gateway
     # platforms (the callback was not wired during __init__).
     if agent._compression_warning:
@@ -764,7 +764,7 @@ def run_conversation(
             _turn_msg = original_user_message if isinstance(original_user_message, str) else ""
             agent._memory_manager.on_turn_start(agent._user_turn_count, _turn_msg)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # External memory provider: prefetch once before the tool loop.
     # Reuse the cached result on every iteration to avoid re-calling
@@ -777,7 +777,7 @@ def run_conversation(
             _query = original_user_message if isinstance(original_user_message, str) else ""
             _ext_prefetch_cache = agent._memory_manager.prefetch_all(_query) or ""
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     _rag_prefetch_cache = ""
     if agent._rag_manager:
@@ -785,7 +785,7 @@ def run_conversation(
             _query = original_user_message if isinstance(original_user_message, str) else ""
             _rag_prefetch_cache = agent._rag_manager.prefetch_all(_query) or ""
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # Optional opt-in runtime: if api_mode == codex_app_server, hand the
     # turn to the codex app-server subprocess (terminal/file ops/patching
@@ -891,7 +891,7 @@ def run_conversation(
                             blocks.append({"type": "text", "text": marker})
                             _sm["content"] = blocks
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
                     _injected = True
                     logger.debug(
                         "Pre-API-call steer drain: injected into tool msg at index %d",
@@ -1112,7 +1112,7 @@ def run_conversation(
             try:
                 agent.iteration_budget.refund()
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             break
         
         # Thinking spinner for quiet mode (animated during API call)
@@ -1214,7 +1214,8 @@ def run_conversation(
                 except ImportError:
                     pass
                 except Exception:
-                    pass  # Never let rate guard break the agent loop
+                    # Never let rate guard break the agent loop
+                    logger.debug('non-critical operation failed', exc_info=True)
 
             try:
                 agent._reset_stream_delivery_tracking()
@@ -1265,7 +1266,7 @@ def run_conversation(
                         max_tokens=agent.max_tokens,
                     )
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
                 if env_var_enabled("intellect_DUMP_REQUESTS"):
                     agent._dump_api_request_debug(api_kwargs, reason="preflight")
@@ -1993,7 +1994,7 @@ def run_conversation(
                         from agent.ontoweb_rate_guard import clear_ontoweb_rate_limit
                         clear_ontoweb_rate_limit()
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                 agent._touch_activity(f"API call #{api_call_count} completed")
                 break  # Success, exit retry loop
 
@@ -2204,7 +2205,7 @@ def run_conversation(
                                     getattr(api_error, "message", None) or
                                     str(api_error))
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
                 _err_status = getattr(api_error, "status_code", None)
                 _IMAGE_REJECTION_PHRASES = (
                     "only 'text' content type is supported",
@@ -2384,7 +2385,7 @@ def run_conversation(
                         try:
                             agent._anthropic_client.close()
                         except Exception:
-                            pass
+                            pass  # intentionally silent — cleanup/teardown path
                         agent._rebuild_anthropic_client()
                         agent._vprint(
                             f"{agent.log_prefix}🔕 OAuth subscription doesn't support "
@@ -2425,7 +2426,7 @@ def run_conversation(
                         if _body is not None:
                             _body_text = str(_body)[:200]
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                     print(f"{agent.log_prefix}🔐 OntoWeb 401 — Portal authentication failed.")
                     if _body_text:
                         print(f"{agent.log_prefix}   Response: {_body_text}")
@@ -2812,7 +2813,7 @@ def run_conversation(
                                 "cross-session breaker."
                             )
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                     if _genuine_ontoweb_rate_limit:
                         # Skip straight to max_retries -- the
                         # top-of-loop guard will handle fallback or
@@ -3527,7 +3528,7 @@ def run_conversation(
                     assistant_tool_call_count=len(_assistant_tool_calls),
                 )
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
             # Handle assistant response
             if assistant_message.content and not agent.quiet_mode:
@@ -3551,12 +3552,12 @@ def run_conversation(
                     try:
                         agent.tool_progress_callback("_thinking", first_line)
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                 elif _think_text:
                     try:
                         agent.tool_progress_callback("reasoning.available", "_thinking", _think_text[:500], None)
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
             
             # Check for incomplete <REASONING_SCRATCHPAD> (opened but never closed)
             # This means the model ran out of output tokens mid-reasoning — retry up to 2 times
@@ -3881,7 +3882,7 @@ def run_conversation(
                     try:
                         agent.stream_delta_callback(None)
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
 
                 agent._execute_tool_calls(assistant_message, messages, effective_task_id, api_call_count)
 
@@ -3905,7 +3906,7 @@ def run_conversation(
                                 agent.stream_delta_callback(final_response)
                                 agent.stream_delta_callback(None)
                             except Exception:
-                                pass
+                                logger.debug('non-critical operation failed', exc_info=True)
                     break
 
                 # Reset per-turn retry counters after successful tool
@@ -4438,7 +4439,7 @@ def run_conversation(
                     try:
                         _conn.close()
                     except Exception:
-                        pass
+                        pass  # intentionally silent — cleanup/teardown path
             except Exception:
                 logger.warning(
                     "Failed to record budget-exhausted failure for task %s",
@@ -4661,25 +4662,34 @@ def run_conversation(
         "model": agent.model,
         "provider": agent.provider,
         "base_url": agent.base_url,
-        # ── Stage 3b: prefer Rust TokenAccumulator when available ────────
-        _acc = getattr(agent, '_token_acc', None)
-        if _acc is not None and _acc.api_calls() > 0:
-            _snap = _acc.snapshot()
-            _in, _out, _cr, _cw, _rsn, _api, _cost = _snap
-            result["input_tokens"] = _in
-            result["output_tokens"] = _out
-            result["cache_read_tokens"] = _cr
-            result["cache_write_tokens"] = _cw
-            result["reasoning_tokens"] = _rsn
-            result["prompt_tokens"] = _in + _cr + _cw
-            result["completion_tokens"] = _out
-            result["total_tokens"] = _in + _cr + _cw + _out
-            result["estimated_cost_usd"] = _cost
-        result["last_prompt_tokens"] = getattr(agent.context_compressor, "last_prompt_tokens", 0) or 0
-        result["cost_status"] = agent.session_cost_status
-        result["cost_source"] = agent.session_cost_source
-        result["session_id"] = agent.session_id
+        "input_tokens": agent.session_input_tokens,
+        "output_tokens": agent.session_output_tokens,
+        "cache_read_tokens": agent.session_cache_read_tokens,
+        "cache_write_tokens": agent.session_cache_write_tokens,
+        "reasoning_tokens": agent.session_reasoning_tokens,
+        "prompt_tokens": agent.session_prompt_tokens,
+        "completion_tokens": agent.session_completion_tokens,
+        "total_tokens": agent.session_total_tokens,
+        "last_prompt_tokens": getattr(agent.context_compressor, "last_prompt_tokens", 0) or 0,
+        "estimated_cost_usd": agent.session_estimated_cost_usd,
+        "cost_status": agent.session_cost_status,
+        "cost_source": agent.session_cost_source,
+        "session_id": agent.session_id,
     }
+    # ── Stage 3b: prefer Rust TokenAccumulator when available ────────
+    _acc = getattr(agent, '_token_acc', None)
+    if _acc is not None and _acc.api_calls() > 0:
+        _snap = _acc.snapshot()
+        _in, _out, _cr, _cw, _rsn, _api, _cost = _snap
+        result["input_tokens"] = _in
+        result["output_tokens"] = _out
+        result["cache_read_tokens"] = _cr
+        result["cache_write_tokens"] = _cw
+        result["reasoning_tokens"] = _rsn
+        result["prompt_tokens"] = _in + _cr + _cw
+        result["completion_tokens"] = _out
+        result["total_tokens"] = _in + _cr + _cw + _out
+        result["estimated_cost_usd"] = _cost
     if agent._tool_guardrail_halt_decision is not None:
         result["guardrail"] = agent._tool_guardrail_halt_decision.to_metadata()
     # If a /steer landed after the final assistant turn (no more tool
@@ -4726,7 +4736,8 @@ def run_conversation(
                 review_skills=_should_review_skills,
             )
         except Exception:
-            pass  # Background review is best-effort
+            # Background review is best-effort
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # Note: Memory provider on_session_end() + shutdown_all() are NOT
     # called here — run_conversation() is called once per user message in

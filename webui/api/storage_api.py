@@ -105,7 +105,7 @@ def storage_status_payload() -> dict[str, Any]:
             cfg = load_config()
             backend = get_storage_backend_name(cfg)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     pg_dsn = ""
     if _INTELLECT_FOUND and backend == "postgresql":
         try:
@@ -114,7 +114,7 @@ def storage_status_payload() -> dict[str, Any]:
 
             pg_dsn = resolve_postgresql_dsn(load_config()) or ""
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     payload: dict[str, Any] = {
         "agent_available": agent_storage_available(),
         "pg_deps_available": _pg_deps_available(),

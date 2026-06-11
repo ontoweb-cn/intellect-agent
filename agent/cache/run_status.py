@@ -50,7 +50,7 @@ class RunStatusStore:
             try:
                 self._cache.delete_sync(self._key(run_id))
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     def items_terminal_before(self, cutoff: float) -> list[tuple[str, dict[str, Any]]]:
         out: list[tuple[str, dict[str, Any]]] = []

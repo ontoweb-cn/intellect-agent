@@ -742,6 +742,6 @@ def resolve_provider_full(
                 source="models.dev",
             )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     return None

@@ -508,7 +508,7 @@ try:
             if _alias not in PROVIDER_REGISTRY:
                 PROVIDER_REGISTRY[_alias] = PROVIDER_REGISTRY[_pp.name]
 except Exception:
-    pass
+    logger.debug('non-critical operation failed', exc_info=True)
 
 
 # =============================================================================
@@ -609,7 +609,7 @@ def _resolve_api_key_provider_secret(
         except ValueError as exc:
             logger.warning("Copilot token validation failed: %s", exc)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return "", ""
 
     from intellect_cli.api_key_secrets import (
@@ -640,7 +640,7 @@ def _resolve_api_key_provider_secret(
                 if has_usable_secret(key):
                     return key, f"credential_pool:{provider_id}"
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     cfg_key, cfg_source = resolve_config_yaml_provider_key(provider_id)
     if has_usable_secret(cfg_key):
@@ -737,7 +737,7 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
                 logger.debug("Z.AI: using DB cached endpoint %s", cached["base_url"])
                 return cached["base_url"]
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Step 2: auth.json fallback (legacy)
     try:
@@ -752,10 +752,10 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
                     from agent.oauth.model_tokens import write_provider_extra_metadata
                     write_provider_extra_metadata("zai", {"detected_endpoint": cached})
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
                 return cached["base_url"]
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Step 3: Probe — may take up to ~8s per endpoint.
     detected = detect_zai_endpoint(api_key)
@@ -773,7 +773,7 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
             from agent.oauth.model_tokens import write_provider_extra_metadata
             write_provider_extra_metadata("zai", {"detected_endpoint": endpoint_cache})
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         # Write to auth.json (conditional)
         try:
@@ -784,7 +784,7 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
                 state["detected_endpoint"] = endpoint_cache
                 _save_provider_state(auth_store, "zai", state)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         logger.info("Z.AI: auto-detected endpoint %s (%s)", detected["label"], detected["base_url"])
         return detected["base_url"]
@@ -904,7 +904,7 @@ def _format_ontoweb_entitlement_auth_error(error: AuthError) -> str:
         if message:
             return message
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return f"{error} Check credits or billing in ONTOWEB Portal, then retry."
 
 
@@ -1017,7 +1017,7 @@ def _load_global_auth_store() -> Dict[str, Any]:
                 if global_path.resolve(strict=False) == real_root.resolve(strict=False):
                     return {}
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
     try:
         return _load_auth_store(global_path)
     except Exception:
@@ -1141,14 +1141,14 @@ def _load_auth_store(auth_file: Optional[Path] = None) -> Dict[str, Any]:
             try:
                 raw = json.loads(auth_file.read_text())
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
     except Exception as exc:
         corrupt_path = auth_file.with_suffix(".json.corrupt")
         try:
             import shutil
             shutil.copy2(auth_file, corrupt_path)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         logger.warning(
             "auth: failed to parse %s (%s) — starting with empty store. "
             "Corrupt file preserved at %s",
@@ -1370,7 +1370,7 @@ def write_credential_pool(provider_id: str, entries: List[Dict[str, Any]]) -> Pa
         if get_oauth_runtime_settings().pool_uses_db():
             try_write_pool_entries(provider_id, list(entries))
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         from agent.oauth.runtime_settings import should_write_auth_json
@@ -1378,7 +1378,7 @@ def write_credential_pool(provider_id: str, entries: List[Dict[str, Any]]) -> Pa
         if not should_write_auth_json():
             return _auth_file_path()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     with _auth_store_lock():
         auth_store = _load_auth_store()
         pool = auth_store.get("credential_pool")
@@ -1469,7 +1469,7 @@ def _read_active_provider_from_config() -> Optional[str]:
             if isinstance(auth, dict):
                 return _normalize_active_provider_id(auth.get("active_provider"))
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return None
 
 
@@ -1568,7 +1568,7 @@ def is_provider_explicitly_configured(provider_id: str) -> bool:
         if active and active == normalized:
             return True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # 2. Check config.yaml model.provider
     try:
@@ -1580,7 +1580,7 @@ def is_provider_explicitly_configured(provider_id: str) -> bool:
             if cfg_provider == normalized:
                 return True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # 3. Check provider-specific env vars
     # Exclude CLAUDE_CODE_OAUTH_TOKEN — it's set by Claude Code itself,
@@ -1654,7 +1654,7 @@ def clear_provider_auth(provider_id: Optional[str] = None) -> bool:
         finally:
             store.close()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
     return cleared
 
@@ -1766,7 +1766,7 @@ def resolve_provider(
                 if _alias not in _PROVIDER_ALIASES:
                     _PROVIDER_ALIASES[_alias] = _pp.name
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     normalized = _PROVIDER_ALIASES.get(normalized, normalized)
 
     if normalized == "openrouter":
@@ -2056,7 +2056,7 @@ def _ontoweb_jwt_expires_at(token: Any, fallback_expires_at: Any = None) -> Opti
         try:
             return datetime.fromtimestamp(float(exp), tz=timezone.utc).isoformat()
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     return fallback_expires_at if isinstance(fallback_expires_at, str) else None
 
 
@@ -2162,7 +2162,7 @@ def _read_qwen_cli_tokens() -> Dict[str, Any]:
                     out[key] = meta[key]
             return out
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     auth_path = _qwen_cli_auth_path()
     if not auth_path.exists():
@@ -2225,7 +2225,7 @@ def _save_qwen_cli_tokens(tokens: Dict[str, Any]) -> Path:
         if not should_write_auth_json():
             return auth_path
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     auth_path.parent.mkdir(parents=True, exist_ok=True)
     # secure_parent_dir refuses to chmod / or top-level dirs (#25821).
@@ -2377,7 +2377,7 @@ def get_qwen_auth_status() -> Dict[str, Any]:
         if db_status:
             return db_status
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     auth_path = _qwen_cli_auth_path()
     try:
@@ -2468,10 +2468,10 @@ def get_gemini_oauth_auth_status() -> Dict[str, Any]:
                     db_status["email"] = creds.email
                     db_status["project_id"] = creds.project_id
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             return db_status
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         from agent.google_oauth import _credentials_path, load_credentials
@@ -3128,7 +3128,7 @@ def _spotify_save_state(spotify_state: Dict[str, Any]) -> None:
                 metadata=metadata,
             )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # auth.json legacy (conditional on should_write_auth_json, default False)
     try:
@@ -3139,7 +3139,7 @@ def _spotify_save_state(spotify_state: Dict[str, Any]) -> None:
                 _store_provider_state(auth_store, "spotify", spotify_state, set_active=False)
                 _save_auth_store(auth_store)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def _spotify_state_from_db_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -3182,7 +3182,7 @@ def resolve_spotify_runtime_credentials(
         if row and row.get("access_token"):
             state = _spotify_state_from_db_row(row)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Fallback: auth.json
     if not state or not state.get("access_token"):
@@ -3281,7 +3281,7 @@ def _spotify_interactive_setup(redirect_uri_hint: str) -> str:
         try:
             webbrowser.open(SPOTIFY_DASHBOARD_URL)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         raw = input("Spotify Client ID: ").strip()
@@ -3703,7 +3703,7 @@ def _read_codex_tokens(*, _lock: bool = True) -> Dict[str, Any]:
 
                 allow_auth_json_fallback = should_read_auth_json()
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             if not allow_auth_json_fallback:
                 raise AuthError(
                     "Codex auth is missing refresh_token. Run `intellect auth` to re-authenticate.",
@@ -3898,7 +3898,7 @@ def _save_codex_tokens(tokens: Dict[str, str], last_refresh: str = None) -> None
         if not should_write_auth_json():
             _persist_codex_pool_after_token_save(tokens, last_refresh)
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
     try:
         from agent.oauth.runtime_settings import should_write_auth_json
@@ -3906,7 +3906,7 @@ def _save_codex_tokens(tokens: Dict[str, str], last_refresh: str = None) -> None
         if not should_write_auth_json():
             return
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
     with _auth_store_lock():
         auth_store = _load_auth_store()
@@ -3994,7 +3994,7 @@ def refresh_codex_oauth_pure(
                     if isinstance(err_desc, str) and err_desc.strip():
                         message = f"Codex token refresh failed: {err_desc.strip()}"
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         if code in {"invalid_grant", "invalid_token", "invalid_request"}:
             relogin_required = True
         if code == "refresh_token_reused":
@@ -4138,7 +4138,7 @@ def resolve_codex_runtime_credentials(
                     "auth_mode": "chatgpt",
                 }
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         data = _read_codex_tokens()
@@ -4325,7 +4325,7 @@ def _save_xai_oauth_tokens(
         if not should_write_auth_json():
             return
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
     with _auth_store_lock():
         auth_store = _load_auth_store()
@@ -4659,7 +4659,7 @@ def resolve_xai_oauth_runtime_credentials(
                     "auth_mode": "oauth_pkce",
                 }
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     data = _read_xai_oauth_tokens()
     tokens = dict(data["tokens"])
@@ -5482,7 +5482,7 @@ def resolve_ontoweb_access_token(
                             _save_provider_state(auth_store, "ontoweb", state)
                             _save_auth_store(auth_store)
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                 return access_token
 
             if not isinstance(refresh_token, str) or not refresh_token:
@@ -5524,7 +5524,7 @@ def resolve_ontoweb_access_token(
                                 _save_provider_state(auth_store, "ontoweb", state)
                                 _save_auth_store(auth_store)
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
                     raise
 
             now = datetime.now(timezone.utc)
@@ -5552,7 +5552,7 @@ def resolve_ontoweb_access_token(
                     _save_provider_state(auth_store, "ontoweb", state)
                     _save_auth_store(auth_store)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             _write_shared_ontoweb_state(state)
             return state["access_token"]
 
@@ -5705,7 +5705,7 @@ def _ontoweb_save_state_to_db(state: Dict[str, Any]) -> None:
             },
         )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def persist_ontoweb_credentials(
@@ -5759,7 +5759,7 @@ def persist_ontoweb_credentials(
                 _save_provider_state(auth_store, "ontoweb", state)
                 _save_auth_store(auth_store)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Mirror to the shared store so a new profile can one-tap import
     # these credentials via `intellect auth add ontoweb --type oauth`. Best-
@@ -5827,7 +5827,7 @@ def resolve_ontoweb_runtime_credentials(
                 "agent_key": meta.get("agent_key", ""),
             }
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     with _auth_store_lock():
         auth_store = _load_auth_store()
@@ -6200,7 +6200,7 @@ def _compute_ontoweb_auth_status() -> Dict[str, Any]:
                 "inference_credential_present": True,
             }
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     state = get_provider_auth_state("ontoweb")
     if state:
@@ -6291,7 +6291,7 @@ def get_codex_auth_status() -> Dict[str, Any]:
         if db_status:
             return db_status
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Check credential pool first — this is where `intellect auth` and
     # `intellect model` store device_code tokens.
@@ -6315,7 +6315,7 @@ def get_codex_auth_status() -> Dict[str, Any]:
                         "api_key": api_key,
                     }
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Fall back to legacy provider state
     try:
@@ -6344,7 +6344,7 @@ def get_xai_oauth_auth_status() -> Dict[str, Any]:
         if db_status:
             return db_status
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         from agent.credential_pool import load_pool
@@ -6367,7 +6367,7 @@ def get_xai_oauth_auth_status() -> Dict[str, Any]:
                         "api_key": api_key,
                     }
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         creds = resolve_xai_oauth_runtime_credentials()
@@ -7385,11 +7385,11 @@ def _xai_oauth_loopback_login(
                 server.shutdown()
                 server.server_close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             try:
                 thread.join(timeout=1.0)
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             raise
 
     if callback.get("error"):
@@ -7773,7 +7773,7 @@ def _minimax_save_auth_state(auth_state: Dict[str, Any]) -> None:
                 metadata=metadata,
             )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # auth.json legacy (conditional on should_write_auth_json, default False)
     try:
@@ -7784,7 +7784,7 @@ def _minimax_save_auth_state(auth_state: Dict[str, Any]) -> None:
                 _save_provider_state(auth_store, "minimax-oauth", auth_state)
                 _save_auth_store(auth_store)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def _minimax_oauth_login(
@@ -8059,7 +8059,7 @@ def resolve_minimax_oauth_runtime_credentials(
         if row and row.get("access_token"):
             state = _minimax_state_from_db_row(row)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Fallback: auth.json
     if not state or not state.get("access_token"):
@@ -8096,7 +8096,7 @@ def get_minimax_oauth_auth_status() -> Dict[str, Any]:
         if db_status:
             return db_status
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     state = get_provider_auth_state("minimax-oauth")
     if not state or not state.get("access_token"):
         return {"logged_in": False, "provider": "minimax-oauth"}
@@ -8328,7 +8328,7 @@ def _login_ontoweb(args, pconfig: ProviderConfig) -> None:
                     _save_provider_state(auth_store, "ontoweb", auth_state)
                     saved_to = _save_auth_store(auth_store)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         # Mirror to the shared store so other profiles can one-tap import
         # these credentials. Best-effort: any I/O failure is logged and

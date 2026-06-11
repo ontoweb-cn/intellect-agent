@@ -459,7 +459,8 @@ class PluginContext:
                 )
                 return
         except Exception:
-            pass  # If commands module isn't available, skip the check
+            # If commands module isn't available, skip the check
+            logger.debug('non-critical operation failed', exc_info=True)
 
         self._manager._plugin_commands[clean] = {
             "handler": handler,
@@ -1332,7 +1333,7 @@ class PluginManager:
                                 key,
                             )
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
 
             logger.debug(
                 "Parsed manifest: key=%s name=%s kind=%s source=%s path=%s",

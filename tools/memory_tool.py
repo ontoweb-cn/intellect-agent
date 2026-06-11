@@ -73,7 +73,7 @@ def get_memory_dir() -> Path:
                 member_dir.mkdir(parents=True, exist_ok=True)
                 return member_dir
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return home / "memories"
 
 
@@ -92,7 +92,7 @@ def _resolve_current_member_id() -> str | None:
             if mid:
                 return mid
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     # (single-user: no multi-user membership DB)
     return None
 

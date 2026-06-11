@@ -463,7 +463,7 @@ class AIAgent:
             if data:
                 return data.get("member_id")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         # Also check for gateway-injected member context.
         gw_member = os.environ.get("INTELLECT_MEMBER_ID")
         if gw_member:
@@ -758,7 +758,7 @@ class AIAgent:
                 _sys.stderr.write(f"{self.log_prefix}{message}\n")
                 _sys.stderr.flush()
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         if self.status_callback:
             try:
                 self.status_callback("lifecycle", message)
@@ -780,7 +780,7 @@ class AIAgent:
                 _sys.stderr.write(f"{self.log_prefix}{message}\n")
                 _sys.stderr.flush()
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         if self.status_callback:
             try:
                 self.status_callback("warn", message)
@@ -827,7 +827,7 @@ class AIAgent:
                 self._retry_status_buffer = buf
             buf.append(("vprint", message))
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     def _clear_status_buffer(self) -> None:
         """Drop buffered retry messages — call on successful recovery."""
@@ -836,7 +836,7 @@ class AIAgent:
             if buf:
                 buf.clear()
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     def _flush_status_buffer(self) -> None:
         """Emit buffered retry messages — call on terminal failure.
@@ -860,9 +860,9 @@ class AIAgent:
                     else:
                         self._vprint(f"{self.log_prefix}{msg}", force=True)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     def _disable_codex_reasoning_replay(
         self,
@@ -1879,7 +1879,8 @@ class AIAgent:
                         )
                         return
                 except Exception:
-                    pass  # corrupted existing file — allow the overwrite
+                    # corrupted existing file — allow the overwrite
+                    logger.debug('non-critical operation failed', exc_info=True)
 
             entry = {
                 "session_id": self.session_id,
@@ -1962,7 +1963,7 @@ class AIAgent:
                 try:
                     _set_interrupt(True, _wtid)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
         # Propagate interrupt to any running child agents (subagent delegation)
         with self._active_children_lock:
             children_copy = list(self._active_children)
@@ -1997,7 +1998,7 @@ class AIAgent:
                 try:
                     _set_interrupt(False, _wtid)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
         # A hard interrupt supersedes any pending /steer — the steer was
         # meant for the agent's next tool-call iteration, which will no
         # longer happen. Drop it instead of surprising the user with a
@@ -2122,7 +2123,7 @@ class AIAgent:
             if isinstance(_display, dict) and "file_mutation_verifier" in _display:
                 return bool(_display.get("file_mutation_verifier"))
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return True  # safe default: verifier on
 
     # Bare absolute / home / Windows-drive file paths in a footer line.
@@ -2219,7 +2220,7 @@ class AIAgent:
             if isinstance(_display, dict) and "turn_completion_explainer" in _display:
                 return bool(_display.get("turn_completion_explainer"))
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return True  # safe default: explainer on
 
     @staticmethod
@@ -2359,7 +2360,8 @@ class AIAgent:
             if state is not None:
                 self._rate_limit_state = state
         except Exception:
-            pass  # Never let header parsing break the agent loop
+            # Never let header parsing break the agent loop
+            logger.debug('non-critical operation failed', exc_info=True)
 
     def get_rate_limit_state(self):
         """Return the last captured RateLimitState, or None."""
@@ -2385,7 +2387,8 @@ class AIAgent:
             else:
                 logger.debug("OpenRouter response cache %s", status.upper())
         except Exception:
-            pass  # Never let header parsing break the agent loop
+            # Never let header parsing break the agent loop
+            logger.debug('non-critical operation failed', exc_info=True)
 
     def get_activity_summary(self) -> dict:
         """Return a snapshot of the agent's current activity for diagnostics.
@@ -2417,20 +2420,20 @@ class AIAgent:
             try:
                 self._memory_manager.on_session_end(messages or [])
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             try:
                 self._memory_manager.shutdown_all()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
         if self._rag_manager:
             try:
                 self._rag_manager.on_session_end(messages or [])
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             try:
                 self._rag_manager.shutdown_all()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
         # Notify context engine of session end (flush DAG, close DBs, etc.)
         if hasattr(self, "context_compressor") and self.context_compressor:
             try:
@@ -2439,7 +2442,7 @@ class AIAgent:
                     messages or [],
                 )
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
     def commit_memory_session(self, messages: list = None) -> None:
         """Trigger end-of-session extraction without tearing providers down.
@@ -2450,12 +2453,12 @@ class AIAgent:
             try:
                 self._memory_manager.on_session_end(messages or [])
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         if self._rag_manager:
             try:
                 self._rag_manager.on_session_end(messages or [])
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         # Notify context engine of session end too — same lifecycle moment as
         # the memory manager's on_session_end. Without this, engines that
         # accumulate per-session state (DAGs, summaries) leak that state from
@@ -2469,7 +2472,7 @@ class AIAgent:
                     messages or [],
                 )
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
     def _sync_external_memory_for_turn(
         self,
@@ -2530,7 +2533,7 @@ class AIAgent:
                     **sync_kwargs,
                 )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     def release_clients(self) -> None:
         """Release LLM client resources WITHOUT tearing down session tool state.
@@ -2566,9 +2569,9 @@ class AIAgent:
                     try:
                         child.close()
                     except Exception:
-                        pass
+                        pass  # intentionally silent — cleanup/teardown path
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
         # Close the OpenAI/httpx client to release sockets immediately.
         try:
@@ -2577,7 +2580,7 @@ class AIAgent:
                 self._close_openai_client(client, reason="cache_evict", shared=True)
                 self.client = None
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
     def close(self) -> None:
         """Release all resources held by this agent instance.
@@ -2599,19 +2602,19 @@ class AIAgent:
             from tools.process_registry import process_registry
             process_registry.kill_all(task_id=task_id)
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
         # 2. Clean terminal sandbox environments
         try:
             cleanup_vm(task_id)
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
         # 3. Clean browser daemon sessions
         try:
             cleanup_browser(task_id)
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
         # 4. Close active child agents
         try:
@@ -2622,9 +2625,9 @@ class AIAgent:
                 try:
                     child.close()
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
         # 5. Close the OpenAI/httpx client
         try:
@@ -2633,7 +2636,7 @@ class AIAgent:
                 self._close_openai_client(client, reason="agent_close", shared=True)
                 self.client = None
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
     def _hydrate_todo_store(self, history: List[Dict[str, Any]]) -> None:
         """
@@ -3296,7 +3299,7 @@ class AIAgent:
         try:
             self._anthropic_client.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
         try:
             self._anthropic_client = build_anthropic_client(
@@ -3351,7 +3354,7 @@ class AIAgent:
                 if _ph2 and _ph2.default_headers:
                     _ph_headers = dict(_ph2.default_headers)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             if _ph_headers:
                 self._client_kwargs["default_headers"] = _ph_headers
             else:
@@ -3367,7 +3370,7 @@ class AIAgent:
             try:
                 self._anthropic_client.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
             self._anthropic_api_key = runtime_key
             self._anthropic_base_url = runtime_base
@@ -3475,7 +3478,7 @@ class AIAgent:
                         try:
                             cb(think_tail)
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
                     self._record_streamed_assistant_text(think_tail)
         # Flush any benign partial-tag tail held by the context scrubber so it
         # reaches the UI before we clear state for the next model call.  If
@@ -3489,7 +3492,7 @@ class AIAgent:
                     try:
                         cb(tail)
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                 self._record_streamed_assistant_text(tail)
         self._current_streamed_assistant_text = ""
 
@@ -3581,7 +3584,7 @@ class AIAgent:
                 cb(text)
                 delivered = True
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         if delivered:
             self._record_streamed_assistant_text(text)
 
@@ -3592,7 +3595,7 @@ class AIAgent:
             try:
                 cb(text)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     def _fire_tool_gen_started(self, tool_name: str) -> None:
         """Notify display layer that the model is generating tool call arguments.
@@ -3607,7 +3610,7 @@ class AIAgent:
             try:
                 cb(tool_name)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     def _has_stream_consumers(self) -> bool:
         """Return True if any streaming consumer is registered."""

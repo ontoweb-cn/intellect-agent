@@ -408,7 +408,7 @@ def restore_goal_state(session_id: str, snapshot: Any, *, profile_home: str | Pa
         try:
             mgr.clear()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         return
     if isinstance(mgr, _ProfileGoalManager):
         mgr._state = snapshot

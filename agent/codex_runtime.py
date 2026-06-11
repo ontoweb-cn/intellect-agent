@@ -74,7 +74,7 @@ def run_codex_app_server_turn(
         try:
             agent._codex_session.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         agent._codex_session = None
         return {
             "final_response": (
@@ -101,7 +101,7 @@ def run_codex_app_server_turn(
         try:
             agent._codex_session.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         agent._codex_session = None
 
     # Splice projected messages into the conversation. The projector emits
@@ -512,7 +512,7 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                 try:
                     close_fn()
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
 
 
 def run_codex_create_stream_fallback(agent, api_kwargs: dict, client: Any = None):

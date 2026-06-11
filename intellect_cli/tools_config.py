@@ -114,14 +114,14 @@ def _xai_credentials_present() -> bool:
         _read_xai_oauth_tokens()
         return True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     try:
         from tools.xai_http import get_env_value as _xai_get_env_value
 
         if str(_xai_get_env_value("XAI_API_KEY") or "").strip():
             return True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return bool(str(os.environ.get("XAI_API_KEY") or "").strip())
 
 # Platform-scoped toolsets: only appear in the `intellect tools` checklist for
@@ -168,7 +168,7 @@ def _get_effective_configurable_toolsets():
             seen.add(entry[0])
             result.append(entry)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return result
 
 
@@ -718,7 +718,7 @@ def install_cua_driver(upgrade: bool = False) -> bool:
             elif after:
                 _print_info(f"    {driver_cmd} up to date: {after}")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     return ok
 
 
@@ -2030,7 +2030,7 @@ def _toolset_needs_configuration_prompt(
                 except Exception:
                     continue
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return True
     if ts_key == "video_gen":
         # Satisfied when any plugin-registered video gen provider reports
@@ -2047,7 +2047,7 @@ def _toolset_needs_configuration_prompt(
                 except Exception:
                     continue
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return True
 
     return not _toolset_has_keys(ts_key, config, force_fresh=force_fresh)

@@ -264,7 +264,7 @@ def build_session_context_prompt(
             if entry and entry.pii_safe:
                 _is_pii_safe = True
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     redact_pii = redact_pii and _is_pii_safe
     lines = [
         "## Current Session Context",
@@ -982,7 +982,8 @@ class SessionStore:
             try:
                 return self._db.session_count() > 1
             except Exception:
-                pass  # fall through to heuristic
+                # fall through to heuristic
+                logger.debug('non-critical operation failed', exc_info=True)
         # Fallback: check if session index was loaded with existing data.
         # Covers the rare case where the DB is unavailable.
         with self._lock:

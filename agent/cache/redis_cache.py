@@ -119,4 +119,4 @@ class RedisCache(CacheBackend):
             try:
                 client.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path

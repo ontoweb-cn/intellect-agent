@@ -103,7 +103,7 @@ def _tool_search_scoped_names(agent) -> frozenset:
     try:
         agent._tool_search_scope_cache = (cache_key, names)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return names
 
 
@@ -178,7 +178,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                             ),
                         }, ensure_ascii=False)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         # ── Block evaluation (BEFORE checkpoint preflight) ───────────
         # We must know whether the tool will execute before touching
@@ -215,7 +215,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                         work_dir = agent._checkpoint_mgr.get_working_dir_for_path(file_path)
                         agent._checkpoint_mgr.ensure_checkpoint(work_dir, f"before {function_name}")
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
             # Checkpoint before destructive terminal commands
             if function_name == "terminal" and agent._checkpoint_mgr.enabled:
@@ -227,7 +227,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                             cwd, f"before terminal: {cmd[:60]}"
                         )
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
         parsed_calls.append((tool_call, function_name, function_args, block_result, blocked_by_guardrail))
 
@@ -291,7 +291,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             try:
                 _ra()._set_interrupt(True, _worker_tid)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         # Set the activity callback on THIS worker thread so
         # _wait_for_process (terminal commands) can fire heartbeats.
         # The callback is thread-local; the main thread's callback
@@ -300,7 +300,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             from tools.environments.base import set_activity_callback
             set_activity_callback(agent._touch_activity)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         # Approval/sudo callbacks (thread-local) and the agent turn's
         # ContextVars are propagated by propagate_context_to_thread() at the
         # submit site below (GHSA-qg5c-hvr5-hjgr, #13617).
@@ -337,7 +337,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             try:
                 _ra()._set_interrupt(False, _worker_tid)
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
     # Start spinner for CLI mode (skip when TUI handles tool progress)
     spinner = None
@@ -588,7 +588,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                             "Use tool_search to find tools you can call."
                         )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         # Check plugin hooks for a block directive before executing.
         _block_msg: Optional[str] = None
@@ -601,7 +601,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     function_name, function_args, task_id=effective_task_id or "",
                 )
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         _guardrail_block_decision: ToolGuardrailDecision | None = None
         if _block_msg is None:
@@ -642,7 +642,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 from tools.environments.base import set_activity_callback
                 set_activity_callback(agent._touch_activity)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         if not _execution_blocked and agent.tool_progress_callback:
             try:
@@ -667,7 +667,8 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                         work_dir, f"before {function_name}"
                     )
             except Exception:
-                pass  # never block tool execution
+                # never block tool execution
+                logger.debug('non-critical operation failed', exc_info=True)
 
         # Checkpoint before destructive terminal commands
         if not _execution_blocked and function_name == "terminal" and agent._checkpoint_mgr.enabled:
@@ -679,7 +680,8 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                         cwd, f"before terminal: {cmd[:60]}"
                     )
             except Exception:
-                pass  # never block tool execution
+                # never block tool execution
+                logger.debug('non-critical operation failed', exc_info=True)
 
         tool_start_time = time.time()
 
@@ -746,7 +748,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                         ),
                     )
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('memory', function_args, tool_duration, result=function_result)}")

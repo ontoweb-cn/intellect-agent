@@ -492,7 +492,7 @@ def resolve_skill_config_values(
             if isinstance(parsed, dict):
                 config = parsed
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     resolved: Dict[str, Any] = {}
     for var in config_vars:

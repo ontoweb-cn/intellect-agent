@@ -471,7 +471,7 @@ class ModalEnvironment(BaseEnvironment):
         try:
             self._worker.run_coroutine(self._sandbox.terminate.aio(), timeout=15)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         finally:
             self._worker.stop()
             self._sandbox = None

@@ -30,7 +30,7 @@ def _validate_stream_peer(stream: Any) -> None:
         try:
             stream.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         logger.warning("Blocked HTTP connection to unsafe peer address: %s", ip_str)
         raise SSRFConnectBlocked(
             f"Blocked connection to private or internal network address: {ip_str}"

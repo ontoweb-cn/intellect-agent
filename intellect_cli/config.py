@@ -74,7 +74,7 @@ def _warn_config_parse_failure(config_path: Path, exc: Exception) -> None:
         try:
             print(f"⚠️  intellect config: {msg}")
         except Exception:
-            pass
+            logger.debug("config parse stderr fallback failed", exc_info=True)
 
 _IS_WINDOWS = platform.system() == "Windows"
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -3968,7 +3968,8 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
         if fixes and not quiet:
             print(f"  ✓ Repaired .env file ({fixes} corrupted entries fixed)")
     except Exception:
-        pass  # best-effort; don't block migration on sanitize failure
+        # best-effort; don't block migration on sanitize failure
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Check config version
     current_ver, latest_ver = check_config_version()
@@ -4022,7 +4023,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
                 if not quiet:
                     print("  ✓ Cleared ANTHROPIC_TOKEN from .env (no longer used)")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # ── Version 11 → 12: migrate custom_providers list → providers dict ──
     if current_ver < 12:
@@ -4100,7 +4101,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
                     if not quiet:
                         print(f"  ✓ Cleared {dead_var} from .env (no longer used — config.yaml is source of truth)")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     # ── Version 13 → 14: migrate legacy flat stt.model to provider section ──
     # Old configs (and cli-config.yaml.example) had a flat `stt.model` key
@@ -5612,7 +5613,7 @@ def show_config():
                 display_val = str(value) if value else color("(not set)", Colors.DIM)
                 print(f"  {key:<20s} {display_val}  {color(f'[{skill_name}]', Colors.DIM)}")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     print()
     print(color("─" * 60, Colors.DIM))
@@ -5926,7 +5927,7 @@ def _inject_profile_env_vars() -> None:
                     "advanced": True,
                 }
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 # Eagerly inject so that OPTIONAL_ENV_VARS is fully populated at import time.
@@ -6023,7 +6024,7 @@ def _inject_platform_plugin_env_vars() -> None:
                     "category": meta.get("category") or "messaging",
                 }
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 # Eagerly inject so that platform plugin env vars show up in the setup wizard.

@@ -371,7 +371,7 @@ MembershipStore = _noop_store
         finally:
             store.close()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
     return {}
 
 

@@ -462,7 +462,7 @@ def cmd_mcp_remove(args):
         get_manager().remove(name)
         _success("Cleaned up OAuth tokens")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 # ─── intellect mcp list ──────────────────────────────────────────────────────────

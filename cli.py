@@ -698,22 +698,27 @@ CLI_CONFIG = load_cli_config()
 try:
     from intellect_logging import setup_logging
     setup_logging(mode="cli")
-except Exception:
-    pass  # Logging setup is best-effort — don't crash the CLI
+except Exception as _log_exc:
+    logger.debug("CLI logging setup failed", exc_info=True)
+    try:
+        import traceback as _tb
+        _tb.print_exception(type(_log_exc), _log_exc, _log_exc.__traceback__, file=sys.stderr)
+    except Exception:
+        logger.debug("CLI logging setup stderr fallback failed", exc_info=True)
 
 # Validate config structure early — print warnings before user hits cryptic errors
 try:
     from intellect_cli.config import print_config_warnings
     print_config_warnings()
 except Exception:
-    pass
+    logger.debug("CLI config validation failed", exc_info=True)
 
 # Initialize the skin engine from config
 try:
     from intellect_cli.skin_engine import init_skin_from_config
     init_skin_from_config(CLI_CONFIG)
 except Exception:
-    pass  # Skin engine is optional — default skin used if unavailable
+    logger.debug("CLI skin engine init failed; using default skin", exc_info=True)
 
 # Initialize tool preview length from config
 try:
@@ -721,7 +726,7 @@ try:
     _tpl = CLI_CONFIG.get("display", {}).get("tool_preview_length", 0)
     set_tool_preview_max_len(int(_tpl) if _tpl else 0)
 except Exception:
-    pass
+    logger.debug("CLI tool preview length init failed", exc_info=True)
 
 # Neuter AsyncHttpxClientWrapper.__del__ before any AsyncOpenAI clients are
 # created.  The SDK's __del__ schedules aclose() on asyncio.get_running_loop()

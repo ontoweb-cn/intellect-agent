@@ -88,7 +88,7 @@ class SQLiteBackend:
             try:
                 self._conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             try:
                 self._conn.close()
             finally:
@@ -114,7 +114,7 @@ class SQLiteBackend:
                         try:
                             conn.rollback()
                         except Exception:
-                            pass
+                            pass  # intentionally silent — cleanup/teardown path
                         raise
                 self._write_count += 1
                 if self._write_count % self._checkpoint_every == 0:
@@ -143,7 +143,7 @@ class SQLiteBackend:
                         result[1],
                     )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     def ensure_schema(self, ddl: str) -> None:
         if not ddl.strip():
@@ -248,7 +248,7 @@ class RustSQLiteBackend:
         try:
             self._python_conn.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
     def execute(self, sql, params=()):
         """Execute a read query via Python sqlite3 (backward compat)."""
@@ -278,7 +278,7 @@ class RustSQLiteBackend:
                         try:
                             conn.rollback()
                         except Exception:
-                            pass
+                            pass  # intentionally silent — cleanup/teardown path
                         raise
                 self._write_count += 1
                 if self._write_count % self._checkpoint_every == 0:

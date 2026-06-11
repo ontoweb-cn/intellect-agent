@@ -2196,7 +2196,7 @@ def _seed_custom_pool(pool_key: str, entries: List[PooledCredential]) -> Tuple[b
                             },
                         )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     return changed, active_sources
 

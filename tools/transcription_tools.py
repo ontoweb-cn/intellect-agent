@@ -840,7 +840,7 @@ def _get_provider(stt_config: dict) -> str:
             logger.info("No local STT available, using xAI Grok STT API")
             return "xai"
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return "none"
 
 

@@ -257,7 +257,7 @@ def heartbeat_current_worker_from_env() -> bool:
             try:
                 conn.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
         return True
     except Exception:
         logger.debug("auto-heartbeat: bridge failed", exc_info=True)

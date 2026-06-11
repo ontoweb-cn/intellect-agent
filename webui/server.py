@@ -595,7 +595,7 @@ def main() -> None:
                 flush=True,
             )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     httpd = QuietHTTPServer((HOST, PORT), Handler)
 

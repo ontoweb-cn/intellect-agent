@@ -354,7 +354,7 @@ def _main() -> int:
         from intellect_cli.env_loader import load_intellect_dotenv
         load_intellect_dotenv()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     usage = (
         "Usage: python -m gateway.platforms.feishu_comment_rules <command> [args]\n"

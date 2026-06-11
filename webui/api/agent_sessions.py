@@ -593,7 +593,7 @@ def read_importable_agent_session_rows_for_profile(
         try:
             db.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
 
 def _lineage_report_row(row: dict, role: str) -> dict:
@@ -811,7 +811,7 @@ def read_session_lineage_report_for_profile(
         try:
             db.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
 
 def read_session_lineage_metadata(
@@ -1024,4 +1024,4 @@ def read_session_lineage_metadata_for_profile(
         try:
             db.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path

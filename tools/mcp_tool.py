@@ -165,7 +165,7 @@ def _write_stderr_log_header(server_name: str) -> None:
         fh.write(f"\n===== [{ts}] starting MCP server '{server_name}' =====\n")
         fh.flush()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
 # ---------------------------------------------------------------------------
 # Graceful import -- MCP SDK is an optional dependency
@@ -2302,7 +2302,7 @@ def _snapshot_child_pids() -> set:
         import psutil
         return {c.pid for c in psutil.Process(my_pid).children()}
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     return set()
 
@@ -2439,7 +2439,7 @@ def _load_mcp_config() -> Dict[str, dict]:
             from intellect_cli.env_loader import load_intellect_dotenv
             load_intellect_dotenv()
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return {name: _interpolate_env_vars(cfg) for name, cfg in servers.items()}
     except Exception as exc:
         logger.debug("Failed to load MCP config: %s", exc)
@@ -3785,7 +3785,7 @@ def _stop_mcp_loop():
         try:
             loop.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         # After closing the loop, any stdio subprocesses that survived the
         # graceful shutdown are now orphaned — include active PIDs too
         # since the loop is gone and no session can still be in flight.

@@ -251,7 +251,7 @@ def _get_aux_model_for_provider(provider_id: str) -> str:
         if _p and _p.default_aux_model:
             return _p.default_aux_model
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return _API_KEY_PROVIDER_AUX_MODELS_FALLBACK.get(provider_id, "")
 
 
@@ -467,7 +467,7 @@ def _codex_cloudflare_headers(access_token: str) -> Dict[str, str]:
         if isinstance(acct_id, str) and acct_id:
             headers["ChatGPT-Account-ID"] = acct_id
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return headers
 
 
@@ -823,7 +823,7 @@ class _CodexCompletionsAdapter:
                     try:
                         close_fn()
                     except Exception:
-                        pass
+                        pass  # intentionally silent — cleanup/teardown path
 
             if final is None:
                 raise RuntimeError("Codex auxiliary Responses stream did not return a final response")
@@ -1384,7 +1384,8 @@ def _read_codex_access_token() -> Optional[str]:
                 logger.debug("Codex access token expired (exp=%s), skipping", exp)
                 return None
         except Exception:
-            pass  # Non-JWT token or decode error — use as-is
+            # Non-JWT token or decode error — use as-is
+            logger.debug('non-critical operation failed', exc_info=True)
 
         return access_token.strip()
     except Exception as exc:
@@ -1455,7 +1456,7 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
                     if _ph_aux and _ph_aux.default_headers:
                         extra["default_headers"] = dict(_ph_aux.default_headers)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             _client = OpenAI(api_key=api_key, base_url=base_url, **extra)
             _client = _maybe_wrap_anthropic(_client, model, api_key, raw_base_url)
             return _client, model
@@ -1492,7 +1493,7 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
                 if _ph_aux2 and _ph_aux2.default_headers:
                     extra["default_headers"] = dict(_ph_aux2.default_headers)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         _client = OpenAI(api_key=api_key, base_url=base_url, **extra)
         _client = _maybe_wrap_anthropic(_client, model, api_key, raw_base_url)
         return _client, model
@@ -1553,7 +1554,7 @@ def _try_ontoweb(vision: bool = False) -> Tuple[Optional[OpenAI], Optional[str]]
             _mark_provider_unhealthy("ontoweb", ttl=_remaining)
             return None, None
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     ontoweb = _read_ontoweb_auth()
     runtime = _resolve_ontoweb_runtime_api(force_refresh=False)
@@ -1648,7 +1649,7 @@ def _read_main_model() -> str:
             if isinstance(default, str) and default.strip():
                 return default.strip()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return ""
 
 
@@ -1673,7 +1674,7 @@ def _read_main_provider() -> str:
             if isinstance(provider, str) and provider.strip():
                 return provider.strip().lower()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return ""
 
 
@@ -2084,7 +2085,7 @@ def _try_anthropic(explicit_api_key: str = None) -> Tuple[Optional[Any], Optiona
                 if cfg_base_url:
                     base_url = cfg_base_url
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     from agent.anthropic_adapter import _is_oauth_token
     is_oauth = _is_oauth_token(token)
@@ -2469,7 +2470,7 @@ def _evict_cached_clients(provider: str) -> None:
                     if callable(close_fn):
                         close_fn()
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             _client_cache.pop(key, None)
 
 
@@ -2576,7 +2577,7 @@ def _recoverable_pool_provider(
                     if rt_base and base_url_host_matches(base, base_url_hostname(rt_base)):
                         return rt_provider
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
     return None
 
 
@@ -3170,7 +3171,7 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
                 if _ph_async and _ph_async.default_headers:
                     async_kwargs["default_headers"] = dict(_ph_async.default_headers)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     return AsyncOpenAI(**async_kwargs), model
 
 
@@ -3457,7 +3458,7 @@ def resolve_provider_client(
                     if _ph_custom and _ph_custom.default_headers:
                         extra["default_headers"] = dict(_ph_custom.default_headers)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             client = OpenAI(api_key=custom_key, base_url=_clean_base, **extra)
             client = _wrap_if_needed(client, final_model, custom_base, custom_key)
             return (_to_async_client(client, final_model, is_vision=is_vision) if async_mode
@@ -3703,7 +3704,7 @@ def resolve_provider_client(
                 if _ph_main and _ph_main.default_headers:
                     headers.update(_ph_main.default_headers)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         client = OpenAI(api_key=api_key, base_url=base_url,
                         **({"default_headers": headers} if headers else {}))
 
@@ -4209,7 +4210,7 @@ def _store_cached_client(cache_key: tuple, client: Any, default_model: Optional[
                 if callable(close_fn):
                     close_fn()
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         _client_cache[cache_key] = (client, default_model, bound_loop)
 
 
@@ -4307,7 +4308,7 @@ def _force_close_async_httpx(client: Any) -> None:
         if inner is not None and not getattr(inner, "is_closed", True):
             inner._state = ClientState.CLOSED
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
 
 def shutdown_cached_clients() -> None:
@@ -4333,7 +4334,7 @@ def shutdown_cached_clients() -> None:
                 if close_fn and not inspect.iscoroutinefunction(close_fn):
                     close_fn()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
         _client_cache.clear()
 
 

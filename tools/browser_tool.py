@@ -951,7 +951,7 @@ def _run_chrome_fallback_command(
         try:
             _run_tmp("close", [])
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         # Clean up socket directory
         import shutil as _shutil
         _shutil.rmtree(task_socket_dir, ignore_errors=True)
@@ -1840,7 +1840,7 @@ def _find_agent_browser() -> str:
                 _agent_browser_resolved = True
                 return recheck
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     _agent_browser_resolved = True
     raise FileNotFoundError(
@@ -3264,7 +3264,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
             if _vtemp is not None:
                 vision_temperature = float(_vtemp)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         call_kwargs = {
             "task": "vision",
@@ -3514,7 +3514,7 @@ def cleanup_all_browsers() -> None:
         from tools.browser_supervisor import SUPERVISOR_REGISTRY  # type: ignore[import-not-found]
         SUPERVISOR_REGISTRY.stop_all()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
     # Reset cached lookups so they are re-evaluated on next use.
     global _cached_agent_browser, _agent_browser_resolved

@@ -45,7 +45,7 @@ def _read_ontoweb_provider_state() -> Optional[dict]:
         if isinstance(ontoweb_provider, dict):
             return ontoweb_provider
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return None
 
 

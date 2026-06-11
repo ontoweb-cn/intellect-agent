@@ -327,7 +327,8 @@ def init_agent(
     try:
         agent._get_transport()
     except Exception:
-        pass  # Non-fatal — transport may not exist for all modes yet
+        # Non-fatal — transport may not exist for all modes yet
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         from intellect_cli.model_normalize import (
@@ -338,7 +339,7 @@ def init_agent(
         if agent.provider not in _AGGREGATOR_PROVIDERS:
             agent.model = normalize_model_for_provider(agent.model, agent.provider)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # GPT-5.x models usually require the Responses API path, but some
     # providers have exceptions (for example Copilot's gpt-5-mini still
@@ -484,7 +485,7 @@ def init_agent(
         if _ttl in {"5m", "1h"}:
             agent._cache_ttl = _ttl
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Iteration budget: the LLM is only notified when it actually exhausts
     # the iteration budget (api_call_count >= max_iterations).  At that
@@ -681,7 +682,7 @@ def init_agent(
                 if _gr.get("trace"):
                     agent._bedrock_guardrail_config["trace"] = _gr["trace"]
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         agent.client = None
         agent._client_kwargs = {}
         if not agent.quiet_mode:
@@ -744,7 +745,7 @@ def init_agent(
                     if _ph and _ph.default_headers:
                         client_kwargs["default_headers"] = dict(_ph.default_headers)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
         else:
             # No explicit creds — use the centralized provider router
             from agent.auxiliary_client import resolve_provider_client
@@ -782,7 +783,7 @@ def init_agent(
                         if _pcfg and _pcfg.api_key_env_vars:
                             _env_hint = _pcfg.api_key_env_vars[0]
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                     # --- Init-time fallback (#17929) ---
                     _fb_entries = []
                     if isinstance(fallback_model, list):
@@ -1002,7 +1003,7 @@ def init_agent(
         _sess_cfg = (_load_sess_cfg().get("sessions") or {})
         agent._session_json_enabled = bool(_sess_cfg.get("write_json_snapshots", False))
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     # logs_dir is retained unconditionally for request_dump_*.json (debug
     # breadcrumb path written by agent_runtime_helpers.dump_api_request_debug).
     
@@ -1090,7 +1091,8 @@ def init_agent(
                 )
                 agent._memory_store.load_from_disk()
         except Exception:
-            pass  # Memory is optional -- don't break agent init
+            # Memory is optional -- don't break agent init
+            logger.debug('non-critical operation failed', exc_info=True)
     
 
 
@@ -1123,7 +1125,7 @@ def init_agent(
                             if _st:
                                 _init_kwargs["session_title"] = _st
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
                     # Thread gateway user identity for per-user memory scoping
                     if agent._user_id:
                         _init_kwargs["user_id"] = agent._user_id
@@ -1149,7 +1151,7 @@ def init_agent(
                         _init_kwargs["agent_identity"] = _profile
                         _init_kwargs["agent_workspace"] = "intellect"
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                     # Thread member/team/config so multi-tenant providers
                     # (e.g. graphiti) can resolve per-scope graphs.  Existing
                     # providers accept **kwargs and ignore unknown entries,
@@ -1239,7 +1241,7 @@ def init_agent(
                         if _st:
                             _rag_init_kwargs["session_title"] = _st
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                 for _k in (
                     "user_id", "user_id_alt", "user_name", "chat_id",
                     "chat_name", "chat_type", "thread_id", "gateway_session_key",
@@ -1252,7 +1254,7 @@ def init_agent(
                     _rag_init_kwargs["agent_identity"] = get_active_profile_name()
                     _rag_init_kwargs["agent_workspace"] = "intellect"
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
                 _rt_ctx = getattr(agent, "runtime_context", None)
                 if _rt_ctx is not None:
                     for _rk, _attr in (
@@ -1295,7 +1297,7 @@ def init_agent(
         skills_config = _agent_cfg.get("skills", {})
         agent._skill_nudge_interval = int(skills_config.get("creation_nudge_interval", 10))
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Tool-use enforcement config: "auto" (default — matches hardcoded
     # model list), true (always), false (never), or list of substrings.
@@ -1339,7 +1341,7 @@ def init_agent(
         if _model_cthresh is not None:
             compression_threshold = _model_cthresh
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     compression_enabled = str(_compression_cfg.get("enabled", True)).lower() in {"true", "1", "yes"}
     compression_target_ratio = float(_compression_cfg.get("target_ratio", 0.20))
     compression_protect_last = int(_compression_cfg.get("protect_last_n", 20))
@@ -1508,7 +1510,7 @@ def init_agent(
         _ctx_cfg = _agent_cfg.get("context", {}) if isinstance(_agent_cfg, dict) else {}
         _engine_name = _ctx_cfg.get("engine", "compressor") or "compressor"
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     if _engine_name != "compressor":
         # Try loading from plugins/context_engine/<name>/
@@ -1526,7 +1528,7 @@ def init_agent(
                 if _candidate and _candidate.name == _engine_name:
                     _selected_engine = _candidate
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         if _selected_engine is None:
             _ra().logger.warning(

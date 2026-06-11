@@ -480,7 +480,7 @@ def ensure(feature: str, *, prompt: bool = True) -> None:
         if hasattr(_md, "_cache_clear"):
             _md._cache_clear()  # type: ignore[attr-defined]
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     still_missing = feature_missing(feature)
     if still_missing:

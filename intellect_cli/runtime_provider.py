@@ -67,7 +67,7 @@ def _config_base_url_trustworthy_for_bare_custom(cfg_base_url: str, cfg_provider
         if _resolve_provider(cfg_provider_norm) == "custom":
             return True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     if base_url_host_matches(bu, "openrouter.ai"):
         return False
     return _loopback_hostname(base_url_hostname(bu))
@@ -645,7 +645,7 @@ def _resolve_named_custom_runtime(
             if _resolve_provider(requested_norm) == "custom":
                 requested_norm = "custom"
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     if requested_norm == "custom" and explicit_base_url:
         base_url = explicit_base_url.strip().rstrip("/")
         # Check credential pool first — mirrors the named-custom-provider path
@@ -771,7 +771,7 @@ def _resolve_openrouter_runtime(
             if _resolve_provider(requested_norm) == "custom":
                 requested_norm = "custom"
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     env_openrouter_base_url = os.getenv("OPENROUTER_BASE_URL", "").strip()
     env_custom_base_url = os.getenv("CUSTOM_BASE_URL", "").strip()

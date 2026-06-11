@@ -632,7 +632,7 @@ class GatewayStreamConsumer:
                 try:
                     _best_effort_ok = bool(await self._send_or_edit(self._accumulated))
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             # Only confirm final delivery if the best-effort send above
             # actually succeeded OR if the final response was already
             # confirmed before we were cancelled.  Previously this
@@ -780,7 +780,7 @@ class GatewayStreamConsumer:
                         if result.success:
                             self._last_sent_text = clean_text
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                 self._already_sent = True
                 self._final_response_sent = True
                 self._final_content_delivered = True
@@ -1008,7 +1008,8 @@ class GatewayStreamConsumer:
             )
             self._last_sent_text = prefix
         except Exception:
-            pass  # best-effort — don't let this block the fallback path
+            # best-effort — don't let this block the fallback path
+            logger.debug('non-critical operation failed', exc_info=True)
 
     async def _send_commentary(self, text: str) -> bool:
         """Send a completed interim assistant commentary message."""

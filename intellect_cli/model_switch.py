@@ -239,7 +239,7 @@ def _load_direct_aliases() -> dict[str, DirectAlias]:
                         base_url="",
                     )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return merged
 
 
@@ -491,7 +491,7 @@ def resolve_alias(
                 if m.lower() not in seen:
                     catalog.append(m)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # For aggregators, models are vendor/model-name format
     aggregator = is_aggregator(current_provider)
@@ -596,7 +596,7 @@ def resolve_display_context_length(
         if ctx:
             return int(ctx)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     if model_info is not None and model_info.context_window:
         return int(model_info.context_window)
     return None
@@ -691,7 +691,7 @@ def switch_model(
                     for _ci in _cfg_issues[:3]:
                         _switch_err += f"\n  • {_ci.message}"
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             return ModelSwitchResult(
                 success=False,
                 is_global=is_global,
@@ -887,7 +887,7 @@ def switch_model(
             base_url = runtime.get("base_url", "")
             api_mode = runtime.get("api_mode", "")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # --- Direct alias override: use exact base_url from the alias if set ---
     if resolved_alias:
@@ -1229,7 +1229,7 @@ def list_authenticated_providers(
                 if store and store.get("credential_pool", {}).get(intellect_id):
                     has_creds = True
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         if not has_creds:
             continue
 
@@ -1411,7 +1411,7 @@ def list_authenticated_providers(
                 if _cp_store and _cp.slug in _cp_providers_store:
                     _cp_has_creds = True
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         if not _cp_has_creds:
             try:
                 from agent.credential_pool import load_pool
@@ -1419,7 +1419,7 @@ def list_authenticated_providers(
                 if _cp_pool.has_credentials():
                     _cp_has_creds = True
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         # Special case: aws_sdk auth (bedrock) — no API key env vars,
         # credentials come from the boto3 credential chain (env vars,
@@ -1533,7 +1533,7 @@ def list_authenticated_providers(
                     if live_models:
                         models_list = live_models
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
             results.append({
                 "slug": ep_name,
@@ -1722,7 +1722,7 @@ def list_authenticated_providers(
                         grp["models"] = live_models
                         grp["total_models"] = len(live_models)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             results.append({
                 "slug": slug,
                 "name": grp["name"],

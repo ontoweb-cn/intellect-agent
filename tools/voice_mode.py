@@ -444,7 +444,7 @@ class TermuxAudioRecorder:
         try:
             self._stop_termux_recording()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         if path and os.path.isfile(path):
             try:
                 os.unlink(path)
@@ -644,7 +644,7 @@ class AudioRecorder:
                 try:
                     stream.close()
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
             raise RuntimeError(
                 f"Failed to open audio input stream: {e}. "
                 "Check that a microphone is connected and accessible."
@@ -710,7 +710,7 @@ class AudioRecorder:
                 stream.stop()
                 stream.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
         t = threading.Thread(target=_do_close, daemon=True)
         t.start()
@@ -1030,13 +1030,13 @@ def stop_playback() -> None:
             proc.terminate()
             logger.info("Audio playback interrupted")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     # Also stop sounddevice playback if active
     try:
         sd, _ = _import_audio()
         sd.stop()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def play_audio_file(file_path: str) -> bool:

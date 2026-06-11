@@ -174,11 +174,11 @@ def _list_oauth_providers(handler) -> None:
 
                     enrich_providers_with_token_status(result, store)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             json_response(handler, _oauth_providers_payload(result))
             return
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         finally:
             if store:
                 store.close()

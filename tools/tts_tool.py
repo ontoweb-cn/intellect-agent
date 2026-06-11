@@ -2188,7 +2188,7 @@ def check_tts_requirements() -> bool:
         if resolve_xai_http_credentials().get("api_key"):
             return True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     if get_env_value("GEMINI_API_KEY") or get_env_value("GOOGLE_API_KEY"):
         return True
     try:
@@ -2477,7 +2477,7 @@ def stream_tts_to_speaker(
                 output_stream.stop()
                 output_stream.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
         tts_done_event.set()
 
 

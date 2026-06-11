@@ -618,7 +618,7 @@ class GeminiCloudCodeClient:
         try:
             self._http.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
     # Implement the OpenAI SDK's context-manager-ish closure check
     def __enter__(self):

@@ -288,7 +288,7 @@ def remove_worktree_for_session(session, *, force: bool = False) -> dict:
             timeout=5,
         )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     return {
         "ok": True,

@@ -554,7 +554,7 @@ def save_credentials(creds: GoogleCredentials) -> Path:
         if not should_write_auth_json():
             return path
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     # Tighten parent dir to 0o700 so siblings can't traverse to the creds file.
@@ -595,7 +595,7 @@ def clear_credentials() -> None:
 
         try_delete_model_token("google-gemini-cli")
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
     path = _credentials_path()
     with _credentials_lock():
         try:
@@ -631,7 +631,7 @@ def _post_form(url: str, data: Dict[str, str], timeout: float) -> Dict[str, Any]
         try:
             detail = exc.read().decode("utf-8", errors="replace")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         # Detect invalid_grant to signal credential revocation
         code = "google_oauth_token_http_error"
         if "invalid_grant" in detail.lower():
@@ -1002,11 +1002,11 @@ def start_oauth_flow(
         try:
             server.shutdown()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         try:
             server.server_close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         server_thread.join(timeout=2.0)
 
     if not code:

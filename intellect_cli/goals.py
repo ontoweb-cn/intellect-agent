@@ -315,7 +315,7 @@ def _goal_judge_max_tokens() -> int:
         if value > 0:
             return value
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return DEFAULT_JUDGE_MAX_TOKENS
 
 
@@ -820,7 +820,7 @@ def run_kanban_goal_loop(
             try:
                 log(msg)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     max_turns = int(max_turns or DEFAULT_MAX_TURNS)
     if max_turns < 1:

@@ -96,7 +96,7 @@ def get_intellect_home() -> Path:
                 sys.stderr.write(msg + "\n")
                 sys.stderr.flush()
             except Exception:
-                pass
+                pass  # stderr itself is unavailable — nothing we can do
 
     return Path.home() / ".intellect"
 

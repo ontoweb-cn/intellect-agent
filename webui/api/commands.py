@@ -73,7 +73,7 @@ def list_commands(_registry=None) -> list[dict[str, Any]]:
                 'gateway_only': False,
             })
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     return out
 

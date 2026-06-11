@@ -585,7 +585,7 @@ def resolve_trusted_workspace(path: str | Path | None = None) -> Path:
         if candidate in saved_paths:
             return candidate
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # (C) Trusted if it is equal to or under the boot-time DEFAULT_WORKSPACE.
     #     In Docker deployments INTELLECT_WEBUI_DEFAULT_WORKSPACE is often set to a

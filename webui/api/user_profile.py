@@ -156,7 +156,7 @@ def build_profile_payload(handler, parsed) -> dict[str, Any]:
                 finally:
                     store.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
         display_name = oauth_name or db_name or str(member_id or "")
     else:
         display_name = str(stored.get("display_name") or "").strip() or "User"

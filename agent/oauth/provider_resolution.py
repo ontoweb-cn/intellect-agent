@@ -56,7 +56,7 @@ def effective_login_pkce(provider_id: str, pkce_from_row: bool) -> bool:
         if pid in OAUTH_PROVIDER_PRESETS and "pkce" in OAUTH_PROVIDER_PRESETS[pid]:
             return bool(OAUTH_PROVIDER_PRESETS[pid]["pkce"])
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     try:
         from agent.oauth.builtin_catalog import load_builtin_catalog
 
@@ -64,7 +64,7 @@ def effective_login_pkce(provider_id: str, pkce_from_row: bool) -> bool:
             if str(record.get("id") or "").strip().lower() == pid:
                 return bool(record.get("pkce", pkce_from_row))
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return bool(pkce_from_row)
 
 
@@ -126,7 +126,7 @@ def resolve_client_secret_stored(stored: str) -> str:
 
         return decrypt_token(raw)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     if raw.startswith("gAAAA"):
         return ""
     if len(raw) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw):

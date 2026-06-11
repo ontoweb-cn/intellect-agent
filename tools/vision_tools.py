@@ -64,7 +64,7 @@ def _resolve_download_timeout() -> float:
         if val is not None:
             return float(val)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return 30.0
 
 _VISION_DOWNLOAD_TIMEOUT = _resolve_download_timeout()
@@ -711,7 +711,7 @@ async def _vision_analyze_native(
                 if temp_image_path.exists():
                     temp_image_path.unlink()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
 
 async def vision_analyze_tool(
@@ -879,7 +879,7 @@ async def vision_analyze_tool(
             if _vtemp is not None:
                 vision_temperature = float(_vtemp)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         call_kwargs = {
             "task": "vision",
             "messages": messages,
@@ -1365,7 +1365,7 @@ async def video_analyze_tool(
             if _vtemp is not None:
                 vision_temperature = float(_vtemp)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         call_kwargs = {
             "task": "vision",

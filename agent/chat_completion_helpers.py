@@ -398,7 +398,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
             try:
                 _close_request_client_once("codex_ttfb_kill")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             agent._touch_activity(
                 f"codex stream killed after {int(_elapsed)}s with no first byte"
             )
@@ -444,7 +444,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
             try:
                 _close_request_client_once("codex_stream_idle_kill")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             agent._touch_activity(
                 f"codex stream killed after {int(_event_stale_elapsed)}s with no SSE events"
             )
@@ -492,7 +492,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
                 else:
                     _close_request_client_once("stale_call_kill")
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             agent._touch_activity(
                 f"stale non-streaming call killed after {int(_elapsed)}s"
             )
@@ -523,7 +523,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
                 else:
                     _close_request_client_once("interrupt_abort")
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             raise InterruptedError("Agent interrupted during API call")
     if result["error"] is not None:
         raise result["error"]
@@ -691,7 +691,7 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
             from agent.anthropic_adapter import _get_anthropic_max_output
             _ant_max = _get_anthropic_max_output(agent.model)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # Qwen session metadata
     _qwen_meta = None
@@ -827,7 +827,7 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
             try:
                 agent.reasoning_callback(reasoning_text)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     # Sanitize surrogates from API response — some models (e.g. Kimi/GLM via Ollama)
     # can return invalid surrogate code points that crash json.dumps() on persist.
@@ -1574,7 +1574,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 try:
                     on_first_delta()
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
 
         def _bedrock_call():
             try:
@@ -1676,7 +1676,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             try:
                 on_first_delta()
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     def _call_chat_completions():
         """Stream a chat completions response."""
@@ -1785,9 +1785,9 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 try:
                     _diag["bytes"] = int(_diag.get("bytes", 0)) + len(repr(chunk))
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
             if agent._interrupt_requested:
                 break
@@ -1840,7 +1840,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                         agent.stream_delta_callback(delta.content)
                         agent._record_streamed_assistant_text(delta.content)
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
 
             # Accumulate tool call deltas — notify display on first name
             if delta and delta.tool_calls:
@@ -2011,7 +2011,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                     _diag, getattr(stream, "response", None)
                 )
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             for event in stream:
                 # Update stale-stream timer on every event so the
                 # outer poll loop knows data is flowing.  Without
@@ -2030,9 +2030,9 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                     try:
                         _diag["bytes"] = int(_diag.get("bytes", 0)) + len(repr(event))
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
                 if agent._interrupt_requested:
                     break
@@ -2171,7 +2171,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                                 "reconnecting…\n\n"
                             )
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
                         # Reset the streamed-text buffer so the retry's
                         # fresh preamble doesn't get double-recorded in
                         # _current_streamed_assistant_text (which would
@@ -2179,7 +2179,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                         try:
                             agent._reset_stream_delivery_tracking()
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
                         # Reset in-memory accumulators so the next
                         # attempt's chunks don't concat onto the dead
                         # stream's partial JSON.
@@ -2199,7 +2199,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                                 reason="stream_mid_tool_retry_pool_cleanup"
                             )
                         except Exception:
-                            pass
+                            pass  # intentionally silent — cleanup/teardown path
                         continue
 
                     # SSE error events from proxies (e.g. OpenRouter sends
@@ -2252,7 +2252,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                                     reason="stream_retry_pool_cleanup"
                                 )
                             except Exception:
-                                pass
+                                pass  # intentionally silent — cleanup/teardown path
                             continue
                         # Retries exhausted. Log the final failure with
                         # full diagnostic detail (chain, headers,
@@ -2384,13 +2384,13 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             try:
                 _close_request_client_once("stale_stream_kill")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             # Rebuild the primary client too — its connection pool
             # may hold dead sockets from the same provider outage.
             try:
                 agent._replace_primary_openai_client(reason="stale_stream_pool_cleanup")
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             # Reset the timer so we don't kill repeatedly while
             # the inner thread processes the closure.
             last_chunk_time["t"] = time.time()
@@ -2406,7 +2406,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 else:
                     _close_request_client_once("stream_interrupt_abort")
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             raise InterruptedError("Agent interrupted during streaming API call")
     if result["error"] is not None:
         if deltas_were_sent["yes"]:
@@ -2436,7 +2436,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 try:
                     agent._fire_stream_delta(_warn)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
                 logger.warning(
                     "Partial stream dropped tool call(s) %s after %s chars "
                     "of text; surfaced warning to user: %s",

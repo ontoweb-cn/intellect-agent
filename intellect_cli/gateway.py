@@ -419,7 +419,7 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
                             continue
                     _found_via_proc = True
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
             if not _found_via_proc:
                 result = subprocess.run(
@@ -528,7 +528,7 @@ def find_gateway_pids(exclude_pids: set | None = None, all_profiles: bool = Fals
 
             _append_unique_pid(pids, get_running_pid(), _exclude)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     for pid in _get_service_pids():
         _append_unique_pid(pids, pid, _exclude)
     for pid in _scan_gateway_pids(_exclude, all_profiles=all_profiles):
@@ -992,7 +992,8 @@ def get_gateway_runtime_snapshot(system: bool = False) -> GatewayRuntimeSnapshot
                     gateway_pids=gateway_pids,
                 )
         except Exception:
-            pass  # Fall through to the legacy label on any detection error.
+            # Fall through to the legacy label on any detection error.
+            logger.debug('non-critical operation failed', exc_info=True)
         return GatewayRuntimeSnapshot(
             manager="docker (foreground)",
             gateway_pids=gateway_pids,
@@ -1064,7 +1065,7 @@ def _print_other_profiles_gateway_status() -> None:
         for proc in other_processes:
             print(f"  ✓ {proc.profile:<16s} — PID {proc.pid}")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def _gateway_list() -> None:
@@ -1101,7 +1102,7 @@ def _gateway_list() -> None:
                 if pid:
                     parts.append(f"PID {pid}")
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
         else:
             parts.append("not running")
         print(" — ".join(parts))
@@ -1156,7 +1157,7 @@ def stop_profile_gateway() -> bool:
         from gateway.status import write_planned_stop_marker
         write_planned_stop_marker(pid)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         os.kill(pid, signal.SIGTERM)
@@ -2185,7 +2186,7 @@ def _stable_service_working_dir() -> str:
         if home and Path(home).is_dir():
             return str(Path(home).resolve())
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return str(PROJECT_ROOT)
 
 
@@ -2610,7 +2611,7 @@ def systemd_stop(system: bool = False):
         if pid is not None:
             write_planned_stop_marker(pid)
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
     try:
         _run_systemctl(["stop", get_service_name()], system=system, check=True, timeout=90)
     except subprocess.TimeoutExpired:
@@ -3025,7 +3026,7 @@ def launchd_stop():
         if pid is not None:
             write_planned_stop_marker(pid)
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
     # bootout unloads the service definition so KeepAlive doesn't respawn
     # the process.  A plain `kill SIGTERM` only signals the process — launchd
     # immediately restarts it because KeepAlive.SuccessfulExit = false.
@@ -3257,7 +3258,8 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False):
         try:
             refresh_systemd_unit_if_needed(system=False)
         except Exception:
-            pass  # best-effort; don't block gateway startup
+            # best-effort; don't block gateway startup
+            logger.debug('non-critical operation failed', exc_info=True)
     
     from gateway.run import start_gateway
     
@@ -3307,7 +3309,8 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False):
             with open(log_dir / "gateway-exit-diag.log", "a", encoding="utf-8") as f:
                 f.write(_json.dumps(line, default=str) + "\n")
         except Exception:
-            pass  # never let the diagnostic itself crash the gateway
+            # never let the diagnostic itself crash the gateway
+            logger.debug('non-critical operation failed', exc_info=True)
 
     _exit_diag(
         "gateway.start",

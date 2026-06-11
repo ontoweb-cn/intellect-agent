@@ -25,7 +25,7 @@ def current_profile_scope() -> str:
             if home == root:
                 return ""
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return hashlib.sha256(str(home).encode("utf-8")).hexdigest()[:16]
     except Exception:
         return ""

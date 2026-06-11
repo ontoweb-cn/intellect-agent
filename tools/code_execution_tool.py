@@ -1384,7 +1384,7 @@ def execute_code(
                 from tools.environments.base import touch_activity_if_due
                 touch_activity_if_due(_activity_state, "execute_code running")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             time.sleep(0.2)
 
         # Wait for readers to finish draining

@@ -408,7 +408,7 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
                 if self.stream is not None:
                     self.stream.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             self.stream = None  # type: ignore[assignment]
             try:
                 self.stream = self._open()
@@ -416,7 +416,7 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
             except Exception:
                 # Couldn't reopen — leave stream=None; next emit will
                 # bail rather than write to a stale inode.
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             return
         except OSError:
             return  # transient — try again on the next emit
@@ -432,13 +432,13 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
                 if self.stream is not None:
                     self.stream.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             self.stream = None  # type: ignore[assignment]
             try:
                 self.stream = self._open()
                 self._stat_dev, self._stat_ino = st.st_dev, st.st_ino
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
     def emit(self, record: logging.LogRecord) -> None:
         # Cheap-ish stat-per-record check; the kernel caches inode metadata
@@ -518,5 +518,11 @@ def _read_logging_config():
                     log_cfg.get("backup_count"),
                 )
     except Exception:
-        pass
+        # Can't use logger here (logging module loading its own config).
+        # Emit to stderr as best-effort diagnostic.
+        try:
+            import traceback as _tb
+            _tb.print_exc(file=sys.stderr)
+        except Exception:
+            pass  # truly unrecoverable — stderr itself is gone
     return (None, None, None)

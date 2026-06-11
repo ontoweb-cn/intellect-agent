@@ -54,7 +54,7 @@ def _get_max_read_chars() -> int:
             _max_read_chars_cached = int(val)
             return _max_read_chars_cached
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     _max_read_chars_cached = _DEFAULT_MAX_READ_CHARS
     return _max_read_chars_cached
 
@@ -111,7 +111,7 @@ def _get_live_tracking_cwd(task_id: str = "default") -> str | None:
         if live_cwd:
             return live_cwd
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     return None
 
@@ -970,7 +970,7 @@ def write_file_tool(path: str, content: str, task_id: str = "default",
     except WikiWriteForbidden as exc:
         return tool_error(str(exc))
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     if not cross_profile:
         cross_warning = _check_cross_profile_path(path, task_id)
         if cross_warning:

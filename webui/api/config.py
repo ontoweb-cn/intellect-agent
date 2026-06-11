@@ -869,7 +869,7 @@ def _resolve_provider_alias(name: str) -> str:
         if raw in _agent_aliases:
             return _agent_aliases[raw]
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return _PROVIDER_ALIASES.get(raw, name)
 
 
@@ -2452,7 +2452,7 @@ def set_auxiliary_model(task: str, provider: str, model: str) -> dict:
                     if resolved_base_url:
                         slot_cfg["base_url"] = str(resolved_base_url).strip().rstrip("/")
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             aux_cfg[task] = slot_cfg
             config_data["auxiliary"] = aux_cfg
 
@@ -2866,7 +2866,8 @@ def _save_models_cache_to_disk(cache: dict) -> None:
             json.dump(payload, f, indent=2)
         os.rename(tmp, str(_models_cache_path))
     except Exception:
-        pass  # Non-fatal -- cache will rebuild on next call
+        # Non-fatal -- cache will rebuild on next call
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def _get_fresh_memory_models_cache(now: float) -> dict | None:
@@ -3169,7 +3170,7 @@ def _read_custom_endpoint_models(
         try:
             err_body = exc.read().decode("utf-8", errors="replace")[:500]
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return [], {"error": f"HTTP {exc.code} from {provider} models endpoint", "detail": err_body}
     except Exception as exc:
         return [], {"error": f"Failed to reach {provider} models endpoint: {exc}"}
@@ -4283,7 +4284,7 @@ def get_available_models() -> dict:
                 for _pid in _pool:
                     _providers_with_keys.add(_resolve_provider_alias(str(_pid)))
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         try:
             _cfg_providers = cfg.get("providers", {})
             if isinstance(_cfg_providers, dict):
@@ -4291,7 +4292,7 @@ def get_available_models() -> dict:
                     if isinstance(_pv, dict) and (_pv.get("api_key") or _pv.get("key_env")):
                         _providers_with_keys.add(_resolve_provider_alias(str(_pk)))
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         def _group_sort_key(g):
             pid = g.get("provider_id") or ""
@@ -4311,7 +4312,7 @@ def get_available_models() -> dict:
             if isinstance(raw_aliases, dict):
                 model_aliases = {str(k).strip(): str(v).strip() for k, v in raw_aliases.items() if k and v}
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         return {
             "active_provider": active_provider,
@@ -4928,7 +4929,7 @@ if _settings_file_exists:
                 encoding="utf-8",
             )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
 # ── SESSIONS in-memory cache (LRU OrderedDict) ───────────────────────────────
 SESSIONS: collections.OrderedDict = collections.OrderedDict()

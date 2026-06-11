@@ -299,7 +299,7 @@ def build_bundle_invocation_message(
             from tools.skill_usage import bump_use
             bump_use(skill_name)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         activation_note = (
             f'[Loaded as part of the "{bundle_name}" skill bundle.]'

@@ -161,7 +161,7 @@ def _post_json(
         try:
             detail = exc.read().decode("utf-8", errors="replace")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         # Special case: VPC-SC violation should be distinguishable
         if _is_vpc_sc_violation(detail):
             raise CodeAssistError(

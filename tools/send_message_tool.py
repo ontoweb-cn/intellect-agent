@@ -342,7 +342,7 @@ def _handle_send(args):
                 ):
                     result["mirrored"] = True
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         if isinstance(result, dict) and "error" in result:
             result["error"] = _sanitize_error_text(result["error"])
@@ -621,7 +621,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
             if entry and entry.max_message_length > 0:
                 _MAX_LENGTHS[platform] = entry.max_message_length
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # Smart-chunk the message to fit within platform limits.
     # For short messages or platforms without a known limit this is a no-op.
@@ -1471,7 +1471,7 @@ async def _send_matrix_via_adapter(pconfig, chat_id, message, media_files=None, 
         try:
             await adapter.disconnect()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
 
 async def _send_homeassistant(token, extra, chat_id, message):

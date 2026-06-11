@@ -23,7 +23,10 @@ Usage:
     all_tools = resolve_toolset("full_stack")
 """
 
+import logging
 from typing import List, Dict, Any, Set, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # Shared tool list for CLI and all messaging platform toolsets.
@@ -663,10 +666,10 @@ def resolve_toolset(name: str, visited: Set[str] = None) -> List[str]:
                             if e.toolset == platform_name
                         )
                     except Exception:
-                        pass
+                        logger.debug("plugin tool discovery failed for %s", platform_name, exc_info=True)
                     return list(plugin_tools)
             except Exception:
-                pass
+                logger.debug("platform tool discovery failed for %s", platform_name, exc_info=True)
 
         return []
 

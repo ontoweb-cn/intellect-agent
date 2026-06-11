@@ -168,7 +168,7 @@ class Platform(Enum):
                 cls._member_map_[pseudo._name_] = pseudo
                 return pseudo
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         return None
 
@@ -190,7 +190,7 @@ class Platform(Enum):
                     ):
                         names.add(child.name.lower())
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return names
 
 
@@ -542,7 +542,8 @@ class GatewayConfig:
                     return entry.validate_config(config)
                 return True
         except Exception:
-            pass  # Registry not yet initialised during early import
+            # Registry not yet initialised during early import
+            logger.debug('non-critical operation failed', exc_info=True)
 
         return False
     

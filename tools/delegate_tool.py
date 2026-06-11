@@ -298,7 +298,7 @@ def _looks_like_error_output(content: str) -> bool:
                 if status in {"error", "failed", "failure", "timeout"}:
                     return True
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     first = content.splitlines()[0].strip().lower() if content.splitlines() else ""
     return (
@@ -1258,7 +1258,7 @@ def _dump_subagent_timeout_diagnostic(
             try:
                 _w(f"  loaded tools:      {sorted(tool_names)}")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         _w("")
 
         _w("## Prompt / schema sizes")
@@ -1475,11 +1475,11 @@ def _run_single_child(
                             f"(iteration {child_iter}/{child_max})"
                         )
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             try:
                 touch(desc)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
 
@@ -1567,7 +1567,7 @@ def _run_single_child(
                 elif hasattr(child, "_interrupt_requested"):
                     child._interrupt_requested = True
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
             is_timeout = isinstance(_timeout_exc, (FuturesTimeoutError, TimeoutError))
             duration = round(time.monotonic() - child_start, 2)
@@ -1587,7 +1587,7 @@ def _run_single_child(
                 _summary = child.get_activity_summary()
                 child_api_calls = int(_summary.get("api_call_count", 0) or 0)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             if is_timeout and child_api_calls == 0:
                 diagnostic_path = _dump_subagent_timeout_diagnostic(
                     child=child,
@@ -1618,7 +1618,7 @@ def _run_single_child(
                         summary="",
                     )
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
             if is_timeout:
                 if child_api_calls == 0:
@@ -2321,7 +2321,7 @@ def _delegate_task_execute(
                     ),
                 )
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     # Fire subagent_stop hooks once per child, serialised on the parent thread.
     # This keeps Python-plugin and shell-hook callbacks off of the worker threads
@@ -2557,7 +2557,7 @@ def _load_config() -> dict:
         if cfg:
             return cfg
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     try:
         from intellect_cli.config import load_config
 

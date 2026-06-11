@@ -1246,7 +1246,7 @@ def _extract_error_body(error: Exception) -> dict:
             if isinstance(json_body, dict):
                 return json_body
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     return {}
 
 

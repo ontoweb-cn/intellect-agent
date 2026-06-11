@@ -1244,7 +1244,7 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
                 if "ephemeral_disk" in inspect.signature(modal.Sandbox.create).parameters:
                     sandbox_kwargs["ephemeral_disk"] = disk
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         modal_state = _get_modal_backend_state(cc.get("modal_mode"))
 
@@ -2341,7 +2341,7 @@ def terminal_tool(
                         output = hook_result
                         break
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             
             # Truncate output if too long, keeping both head and tail
             from tools.tool_output_limits import get_max_bytes

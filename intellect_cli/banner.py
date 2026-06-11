@@ -152,7 +152,8 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
             cwd=str(repo_dir),
         )
     except Exception:
-        pass  # Offline or timeout — use stale refs, that's fine
+        # Offline or timeout — use stale refs, that's fine
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         result = subprocess.run(
@@ -163,7 +164,7 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
         if result.returncode == 0:
             return int(result.stdout.strip())
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return None
 
 
@@ -240,7 +241,7 @@ def check_for_updates() -> Optional[int]:
             ):
                 return cached.get("behind")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     if embedded_rev:
         behind = _check_via_rev(embedded_rev)
@@ -261,7 +262,7 @@ def check_for_updates() -> Optional[int]:
             json.dumps({"ts": now, "behind": behind, "rev": embedded_rev, "ver": VERSION})
         )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     return behind
 
@@ -320,7 +321,7 @@ def get_git_banner_state(repo_dir: Optional[Path] = None) -> Optional[dict]:
             if baked:
                 return {"upstream": baked, "local": baked, "ahead": 0}
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return None
 
     upstream = _git_short_hash(repo_dir, "origin/main")
@@ -334,7 +335,7 @@ def get_git_banner_state(repo_dir: Optional[Path] = None) -> Optional[dict]:
             if baked:
                 return {"upstream": baked, "local": baked, "ahead": 0}
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return None
 
     ahead = 0
@@ -668,7 +669,7 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
                 f"[dim {dim}](terminal/file ops/MCP run inside codex)[/]"
             )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     # Show active profile name when not 'default'
     try:
         from intellect_cli.profiles import get_active_profile_name
@@ -676,7 +677,8 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
         if _profile_name and _profile_name != "default":
             right_lines.append(f"[bold {accent}]Profile:[/] [{text}]{_profile_name}[/]")
     except Exception:
-        pass  # Never break the banner over a profiles.py bug
+        # Never break the banner over a profiles.py bug
+        logger.debug('non-critical operation failed', exc_info=True)
 
     right_lines.append(f"[dim {dim}]{' · '.join(summary_parts)}[/]")
 
@@ -701,7 +703,8 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
                     line += f"[dim yellow] — run [bold]{managed_cmd}[/bold][/]"
                 right_lines.append(line)
     except Exception:
-        pass  # Never break the banner over an update check
+        # Never break the banner over an update check
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Pip-install warning — `pip install intellect-agent` is not the supported
     # install path (it exists on PyPI for internal/CI reasons, not end users).
@@ -716,7 +719,8 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
                 "expect instability and an inability to support issues[/]"
             )
     except Exception:
-        pass  # Never break the banner over the install-method check
+        # Never break the banner over the install-method check
+        logger.debug('non-critical operation failed', exc_info=True)
 
     right_content = "\n".join(right_lines)
     layout_table.add_row(left_content, right_content)

@@ -1878,7 +1878,7 @@ class BasePlatformAdapter(ABC):
                 try:
                     self._status_write_logged = logged
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             key = (self.platform.value, context)
             if key not in logged:
                 logger.warning(
@@ -2798,7 +2798,7 @@ class BasePlatformAdapter(ABC):
                 try:
                     await self.stop_typing(chat_id)
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
             self._typing_paused.discard(chat_id)
 
     def pause_typing_for_chat(self, chat_id: str) -> None:
@@ -2822,7 +2822,7 @@ class BasePlatformAdapter(ABC):
         try:
             await self.stop_typing(chat_id)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     def register_post_delivery_callback(
         self,
@@ -4087,7 +4087,8 @@ class BasePlatformAdapter(ABC):
                     metadata=_thread_metadata,
                 )
             except Exception:
-                pass  # Last resort — don't let error reporting crash the handler
+                # Last resort — don't let error reporting crash the handler
+                logger.debug('non-critical operation failed', exc_info=True)
         finally:
             # Fire any one-shot post-delivery callback registered for this
             # session (e.g. deferred background-review notifications).
@@ -4118,7 +4119,7 @@ class BasePlatformAdapter(ABC):
                     if inspect.isawaitable(_post_result):
                         await _post_result
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             # Stop typing indicator
             await _stop_typing_task()
             # Also cancel any platform-level persistent typing tasks (e.g. Discord)
@@ -4127,7 +4128,7 @@ class BasePlatformAdapter(ABC):
                 if hasattr(self, "stop_typing"):
                     await self.stop_typing(event.source.chat_id)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             # Final drain/release boundary: force-flush any timer that missed
             # the in-band drain before deciding whether the guard can clear.
             await self._flush_text_debounce_now(session_key)

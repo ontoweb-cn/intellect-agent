@@ -3014,7 +3014,7 @@ def _tool_result_snippet(raw, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
             preview = data.get('output') or data.get('result') or data.get('error') or text
             text = str(preview)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return text[:limit]
 
 
@@ -3326,7 +3326,7 @@ def _refresh_cached_agent_runtime(agent, agent_kwargs: dict) -> bool:
         try:
             agent._credential_pool = new_pool
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     new_key = agent_kwargs.get('api_key') or ''
     if not new_key:
@@ -3593,7 +3593,7 @@ def _run_agent_streaming(
                 _usage['cache_read_tokens'] = getattr(_agent, 'session_cache_read_tokens', 0) or 0
                 _usage['cache_write_tokens'] = getattr(_agent, 'session_cache_write_tokens', 0) or 0
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             try:
                 _cc = getattr(_agent, 'context_compressor', None)
                 if _cc:
@@ -3601,7 +3601,7 @@ def _run_agent_streaming(
                     _usage['threshold_tokens'] = getattr(_cc, 'threshold_tokens', 0) or 0
                     _usage['last_prompt_tokens'] = getattr(_cc, 'last_prompt_tokens', 0) or 0
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         if _session_obj is not None:
             for _field in ('input_tokens', 'output_tokens', 'estimated_cost', 'cache_read_tokens', 'cache_write_tokens', 'context_length', 'threshold_tokens', 'last_prompt_tokens'):
@@ -3609,7 +3609,7 @@ def _run_agent_streaming(
                     try:
                         _usage[_field] = getattr(_session_obj, _field, 0) or 0
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
 
         _real_prompt_tokens = int(_usage.get('last_prompt_tokens') or 0)
         _usage['cache_hit_percent'] = prompt_cache_hit_percent(
@@ -3853,7 +3853,8 @@ def _run_agent_streaming(
             from tools.mcp_tool import discover_mcp_tools
             discover_mcp_tools()
         except Exception:
-            pass  # MCP not available or not configured — non-fatal
+            # MCP not available or not configured — non-fatal
+            logger.debug('non-critical operation failed', exc_info=True)
 
         # Register a gateway-style notify callback so the approval system can
         # push the `approval` SSE event the moment a dangerous command is
@@ -4577,7 +4578,7 @@ def _run_agent_streaming(
                             if getattr(agent, '_session_db', None) is not None:
                                 agent._session_db.close()
                         except Exception:
-                            pass
+                            pass  # intentionally silent — cleanup/teardown path
                         with SESSION_AGENT_CACHE_LOCK:
                             SESSION_AGENT_CACHE.pop(_cache_key, None)
                         agent = None
@@ -4623,7 +4624,7 @@ def _run_agent_streaming(
                             try:
                                 agent._session_db.close()
                             except Exception:
-                                pass
+                                pass  # intentionally silent — cleanup/teardown path
                         agent._session_db = _session_db
                     if hasattr(agent, '_api_call_count'):
                         agent._api_call_count = 0
@@ -4872,7 +4873,7 @@ def _run_agent_streaming(
                     import pathlib
                     pathlib.Path(s.path).unlink(missing_ok=True)
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
                 return  # skip all normal persistence for ephemeral sessions
             if _checkpoint_stop is not None:
                 _checkpoint_stop.set()
@@ -5154,7 +5155,7 @@ def _run_agent_streaming(
                         try:
                             s.save()
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
                         # Legacy #373 source tests and clients look for the
                         # no_response type; #1765 keeps that type but improves
                         # the catch-all label, hint, and provider details.
@@ -5484,7 +5485,7 @@ def _run_agent_streaming(
                             if isinstance(_raw_cp, list):
                                 _cfg_custom_providers = _raw_cp
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
                         _resolved_cl = get_model_context_length(
                             getattr(agent, 'model', resolved_model or '') or '',
                             getattr(agent, 'base_url', '') or '',
@@ -5508,7 +5509,7 @@ def _run_agent_streaming(
                             if _resolved_cl:
                                 s.context_length = _resolved_cl
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
                     except Exception:
                         # Older intellect-agent builds may not expose this helper.
                         # Better to leave context_length=0 than crash the save.
@@ -5676,7 +5677,7 @@ def _run_agent_streaming(
                         if isinstance(_raw_cp, list):
                             _cfg_custom_providers = _raw_cp
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                     try:
                         _fb_cl = _get_cl(
                             getattr(agent, 'model', resolved_model or '') or '',
@@ -5694,7 +5695,7 @@ def _run_agent_streaming(
                     if _fb_cl:
                         usage['context_length'] = _fb_cl
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             # Fallback: when last_prompt_tokens is missing (no compressor), use the
             # session-persisted value rather than letting the frontend fall back to
             # the cumulative input_tokens counter, which overflows for long sessions.
@@ -5846,7 +5847,7 @@ def _run_agent_streaming(
                     from api.members import pop_member_runtime_env
                     pop_member_runtime_env(_member_env_snapshot)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
     except Exception as e:
         print('[webui] stream error:\n' + traceback.format_exc(), flush=True)
@@ -6040,7 +6041,7 @@ def _run_agent_streaming(
                 try:
                     s.save()
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
                 if not ephemeral:
                     try:
                         append_turn_journal_event_for_stream(

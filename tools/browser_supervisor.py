@@ -365,7 +365,7 @@ class CDPSupervisor:
                     try:
                         await ws.close()
                     except Exception:
-                        pass
+                        pass  # intentionally silent — cleanup/teardown path
 
             try:
                 from agent.async_utils import safe_schedule_threadsafe
@@ -374,7 +374,7 @@ class CDPSupervisor:
                     try:
                         fut.result(timeout=2.0)
                     except Exception:
-                        pass
+                        pass  # intentionally silent — cleanup/teardown path
             except RuntimeError:
                 pass  # loop already shutting down
         if self._thread is not None:
@@ -591,11 +591,11 @@ class CDPSupervisor:
                 if pending:
                     loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             try:
                 loop.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
             with self._state_lock:
                 self._active = False
 
@@ -683,7 +683,7 @@ class CDPSupervisor:
                     try:
                         await ws.close()
                     except Exception:
-                        pass
+                        pass  # intentionally silent — cleanup/teardown path
 
             if self._stop_requested:
                 return
@@ -780,7 +780,7 @@ class CDPSupervisor:
                 timeout=3.0,
             )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     async def _cdp(
         self,
@@ -1069,7 +1069,7 @@ class CDPSupervisor:
                     session_id=session_id, timeout=3.0,
                 )
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             return
 
         # Parse query string for dialog metadata. Use urllib to be robust.

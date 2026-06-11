@@ -119,7 +119,7 @@ class SSHEnvironment(BaseEnvironment):
                 logger.debug("SSH: remote home = %s", home)
                 return home
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         if self.user == "root":
             return "/root"
         return f"/home/{self.user}"

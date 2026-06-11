@@ -133,7 +133,7 @@ class SqliteResponseStore:
         try:
             self._conn.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
     def __len__(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) FROM responses").fetchone()
@@ -189,7 +189,7 @@ class RedisResponseStore:
             try:
                 client.zrem(_LRU_KEY, response_id)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         return existed
 
     def get_conversation(self, name: str) -> str | None:

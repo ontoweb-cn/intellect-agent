@@ -839,7 +839,7 @@ class GeminiNativeClient:
         try:
             self._http.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
     def __enter__(self):
         return self

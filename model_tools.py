@@ -136,7 +136,7 @@ def _run_async(coro):
                             asyncio.gather(*pending, return_exceptions=True)
                         )
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
                 worker_loop.close()
 
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -965,7 +965,8 @@ def handle_function_call(
                 from tools.file_tools import notify_other_tool_call
                 notify_other_tool_call(task_id or "default")
             except Exception:
-                pass  # file_tools may not be loaded yet
+                # file_tools may not be loaded yet
+                logger.debug('non-critical operation failed', exc_info=True)
 
         # Measure tool dispatch latency so post_tool_call and
         # transform_tool_result hooks can observe per-tool duration.

@@ -199,7 +199,7 @@ def _write_session_index(updates=None):
                 try:
                     _tmp.unlink(missing_ok=True)
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
                 raise
             return
 
@@ -249,7 +249,7 @@ def _write_session_index(updates=None):
                 try:
                     _tmp.unlink(missing_ok=True)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
                 raise
         except Exception:
             _fallback = True
@@ -288,7 +288,7 @@ def prune_session_from_index(session_id: str) -> None:
                 try:
                     _tmp.unlink(missing_ok=True)
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
                 raise
         except Exception:
             _fallback = True
@@ -708,7 +708,7 @@ class Session:
                         try:
                             bak_tmp.unlink(missing_ok=True)
                         except Exception:
-                            pass
+                            logger.debug('non-critical operation failed', exc_info=True)
         except OSError:
             pass
 
@@ -723,7 +723,7 @@ class Session:
             try:
                 tmp.unlink(missing_ok=True)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             raise
         if not skip_index:
             _write_session_index(updates=[self])
@@ -955,7 +955,7 @@ def _classify_interruption_cause(
                 if str(stream_id) in _cfg.ACTIVE_RUNS:
                     return 'stream_run_split_brain'
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return 'lost_worker_bookkeeping'
 
     return 'unknown'
@@ -2013,7 +2013,8 @@ def get_session(sid, metadata_only=False):
                         if SESSIONS.get(sid) is s:
                             SESSIONS.pop(sid, None)
             except Exception:
-                pass  # repair is best-effort
+                # repair is best-effort
+                logger.debug('non-critical operation failed', exc_info=True)
         _enforce_request_session_access(s, sid)
         return s
     raise KeyError(sid)
@@ -2339,7 +2340,7 @@ def _state_messages_via_session_db(
         try:
             db.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
 
 def _sidebar_title_is_generic_webui(title: str | None) -> bool:
@@ -2380,7 +2381,7 @@ def _diag_stage(diag, name: str) -> None:
         try:
             diag.stage(name)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
 
 def all_sessions(diag=None):
@@ -3103,7 +3104,8 @@ def _load_cli_sessions_uncached(
                                 _title = _j.get('name') or _title
                                 break
                 except Exception:
-                    pass  # degrade gracefully
+                    # degrade gracefully
+                    logger.debug('non-critical operation failed', exc_info=True)
         # If a WebUI JSON file exists for this session (e.g. previously
         # imported or renamed in the sidebar), prefer its title over the
         # state.db title.  This fixes rename-not-persisting for CLI sessions
@@ -3113,7 +3115,7 @@ def _load_cli_sessions_uncached(
             if _webui_meta and getattr(_webui_meta, 'title', None):
                 _title = _webui_meta.title
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         _display_title = _title or f'{_source.title()} Session'
         cli_sessions.append({
             'session_id': sid,
@@ -3273,7 +3275,7 @@ def get_state_db_session_summary(sid, *, profile=None) -> dict:
         try:
             db.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
 
 def _normalized_message_timestamp_for_key(value):
@@ -3640,7 +3642,7 @@ def count_conversation_rounds(sid: str, since: float | None = None) -> int:
         try:
             db.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
     rounds = 0
     seen_user = False          # have we seen a user msg in the current round?
@@ -3663,7 +3665,7 @@ def count_conversation_rounds(sid: str, since: float | None = None) -> int:
                 if ts_val <= since:
                     continue
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         if role == 'user':
             if seen_user and not seen_agent_after_user:
@@ -3705,7 +3707,7 @@ def delete_cli_session(sid) -> bool:
             try:
                 db.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
     except Exception:
         logger.debug("delete_cli_session failed", exc_info=True)
         return False

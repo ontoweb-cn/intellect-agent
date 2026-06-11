@@ -152,7 +152,7 @@ def wiki_latest_mtime(wiki_path: Path) -> float:
             except OSError:
                 continue
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return latest
 
 

@@ -41,7 +41,7 @@ def publish_sync(
             try:
                 client.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
     except Exception:
         logger.warning("Redis publish failed on channel %s", channel, exc_info=True)
 
@@ -71,7 +71,7 @@ class RedisSubscriberThread(threading.Thread):
             try:
                 pubsub.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
     def run(self) -> None:
         try:
@@ -109,4 +109,4 @@ class RedisSubscriberThread(threading.Thread):
                 try:
                     pubsub.close()
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path

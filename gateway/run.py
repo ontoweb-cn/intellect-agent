@@ -1784,7 +1784,8 @@ class GatewayRunner:
             from tools.tirith_security import ensure_installed
             ensure_installed(log_failures=False)
         except Exception:
-            pass  # Non-fatal — fail-open at scan time if unavailable
+            # Non-fatal — fail-open at scan time if unavailable
+            logger.debug('non-critical operation failed', exc_info=True)
 
         # Startup heads-up (#30882): a gateway in manual approval mode with no
         # automated risk assessor (tirith disabled AND no auxiliary.approval
@@ -3287,7 +3288,8 @@ class GatewayRunner:
             try:
                 running_agent.interrupt(event.text)
             except Exception:
-                pass  # don't let interrupt failure block the ack
+                # don't let interrupt failure block the ack
+                logger.debug('non-critical operation failed', exc_info=True)
 
         # Check if busy ack is disabled — skip sending but still process the input.
         # Placed before debounce so we don't stamp a "last ack" timestamp that was
@@ -13581,7 +13583,8 @@ class GatewayRunner:
                     user_id=source.user_id,
                 )
             except Exception:
-                pass  # Session might already exist, ignore errors
+                # Session might already exist, ignore errors
+                logger.debug('non-critical operation failed', exc_info=True)
 
         title_arg = event.get_command_args().strip()
         if title_arg:
@@ -13813,7 +13816,8 @@ class GatewayRunner:
                     codex_message_items=msg.get("codex_message_items"),
                 )
             except Exception:
-                pass  # Best-effort copy
+                # Best-effort copy
+                logger.debug('non-critical operation failed', exc_info=True)
 
         # Set title
         try:
@@ -14182,7 +14186,8 @@ class GatewayRunner:
                     session_entry.session_id, reload_msg
                 )
             except Exception:
-                pass  # Best-effort; don't fail the reload over a transcript write
+                # Best-effort; don't fail the reload over a transcript write
+                logger.debug('non-critical operation failed', exc_info=True)
 
             return "\n".join(lines)
 

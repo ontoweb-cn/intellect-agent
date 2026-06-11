@@ -634,7 +634,7 @@ def _provider_api_key_present(
             if isinstance(status, dict) and status.get("logged_in"):
                 return True
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     return False
 
@@ -710,7 +710,7 @@ def _provider_oauth_authenticated(provider: str, intellect_home: "Path") -> bool
             finally:
                 store.close()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
     try:
         from agent.oauth.runtime_settings import should_read_auth_json  # type: ignore[import-not-found]
@@ -718,7 +718,7 @@ def _provider_oauth_authenticated(provider: str, intellect_home: "Path") -> bool
         if not should_read_auth_json():
             return False
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
     try:
         import json as _j

@@ -418,7 +418,7 @@ class LSPClient:
                 try:
                     await self._send_notification("exit", None)
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
         finally:
             self._state = "stopped"
             await self._cleanup_process()

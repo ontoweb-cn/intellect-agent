@@ -142,7 +142,7 @@ def _account_usage_preexec_fn() -> None:
         libc = ctypes.CDLL(None)
         libc.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG=1, SIGTERM=15
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 _ACCOUNT_USAGE_SUBPROCESS_CODE = r"""
@@ -1075,7 +1075,7 @@ def _get_provider_api_key(provider_id: str) -> str | None:
         if store_key and _provider_value_counts_as_api_key(provider_id, store_key):
             return store_key
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     cfg = get_config()
     model_cfg = cfg.get("model", {})
@@ -1934,7 +1934,7 @@ def get_providers() -> dict[str, Any]:
                         key_source = _raw_ks if _raw_ks in {"oauth", "env", "config", "token"} else "oauth"
                         is_oauth = True
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
         if pid == "openai" and not has_key and _provider_has_shadowed_codex_oauth_value(pid):
             continue

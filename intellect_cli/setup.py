@@ -477,7 +477,7 @@ def _print_setup_summary(config: dict, intellect_home, oauth_seed_stats: dict | 
                 except Exception:
                     continue
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         if _img_backend:
             tool_status.append((f"Image Generation ({_img_backend})", True, None))
         else:
@@ -565,7 +565,7 @@ def _print_setup_summary(config: dict, intellect_home, oauth_seed_stats: dict | 
         if _spotify_state.get("access_token") or _spotify_state.get("refresh_token"):
             tool_status.append(("Spotify (PKCE OAuth)", True, None))
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Skills Hub
     if get_env_value("GITHUB_TOKEN"):
@@ -2362,7 +2362,7 @@ def _model_section_has_credentials(config: dict) -> bool:
         if get_active_provider():
             return True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         from intellect_cli.auth import PROVIDER_REGISTRY

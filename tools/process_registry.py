@@ -639,11 +639,11 @@ class ProcessRegistry:
                 else:
                     proc.kill()
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             try:
                 proc.wait(timeout=5)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             raise
 
         return session
@@ -970,7 +970,7 @@ class ProcessRegistry:
                     try:
                         fcntl.fcntl(fd, fcntl.F_SETFL, flags)
                     except Exception:
-                        pass
+                        pass  # intentionally silent — cleanup/teardown path
             except Exception as e:
                 logger.debug("Non-blocking drain failed for %s: %s", session.id, e)
 

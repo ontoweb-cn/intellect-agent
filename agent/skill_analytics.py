@@ -180,7 +180,7 @@ class SkillAnalytics:
                 if name in name_map:
                     name_map[name].usage_count_30d = row["cnt"]
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         try:
             week = db._conn.execute(
@@ -196,7 +196,7 @@ class SkillAnalytics:
                 if name in name_map:
                     name_map[name].usage_count_7d = row["cnt"]
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # ── Aggregation ──────────────────────────────────────────────────
 

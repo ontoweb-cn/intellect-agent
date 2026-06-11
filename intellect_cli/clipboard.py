@@ -341,7 +341,7 @@ def _wayland_has_image() -> bool:
     except FileNotFoundError:
         logger.debug("wl-paste not installed — Wayland clipboard unavailable")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return False
 
 
@@ -459,7 +459,7 @@ def _xclip_has_image() -> bool:
     except FileNotFoundError:
         pass
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return False
 
 

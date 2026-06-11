@@ -781,7 +781,7 @@ def _discover_all_plugins() -> list:
                         version = manifest.get("version", "")
                         description = manifest.get("description", "")
                     except Exception:
-                        pass
+                        logger.debug('non-critical operation failed', exc_info=True)
                 # Path-derived key, intentionally ignoring the manifest
                 # ``name:`` field for category-namespaced plugins — mirrors
                 # ``PluginManager._parse_manifest`` in plugins.py:1027-1028
@@ -931,7 +931,7 @@ def _discover_context_engines() -> list[tuple[str, str]]:
                 engines.append((name, desc))
                 seen.add(name)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         from intellect_cli.plugins import discover_plugins, get_plugin_context_engine
@@ -940,7 +940,7 @@ def _discover_context_engines() -> list[tuple[str, str]]:
         if plugin_engine and getattr(plugin_engine, "name", None) and plugin_engine.name not in seen:
             engines.append((plugin_engine.name, "installed plugin"))
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     return engines
 

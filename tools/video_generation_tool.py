@@ -214,7 +214,7 @@ def check_video_generation_requirements() -> bool:
             except Exception:
                 continue
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return False
 
 

@@ -180,7 +180,7 @@ def _best_effort_sweep_expired_pastes() -> None:
     try:
         _sweep_expired_pastes()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
 
 # ---------------------------------------------------------------------------
@@ -718,7 +718,7 @@ def run_debug(args):
     try:
         _sweep_expired_pastes()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     subcmd = getattr(args, "debug_command", None)
     if subcmd == "share":

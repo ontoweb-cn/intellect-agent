@@ -745,7 +745,7 @@ def try_recover_primary_transport(
                     agent.client, reason="primary_recovery", shared=True,
                 )
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         # Rebuild from primary snapshot
         rt = agent._primary_runtime
@@ -1493,7 +1493,7 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
             try:
                 setattr(agent, _name, _value)
             except Exception:  # noqa: BLE001
-                pass
+                pass  # intentionally silent — cleanup/teardown path
         raise
 
     # ── Re-evaluate prompt caching ──
@@ -1639,7 +1639,7 @@ def _invoke_tool_body(
                 function_name, function_args, task_id=effective_task_id or "",
             )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     if block_message is not None:
         return json.dumps({"error": block_message}, ensure_ascii=False)
 
@@ -1692,7 +1692,7 @@ def _invoke_tool_body(
                     ),
                 )
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         return result
     elif agent._memory_manager and agent._memory_manager.has_tool(function_name):
         return agent._memory_manager.handle_tool_call(function_name, function_args)

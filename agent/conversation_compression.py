@@ -265,7 +265,7 @@ def replay_compression_warning(agent: Any) -> None:
         try:
             agent.status_callback("lifecycle", msg)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
 
 def compress_context(
@@ -408,7 +408,7 @@ def compress_context(
                         "after it finishes."
                     )
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
             _existing_sp = getattr(agent, "_cached_system_prompt", None)
             if not _existing_sp:
                 _existing_sp = agent._build_system_prompt(system_message)
@@ -427,12 +427,12 @@ def compress_context(
         try:
             agent._memory_manager.on_pre_compress(messages)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     if agent._rag_manager:
         try:
             agent._rag_manager.on_pre_compress(messages)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         compressed = agent.context_compressor.compress(messages, current_tokens=approx_tokens, focus_topic=focus_topic, force=force)
@@ -523,7 +523,7 @@ def compress_context(
                 if _existing:
                     _existing_member_id = _existing.get("member_id")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             agent._session_db.create_session(
                 session_id=agent.session_id,
                 source=agent.platform or os.environ.get("INTELLECT_SESSION_SOURCE", "cli"),
@@ -609,7 +609,7 @@ def compress_context(
         from tools.file_tools import reset_file_dedup
         reset_file_dedup(task_id)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     logger.info(
         "context compression done: session=%s messages=%d->%d rough_tokens=~%s awaiting_real_usage=true",
@@ -700,7 +700,7 @@ def try_shrink_image_parts_in_messages(api_messages: list) -> bool:
                 try:
                     Path(tmp.name).unlink(missing_ok=True)
                 except Exception:
-                    pass
+                    pass  # intentionally silent — cleanup/teardown path
             if not resized or len(resized) >= len(url):
                 # Shrink didn't help (or made it bigger — corrupt input?).
                 return None

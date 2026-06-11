@@ -331,7 +331,7 @@ def _passkey_feature_flag_enabled() -> bool:
             if isinstance(raw, str):
                 return raw.strip().lower() in {"1", "true", "yes", "on"}
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return False
 
 
@@ -505,7 +505,7 @@ def _members_flag_from_config() -> bool:
         if _multi_user_members_enabled():
             return True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     try:
         from api.config import _get_config_path
         import yaml
@@ -629,7 +629,7 @@ def check_auth(handler, parsed) -> bool:
             if resolve_member_id(handler, parsed):
                 return True
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     # Check session cookie
     cookie_val = parse_cookie(handler)
     if cookie_val and verify_session(cookie_val):

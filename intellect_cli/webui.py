@@ -93,7 +93,7 @@ def _proc_args(pid: int) -> str:
         if cmdline:
             return " ".join(cmdline)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # 2. /proc/<pid>/cmdline — Linux fast path (no subprocess)
     cmdline_path = Path(f"/proc/{pid}/cmdline")
@@ -230,7 +230,7 @@ def _uptime(pid: int) -> str:
                 seconds = elapsed % 60
                 return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # POSIX fallback: ps -p <pid> -o etime=
     try:

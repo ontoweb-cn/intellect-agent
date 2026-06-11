@@ -63,6 +63,9 @@ except ModuleNotFoundError:
 
 import os
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _set_process_title() -> None:
@@ -102,7 +105,7 @@ def _set_process_title() -> None:
             libc.pthread_setname_np(b"intellect")
         # Windows: the .exe name is already ``intellect.exe`` — nothing to do.
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 # Mouse-tracking residue suppression — runs BEFORE every other import on the
@@ -377,7 +380,10 @@ try:
         del _early_cfg_raw
     del _cfg_path
 except Exception:
-    pass  # best-effort — redaction stays at default (enabled) on config errors
+    logger.debug(
+        "early config read failed; redaction stays at default (enabled)",
+        exc_info=True,
+    )
 
 # Initialize centralized file logging early — all `intellect` subcommands
 # (chat, setup, gateway, config, etc.) write to agent.log + errors.log.
@@ -400,15 +406,16 @@ if _FORCE_IPV4_EARLY:
 
         _apply_ipv4(force=True)
     except Exception:
-        pass  # best-effort — don't crash if intellect_constants not importable yet
+        logger.debug(
+            "early IPv4 preference apply failed",
+            exc_info=True,
+        )
 
-import logging
 import threading
 import time as _time
 from datetime import datetime
 
 from intellect_cli import __version__, __release_date__
-logger = logging.getLogger(__name__)
 
 
 def _is_termux_startup_environment(env: dict[str, str] | None = None) -> bool:
@@ -621,7 +628,7 @@ def _has_any_provider_configured() -> bool:
                 if key.strip() in provider_env_vars and val:
                     return True
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # Check provider-specific auth fallbacks (for example, Copilot via gh auth).
     try:
@@ -632,7 +639,7 @@ def _has_any_provider_configured() -> bool:
             if status.get("logged_in"):
                 return True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Check for ONTOWEB Portal OAuth credentials
     auth_file = get_intellect_home() / "auth.json"
@@ -647,7 +654,7 @@ def _has_any_provider_configured() -> bool:
                 if status.get("logged_in"):
                     return True
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # Check config.yaml — if model is a dict with an explicit provider set,
     # the user has gone through setup (fresh installs have model as a plain
@@ -676,7 +683,7 @@ def _has_any_provider_configured() -> bool:
             ):
                 return True
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     return False
 
@@ -892,7 +899,7 @@ def _session_browse_picker(sessions: list) -> Optional[str]:
         return result_holder[0]
 
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Fallback: numbered list (Windows without curses, etc.)
     print("\n  Browse sessions  (enter number to resume, q to cancel)\n")
@@ -932,13 +939,13 @@ def _resolve_last_session(source: str = "cli") -> Optional[str]:
         sessions = db.search_sessions(source=source, limit=1)
         return sessions[0]["id"] if sessions else None
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     finally:
         if db is not None:
             try:
                 db.close()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
     return None
 
 
@@ -1084,12 +1091,12 @@ def _resolve_session_by_name_or_id(name_or_id: str) -> Optional[str]:
             try:
                 resolved_id = db.get_compression_tip(resolved_id) or resolved_id
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
         db.close()
         return resolved_id
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
     return None
 
 
@@ -1397,7 +1404,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
                 if ensure_dependency("node"):
                     path = shutil.which("node")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         if not path:
             print(f"{bin} not found — install Node.js to use the TUI.")
             sys.exit(1)
@@ -1666,7 +1673,7 @@ def _launch_tui(
             try:
                 _cleanup_worktree(wt_info)
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
     # Exit code 42 = TUI requested an update. Relaunch as `intellect update` so
     # the user sees update output directly and gets the new version.
@@ -1701,7 +1708,7 @@ def _pin_kanban_board_env() -> None:
 
         os.environ["INTELLECT_KANBAN_BOARD"] = get_current_board()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def cmd_chat(args):
@@ -1763,7 +1770,7 @@ def cmd_chat(args):
             sys.stderr.write(f"  \033[2mMigration guide: {MIGRATION_GUIDE_URL}\033[0m\n")
             sys.stderr.write("  \033[2mRun 'intellect doctor' for details.\033[0m\n\n")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # First-run guard: check if any provider is configured before launching
     if not _has_any_provider_configured():
@@ -1806,13 +1813,13 @@ def cmd_chat(args):
 
             prefetch_update_check()
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     # Sync bundled skills on every CLI launch (fast -- skips unchanged skills)
     try:
         _sync_bundled_skills_for_startup()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # --yolo: bypass all dangerous command approvals
     if getattr(args, "yolo", False):
@@ -2166,7 +2173,7 @@ def cmd_model(args):
             clear_provider_models_cache()
             print("  Cleared model picker cache.")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     select_provider_and_model(args=args)
 
 
@@ -3012,7 +3019,7 @@ def _prompt_provider_choice(choices, *, default=0):
             print()
             return idx
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Fallback: numbered list
     print("Select provider:")
@@ -3139,7 +3146,7 @@ def _model_flow_ontoweb(config, current_model="", args=None):
                 _refreshed = load_config() or {}
                 prompt_enable_tool_gateway(_refreshed)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         except SystemExit:
             print("Login cancelled or failed.")
             return
@@ -3219,7 +3226,7 @@ def _model_flow_ontoweb(config, current_model="", args=None):
         if _ontoweb_state:
             _ontoweb_portal_url = _ontoweb_state.get("portal_base_url", "")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # For free users: partition models into selectable/unavailable based on
     # whether they are free per the Portal-reported pricing.  First augment
@@ -3385,7 +3392,7 @@ def _model_flow_openai_codex(config, current_model=""):
         if _codex_status.get("logged_in"):
             _codex_token = _codex_status.get("api_key")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     if not _codex_token:
         try:
             from intellect_cli.auth import resolve_codex_runtime_credentials
@@ -3393,7 +3400,7 @@ def _model_flow_openai_codex(config, current_model=""):
             _codex_creds = resolve_codex_runtime_credentials()
             _codex_token = _codex_creds.get("api_key")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     codex_models = get_codex_model_ids(access_token=_codex_token)
 
@@ -3487,7 +3494,7 @@ def _model_flow_xai_oauth(_config, current_model="", *, args=None):
         creds = resolve_xai_oauth_runtime_credentials()
         base_url = (creds.get("base_url") or "").strip().rstrip("/") or base_url
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     models = list(_PROVIDER_MODELS.get("xai-oauth") or _PROVIDER_MODELS.get("xai") or [])
     selected = _prompt_model_selection(models, current_model=current_model or (models[0] if models else "grok-4.3"))
@@ -3534,7 +3541,7 @@ def _model_flow_qwen_oauth(_config, current_model=""):
         creds = resolve_qwen_runtime_credentials(refresh_if_expiring=True)
         models = fetch_api_models(creds["api_key"], creds["base_url"])
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     if not models:
         models = list(_DEFAULT_QWEN_PORTAL_MODELS)
 
@@ -5020,7 +5027,7 @@ def _model_flow_copilot_acp(config, current_model=""):
         catalog_creds = resolve_api_key_provider_credentials("copilot")
         catalog_api_key = catalog_creds.get("api_key", "")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     catalog = fetch_github_model_catalog(catalog_api_key)
     normalized_current_model = (
@@ -5773,7 +5780,7 @@ def _model_flow_api_key_provider(config, provider_id, current_model=""):
             if str(_m.get("provider") or "").strip().lower() == provider_id:
                 current_base = str(_m.get("base_url") or "").strip()
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     effective_base = current_base or pconfig.inference_base_url
 
     try:
@@ -5843,7 +5850,7 @@ def _model_flow_api_key_provider(config, provider_id, current_model=""):
 
                 mdev_models = list_agentic_models(provider_id)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             if mdev_models:
                 seen = {m.lower() for m in mdev_models}
                 model_list = list(mdev_models)
@@ -5868,7 +5875,7 @@ def _model_flow_api_key_provider(config, provider_id, current_model=""):
 
             mdev_models = list_agentic_models(provider_id)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
         if mdev_models:
             # Merge models.dev with curated list so newly added models
@@ -6071,7 +6078,7 @@ def _model_flow_anthropic(config, current_model=""):
         if cc_creds and is_claude_code_token_valid(cc_creds):
             cc_available = True
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Stale-OAuth guard: if the only existing cred is an expired OAuth token
     # (no valid cc_creds to fall back on), treat it as missing so the re-auth
@@ -6716,7 +6723,7 @@ def _oauth_register_bind(member_id: str, login: str, provider_id: str, config: d
     try:
         server.handle_request()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     server.server_close()
 
     if result.get("error") or not result.get("code"):
@@ -6874,12 +6881,12 @@ def _write_cli_session(m: dict, db=None) -> Path:
         try:
             db._execute_write(_upsert)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         # Record online presence (covers all login paths: password, OAuth, reset-code, first-login)
         try:
             db.record_session(m["id"], "cli", "login", f"cli-{m['id'][:8]}", "")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     return session_file
 
@@ -7098,7 +7105,7 @@ def _oauth_loopback_flow(provider, config, auth_url, redirect_uri, verifier, sta
         if proj:
             project_msg = f"\n  Active project: {proj}"
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     git_msg = ""
     if is_git_host_provider(pid):
@@ -7768,7 +7775,7 @@ def _print_version_info(*, check_updates: bool = True) -> None:
         elif behind == 0:
             print("Up to date")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def cmd_version(args):
@@ -8068,7 +8075,7 @@ def _print_curator_recent_run_notice() -> None:
             state["last_run_summary_shown_at"] = last_run_at
             curator.save_state(state)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return
 
     # Format the timestamp as "Xh ago" for readability.
@@ -8087,7 +8094,7 @@ def _print_curator_recent_run_notice() -> None:
         state["last_run_summary_shown_at"] = last_run_at
         curator.save_state(state)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def _format_time_ago(iso_ts: str) -> str:
@@ -8272,7 +8279,7 @@ def _update_via_zip(args):
         if not result["copied"] and not result.get("updated"):
             print("  ✓ Skills are up to date")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     print()
     print("✓ Update complete!")
@@ -8498,7 +8505,7 @@ def _get_origin_url(git_cmd: list[str], cwd: Path) -> Optional[str]:
         if result.returncode == 0:
             return result.stdout.strip()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return None
 
 
@@ -8559,7 +8566,7 @@ def _count_commits_between(git_cmd: list[str], cwd: Path, base: str, head: str) 
         if result.returncode == 0:
             return int(result.stdout.strip())
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return -1
 
 
@@ -8577,7 +8584,7 @@ def _mark_skip_upstream_prompt():
 
         (get_intellect_home() / SKIP_UPSTREAM_PROMPT_FILE).touch()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path) -> bool:
@@ -8736,7 +8743,7 @@ def _invalidate_update_cache():
             if cache_file.exists():
                 cache_file.unlink()
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
 
 def _load_installable_optional_extras(group: str = "all") -> list[str]:
@@ -8924,7 +8931,7 @@ def _detect_concurrent_intellect_instances(
                 except Exception:
                     continue
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     matches: list[tuple[int, str]] = []
     try:
@@ -9330,7 +9337,7 @@ def _ensure_uv_for_termux(pip_cmd: list[str]) -> str | None:
         print("  → Termux detected: trying to install uv for faster dependency updates...")
         subprocess.run(pip_cmd + ["install", "uv"], cwd=PROJECT_ROOT, check=False)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return shutil.which("uv")
 
 
@@ -9420,7 +9427,7 @@ class _UpdateOutputStream:
             try:
                 self._log.flush()
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
         if self._original_broken:
             return
         try:
@@ -9534,18 +9541,18 @@ def _finalize_update_output(state):
         try:
             sys.stdout = state.get("prev_stdout", sys.stdout)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         try:
             sys.stderr = state.get("prev_stderr", sys.stderr)
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     log_file = state.get("log_file")
     if log_file is not None:
         try:
             log_file.flush()
             log_file.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
 
 def _resolve_update_branch(args) -> str:
@@ -10395,7 +10402,8 @@ def _cmd_update_impl(args, gateway_mode: bool):
 
             importlib.reload(_hc)
         except Exception:
-            pass  # non-fatal — worst case a lazy import fails gracefully
+            # non-fatal — worst case a lazy import fails gracefully
+            logger.debug('non-critical operation failed', exc_info=True)
 
         # Sync bundled skills (copies new, updates changed, respects user deletions)
         try:
@@ -10457,7 +10465,8 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     except Exception as pe:
                         print(f"  {p.name}: error ({pe})")
         except Exception:
-            pass  # profiles module not available or no profiles
+            # profiles module not available or no profiles
+            logger.debug('non-critical operation failed', exc_info=True)
 
         # Sync Honcho host blocks to all profiles
         try:
@@ -10467,7 +10476,8 @@ def _cmd_update_impl(args, gateway_mode: bool):
             if synced:
                 print(f"\n-> Honcho: synced {synced} profile(s)")
         except Exception:
-            pass  # honcho plugin not installed or not configured
+            # honcho plugin not installed or not configured
+            logger.debug('non-critical operation failed', exc_info=True)
 
         # Check for config migrations
         print()
@@ -10793,7 +10803,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 _cfg_agent = load_config().get("agent") or {}
                 _cfg_drain = _cfg_agent.get("restart_drain_timeout")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             try:
                 _drain_budget = (
                     float(_cfg_drain)
@@ -10816,7 +10826,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 try:
                     _ensure_user_systemd_env()
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
 
                 for scope, scope_cmd in [
                     ("user", ["systemctl", "--user"]),
@@ -11464,7 +11474,8 @@ def cmd_profile(args):
                     if clone_honcho_for_profile(name):
                         print(f"Honcho config cloned (peer: {name})")
                 except Exception:
-                    pass  # Honcho plugin not installed or not configured
+                    # Honcho plugin not installed or not configured
+                    logger.debug('non-critical operation failed', exc_info=True)
 
             # Seed bundled skills (skip if --clone-all already copied them, or
             # if --no-skills was passed — in which case seed_profile_skills()
@@ -12380,7 +12391,7 @@ def main():
         from intellect_cli.stdio import configure_windows_stdio
         configure_windows_stdio()
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Sweep stale ``intellect.exe.old.*`` quarantine files left by previous
     # ``intellect update`` runs on Windows. Silent no-op on non-Windows or when
@@ -12388,7 +12399,7 @@ def main():
     try:
         _cleanup_quarantined_exes()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
     if _try_termux_fast_tui_launch():
         return
@@ -14936,7 +14947,7 @@ Examples:
                         capture_output=True, text=True, timeout=5,
                     ).stdout.strip()
                 except Exception:
-                    pass
+                    logger.debug('non-critical operation failed', exc_info=True)
                 if version:
                     print(f"cua-driver: installed at {path} ({version})")
                 else:

@@ -318,7 +318,7 @@ def _detect_claude_code_version() -> str:
                 if version and version[0].isdigit():
                     return version
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     return _CLAUDE_CODE_VERSION_FALLBACK
 
 
@@ -1080,7 +1080,7 @@ def _write_claude_code_credentials(
                 metadata={"source": "claude_code", "expires_at_ms": expires_at_ms},
             )
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def _resolve_claude_code_token_from_credentials(creds: Optional[Dict[str, Any]] = None) -> Optional[str]:
@@ -1162,7 +1162,7 @@ def resolve_anthropic_token() -> Optional[str]:
                 return preferred
             return db_token
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # 4. Claude Code credential file
     resolved_claude_token = _resolve_claude_code_token_from_credentials(creds)
@@ -1288,7 +1288,7 @@ def run_intellect_oauth_login_pure() -> Optional[Dict[str, Any]]:
             webbrowser.open(auth_url)
             print("  (Browser opened automatically)")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
 
     print()
     print("After authorizing, you'll see a code. Paste it below.")
@@ -1387,7 +1387,7 @@ def save_intellect_oauth_credentials(creds: Dict[str, Any]) -> None:
         if not should_write_auth_json():
             return
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     payload = {
         "accessToken": access,
@@ -1418,7 +1418,7 @@ def read_intellect_oauth_credentials() -> Optional[Dict[str, Any]]:
                 "expiresAt": expires_ms,
             }
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     try:
         from agent.secret_store import SecretStore

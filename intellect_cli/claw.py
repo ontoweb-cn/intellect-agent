@@ -100,7 +100,7 @@ def _detect_openclaw_processes() -> list[str]:
             if result.stdout.strip():
                 found.append(f"node.exe process with openclaw in command line (PID {result.stdout.strip()})")
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
     else:
         try:
             result = subprocess.run(

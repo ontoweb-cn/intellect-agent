@@ -133,7 +133,7 @@ class OAuthEngine:
                 from agent.oauth.auth_json_migration import migrate_auth_tokens
                 migrate_auth_tokens(db)
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     # ── Provider management ───────────────────────────────────────────────
 
@@ -375,7 +375,7 @@ class OAuthEngine:
                 if row:
                     return row["member_id"]
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         return None
 
     # ── Model OAuth tokens (PR-A4) ─────────────────────────────────────────
@@ -638,7 +638,8 @@ class OAuthEngine:
                 from agent.oauth.storage import decrypt_token
                 data["client_secret"] = decrypt_token(provider.client_secret_encrypted)
             except Exception:
-                pass  # Fall through without secret — public clients may still work
+                # Fall through without secret — public clients may still work
+                logger.debug('non-critical operation failed', exc_info=True)
 
         try:
             req = urllib.request.Request(
@@ -671,5 +672,5 @@ class OAuthEngine:
                     claims["email"] = info.get(provider.claim_email, claims["email"])
                     claims["name"] = info.get(provider.claim_name, claims["name"])
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         return claims

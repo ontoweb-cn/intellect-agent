@@ -462,10 +462,10 @@ def _link_anthropic_credentials(intellect_home: Path) -> None:
                 from api.config import invalidate_credential_pool_cache
                 invalidate_credential_pool_cache("anthropic")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             return
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
     auth_path = Path(intellect_home) / "auth.json"
     auth = _read_auth_json(auth_path)
@@ -993,7 +993,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                     )
                     return status
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         # 2) Claude Code credentials (linked)
         creds = _read_claude_code_credentials()
         if creds:
@@ -1018,7 +1018,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                     )
                     return status
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         try:
             from agent.oauth.runtime_settings import should_read_auth_json  # type: ignore[import-not-found]
 
@@ -1038,7 +1038,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                             )
                             return status
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return status
 
     if provider_id == "claude-code":
@@ -1067,7 +1067,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                 )
                 return status
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         try:
             from agent.oauth.pool_storage import try_read_pool_entries  # type: ignore[import-not-found]
 
@@ -1082,7 +1082,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                     )
                     return status
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         try:
             from agent.oauth.runtime_settings import should_read_auth_json  # type: ignore[import-not-found]
 
@@ -1101,7 +1101,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                             )
                             return status
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         # Fall back to CLI auth
         try:
             from intellect_cli.auth import get_codex_auth_status
@@ -1115,7 +1115,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                     has_refresh_token=False,
                 )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return status
 
     if provider_id == "qwen-oauth":
@@ -1132,7 +1132,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                     has_refresh_token=bool(raw.get("has_refresh_token")),
                 )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return status
 
     if provider_id == "minimax-oauth":
@@ -1149,7 +1149,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                     has_refresh_token=True,
                 )
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         return status
 
     if provider_id == "xai-oauth":
@@ -1168,7 +1168,7 @@ def _resolve_oauth_provider_status(provider_id: str) -> dict[str, Any]:
                 )
                 return status
         except Exception:
-            pass
+            logger.debug('non-critical operation failed', exc_info=True)
         # credential_pool fallback
         auth = _read_auth_json(home / "auth.json")
         entries = auth.get("credential_pool", {}).get("xai-oauth", [])
@@ -1229,7 +1229,7 @@ def _remove_credential_pool_entries(provider_id: str, source_filter: str | None 
         finally:
             store.close()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
 
     try:
         from agent.oauth.runtime_settings import should_read_auth_json  # type: ignore[import-not-found]
@@ -1266,7 +1266,7 @@ def _remove_credential_pool_entries(provider_id: str, source_filter: str | None 
         from api.config import invalidate_credential_pool_cache
         invalidate_credential_pool_cache(provider_id)
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
     return True
 
 
@@ -1282,11 +1282,11 @@ def disconnect_oauth_provider(provider_id: str) -> dict[str, Any]:
             if _INTELLECT_OAUTH_FILE.exists():
                 _INTELLECT_OAUTH_FILE.unlink()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         try:
             _remove_anthropic_link_marker(_get_active_intellect_home())
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         _remove_credential_pool_entries("anthropic", "manual:dashboard_pkce")
         _remove_credential_pool_entries("anthropic", "claude_code_linked")
         try:
@@ -1301,12 +1301,12 @@ def disconnect_oauth_provider(provider_id: str) -> dict[str, Any]:
             finally:
                 store.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         try:
             from api.config import invalidate_credential_pool_cache
             invalidate_credential_pool_cache("anthropic")
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
         logger.info("oauth/disconnect: %s", provider_id)
         return {"ok": True, "provider": provider_id}
 
@@ -1334,7 +1334,7 @@ def disconnect_oauth_provider(provider_id: str) -> dict[str, Any]:
         finally:
             store.close()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
     logger.info("oauth/disconnect: %s (cleared=%s)", provider_id, cleared)
     return {"ok": bool(cleared), "provider": provider_id}
 
@@ -1493,7 +1493,7 @@ def _save_anthropic_oauth_creds(access_token: str, refresh_token: str, expires_a
         from api.config import invalidate_credential_pool_cache
         invalidate_credential_pool_cache("anthropic")
     except Exception:
-        pass
+        logger.debug('non-critical operation failed', exc_info=True)
 
 
 def _submit_anthropic_pkce(session_id: str, code_input: str) -> dict[str, Any]:

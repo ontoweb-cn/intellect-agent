@@ -304,7 +304,8 @@ def _resolve_model_override(model_obj: Optional[Dict[str, Any]]) -> tuple:
             if isinstance(model_cfg, dict):
                 provider_name = model_cfg.get("provider") or None
         except Exception:
-            pass  # Best-effort; provider stays None
+            # Best-effort; provider stays None
+            logger.debug('non-critical operation failed', exc_info=True)
     return (provider_name, model_name)
 
 

@@ -1503,7 +1503,7 @@ def connect_closing(
         try:
             conn.close()
         except Exception:
-            pass
+            pass  # intentionally silent — cleanup/teardown path
 
 
 def init_db(
@@ -1986,7 +1986,8 @@ def _check_file_length_invariant(conn: sqlite3.Connection) -> None:
     except sqlite3.DatabaseError:
         raise
     except Exception:
-        pass  # I/O errors during check are non-fatal; let normal ops continue
+        # I/O errors during check are non-fatal; let normal ops continue
+        _log.debug('non-critical operation failed', exc_info=True)
 
 
 @contextlib.contextmanager
@@ -3928,7 +3929,8 @@ def _cleanup_worker_tmux(conn: sqlite3.Connection, task_id: str) -> None:
             )
             _log.debug("Killed stale tmux session: %s", session)
     except Exception:
-        pass  # best-effort — never block completion
+        # best-effort — never block completion
+        _log.debug('non-critical operation failed', exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -4921,7 +4923,7 @@ def _classify_worker_exit(pid: int) -> "tuple[str, Optional[int]]":
         if os.WIFSIGNALED(raw):
             return ("signaled", os.WTERMSIG(raw))
     except Exception:
-        pass
+        _log.debug('non-critical operation failed', exc_info=True)
     return ("unknown", None)
 
 
@@ -4944,7 +4946,7 @@ def reap_worker_zombies() -> "list[int]":
                 _record_worker_exit(pid, status)
                 reaped.append(pid)
         except Exception:
-            pass
+            _log.debug('non-critical operation failed', exc_info=True)
     return reaped
 
 
@@ -6726,7 +6728,7 @@ def run_daemon(
                 try:
                     on_tick(res)
                 except Exception:
-                    pass
+                    _log.debug('non-critical operation failed', exc_info=True)
         except Exception:
             # Don't let any single tick kill the daemon.
             import traceback
@@ -6856,7 +6858,7 @@ def build_worker_context(conn: sqlite3.Connection, task_id: str) -> str:
                     meta_str = json.dumps(run.metadata, ensure_ascii=False, sort_keys=True)
                     lines.append(f"_metadata_: `{_cap(meta_str)}`")
                 except Exception:
-                    pass
+                    _log.debug('non-critical operation failed', exc_info=True)
             lines.append("")
 
     # Parents: prefer the most-recent 'completed' run's summary + metadata,
@@ -6896,7 +6898,7 @@ def build_worker_context(conn: sqlite3.Connection, task_id: str) -> str:
                     meta_str = json.dumps(run.metadata, ensure_ascii=False, sort_keys=True)
                     body_lines.append(f"_metadata_: `{_cap(meta_str)}`")
                 except Exception:
-                    pass
+                    _log.debug('non-critical operation failed', exc_info=True)
             lines.extend(body_lines)
             lines.append("")
 

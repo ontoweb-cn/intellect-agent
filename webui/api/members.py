@@ -662,7 +662,7 @@ def _oauth_status_fields(handler, parsed, config: dict[str, Any]) -> dict[str, A
 
                 providers = list_enabled_providers(config)
             except Exception:
-                pass
+                pass  # intentionally silent — cleanup/teardown path
 
     fields = {
         "oauth_enabled": oauth_on,
@@ -1237,7 +1237,7 @@ def push_member_runtime_env(ctx=None) -> dict[str, Optional[str]]:
 
         old.update(snapshot_wiki_runtime_env())
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
     if not ctx or not ctx.member_id:
         return old
     os.environ["INTELLECT_MEMBER_ID"] = str(ctx.member_id)
@@ -1526,7 +1526,7 @@ def _resolve_actor_display_name(actor: str) -> str:
         finally:
             store.close()
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
     return actor
 
 
@@ -1584,7 +1584,7 @@ def _get_members(handler, parsed, actor: str) -> None:
                             "role": tm.get("role") or "member",
                         })
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             try:
                 pms = store.list_member_project_memberships(m["id"])
                 for pm in pms:
@@ -1594,7 +1594,7 @@ def _get_members(handler, parsed, actor: str) -> None:
                             "role": pm.get("role") or "member",
                         })
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
             result.append({
                 "id": m["id"],
                 "display_name": m.get("display_name") or "",
@@ -2697,7 +2697,7 @@ def _post_session(handler, parsed, body: dict[str, Any]) -> bool:
 
         oauth_cfg = get_oauth_config(config)
     except Exception:
-        pass
+        pass  # intentionally silent — cleanup/teardown path
     ttl = float(oauth_cfg.get("session_ttl_hours") or 168)
     j_with_cookies(
         handler,
@@ -3840,7 +3840,7 @@ def _get_project_detail(handler, parsed, actor: str, project_id: str) -> None:
                         "role": row.get("role") or "member",
                     })
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
         json_response(
             handler,
             {

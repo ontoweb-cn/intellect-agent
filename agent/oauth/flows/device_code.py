@@ -192,7 +192,7 @@ class DeviceCodeFlow:
                 webbrowser.open(self._verification_uri)
                 print("  (Browser opened automatically)")
             except Exception:
-                pass
+                logger.debug('non-critical operation failed', exc_info=True)
 
     def _poll_for_token(self, *, timeout: float | None = None) -> DeviceCodeResult:
         """Poll the token endpoint until success, expiry, or *timeout*."""
