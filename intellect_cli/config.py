@@ -5020,6 +5020,9 @@ def save_config(config: Dict[str, Any], *, only_keys: list[str] | None = None):
         )
         _secure_file(config_path)
         _LAST_EXPANDED_CONFIG_BY_PATH[str(config_path)] = copy.deepcopy(current_normalized)
+        from intellect_cli.api_key_secrets import warn_if_plaintext_api_keys_in_config
+
+        warn_if_plaintext_api_keys_in_config(current_normalized)
 
 
 def load_env() -> Dict[str, str]:

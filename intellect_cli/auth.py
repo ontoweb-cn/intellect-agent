@@ -612,6 +612,15 @@ def _resolve_api_key_provider_secret(
             pass
         return "", ""
 
+    from intellect_cli.api_key_secrets import (
+        resolve_config_yaml_provider_key,
+        resolve_secret_store_provider_key,
+    )
+
+    store_key, store_source = resolve_secret_store_provider_key(provider_id)
+    if has_usable_secret(store_key):
+        return store_key, store_source
+
     from intellect_cli.config import get_env_value
     for env_var in pconfig.api_key_env_vars:
         # Check both os.environ and ~/.intellect/.env file
@@ -632,6 +641,10 @@ def _resolve_api_key_provider_secret(
                     return key, f"credential_pool:{provider_id}"
     except Exception:
         pass
+
+    cfg_key, cfg_source = resolve_config_yaml_provider_key(provider_id)
+    if has_usable_secret(cfg_key):
+        return cfg_key, cfg_source
 
     return "", ""
 

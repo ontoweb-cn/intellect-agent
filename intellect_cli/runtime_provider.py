@@ -751,12 +751,12 @@ def _resolve_openrouter_runtime(
     model_cfg = _get_model_config()
     cfg_base_url = model_cfg.get("base_url") if isinstance(model_cfg.get("base_url"), str) else ""
     cfg_provider = model_cfg.get("provider") if isinstance(model_cfg.get("provider"), str) else ""
-    cfg_api_key = ""
-    for k in ("api_key", "api"):
-        v = model_cfg.get(k)
-        if isinstance(v, str) and v.strip():
-            cfg_api_key = v.strip()
-            break
+    from intellect_cli.api_key_secrets import resolve_model_inline_api_key
+
+    cfg_api_key = resolve_model_inline_api_key(
+        model_cfg if isinstance(model_cfg, dict) else {},
+        provider_hint=cfg_provider if isinstance(cfg_provider, str) else "",
+    )
     requested_norm = (requested_provider or "").strip().lower()
     cfg_provider = cfg_provider.strip().lower()
     # GitHub #27132: provider aliases that resolve to "custom" (ollama,
@@ -1499,10 +1499,11 @@ def resolve_runtime_provider(
                     token = os.getenv(env_var, "").strip()
                     if token:
                         break
-            # Next: an inline api_key on the model config (useful in multi-profile
-            # setups that want to avoid env-var juggling).
+            # Next: SecretStore or inline api_key on the model config.
             if not token:
-                token = str(model_cfg.get("api_key") or "").strip()
+                from intellect_cli.api_key_secrets import resolve_model_inline_api_key
+
+                token = resolve_model_inline_api_key(model_cfg)
             # Finally fall back to the historical fixed names.
             if not token:
                 token = (

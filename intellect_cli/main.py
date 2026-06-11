@@ -12548,9 +12548,20 @@ def main():
     _ss_list = _secrets_store_sub.add_parser("list", help="List stored secret keys")
     _ss_del = _secrets_store_sub.add_parser("delete", help="Delete a secret")
     _ss_del.add_argument("key", help="Secret key name")
+    _ss_migrate = _secrets_store_sub.add_parser(
+        "migrate-api-keys",
+        help="Move plaintext API keys from config.yaml into encrypted SecretStore",
+    )
+    _ss_migrate.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be migrated without writing changes",
+    )
 
     def _dispatch_secrets_store(args):  # noqa: ANN001
         from agent.secret_store import SecretStore
+        from intellect_cli.api_key_secrets import cmd_migrate_api_keys
+
         store = SecretStore()
         sub = getattr(args, "store_command", None)
         if sub == "set":
@@ -12571,6 +12582,8 @@ def main():
             else:
                 print(f"Not found: {args.key}", file=__import__("sys").stderr)
                 return 1
+        elif sub == "migrate-api-keys":
+            return cmd_migrate_api_keys(args)
         else:
             _secrets_store.print_help()
         return 0

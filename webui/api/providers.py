@@ -1068,6 +1068,15 @@ def _get_provider_api_key(provider_id: str) -> str | None:
             if _provider_value_counts_as_api_key(provider_id, alias_value):
                 return str(alias_value).strip() or None
 
+    try:
+        from intellect_cli.api_key_secrets import resolve_secret_store_provider_key
+
+        store_key, _ = resolve_secret_store_provider_key(provider_id)
+        if store_key and _provider_value_counts_as_api_key(provider_id, store_key):
+            return store_key
+    except Exception:
+        pass
+
     cfg = get_config()
     model_cfg = cfg.get("model", {})
     if isinstance(model_cfg, dict):
