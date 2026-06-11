@@ -2888,21 +2888,9 @@ main.main > #mainWorkspaces,
 main.main > #mainProfiles,
 main.main > #mainWiki,
 main.main > #mainInsights,
-main.main > #mainLogs,
-main.main > #mainMembers,
-main.main > #mainTeams,
-main.main > #mainProjects{display:none;}
-main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-wiki):not(.showing-insights):not(.showing-logs):not(.showing-members):not(.showing-teams):not(.showing-projects) > #mainChat{display:flex;}
+main.main > #mainLogs{display:none;}
+main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-wiki):not(.showing-insights):not(.showing-logs) > #mainChat{display:flex;}
 main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto;}
-main.main.showing-members > #mainMembers{display:flex;overflow-y:auto;}
-main.main.showing-teams > #mainTeams{display:flex;overflow-y:auto;}
-main.main.showing-projects > #mainProjects{display:flex;overflow-y:auto;}
-#mainMembers .members-pane{display:none;width:100%;max-width:720px;margin:0 auto;padding:20px 24px;flex:1;min-height:0;overflow-y:auto;}
-#mainMembers .members-pane.active{display:block;}
-#mainTeams .teams-pane{display:none;width:100%;max-width:720px;margin:0 auto;padding:20px 24px;flex:1;min-height:0;overflow-y:auto;}
-#mainTeams .teams-pane.active{display:block;}
-#mainProjects .projects-pane{display:none;width:100%;max-width:720px;margin:0 auto;padding:20px 24px;flex:1;min-height:0;overflow-y:auto;}
-#mainProjects .projects-pane.active{display:block;}
 main.main.showing-skills > #mainSkills{display:flex;}
 main.main.showing-memory > #mainMemory{display:flex;}
 main.main.showing-wiki > #mainWiki{display:flex;}

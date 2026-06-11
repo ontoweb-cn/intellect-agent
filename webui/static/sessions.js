@@ -18,62 +18,14 @@ const ICONS={
 let _loadingSessionId = null;
 
 const WEBUI_SESSION_LS_PREFIX = 'intellect-webui-session';
-const WEBUI_ACTOR_MEMBER_LS_KEY = 'intellect_webui_actor_member';
 
-function _multiUserMembersEnabled(){
-  try{
-    return !!(typeof _memberStatusCache!=='undefined'&&_memberStatusCache&&_memberStatusCache.enabled);
-  }catch(_){return false;}
-}
+/** Kept for login.js / member-auth.js compatibility (single-user: no-op). */
+function rememberWebuiActorMemberId(_memberId){}
 
-/** Drop sidebar cache when the signed-in member changes (multi-user). */
-function _resetSessionsForMemberContextChange(){
-  _allSessions=[];
-  _contentSearchResults=[];
-  _otherProfileCount=0;
-  _renderSessionListGen++;
-  if(typeof S!=='undefined'){
-    if(typeof cancelStream==='function'&&S.activeStreamId){try{void cancelStream();}catch(_){}}
-    S.session=null;
-    S.messages=[];
-    S.toolCalls=[];
-  }
-  const empty=typeof $==='function'?$('emptyState'):document.getElementById('emptyState');
-  if(empty) empty.style.display='';
-}
-
-function rememberWebuiActorMemberId(memberId){
-  try{
-    const prev=localStorage.getItem(WEBUI_ACTOR_MEMBER_LS_KEY)||'';
-    const next=memberId?String(memberId):'';
-    if(next){
-      localStorage.setItem(WEBUI_ACTOR_MEMBER_LS_KEY, next);
-      // Legacy unscoped key predates per-member isolation — never reuse across actors.
-      localStorage.removeItem(WEBUI_SESSION_LS_PREFIX);
-    }else{
-      localStorage.removeItem(WEBUI_ACTOR_MEMBER_LS_KEY);
-    }
-    const switched=Boolean(prev&&next&&prev!==next);
-    const signedOut=Boolean(prev&&!next);
-    if(switched||signedOut) _resetSessionsForMemberContextChange();
-    if(switched&&typeof window!=='undefined'&&typeof window.invalidateMembersStatusCache==='function'){
-      window.invalidateMembersStatusCache();
-    }
-  }catch(_){}
-}
+function _resetSessionsForMemberContextChange(){}
 
 function memberScopedSessionStorageKey(){
-  let mid='';
-  try{
-    mid=(typeof _memberStatusCache!=='undefined'&&_memberStatusCache&&_memberStatusCache.actor_member_id)
-      ||localStorage.getItem(WEBUI_ACTOR_MEMBER_LS_KEY)||'';
-  }catch(_){}
-  // Multi-user: do not fall back to the shared legacy key (another member's session id).
-  if(_multiUserMembersEnabled()){
-    if(!mid) return null;
-    return WEBUI_SESSION_LS_PREFIX+':'+mid;
-  }
-  return mid?(WEBUI_SESSION_LS_PREFIX+':'+mid):WEBUI_SESSION_LS_PREFIX;
+  return WEBUI_SESSION_LS_PREFIX;
 }
 
 function getSavedWebuiSessionId(){
@@ -95,15 +47,12 @@ function setSavedWebuiSessionId(sid){
 
 function clearSavedWebuiSessionIds(opts={}){
   try{
-    // Always drop legacy unscoped resume key (pre–per-member localStorage).
     localStorage.removeItem(WEBUI_SESSION_LS_PREFIX);
     if(opts.allMembers){
       for(let i=localStorage.length-1;i>=0;i--){
         const k=localStorage.key(i);
         if(k&&k.indexOf(WEBUI_SESSION_LS_PREFIX+':')===0) localStorage.removeItem(k);
       }
-    }else{
-      localStorage.removeItem(memberScopedSessionStorageKey());
     }
   }catch(_){}
 }
@@ -2386,43 +2335,6 @@ function _schedulePendingSessionListApply(){
   }, Math.max(120, SESSION_LIST_INTERACTION_IDLE_MS));
 }
 
-function _currentActorMemberId(){
-  try{
-    const actor=(_memberStatusCache&&_memberStatusCache.actor_member_id)
-      ||localStorage.getItem(WEBUI_ACTOR_MEMBER_LS_KEY)||'';
-    return String(actor||'').trim();
-  }catch(_){return '';}
-}
-
-/** True once /api/members/status has been applied (multi-user boot complete). */
-function _memberActorContextResolved(){
-  try{
-    return !!(typeof _memberStatusCache!=='undefined'&&_memberStatusCache
-      &&typeof _memberStatusCache.enabled==='boolean');
-  }catch(_){return false;}
-}
-
-function _sessionVisibleInServerSidebar(sid){
-  if(!sid||!Array.isArray(_allSessions)) return false;
-  return _allSessions.some(s=>s&&s.session_id===sid);
-}
-
-function _sessionOwnedByCurrentActor(session){
-  if(!session||!_multiUserMembersEnabled()) return true;
-  const sid=session.session_id;
-  // Sidebar rows already passed server member scope; trust that list.
-  if(sid&&_sessionVisibleInServerSidebar(sid)) return true;
-  const actor=_currentActorMemberId();
-  // After status is loaded, hide rows until actor is known (fail-closed).
-  if(_memberActorContextResolved()&&!actor) return false;
-  // Boot race before first /api/members/status — server list is already scoped.
-  if(!actor) return true;
-  const owner=String(session.member_id||'').trim();
-  // Missing owner on payload: do not reject; server visibility already enforced.
-  if(!owner) return true;
-  return owner===actor;
-}
-
 function _abandonInaccessibleSession(sid, opts={}){
   const showToastMsg=opts&&opts.toast;
   if(S&&S.session&&S.session.session_id===sid){
@@ -2461,44 +2373,14 @@ function _abandonInaccessibleSession(sid, opts={}){
   if(showToastMsg&&typeof showToast==='function') showToast(showToastMsg, 4000, 'error');
 }
 
-function _rejectSessionIfWrongMember(session, sid){
-  if(!session||!_multiUserMembersEnabled()) return false;
-  if(_sessionOwnedByCurrentActor(session)) return false;
-  const actor=_currentActorMemberId();
-  const owner=String(session.member_id||'').trim();
-  // Only reject explicit cross-member access (both ids present and differ).
-  if(!actor||!owner||owner===actor) return false;
-  if(sid&&_sessionVisibleInServerSidebar(sid)) return false;
-  _abandonInaccessibleSession(sid, {
-    toast: 'Session not available in web UI.',
-  });
-  return true;
+function _rejectSessionIfWrongMember(_session, _sid){
+  return false;
 }
 
-function _reconcileActiveSessionWithSidebarScope(){
-  if(!_multiUserMembersEnabled()||!S||!S.session||!S.session.session_id) return;
-  const sid=S.session.session_id;
-  if(_sessionVisibleInServerSidebar(sid)) return;
-  if(_sessionOwnedByCurrentActor(S.session)) return;
-  const actor=_currentActorMemberId();
-  const owner=String(S.session.member_id||'').trim();
-  if(!actor||!owner||owner===actor) return;
-  _abandonInaccessibleSession(sid, {
-    toast: 'Session not available in web UI.',
-  });
-}
+function _reconcileActiveSessionWithSidebarScope(){}
 
 function _filterSessionsForCurrentMember(rows){
-  const list=Array.isArray(rows)?rows:[];
-  if(!_multiUserMembersEnabled()) return list;
-  const actor=_currentActorMemberId();
-  // Server already scoped /api/sessions; trust it while actor cache is still loading.
-  if(!actor) return list;
-  return list.filter(s=>{
-    if(!s||!s.session_id) return false;
-    const owner=String(s.member_id||'').trim();
-    return owner===actor;
-  });
+  return Array.isArray(rows)?rows:[];
 }
 
 function _applySessionListPayload(sessData, projData){

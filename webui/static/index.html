@@ -173,14 +173,6 @@
           </div>
         </div>
       </div>
-      <div class="user-profile-section" id="userProfileTeamsSection" hidden>
-        <div class="user-profile-section-title" data-i18n="profile_section_teams">Teams</div>
-        <div class="user-profile-team-list" id="userProfileTeamList"></div>
-      </div>
-      <div class="user-profile-section" id="userProfileProjectsSection" hidden>
-        <div class="user-profile-section-title" data-i18n="profile_section_projects">Projects</div>
-        <div class="user-profile-team-list" id="userProfileProjectList"></div>
-      </div>
       <div class="user-profile-actions">
         <button type="button" class="user-profile-action user-profile-action--warn" id="userProfileDisableAuth" hidden data-i18n="disable_auth">Disable auth</button>
         <button type="button" class="user-profile-action user-profile-action--danger" id="userProfileSignOut" hidden data-i18n="sign_out">Sign out</button>
@@ -188,8 +180,6 @@
     </div>
   </div>
 </header>
-<div class="member-team-banner" id="memberTeamBanner" hidden data-i18n="member_team_banner">Select an active team to continue.</div>
-<div class="member-team-banner" id="memberProjectBanner" hidden data-i18n="member_project_banner">Select an active project to continue.</div>
 <div class="layout">
   <nav class="rail" aria-label="Primary navigation">
     <button class="rail-btn nav-tab active has-tooltip" data-panel="chat" onclick="switchPanel('chat',{fromRailClick:true})" data-tooltip="Chat" data-i18n-title="tab_chat" aria-label="Chat"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
@@ -201,9 +191,6 @@
     <button class="rail-btn nav-tab has-tooltip" data-panel="workspaces" onclick="switchPanel('workspaces',{fromRailClick:true})" data-tooltip="Spaces" data-i18n-title="tab_workspaces" aria-label="Spaces"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
     <!-- TEMPORARY: hidden by boot.js when profiles.management_enabled is false -->
     <button class="rail-btn nav-tab has-tooltip" data-panel="profiles" onclick="switchPanel('profiles',{fromRailClick:true})" data-tooltip="Agent profiles" data-i18n-title="tab_profiles" aria-label="Agent profiles"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 21a8 8 0 0 1 10.821-7.487"/><path d="M21.378 16.626a1 1 0 0 0-3.004-3.004l-4.01 4.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/><circle cx="10" cy="8" r="5"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="members" onclick="switchPanel('members',{fromRailClick:true})" data-tooltip="Members" data-i18n-title="tab_members" aria-label="Members"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="teams" onclick="switchPanel('teams',{fromRailClick:true})" data-tooltip="Teams" data-i18n-title="tab_teams" aria-label="Teams"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M20 8a4 4 0 0 1-3 3.87"/><circle cx="9" cy="7" r="4"/></svg></button>
-    <button class="rail-btn nav-tab has-tooltip" data-panel="projects" onclick="(window.openProjectsPanel||function(o){switchPanel('projects',o||{fromRailClick:true})})({fromRailClick:true})" data-tooltip="Projects" data-i18n-title="tab_projects" aria-label="Projects"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="todos" onclick="switchPanel('todos',{fromRailClick:true})" data-tooltip="Current task list" data-i18n-title="tab_todos" aria-label="Todos"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="insights" onclick="switchPanel('insights',{fromRailClick:true})" data-tooltip="Insights" data-i18n-title="tab_insights" aria-label="Insights"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></button>
     <button class="rail-btn nav-tab has-tooltip" data-panel="logs" onclick="switchPanel('logs',{fromRailClick:true})" data-tooltip="Logs" data-i18n-title="tab_logs" aria-label="Logs"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 9h2"/></svg></button>
@@ -222,9 +209,6 @@
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="workspaces" data-label="Spaces" onclick="switchPanel('workspaces',{fromRailClick:true})" data-tooltip="Spaces" data-i18n-title="tab_workspaces"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
       <!-- TEMPORARY: hidden by boot.js when profiles.management_enabled is false -->
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="profiles" data-label="Profiles" onclick="switchPanel('profiles',{fromRailClick:true})" data-tooltip="Agent profiles" data-i18n-title="tab_profiles"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 21a8 8 0 0 1 10.821-7.487"/><path d="M21.378 16.626a1 1 0 0 0-3.004-3.004l-4.01 4.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/><circle cx="10" cy="8" r="5"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="members" data-label="Members" onclick="switchPanel('members',{fromRailClick:true})" data-tooltip="Members" data-i18n-title="tab_members"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="teams" data-label="Teams" onclick="switchPanel('teams',{fromRailClick:true})" data-tooltip="Teams" data-i18n-title="tab_teams"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M20 8a4 4 0 0 1-3 3.87"/><circle cx="9" cy="7" r="4"/></svg></button>
-      <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="projects" data-label="Projects" onclick="(window.openProjectsPanel||function(o){switchPanel('projects',o||{fromRailClick:true})})({fromRailClick:true})" data-tooltip="Projects" data-i18n-title="tab_projects"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="todos" data-label="Todos" onclick="switchPanel('todos',{fromRailClick:true})" data-tooltip="Current task list" data-i18n-title="tab_todos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="insights" data-label="Insights" onclick="switchPanel('insights',{fromRailClick:true})" data-tooltip="Insights" data-i18n-title="tab_insights"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></button>
       <button class="nav-tab has-tooltip has-tooltip--bottom" data-panel="logs" data-label="Logs" onclick="switchPanel('logs',{fromRailClick:true})" data-tooltip="Logs" data-i18n-title="tab_logs"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 9h2"/></svg></button>
@@ -364,27 +348,6 @@
       </div>
       <div style="flex:1;overflow-y:auto;padding:8px" id="profilesPanel"><div style="color:var(--muted);font-size:12px" data-i18n="loading">Loading...</div></div>
     </div>
-    <!-- Members panel (menu list; actual panes render in mainMembers) -->
-    <div class="panel-view" id="panelMembers">
-      <div class="panel-head">
-        <span data-i18n="tab_members">Members</span>
-      </div>
-      <div class="side-menu" id="membersSideMenu"><div style="padding:12px;color:var(--muted);font-size:12px" data-i18n="loading">Loading...</div></div>
-    </div>
-    <!-- Teams panel (menu list; panes render in mainTeams) -->
-    <div class="panel-view" id="panelTeams">
-      <div class="panel-head">
-        <span data-i18n="tab_teams">Teams</span>
-      </div>
-      <div class="side-menu" id="teamsSideMenu"><div style="padding:12px;color:var(--muted);font-size:12px" data-i18n="loading">Loading...</div></div>
-    </div>
-    <!-- Projects panel (menu list; panes render in mainProjects) -->
-    <div class="panel-view" id="panelProjects">
-      <div class="panel-head">
-        <span data-i18n="tab_projects">Projects</span>
-      </div>
-      <div class="side-menu" id="projectsSideMenu"><p class="members-hint" style="padding:12px;color:var(--muted);font-size:12px">Loading…</p></div>
-    </div>
     <!-- Logs panel -->
     <div class="panel-view" id="panelLogs">
       <div class="panel-head">
@@ -439,10 +402,6 @@
         <button type="button" class="side-menu-item" data-settings-section="providers" onclick="switchSettingsSection('providers')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
           <span data-i18n="providers_tab_title">基座模型</span>
-        </button>
-        <button type="button" class="side-menu-item" data-settings-section="oauth-providers" onclick="switchSettingsSection('oauth-providers')">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-          <span data-i18n="settings_tab_oauth_providers">认证服务</span>
         </button>
         <button type="button" class="side-menu-item" data-settings-section="plugins" onclick="switchSettingsSection('plugins')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3 7h7l-5.5 4.3 2.1 7L12 16.2 5.4 20.3l2.1-7L2 9h7z"/></svg>
@@ -1351,18 +1310,6 @@
               No configurable providers found.
             </div>
           </div>
-          <div class="settings-pane" id="settingsPaneOauthProviders">
-            <div class="settings-section-head">
-              <div>
-                <div class="settings-section-title" data-i18n="settings_oauth_providers_title">认证服务</div>
-                <div class="settings-section-meta" data-i18n="settings_oauth_providers_meta">管理成员登录认证服务（GitHub、Google 等 OAuth 提供商）。</div>
-              </div>
-              <button class="sm-btn" id="oauthProvidersAddBtn" onclick="showOAuthAddForm()" style="padding:6px 12px;white-space:nowrap" data-i18n="oauth_providers_add">+ Add Provider</button>
-            </div>
-            <div id="oauthProvidersList" style="display:flex;flex-direction:column;margin-top:4px">
-              <!-- Populated by loadOAuthProvidersPanel() -->
-            </div>
-          </div>
           <div class="settings-pane" id="settingsPanePlugins">
             <div class="settings-section-head">
               <div>
@@ -1389,12 +1336,6 @@
                 <button class="btn-tiny" id="btnCheckUpdatesNow" onclick="checkUpdatesNow()" title="Check for updates now" data-i18n-title="settings_check_now"><svg id="checkUpdatesSpinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spinner-xs" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><polyline points="21 3 21 9 15 9"/></svg><span id="checkUpdatesLabel" data-i18n="settings_check_now">Check now</span></button>
                 <span id="checkUpdatesStatus"></span>
               </div>
-            </div>
-            <!-- Members / OAuth (WebUI-native) -->
-            <div class="settings-field" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
-              <label data-i18n="members_setup_title">Members &amp; OAuth</label>
-              <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="members_setup_desc">Multi-user mode uses the same intellect-agent membership database.</div>
-              <div id="membersSetupCard"><span style="color:var(--muted);font-size:12px" data-i18n="loading">Loading…</span></div>
             </div>
             <!-- Gateway Status Section -->
             <div class="settings-field" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
@@ -1434,24 +1375,6 @@
             <button class="sm-btn" onclick="saveSettings()" style="margin-top:12px;width:100%;padding:8px;font-weight:600" data-i18n="settings_save_btn">Save Settings</button>
           </div>
       </div>
-    </div>
-    <div id="mainMembers" class="main-view">
-      <div class="members-pane active" id="membersPanePassword"></div>
-      <div class="members-pane" id="membersPaneIdentities"></div>
-      <div class="members-pane" id="membersPaneTokens"></div>
-      <div class="members-pane" id="membersPaneInvites"></div>
-      <div class="members-pane" id="membersPaneMembersList"></div>
-      <div class="members-pane" id="membersPaneActivity"></div>
-    </div>
-    <div id="mainTeams" class="main-view">
-      <div class="teams-pane active" id="teamsPaneMine"></div>
-      <div class="teams-pane" id="teamsPaneManage"></div>
-      <div class="teams-pane" id="teamsPaneApprovals"></div>
-    </div>
-    <div id="mainProjects" class="main-view">
-      <div class="projects-pane active" id="projectsPaneMine"></div>
-      <div class="projects-pane" id="projectsPaneManage"></div>
-      <div class="projects-pane" id="projectsPaneApprovals"></div>
     </div>
   </main>
   <button class="workspace-panel-edge-toggle has-tooltip has-tooltip--left" id="btnWorkspacePanelEdgeToggle" type="button" onclick="toggleWorkspacePanel(true)" data-tooltip="Show workspace panel" aria-label="Show workspace panel" aria-expanded="false">
@@ -1577,17 +1500,13 @@
 <script src="static/sessions.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/commands.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/messages.js?v=__WEBUI_VERSION__" defer></script>
-<script src="static/projects.js?v=__WEBUI_VERSION__" defer></script>
-<script src="static/teams.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/wiki-panel.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/panels.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/onboarding.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/oauth.js?v=__WEBUI_VERSION__" defer></script>
-<script src="static/oauth-providers.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/member-auth.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/member-oauth-providers.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/user-profile.js?v=__WEBUI_VERSION__" defer></script>
-<script src="static/members.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/code-cell.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/boot.js?v=__WEBUI_VERSION__" defer></script>
 

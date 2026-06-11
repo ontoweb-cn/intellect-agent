@@ -40,7 +40,7 @@ let _logsSeverityFilter = 'all';
 const APP_TITLEBAR_KEYS = {
   chat: 'tab_chat', tasks: 'tab_tasks', skills: 'tab_skills',
   memory: 'tab_memory', workspaces: 'tab_workspaces',
-  profiles: 'tab_profiles', members: 'tab_members', teams: 'tab_teams', projects: 'tab_projects', todos: 'tab_todos', wiki: 'tab_wiki', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
+  profiles: 'tab_profiles', todos: 'tab_todos', wiki: 'tab_wiki', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
 };
 
 /**
@@ -209,7 +209,7 @@ function _resyncChatSidebarAfterPanelSwitch() {
 }
 
 async function switchPanel(name, opts = {}) {
-  const nextPanel = name || 'chat';
+  let nextPanel = name || 'chat';
   const prevPanel = _currentPanel;
   // ── Desktop sidebar collapse toggle (rail-click only) ──
   // If the click came from a rail icon AND we're on desktop, the rail icon
@@ -230,6 +230,9 @@ async function switchPanel(name, opts = {}) {
       toggleSidebar(true);
       return false;
     }
+  }
+  if (nextPanel === 'members' || nextPanel === 'teams' || nextPanel === 'projects') {
+    nextPanel = 'chat';
   }
   if (!opts.bypassSettingsGuard && !_beforePanelSwitch(nextPanel)) return false;
   if (prevPanel !== 'settings' && nextPanel === 'settings') _beginSettingsPanelSession();
@@ -255,7 +258,7 @@ async function switchPanel(name, opts = {}) {
   // showing-<name> class on <main>; no class means chat (the default).
   const mainEl = document.querySelector('main.main');
   if (mainEl) {
-    ['settings','skills','memory','tasks','kanban','workspaces','profiles','members','teams','projects','wiki','insights','logs'].forEach(p => {
+    ['settings','skills','memory','tasks','kanban','workspaces','profiles','wiki','insights','logs'].forEach(p => {
       mainEl.classList.toggle('showing-' + p, nextPanel === p);
     });
   }
@@ -271,20 +274,6 @@ async function switchPanel(name, opts = {}) {
       return switchPanel('chat', opts);
     }
     await loadProfilesPanel();
-  }
-  if (nextPanel === 'members') await loadMembersPanel();
-  if (nextPanel === 'teams') await loadTeamsPanel();
-  if (nextPanel === 'projects') {
-    if (typeof loadProjectsPanel === 'function') {
-      await loadProjectsPanel();
-    } else {
-      var projectsMenu = document.getElementById('projectsSideMenu');
-      if (projectsMenu) {
-        projectsMenu.innerHTML = '<p class="members-error" style="padding:12px">'
-          + (typeof esc === 'function' ? esc('Projects script not loaded — hard-refresh the page (Ctrl+Shift+R).') : 'Projects script not loaded — hard-refresh the page.')
-          + '</p>';
-      }
-    }
   }
   if (nextPanel === 'todos') loadTodos();
   if (nextPanel === 'wiki' && typeof loadWikiPanel === 'function') await loadWikiPanel();
@@ -305,16 +294,6 @@ async function switchPanel(name, opts = {}) {
   _resyncChatSidebarAfterPanelSwitch();
   syncAppTitlebar();
   return true;
-}
-
-/** Rail/sidebar Projects tab — defined here so onclick works even if projects.js fails to load. */
-function openProjectsPanel(opts = {}) {
-  const merged = { fromRailClick: true, ...opts };
-  void switchPanel('projects', merged);
-}
-
-if (typeof window !== 'undefined') {
-  window.openProjectsPanel = openProjectsPanel;
 }
 
 // ── Cron panel ──
@@ -5821,36 +5800,6 @@ function _applyTabVisibility(hidden){
   }
 }
 
-function _syncMemberTabsVisibility(status){
-  // Show/hide Members and Teams sidebar tabs based on multi-user mode
-  var membersOn=!!(status&&status.enabled);
-  var teamsOn=!!(status&&status.teams_enabled);
-  var projectsOn=!!(status&&status.projects_enabled);
-  document.querySelectorAll('[data-panel="members"]').forEach(function(el){
-    el.classList.toggle('nav-tab-hidden',!membersOn);
-  });
-  document.querySelectorAll('[data-panel="teams"]').forEach(function(el){
-    el.classList.toggle('nav-tab-hidden',!teamsOn);
-  });
-  document.querySelectorAll('[data-panel="projects"]').forEach(function(el){
-    el.classList.toggle('nav-tab-hidden',!projectsOn);
-  });
-}
-
-// Optimistic early init: if member cookies exist, show tabs immediately
-// without waiting for the slow /api/members/status call
-(function(){
-  if (typeof document === 'undefined') return;
-  var hasMemberCookie = document.cookie.indexOf('intellect_member') >= 0;
-  if (hasMemberCookie) {
-    document.querySelectorAll('[data-panel="members"]').forEach(function(el){
-      el.classList.remove('nav-tab-hidden');
-    });
-  }
-})();
-// Expose for user-profile.js
-if(typeof window!=='undefined') window._syncMemberTabsVisibility=_syncMemberTabsVisibility;
-
 function _renderTabVisibilityChips(){
   var container=$('tabVisibilityChips');
   if(!container)return;
@@ -5899,16 +5848,16 @@ function _toggleTabVisibilityChip(panel){
 }
 
 function switchSettingsSection(name){
-  const section=(name==='appearance'||name==='preferences'||name==='providers'||name==='oauth-providers'||name==='plugins'||name==='system')?name:'conversation';
+  const section=(name==='appearance'||name==='preferences'||name==='providers'||name==='plugins'||name==='system')?name:'conversation';
   _settingsSection=section;
   _currentSettingsSection=section;
-  const map={conversation:'Conversation',appearance:'Appearance',preferences:'Preferences',providers:'Providers','oauth-providers':'OauthProviders',plugins:'Plugins',system:'System'};
+  const map={conversation:'Conversation',appearance:'Appearance',preferences:'Preferences',providers:'Providers',plugins:'Plugins',system:'System'};
   // Sidebar menu items
   document.querySelectorAll('#settingsMenu .side-menu-item').forEach(it=>{
     it.classList.toggle('active', it.dataset.settingsSection===section);
   });
   // Panes in main
-  ['conversation','appearance','preferences','providers','oauth-providers','plugins','system'].forEach(key=>{
+  ['conversation','appearance','preferences','providers','plugins','system'].forEach(key=>{
     const pane=$('settingsPane'+map[key]);
     if(pane) pane.classList.toggle('active', key===section);
   });
@@ -5917,7 +5866,6 @@ function switchSettingsSection(name){
   if(dd && dd.value!==section) dd.value=section;
   // Lazy-load integration panels when their tabs are opened
   if(section==='providers') loadProvidersPanel();
-  if(section==='oauth-providers') loadOAuthProvidersPanel();
   if(section==='plugins') loadPluginsPanel();
 }
 
@@ -7689,8 +7637,6 @@ async function saveSettings(andClose){
   body.bot_name=botName||'Intellect';
   const dashboardTitle=(($('settingsDashboardTitle')||{}).value||'').trim();
   body.dashboard_title=dashboardTitle||'Intellect Agent Harness';
-  const localReqCb=$('settingsMembersLocalRequiresApproval');
-  if(localReqCb) body.members_local_requires_approval=!!localReqCb.checked;
   try{
     const saved=await api('/api/settings',{method:'POST',body:JSON.stringify(body)});
     if(modelChanged && model){
@@ -8376,408 +8322,8 @@ function loadGatewayStatus(){
 const _origSwitchSettings=switchSettingsSection;
 switchSettingsSection=function(name){
   _origSwitchSettings(name);
-  if(name==='system'){loadVaultWikiSettings();loadMcpServers();loadMcpTools();loadGatewayStatus();loadMembersSetupCard();loadMemoryProviders();}
+  if(name==='system'){loadVaultWikiSettings();loadMcpServers();loadMcpTools();loadGatewayStatus();loadMemoryProviders();}
 };
-
-var _membersBootstrapActive=false;
-
-async function loadMembersSetupCard(){
-  if(_membersBootstrapActive) return;
-  const card=$('membersSetupCard');
-  if(!card) return;
-  try{
-    const s=await api('/api/members/status');
-    renderMembersSetupCard(card,s);
-  }catch(e){
-    card.innerHTML=`<div style="color:var(--muted);font-size:12px">${esc(t('members_setup_unavailable')||'Members API unavailable (intellect-agent required).')}</div>`;
-  }
-}
-
-function renderMembersSetupCard(card,s){
-  // Show/hide Members/Teams sidebar tabs
-  _syncMemberTabsVisibility(s);
-  if(!s||!s.agent_available){
-    card.innerHTML=`<div style="color:var(--muted);font-size:12px">${esc(t('members_setup_unavailable')||'Members API unavailable (intellect-agent required).')}</div>`;
-    return;
-  }
-  const enabled=s.enabled===true;
-  const teamsOn=s.teams_enabled===true;
-  const projectsOn=s.projects_enabled===true;
-  const actor=s.actor_member_id||'';
-  var html='';
-  // Toggle: Multi-User (requires webui password in single-user mode)
-  if(!enabled&&!s.webui_auth_enabled){
-    html+=`<div class="settings-field" style="margin-bottom:8px;border-left:3px solid var(--amber,#f59e0b);padding-left:12px">
-      <label style="font-weight:500;color:var(--amber,#f59e0b)">${esc(t('members_toggle_locked_title')||'Multi-User Unavailable')}</label>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">${esc(t('members_toggle_locked_desc')||'Set a WebUI admin password first before enabling multi-user mode. Click your avatar → Set Password.')}</div>
-    </div>`;
-  }else{
-    html+=_buildConfigToggleRow({
-      id:'toggleMembersEnabled', on:enabled,
-      label:t('members_toggle_label')||'Multi-User Mode',
-      desc:t('members_toggle_desc')||'Enable multi-user membership system'
-    });
-  }
-  // Toggle: Teams + Projects (only when members on)
-  if(enabled){
-    html+=_buildConfigToggleRow({
-      id:'toggleTeamsEnabled', on:teamsOn,
-      label:t('teams_toggle_label')||'Teams',
-      desc:t('teams_toggle_desc')||'Enable team collaboration features'
-    });
-    html+=_buildConfigToggleRow({
-      id:'toggleProjectsEnabled', on:projectsOn,
-      label:t('projects_toggle_label')||'Projects',
-      desc:t('projects_toggle_desc')||'Enable project workspaces and secrets'
-    });
-  }
-  // Bootstrap button (only when enabled but not bootstrapped)
-  if(enabled&&!s.bootstrap_complete){
-    html+=`<div class="settings-field" style="margin-bottom:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <label style="font-weight:500">${esc(t('members_bootstrap_label')||'Bootstrap')}</label>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(t('members_bootstrap_desc')||'Create your admin account')}</div>
-        </div>
-        <button class="btn btn-sm" id="btnMembersBootstrap" onclick="handleMembersBootstrap()">${esc(t('members_bootstrap_btn')||'Run')}</button>
-      </div></div>`;
-  }
-  // Status line
-  var statusParts=[];
-  if(enabled){statusParts.push('<strong>'+esc(t('members_setup_mode')||'Mode')+':</strong> '+esc(s.mode||'multi'));}
-  if(enabled&&actor){statusParts.push(esc(t('members_setup_actor')||'Signed in as')+': <strong>'+esc(s.actor_display_name||actor)+'</strong>');}
-  if(enabled&&teamsOn){statusParts.push(esc(t('members_setup_teams_on')||'Teams enabled'));}
-  if(statusParts.length){
-    html+='<div style="font-size:12px;color:var(--muted);margin-top:6px">'+statusParts.join(' &middot; ')+'</div>';
-  }
-  // Local registration checkbox (only when members on)
-  if(enabled){
-    html+=`
-      <label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:12px;cursor:pointer">
-        <input type="checkbox" id="settingsMembersLocalRequiresApproval" ${s.local_registration_requires_approval?'checked':''} style="margin-top:2px">
-        <span>${esc(t('members_setup_local_requires_approval')||'Allow local account self-registration (requires admin approval before sign-in)')}</span>
-      </label>`;
-  }
-  // OAuth callback hint
-  if(s.oauth_enabled){
-    var origin=(typeof location!=='undefined'&&location.origin)?location.origin.replace(/\/$/,''):'http://127.0.0.1:9119';
-    var suggested=origin+'/api/members/oauth/callback';
-    html+=`
-      <div class="members-setup-callback" style="margin-top:10px;padding:10px;background:var(--code-bg);border:1px solid var(--border2);border-radius:6px;font-size:12px;line-height:1.5">
-        <div style="font-weight:600;margin-bottom:4px">${esc(t('members_setup_callback_title')||'OAuth callback URL')}</div>
-        <code style="word-break:break-all">${esc(suggested)}</code>
-        <div style="color:var(--muted);margin-top:6px">${esc(t('members_setup_callback_base')||'config.yaml base (no path):')} <code>${esc(origin)}</code></div>
-        <div style="color:var(--muted);margin-top:6px">${esc(t('members_setup_callback_hint')||'Set members.oauth.callback_base_url to the base URL above when behind a reverse proxy.')}</div>
-      </div>`;
-  }
-  card.innerHTML=html;
-}
-
-function _buildConfigToggleRow(opts){
-  var on=opts.on?' on':'';
-  var cls='config-toggle'+on;
-  var attrs='role="switch" aria-checked="'+(opts.on?'true':'false')+'"';
-  return `<div class="settings-field" style="margin-bottom:8px">
-    <div style="display:flex;align-items:center;justify-content:space-between">
-      <div style="flex:1;min-width:0;padding-right:12px">
-        <label style="font-weight:500">${esc(opts.label)}</label>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(opts.desc)}</div>
-      </div>
-      <span class="${cls}" id="${opts.id}" ${attrs} onclick="handleConfigToggleClick(this,'${opts.id}')"></span>
-    </div></div>`;
-}
-
-var _configToggleMap={
-  toggleMembersEnabled:'members.enabled',
-  toggleTeamsEnabled:'members.teams.enabled',
-  toggleProjectsEnabled:'members.projects.enabled'
-};
-
-async function handleConfigToggleClick(el,id){
-  if(el.classList.contains('disabled')) return;
-  var key=_configToggleMap[id];
-  if(!key) return;
-  var currentOn=el.classList.contains('on');
-  var next=!currentOn;
-  // Confirm when disabling members
-  if(id==='toggleMembersEnabled'&&!next){
-    var ok=await showConfirmDialog({
-      title:t('members_disable_confirm_title')||'Disable Multi-User?',
-      message:t('members_disable_confirm_msg')||'This will disable all member accounts, teams, and projects. Continue?',
-      confirmLabel:'Disable',danger:true,focusCancel:true
-    });
-    if(!ok) return;
-  }
-  // Turning members ON: delegate to bootstrap flow (don't set config yet)
-  if(id==='toggleMembersEnabled'&&next){
-    await handleMembersBootstrap();
-    return;
-  }
-  // Teams/Projects toggle, or members OFF: write config immediately
-  el.classList.toggle('on',next);
-  el.setAttribute('aria-checked',String(next));
-  try{
-    await api('/api/config',{method:'POST',body:JSON.stringify({key:key,value:next})});
-    var s=await api('/api/members/status');
-    renderMembersSetupCard($('membersSetupCard'),s);
-  }catch(e){
-    // Rollback on failure
-    el.classList.toggle('on',!next);
-    el.setAttribute('aria-checked',String(!next));
-    showToast('Failed: '+(e.message||'unknown error'),3000);
-  }
-}
-
-var _bsPgDryRunOk=false;
-var _bsStorageChoice='postgresql';
-
-function _bsStorageIsPg(){
-  var r=document.querySelector('input[name="bsStorageBackend"]:checked');
-  return r&&r.value==='postgresql';
-}
-
-function _readBootstrapPgPayload(){
-  var dsnEl=$('bsPgDsn');
-  var dsn=dsnEl?dsnEl.value.trim():'';
-  if(dsn) return {dsn:dsn};
-  return {
-    host:($('bsPgHost')?$('bsPgHost').value.trim():'')||'localhost',
-    port:parseInt(($('bsPgPort')?$('bsPgPort').value:'5432'),10)||5432,
-    database:($('bsPgDatabase')?$('bsPgDatabase').value.trim():'')||'intellect',
-    user:($('bsPgUser')?$('bsPgUser').value.trim():'')||'intellect',
-    password:($('bsPgPassword')?$('bsPgPassword').value:'')||'',
-  };
-}
-
-function _bsUpdatePgPanelVisibility(){
-  var pg=_bsStorageIsPg();
-  var panel=$('bsPgPanel');
-  if(panel) panel.style.display=pg?'':'none';
-  var runBtn=$('bsRunBtn');
-  if(runBtn){
-    var ok=(!pg)||_bsPgDryRunOk;
-    runBtn.disabled=!ok;
-    runBtn.title=ok?'':(t('storage_migrate_dry_run_required')||'Run Test & migrate (dry-run) first');
-  }
-}
-
-function _bsApplyStorageStatus(st){
-  if(!st) return;
-  var dryBtn=$('bsMigrateDryBtn');
-  if(dryBtn){
-    if(st.fresh_pg_install){
-      dryBtn.textContent=t('storage_init_pg_schema')||'Initialize PostgreSQL schema';
-    }else{
-      dryBtn.textContent=t('storage_migrate_dry_run')||'Test & migrate (dry-run)';
-    }
-  }
-  var warnEl=$('bsDualWriteWarn');
-  if(!warnEl) return;
-  var risk=st.dual_write_risk||'none';
-  if(risk==='high'||risk==='medium'||(st.storage_backend==='postgresql'&&st.sqlite_exists)){
-    var lines=st.dual_write_messages&&st.dual_write_messages.length
-      ?st.dual_write_messages
-      :[(t('storage_active_sqlite_on_pg')||'Active state.db on disk while PostgreSQL is configured — run migrate to retire it')];
-    warnEl.textContent=lines.join(' · ');
-    warnEl.style.display='';
-    warnEl.style.color=risk==='high'?'var(--red)':'var(--yellow,#eab308)';
-  }else{
-    warnEl.textContent='';
-    warnEl.style.display='none';
-  }
-}
-
-function _bsRenderMigrateStatus(data){
-  var el=$('bsMigrateStatus');
-  if(!el) return;
-  if(!data){el.style.display='none';el.textContent='';return;}
-  var lines=[];
-  if(data.ok) lines.push(t('storage_migrate_dry_run_ok')||'Dry-run OK — ready to create admin');
-  else lines.push(t('storage_migrate_failed')||'Migration check failed');
-  if(data.checksum){
-    var names=Object.keys(data.checksum);
-    var total=0;
-    names.forEach(function(n){total+=(data.checksum[n].source||0);});
-    lines.push((t('storage_migrate_rows')||'Rows to copy')+': ~'+total);
-  }
-  el.textContent=lines.join(' · ');
-  el.style.display='';
-  el.style.color=data.ok?'var(--green,#22c55e)':'var(--red)';
-}
-
-function _buildBootstrapStorageHtml(){
-  var pgRec=esc(t('storage_pg_recommended')||'PostgreSQL (recommended)');
-  var pgDesc=esc(t('storage_pg_desc')||'Multi-user, OAuth, and multi-worker WebUI');
-  var sqliteLbl=esc(t('storage_sqlite_only')||'SQLite only (single process)');
-  var sqliteDesc=esc(t('storage_sqlite_desc')||'No extra services; not for multiple WebUI workers');
-  return '<div id="bsStorageSection" style="display:flex;flex-direction:column;gap:8px;padding:10px;border:1px dashed var(--border2);border-radius:6px">'
-    +'<div style="font-weight:600;font-size:12px">'+esc(t('storage_bootstrap_title')||'Storage')+'</div>'
-    +'<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer">'
-    +'<input type="radio" name="bsStorageBackend" value="postgresql" checked style="margin-top:3px">'
-    +'<span><strong>'+pgRec+'</strong><br><span style="color:var(--muted)">'+pgDesc+'</span></span></label>'
-    +'<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer">'
-    +'<input type="radio" name="bsStorageBackend" value="sqlite" style="margin-top:3px">'
-    +'<span><strong>'+sqliteLbl+'</strong><br><span style="color:var(--muted)">'+sqliteDesc+'</span></span></label>'
-    +'<div id="bsPgPanel" style="display:flex;flex-direction:column;gap:6px">'
-    +'<input id="bsPgDsn" type="text" placeholder="'+esc(t('storage_pg_dsn_placeholder')||'postgresql://user:pass@host:5432/intellect')+'" autocomplete="off" style="padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:12px">'
-    +'<div style="font-size:11px;color:var(--muted)">'+esc(t('storage_pg_or_fields')||'Or host / port / database / user / password')+'</div>'
-    +'<div style="display:grid;grid-template-columns:1fr 80px;gap:6px">'
-    +'<input id="bsPgHost" type="text" placeholder="localhost" style="padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:12px">'
-    +'<input id="bsPgPort" type="number" placeholder="5432" value="5432" style="padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:12px">'
-    +'</div>'
-    +'<input id="bsPgDatabase" type="text" placeholder="intellect" value="intellect" style="padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:12px">'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
-    +'<input id="bsPgUser" type="text" placeholder="intellect" value="intellect" style="padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:12px">'
-    +'<input id="bsPgPassword" type="password" placeholder="'+esc(t('storage_pg_password')||'Password')+'" autocomplete="new-password" style="padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:12px">'
-    +'</div>'
-    +'<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">'
-    +'<input type="checkbox" id="bsEnableRedis"> '+esc(t('storage_enable_redis')||'Enable Redis (cache + events, for multi-worker)')+'</label>'
-    +'<div style="display:flex;flex-wrap:wrap;gap:6px">'
-    +'<button type="button" class="btn btn-sm" id="bsTestPgBtn">'+esc(t('storage_test_pg')||'Test connection')+'</button>'
-    +'<button type="button" class="btn btn-sm" id="bsMigrateDryBtn" style="background:var(--accent);color:#fff">'+esc(t('storage_migrate_dry_run')||'Test & migrate (dry-run)')+'</button>'
-    +'</div>'
-    +'<div id="bsDualWriteWarn" style="font-size:11px;display:none;padding:6px 8px;border-radius:6px;background:rgba(234,179,8,0.12)"></div>'
-    +'<div id="bsMigrateStatus" style="font-size:11px;display:none"></div>'
-    +'</div>'
-    +'<button type="button" class="btn btn-sm" id="bsSqliteLink" style="align-self:flex-start;font-size:11px;background:transparent;border:none;color:var(--muted);text-decoration:underline;padding:0">'+esc(t('storage_continue_sqlite')||'Continue with SQLite only…')+'</button>'
-    +'</div>';
-}
-
-async function handleMembersBootstrap(){
-  var card=$('membersSetupCard');
-  if(!card) return;
-  _membersBootstrapActive=true;
-  _bsPgDryRunOk=false;
-  _bsStorageChoice='postgresql';
-  var idPH=esc(t('members_bootstrap_id_placeholder')||'Member ID (e.g. admin)');
-  var pwPH=esc(t('members_bootstrap_pw_placeholder')||'Password');
-  var pw2PH=esc(t('members_bootstrap_pw_confirm_placeholder')||'Confirm password');
-  var runLabel=esc(t('members_bootstrap_btn')||'Run');
-  var cancelLabel=esc(t('cancel')||'Cancel');
-  card.innerHTML='<div style="display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--border2);border-radius:8px;background:var(--code-bg)">'
-    +'<div style="font-weight:600;font-size:13px">'+esc(t('members_bootstrap_dialog_title')||'Create Admin Account')+'</div>'
-    +_buildBootstrapStorageHtml()
-    +'<div style="display:flex;gap:16px">'
-    +'<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">'
-    +'<span class="config-toggle" id="bsTeamsToggle" role="switch" aria-checked="false" onclick="event.stopPropagation();var el=document.getElementById(\'bsTeamsToggle\');var on=!el.classList.contains(\'on\');el.classList.toggle(\'on\',on);el.setAttribute(\'aria-checked\',String(on))"></span>'
-    +esc(t('teams_toggle_label')||'Teams')+'</label>'
-    +'<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">'
-    +'<span class="config-toggle" id="bsProjectsToggle" role="switch" aria-checked="false" onclick="event.stopPropagation();var el=document.getElementById(\'bsProjectsToggle\');var on=!el.classList.contains(\'on\');el.classList.toggle(\'on\',on);el.setAttribute(\'aria-checked\',String(on))"></span>'
-    +esc(t('projects_toggle_label')||'Projects')+'</label>'
-    +'</div>'
-    +'<input id="bsMemberId" type="text" placeholder="'+idPH+'" autocomplete="off" spellcheck="false" style="padding:8px;border:1px solid var(--border2);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:13px">'
-    +'<input id="bsPassword" type="password" placeholder="'+pwPH+'" autocomplete="new-password" style="padding:8px;border:1px solid var(--border2);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:13px">'
-    +'<input id="bsPasswordConfirm" type="password" placeholder="'+pw2PH+'" autocomplete="new-password" style="padding:8px;border:1px solid var(--border2);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:13px">'
-    +'<div id="bsError" style="color:var(--red);font-size:12px;display:none"></div>'
-    +'<div style="display:flex;gap:8px;justify-content:flex-end">'
-    +'<button class="btn btn-sm" id="bsCancelBtn">'+cancelLabel+'</button>'
-    +'<button class="btn btn-sm" id="bsRunBtn" style="background:var(--accent);color:#fff" disabled>'+runLabel+'</button>'
-    +'</div></div>';
-  var runBtn=$('bsRunBtn'),cancelBtn=$('bsCancelBtn'),errEl=$('bsError');
-  document.querySelectorAll('input[name="bsStorageBackend"]').forEach(function(r){
-    r.onchange=function(){_bsPgDryRunOk=false;_bsRenderMigrateStatus(null);_bsUpdatePgPanelVisibility();};
-  });
-  var testBtn=$('bsTestPgBtn');
-  var dryBtn=$('bsMigrateDryBtn');
-  var sqliteLink=$('bsSqliteLink');
-  if(testBtn){
-    testBtn.onclick=async function(){
-      if(!_bsStorageIsPg()) return;
-      testBtn.disabled=true;
-      if(errEl) errEl.style.display='none';
-      try{
-        var res=await api('/api/storage/test-pg',{method:'POST',body:JSON.stringify(_readBootstrapPgPayload())});
-        showToast(res.message||'PostgreSQL OK',2500);
-      }catch(e){
-        if(errEl){errEl.textContent=e.message||'Connection failed';errEl.style.display='';}
-      }
-      testBtn.disabled=false;
-    };
-  }
-  if(dryBtn){
-    dryBtn.onclick=async function(){
-      if(!_bsStorageIsPg()) return;
-      dryBtn.disabled=true;
-      if(errEl) errEl.style.display='none';
-      try{
-        var payload=_readBootstrapPgPayload();
-        var st=await api('/api/storage/status');
-        var res;
-        if(st.sqlite_exists){
-          payload.dry_run=true;
-          res=await api('/api/storage/migrate-sqlite-to-pg',{method:'POST',body:JSON.stringify(payload)});
-        }else{
-          payload.verify_only=true;
-          res=await api('/api/storage/init-pg-schema',{method:'POST',body:JSON.stringify(payload)});
-        }
-        _bsPgDryRunOk=!!res.ok;
-        _bsRenderMigrateStatus(res);
-        _bsUpdatePgPanelVisibility();
-      }catch(e){
-        _bsPgDryRunOk=false;
-        _bsRenderMigrateStatus({ok:false});
-        if(errEl){errEl.textContent=e.message||'Dry-run failed';errEl.style.display='';}
-        _bsUpdatePgPanelVisibility();
-      }
-      dryBtn.disabled=false;
-    };
-  }
-  if(sqliteLink){
-    sqliteLink.onclick=async function(){
-      var ok=await showConfirmDialog({
-        title:t('storage_sqlite_confirm_title')||'Use SQLite only?',
-        message:t('storage_sqlite_confirm_msg')||'SQLite cannot run multiple WebUI workers or HA. OAuth and state stay in state.db. Continue?',
-        confirmLabel:t('storage_sqlite_confirm_btn')||'Use SQLite',
-        focusCancel:true
-      });
-      if(!ok) return;
-      var sqliteRadio=document.querySelector('input[name="bsStorageBackend"][value="sqlite"]');
-      if(sqliteRadio) sqliteRadio.checked=true;
-      _bsPgDryRunOk=true;
-      _bsRenderMigrateStatus(null);
-      _bsUpdatePgPanelVisibility();
-    };
-  }
-  _bsUpdatePgPanelVisibility();
-  api('/api/storage/status').then(function(st){_bsApplyStorageStatus(st);}).catch(function(){});
-  cancelBtn.onclick=function(){_membersBootstrapActive=false;loadMembersSetupCard();};
-  runBtn.onclick=async function(){
-    runBtn.disabled=true;cancelBtn.disabled=true;
-    var mid=$('bsMemberId')?$('bsMemberId').value.trim():'';
-    var pw=$('bsPassword')?$('bsPassword').value:'';
-    var pw2=$('bsPasswordConfirm')?$('bsPasswordConfirm').value:'';
-    if(!mid){if(errEl){errEl.textContent=t('members_bootstrap_id_required')||'Member ID is required';errEl.style.display='';}runBtn.disabled=false;cancelBtn.disabled=false;return;}
-    if(!pw||pw.length<8){if(errEl){errEl.textContent=t('members_bootstrap_pw_short')||'Password must be at least 8 characters';errEl.style.display='';}runBtn.disabled=false;cancelBtn.disabled=false;return;}
-    if(pw!==pw2){if(errEl){errEl.textContent=t('members_bootstrap_pw_mismatch')||'Passwords do not match';errEl.style.display='';}runBtn.disabled=false;cancelBtn.disabled=false;return;}
-    if(_bsStorageIsPg()&&!_bsPgDryRunOk){
-      if(errEl){errEl.textContent=t('storage_migrate_dry_run_required')||'Complete Test & migrate (dry-run) first';errEl.style.display='';}
-      runBtn.disabled=false;cancelBtn.disabled=false;
-      return;
-    }
-    try{
-      if(_bsStorageIsPg()){
-        var migPayload=_readBootstrapPgPayload();
-        migPayload.apply_config=true;
-        migPayload.enable_redis=!!($('bsEnableRedis')&&$('bsEnableRedis').checked);
-        var st=await api('/api/storage/status');
-        if(st.sqlite_exists){
-          migPayload.dry_run=false;
-          await api('/api/storage/migrate-sqlite-to-pg',{method:'POST',body:JSON.stringify(migPayload)});
-        }else{
-          await api('/api/storage/init-pg-schema',{method:'POST',body:JSON.stringify(migPayload)});
-        }
-      }
-      var teamsOn=$('bsTeamsToggle')?$('bsTeamsToggle').classList.contains('on'):false;
-      var projectsOn=$('bsProjectsToggle')?$('bsProjectsToggle').classList.contains('on'):false;
-      var res=await api('/api/members/bootstrap',{method:'POST',body:JSON.stringify({admin_login:mid,password:pw,teams_enabled:teamsOn,projects_enabled:projectsOn})});
-      showToast((t('members_bootstrap_ok')||'Admin account created')+' — '+esc(res.display_name||res.member_id||'ok'),3000);
-      setTimeout(function(){window.location.href='login';},1500);
-    }catch(e){
-      if(errEl){errEl.textContent='Bootstrap failed: '+(e.message||'unknown error');errEl.style.display='';}
-      runBtn.disabled=false;cancelBtn.disabled=false;
-    }
-  };
-}
 
 // ── Checkpoints / Rollback ──────────────────────────────────────────────────
 

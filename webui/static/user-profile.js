@@ -278,10 +278,6 @@ async function refreshUserProfileChrome(prefetchedStatus) {
     const optimistic = profileFromMembersStatus(status);
     if (optimistic) applyUserProfileUi(optimistic);
 
-    if (status && typeof _syncMemberTabsVisibility === 'function') {
-        _syncMemberTabsVisibility(status);
-    }
-
     const profile = await fetchUserProfile();
     applyUserProfileUi(profile);
 
@@ -298,21 +294,6 @@ async function refreshUserProfileChrome(prefetchedStatus) {
         return;
     }
 
-    if (status && status.enabled && status.teams_enabled) {
-        await refreshUserProfileTeams();
-    } else {
-        updateMemberTeamBanner(status, null);
-        const section = document.getElementById('userProfileTeamsSection');
-        if (section) section.hidden = true;
-    }
-
-    if (status && status.enabled && status.projects_enabled) {
-        await refreshUserProfileProjects();
-    } else {
-        updateMemberProjectBanner(status, null);
-        const projSection = document.getElementById('userProfileProjectsSection');
-        if (projSection) projSection.hidden = true;
-    }
 }
 
 async function saveUserProfileUsername() {
