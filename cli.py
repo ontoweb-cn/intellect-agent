@@ -2854,11 +2854,62 @@ def save_config_value(key_path: str, value: any) -> bool:
 class IntellectCLI:
     """
     Interactive CLI for the Intellect Agent.
-    
+
     Provides a REPL interface with rich formatting, command history,
     and tool execution capabilities.
     """
-    
+
+    # Fast dispatch table: canonical command name → method name.
+    # Used by process_command() for simple one-line handlers.
+    # Complex handlers (quit, clear, new, retry, etc.) stay in the
+    # elif chain because they have special logic.
+    _COMMAND_DISPATCH = {
+        "agents": "_handle_agents_command",
+        "background": "_handle_background_command",
+        "branch": "_handle_branch_command",
+        "browser": "_handle_browser_command",
+        "bundles": "_handle_bundles_command",
+        "busy": "_handle_busy_command",
+        "codex-runtime": "_handle_codex_runtime",
+        "compress": "_manual_compress",
+        "config": "show_config",
+        "copy": "_handle_copy_command",
+        "cron": "_handle_cron_command",
+        "curator": "_handle_curator_command",
+        "debug": "_handle_debug_command",
+        "fast": "_handle_fast_command",
+        "footer": "_handle_footer_command",
+        "goal": "_handle_goal_command",
+        "gquota": "_handle_gquota_command",
+        "help": "show_help",
+        "history": "show_history",
+        "image": "_handle_image_command",
+        "insights": "_show_insights",
+        "kanban": "_handle_kanban_command",
+        "model": "_handle_model_switch",
+        "paste": "_handle_paste_command",
+        "personality": "_handle_personality_command",
+        "platforms": "_show_gateway_status",
+        "profile": "_handle_profile_command",
+        "reasoning": "_handle_reasoning_command",
+        "reload-mcp": "_confirm_and_reload_mcp",
+        "resume": "_handle_resume_command",
+        "rollback": "_handle_rollback_command",
+        "save": "save_conversation",
+        "sessions": "_handle_sessions_command",
+        "skin": "_handle_skin_command",
+        "snapshot": "_handle_snapshot_command",
+        "status": "_show_session_status",
+        "stop": "_handle_stop_command",
+        "subgoal": "_handle_subgoal_command",
+        "tools": "_handle_tools_command",
+        "toolsets": "show_toolsets",
+        "usage": "_show_usage",
+        "verbose": "_toggle_verbose",
+        "voice": "_handle_voice_command",
+        "yolo": "_toggle_yolo",
+    }
+
     def __init__(
         self,
         model: str = None,
@@ -8391,6 +8442,12 @@ class IntellectCLI:
         if canonical not in {"resume", "sessions"}:
             self._pending_resume_sessions = None
 
+        # ── Fast dispatch table for simple commands ──────────────
+        _handler_name = self._COMMAND_DISPATCH.get(canonical)
+        if _handler_name is not None:
+            getattr(self, _handler_name)(cmd_original)
+            return True
+
         if canonical in {"quit", "exit"}:
             # Parse --delete flag: /exit --delete also removes the current
             # session's transcripts + SQLite history. Ported from
@@ -12842,198 +12899,7 @@ class IntellectCLI:
             """
             return None
 
-        def handle_enter(event):
-            """Handle Enter key - submit input.
-            
-            Routes to the correct queue based on active UI state:
-            - Sudo password prompt: password goes to sudo response queue
-            - Approval selection: selected choice goes to approval response queue
-            - Clarify freetext mode: answer goes to the clarify response queue
-            - Clarify choice mode: selected choice goes to the clarify response queue
-            - Agent running: goes to _interrupt_queue (chat() monitors this)
-            - Agent idle: goes to _pending_input (process_loop monitors this)
-            Commands (starting with /) always go to _pending_input so they're
-            handled as commands, not sent as interrupt text to the agent.
-            """
-            # --- Sudo password prompt: submit the typed password ---
-            if self._sudo_state:
-                text = event.app.current_buffer.text
-                self._sudo_state["response_queue"].put(text)
-                self._sudo_state = None
-                event.app.invalidate()
-                return
-
-            # --- Secret prompt: submit the typed secret ---
-            if self._secret_state:
-                text = event.app.current_buffer.text
-                self._submit_secret_response(text)
-                event.app.current_buffer.reset()
-                event.app.invalidate()
-                return
-
-            # --- Approval selection: confirm the highlighted choice ---
-            if self._approval_state:
-                self._handle_approval_selection()
-                event.app.invalidate()
-                return
-
-            # --- Slash-command confirmation: submit typed or highlighted choice ---
-            if self._slash_confirm_state:
-                text = event.app.current_buffer.text.strip()
-                choices = self._slash_confirm_state.get("choices") or []
-                choice = self._normalize_slash_confirm_choice(text, choices) if text else None
-                if choice is None:
-                    selected = self._slash_confirm_state.get("selected", 0)
-                    if 0 <= selected < len(choices):
-                        choice = choices[selected][0]
-                self._submit_slash_confirm_response(choice or "cancel")
-                event.app.current_buffer.reset()
-                event.app.invalidate()
-                return
-
-            # --- /model picker modal ---
-            if self._model_picker_state:
-                try:
-                    self._handle_model_picker_selection()
-                except Exception as _exc:
-                    _cprint(f"  ✗ Model selection failed: {_exc}")
-                    self._close_model_picker()
-                event.app.current_buffer.reset()
-                event.app.invalidate()
-                return
-
-            # --- Clarify freetext mode: user typed their own answer ---
-            if self._clarify_freetext and self._clarify_state:
-                text = event.app.current_buffer.text.strip()
-                if text:
-                    self._clarify_state["response_queue"].put(text)
-                    self._clarify_state = None
-                    self._clarify_freetext = False
-                    event.app.current_buffer.reset()
-                    event.app.invalidate()
-                return
-
-            # --- Clarify choice mode: confirm the highlighted selection ---
-            if self._clarify_state and not self._clarify_freetext:
-                state = self._clarify_state
-                selected = state["selected"]
-                choices = state.get("choices") or []
-                if selected < len(choices):
-                    state["response_queue"].put(choices[selected])
-                    self._clarify_state = None
-                    event.app.invalidate()
-                else:
-                    # "Other" selected → switch to freetext
-                    self._clarify_freetext = True
-                    event.app.invalidate()
-                return
-
-            # --- Normal input routing ---
-            text = event.app.current_buffer.text.strip()
-            has_images = bool(self._attached_images)
-            if text or has_images:
-                # Handle /model directly on the UI thread so interactive pickers
-                # can safely use prompt_toolkit terminal handoff helpers.
-                if self._should_handle_model_command_inline(text, has_images=has_images):
-                    if not self.process_command(text):
-                        self._should_exit = True
-                        if event.app.is_running:
-                            event.app.exit()
-                    event.app.current_buffer.reset(append_to_history=True)
-                    # Force a repaint: process_command() prints through
-                    # patch_stdout (scrolls output above the prompt) and never
-                    # invalidates the app, so the just-cleared input area can
-                    # keep showing the submitted text until some unrelated
-                    # redraw fires. Every other early-return branch in this
-                    # handler invalidates after reset — match them.
-                    event.app.invalidate()
-                    return
-
-                # Handle /steer while the agent is running immediately on the
-                # UI thread.  Queuing through _pending_input would deadlock the
-                # steer until after the agent loop finishes (process_loop is
-                # blocked inside self.chat()), which turns /steer into a
-                # post-run next-turn message — defeating mid-run injection.
-                # agent.steer() is thread-safe (holds _pending_steer_lock).
-                if self._should_handle_steer_command_inline(text, has_images=has_images):
-                    self.process_command(text)
-                    event.app.current_buffer.reset(append_to_history=True)
-                    # Force a repaint after clearing the buffer.  /steer is
-                    # dispatched mid-run while the agent streams output through
-                    # patch_stdout; process_command() never invalidates the
-                    # app, so without this the submitted "/steer <text>" can
-                    # linger in the input area (looking unsent) and invite an
-                    # accidental re-submit. See issue #34569.
-                    event.app.invalidate()
-                    return
-
-                # Snapshot and clear attached images
-                images = list(self._attached_images)
-                self._attached_images.clear()
-                event.app.invalidate()
-                # Bundle text + images as a tuple when images are present
-                payload = (text, images) if images else text
-                if self._agent_running and not (text and _looks_like_slash_command(text)):
-                    _effective_mode = self.busy_input_mode
-                    if _effective_mode == "steer":
-                        # Route Enter through /steer — inject mid-run after the
-                        # next tool call.  Images can't ride along (steer only
-                        # appends text), so fall back to queue when images are
-                        # attached.  If the agent lacks steer() or rejects the
-                        # payload, also fall back to queue so nothing is lost.
-                        if images or not text:
-                            _effective_mode = "queue"
-                        else:
-                            accepted = False
-                            try:
-                                if self.agent is not None and hasattr(self.agent, "steer"):
-                                    accepted = bool(self.agent.steer(text))
-                            except Exception as exc:
-                                _cprint(f"  {_DIM}Steer failed ({exc}) — queued for next turn.{_RST}")
-                                accepted = False
-                            if accepted:
-                                preview = text[:80] + ("..." if len(text) > 80 else "")
-                                _cprint(f"  {_ACCENT}⏩ Steered: '{preview}'{_RST}")
-                            else:
-                                _effective_mode = "queue"
-                    if _effective_mode == "queue":
-                        # Queue for the next turn instead of interrupting
-                        self._pending_input.put(payload)
-                        preview = text if text else f"[{len(images)} image{'s' if len(images) != 1 else ''} attached]"
-                        _cprint(f"  Queued for the next turn: {preview[:80]}{'...' if len(preview) > 80 else ''}")
-                    elif _effective_mode == "interrupt":
-                        self._interrupt_queue.put(payload)
-                        # Debug: log to file when message enters interrupt queue
-                        try:
-                            _dbg = _intellect_home / "interrupt_debug.log"
-                            with open(_dbg, "a", encoding="utf-8") as _f:
-                                _f.write(f"{time.strftime('%H:%M:%S')} ENTER: queued interrupt msg={str(payload)[:60]!r}, "
-                                         f"agent_running={self._agent_running}\n")
-                        except Exception:
-                            pass
-                    # First-touch onboarding: on the very first busy-while-running
-                    # event for this install, print a one-line tip explaining the
-                    # /busy knob.  Flag persists to config.yaml and never fires
-                    # again.  Guarded for exceptions so onboarding can't break
-                    # the input loop.
-                    try:
-                        from agent.onboarding import (
-                            BUSY_INPUT_FLAG,
-                            busy_input_hint_cli,
-                            is_seen,
-                            mark_seen,
-                        )
-                        if not is_seen(CLI_CONFIG, BUSY_INPUT_FLAG):
-                            _cprint(f"  {_DIM}{busy_input_hint_cli(self.busy_input_mode)}{_RST}")
-                            mark_seen(_intellect_home / "config.yaml", BUSY_INPUT_FLAG)
-                            CLI_CONFIG.setdefault("onboarding", {}).setdefault("seen", {})[BUSY_INPUT_FLAG] = True
-                    except Exception:
-                        pass
-                else:
-                    self._pending_input.put(payload)
-                event.app.current_buffer.reset(append_to_history=True)
-
-        _bind_prompt_submit_keys(kb, handle_enter)
+        _bind_prompt_submit_keys(kb, self._handle_enter)
         
         @kb.add('escape', 'enter')
         def handle_alt_enter(event):
@@ -14607,155 +14473,6 @@ class IntellectCLI:
         spinner_thread.start()
         
         # Background thread to process inputs and run agent
-        def process_loop():
-            while not self._should_exit:
-                try:
-                    # Check for pending input with timeout
-                    try:
-                        user_input = self._pending_input.get(timeout=0.1)
-                    except queue.Empty:
-                        # Periodic config watcher — auto-reload MCP on mcp_servers change
-                        if not self._agent_running:
-                            self._check_config_mcp_changes()
-                            # Check for background process notifications (completions
-                            # and watch pattern matches) while agent is idle.
-                            try:
-                                from tools.process_registry import process_registry
-                                for _evt, _synth in process_registry.drain_notifications():
-                                    self._pending_input.put(_synth)
-                            except Exception:
-                                pass
-                        continue
-                    
-                    if not user_input:
-                        continue
-
-                    # The user has typed and submitted something, so any
-                    # post-resize transient suppression should end here.
-                    self._status_bar_suppressed_after_resize = False
-
-                    # Unpack image payload: (text, [Path, ...]) or plain str
-                    submit_images = []
-                    if isinstance(user_input, tuple):
-                        user_input, submit_images = user_input
-
-                    if isinstance(user_input, str):
-                        user_input = _strip_leaked_bracketed_paste_wrappers(user_input)
-                        user_input, _had_mouse_reports = _strip_leaked_terminal_responses_with_meta(user_input)
-                        if _had_mouse_reports:
-                            self._recover_terminal_input_modes(reason="mouse reports leaked into submitted input")
-                    
-                    # Check for commands — but detect dragged/pasted file paths first.
-                    # See _detect_file_drop() for details.
-                    _file_drop = _detect_file_drop(user_input) if isinstance(user_input, str) else None
-                    if _file_drop:
-                        _drop_path = _file_drop["path"]
-                        _remainder = _file_drop["remainder"]
-                        if _file_drop["is_image"]:
-                            submit_images.append(_drop_path)
-                            user_input = _remainder or f"[User attached image: {_drop_path.name}]"
-                            _cprint(f"  📎 Auto-attached image: {_drop_path.name}")
-                        else:
-                            _cprint(f"  📄 Detected file: {_drop_path.name}")
-                            user_input = (
-                                f"[User attached file: {_drop_path}]"
-                                + (f"\n{_remainder}" if _remainder else "")
-                            )
-
-                    # A bare number right after a bare `/resume` prompt selects
-                    # that session (see #34584). Checked before chat routing so
-                    # the digit isn't sent to the agent as a message.
-                    if (
-                        not _file_drop
-                        and self._pending_resume_sessions
-                        and isinstance(user_input, str)
-                        and self._consume_pending_resume_selection(user_input)
-                    ):
-                        continue
-
-                    if not _file_drop and isinstance(user_input, str) and _looks_like_slash_command(user_input):
-                        _cprint(f"\n⚙️  {user_input}")
-                        try:
-                            if not self.process_command(user_input):
-                                self._should_exit = True
-                                # Schedule app exit
-                                if app.is_running:
-                                    app.exit()
-                        except KeyboardInterrupt:
-                            # Ctrl+C during a slow slash command (e.g. /skills browse,
-                            # /sessions list with a large DB) should interrupt the
-                            # command and return to the prompt, NOT exit the entire
-                            # session. Without this guard a KeyboardInterrupt unwinds
-                            # to the outer prompt_toolkit loop and the session dies.
-                            _cprint("\n[dim]Command interrupted.[/dim]")
-                        continue
-                    
-                    # Expand paste references back to full content
-                    _paste_ref_re = re.compile(r'\[Pasted text #\d+: \d+ lines \u2192 (.+?)\]')
-                    paste_refs = list(_paste_ref_re.finditer(user_input)) if isinstance(user_input, str) else []
-                    if paste_refs:
-                        user_input = self._expand_paste_references(user_input)
-                    print()
-                    self._print_user_message_preview(user_input)
-                    
-                    # Show image attachment count
-                    if submit_images:
-                        n = len(submit_images)
-                        _cprint(f"  {_DIM}📎 {n} image{'s' if n > 1 else ''} attached{_RST}")
-
-                    # Regular chat - run agent
-                    self._agent_running = True
-                    app.invalidate()  # Refresh status line
-
-                    try:
-                        self.chat(user_input, images=submit_images or None)
-                    finally:
-                        self._agent_running = False
-                        self._spinner_text = ""
-                        self._tool_start_time = 0.0
-                        self._pending_tool_info.clear()
-                        self._last_scrollback_tool = ""
-
-                        app.invalidate()  # Refresh status line
-
-                        # Goal continuation: if a standing goal is active, ask
-                        # the judge whether the turn satisfied it. If not, and
-                        # there's no real user message already queued, push the
-                        # continuation prompt back into _pending_input so the
-                        # next loop iteration picks it up naturally (and any
-                        # user input that arrives in between still preempts).
-                        try:
-                            self._maybe_continue_goal_after_turn()
-                        except Exception as _goal_exc:
-                            logging.debug("goal continuation hook failed: %s", _goal_exc)
-
-                        # Continuous voice: auto-restart recording after agent responds.
-                        # Dispatch to a daemon thread so play_beep (sd.wait) and
-                        # AudioRecorder.start (lock acquire) never block process_loop —
-                        # otherwise queued user input would stall silently.
-                        if self._voice_mode and self._voice_continuous and not self._voice_recording:
-                            def _restart_recording():
-                                try:
-                                    if self._voice_tts:
-                                        self._voice_tts_done.wait(timeout=60)
-                                        time.sleep(0.3)
-                                    self._voice_start_recording()
-                                    app.invalidate()
-                                except Exception as e:
-                                    _cprint(f"{_DIM}Voice auto-restart failed: {e}{_RST}")
-                            threading.Thread(target=_restart_recording, daemon=True).start()
-
-                        # Drain process notifications (completions + watch matches)
-                        # that arrived while the agent was running.
-                        try:
-                            from tools.process_registry import process_registry
-                            for _evt, _synth in process_registry.drain_notifications():
-                                self._pending_input.put(_synth)
-                        except Exception:
-                            pass  # Non-fatal — don't break the main loop
-
-                except Exception as e:
-                    logger.warning("process_loop unhandled error (msg may be lost): %s", e)
         
         # Start processing thread
         process_thread = threading.Thread(target=process_loop, daemon=True)
@@ -14998,6 +14715,349 @@ class IntellectCLI:
         if getattr(self, '_pending_relaunch', None):
             from intellect_cli.relaunch import relaunch
             relaunch(self._pending_relaunch, preserve_inherited=False)
+
+    def _handle_enter(self, event):
+        """Handle Enter key - submit input.
+        
+        Routes to the correct queue based on active UI state:
+        - Sudo password prompt: password goes to sudo response queue
+        - Approval selection: selected choice goes to approval response queue
+        - Clarify freetext mode: answer goes to the clarify response queue
+        - Clarify choice mode: selected choice goes to the clarify response queue
+        - Agent running: goes to _interrupt_queue (chat() monitors this)
+        - Agent idle: goes to _pending_input (process_loop monitors this)
+        Commands (starting with /) always go to _pending_input so they're
+        handled as commands, not sent as interrupt text to the agent.
+        """
+        # --- Sudo password prompt: submit the typed password ---
+        if self._sudo_state:
+            text = event.app.current_buffer.text
+            self._sudo_state["response_queue"].put(text)
+            self._sudo_state = None
+            event.app.invalidate()
+            return
+
+        # --- Secret prompt: submit the typed secret ---
+        if self._secret_state:
+            text = event.app.current_buffer.text
+            self._submit_secret_response(text)
+            event.app.current_buffer.reset()
+            event.app.invalidate()
+            return
+
+        # --- Approval selection: confirm the highlighted choice ---
+        if self._approval_state:
+            self._handle_approval_selection()
+            event.app.invalidate()
+            return
+
+        # --- Slash-command confirmation: submit typed or highlighted choice ---
+        if self._slash_confirm_state:
+            text = event.app.current_buffer.text.strip()
+            choices = self._slash_confirm_state.get("choices") or []
+            choice = self._normalize_slash_confirm_choice(text, choices) if text else None
+            if choice is None:
+                selected = self._slash_confirm_state.get("selected", 0)
+                if 0 <= selected < len(choices):
+                    choice = choices[selected][0]
+            self._submit_slash_confirm_response(choice or "cancel")
+            event.app.current_buffer.reset()
+            event.app.invalidate()
+            return
+
+        # --- /model picker modal ---
+        if self._model_picker_state:
+            try:
+                self._handle_model_picker_selection()
+            except Exception as _exc:
+                _cprint(f"  ✗ Model selection failed: {_exc}")
+                self._close_model_picker()
+            event.app.current_buffer.reset()
+            event.app.invalidate()
+            return
+
+        # --- Clarify freetext mode: user typed their own answer ---
+        if self._clarify_freetext and self._clarify_state:
+            text = event.app.current_buffer.text.strip()
+            if text:
+                self._clarify_state["response_queue"].put(text)
+                self._clarify_state = None
+                self._clarify_freetext = False
+                event.app.current_buffer.reset()
+                event.app.invalidate()
+            return
+
+        # --- Clarify choice mode: confirm the highlighted selection ---
+        if self._clarify_state and not self._clarify_freetext:
+            state = self._clarify_state
+            selected = state["selected"]
+            choices = state.get("choices") or []
+            if selected < len(choices):
+                state["response_queue"].put(choices[selected])
+                self._clarify_state = None
+                event.app.invalidate()
+            else:
+                # "Other" selected → switch to freetext
+                self._clarify_freetext = True
+                event.app.invalidate()
+            return
+
+        # --- Normal input routing ---
+        text = event.app.current_buffer.text.strip()
+        has_images = bool(self._attached_images)
+        if text or has_images:
+            # Handle /model directly on the UI thread so interactive pickers
+            # can safely use prompt_toolkit terminal handoff helpers.
+            if self._should_handle_model_command_inline(text, has_images=has_images):
+                if not self.process_command(text):
+                    self._should_exit = True
+                    if event.app.is_running:
+                        event.app.exit()
+                event.app.current_buffer.reset(append_to_history=True)
+                # Force a repaint: process_command() prints through
+                # patch_stdout (scrolls output above the prompt) and never
+                # invalidates the app, so the just-cleared input area can
+                # keep showing the submitted text until some unrelated
+                # redraw fires. Every other early-return branch in this
+                # handler invalidates after reset — match them.
+                event.app.invalidate()
+                return
+
+            # Handle /steer while the agent is running immediately on the
+            # UI thread.  Queuing through _pending_input would deadlock the
+            # steer until after the agent loop finishes (process_loop is
+            # blocked inside self.chat()), which turns /steer into a
+            # post-run next-turn message — defeating mid-run injection.
+            # agent.steer() is thread-safe (holds _pending_steer_lock).
+            if self._should_handle_steer_command_inline(text, has_images=has_images):
+                self.process_command(text)
+                event.app.current_buffer.reset(append_to_history=True)
+                # Force a repaint after clearing the buffer.  /steer is
+                # dispatched mid-run while the agent streams output through
+                # patch_stdout; process_command() never invalidates the
+                # app, so without this the submitted "/steer <text>" can
+                # linger in the input area (looking unsent) and invite an
+                # accidental re-submit. See issue #34569.
+                event.app.invalidate()
+                return
+
+            # Snapshot and clear attached images
+            images = list(self._attached_images)
+            self._attached_images.clear()
+            event.app.invalidate()
+            # Bundle text + images as a tuple when images are present
+            payload = (text, images) if images else text
+            if self._agent_running and not (text and _looks_like_slash_command(text)):
+                _effective_mode = self.busy_input_mode
+                if _effective_mode == "steer":
+                    # Route Enter through /steer — inject mid-run after the
+                    # next tool call.  Images can't ride along (steer only
+                    # appends text), so fall back to queue when images are
+                    # attached.  If the agent lacks steer() or rejects the
+                    # payload, also fall back to queue so nothing is lost.
+                    if images or not text:
+                        _effective_mode = "queue"
+                    else:
+                        accepted = False
+                        try:
+                            if self.agent is not None and hasattr(self.agent, "steer"):
+                                accepted = bool(self.agent.steer(text))
+                        except Exception as exc:
+                            _cprint(f"  {_DIM}Steer failed ({exc}) — queued for next turn.{_RST}")
+                            accepted = False
+                        if accepted:
+                            preview = text[:80] + ("..." if len(text) > 80 else "")
+                            _cprint(f"  {_ACCENT}⏩ Steered: '{preview}'{_RST}")
+                        else:
+                            _effective_mode = "queue"
+                if _effective_mode == "queue":
+                    # Queue for the next turn instead of interrupting
+                    self._pending_input.put(payload)
+                    preview = text if text else f"[{len(images)} image{'s' if len(images) != 1 else ''} attached]"
+                    _cprint(f"  Queued for the next turn: {preview[:80]}{'...' if len(preview) > 80 else ''}")
+                elif _effective_mode == "interrupt":
+                    self._interrupt_queue.put(payload)
+                    # Debug: log to file when message enters interrupt queue
+                    try:
+                        _dbg = _intellect_home / "interrupt_debug.log"
+                        with open(_dbg, "a", encoding="utf-8") as _f:
+                            _f.write(f"{time.strftime('%H:%M:%S')} ENTER: queued interrupt msg={str(payload)[:60]!r}, "
+                                     f"agent_running={self._agent_running}\n")
+                    except Exception:
+                        pass
+                # First-touch onboarding: on the very first busy-while-running
+                # event for this install, print a one-line tip explaining the
+                # /busy knob.  Flag persists to config.yaml and never fires
+                # again.  Guarded for exceptions so onboarding can't break
+                # the input loop.
+                try:
+                    from agent.onboarding import (
+                        BUSY_INPUT_FLAG,
+                        busy_input_hint_cli,
+                        is_seen,
+                        mark_seen,
+                    )
+                    if not is_seen(CLI_CONFIG, BUSY_INPUT_FLAG):
+                        _cprint(f"  {_DIM}{busy_input_hint_cli(self.busy_input_mode)}{_RST}")
+                        mark_seen(_intellect_home / "config.yaml", BUSY_INPUT_FLAG)
+                        CLI_CONFIG.setdefault("onboarding", {}).setdefault("seen", {})[BUSY_INPUT_FLAG] = True
+                except Exception:
+                    pass
+            else:
+                self._pending_input.put(payload)
+            event.app.current_buffer.reset(append_to_history=True)
+
+
+    def _process_loop(self):
+        while not self._should_exit:
+            try:
+                # Check for pending input with timeout
+                try:
+                    user_input = self._pending_input.get(timeout=0.1)
+                except queue.Empty:
+                    # Periodic config watcher — auto-reload MCP on mcp_servers change
+                    if not self._agent_running:
+                        self._check_config_mcp_changes()
+                        # Check for background process notifications (completions
+                        # and watch pattern matches) while agent is idle.
+                        try:
+                            from tools.process_registry import process_registry
+                            for _evt, _synth in process_registry.drain_notifications():
+                                self._pending_input.put(_synth)
+                        except Exception:
+                            pass
+                    continue
+                
+                if not user_input:
+                    continue
+
+                # The user has typed and submitted something, so any
+                # post-resize transient suppression should end here.
+                self._status_bar_suppressed_after_resize = False
+
+                # Unpack image payload: (text, [Path, ...]) or plain str
+                submit_images = []
+                if isinstance(user_input, tuple):
+                    user_input, submit_images = user_input
+
+                if isinstance(user_input, str):
+                    user_input = _strip_leaked_bracketed_paste_wrappers(user_input)
+                    user_input, _had_mouse_reports = _strip_leaked_terminal_responses_with_meta(user_input)
+                    if _had_mouse_reports:
+                        self._recover_terminal_input_modes(reason="mouse reports leaked into submitted input")
+                
+                # Check for commands — but detect dragged/pasted file paths first.
+                # See _detect_file_drop() for details.
+                _file_drop = _detect_file_drop(user_input) if isinstance(user_input, str) else None
+                if _file_drop:
+                    _drop_path = _file_drop["path"]
+                    _remainder = _file_drop["remainder"]
+                    if _file_drop["is_image"]:
+                        submit_images.append(_drop_path)
+                        user_input = _remainder or f"[User attached image: {_drop_path.name}]"
+                        _cprint(f"  📎 Auto-attached image: {_drop_path.name}")
+                    else:
+                        _cprint(f"  📄 Detected file: {_drop_path.name}")
+                        user_input = (
+                            f"[User attached file: {_drop_path}]"
+                            + (f"\n{_remainder}" if _remainder else "")
+                        )
+
+                # A bare number right after a bare `/resume` prompt selects
+                # that session (see #34584). Checked before chat routing so
+                # the digit isn't sent to the agent as a message.
+                if (
+                    not _file_drop
+                    and self._pending_resume_sessions
+                    and isinstance(user_input, str)
+                    and self._consume_pending_resume_selection(user_input)
+                ):
+                    continue
+
+                if not _file_drop and isinstance(user_input, str) and _looks_like_slash_command(user_input):
+                    _cprint(f"\n⚙️  {user_input}")
+                    try:
+                        if not self.process_command(user_input):
+                            self._should_exit = True
+                            # Schedule self._app exit
+                            if self._app.is_running:
+                                self._app.exit()
+                    except KeyboardInterrupt:
+                        # Ctrl+C during a slow slash command (e.g. /skills browse,
+                        # /sessions list with a large DB) should interrupt the
+                        # command and return to the prompt, NOT exit the entire
+                        # session. Without this guard a KeyboardInterrupt unwinds
+                        # to the outer prompt_toolkit loop and the session dies.
+                        _cprint("\n[dim]Command interrupted.[/dim]")
+                    continue
+                
+                # Expand paste references back to full content
+                _paste_ref_re = re.compile(r'\[Pasted text #\d+: \d+ lines \u2192 (.+?)\]')
+                paste_refs = list(_paste_ref_re.finditer(user_input)) if isinstance(user_input, str) else []
+                if paste_refs:
+                    user_input = self._expand_paste_references(user_input)
+                print()
+                self._print_user_message_preview(user_input)
+                
+                # Show image attachment count
+                if submit_images:
+                    n = len(submit_images)
+                    _cprint(f"  {_DIM}📎 {n} image{'s' if n > 1 else ''} attached{_RST}")
+
+                # Regular chat - run agent
+                self._agent_running = True
+                self._app.invalidate()  # Refresh status line
+
+                try:
+                    self.chat(user_input, images=submit_images or None)
+                finally:
+                    self._agent_running = False
+                    self._spinner_text = ""
+                    self._tool_start_time = 0.0
+                    self._pending_tool_info.clear()
+                    self._last_scrollback_tool = ""
+
+                    self._app.invalidate()  # Refresh status line
+
+                    # Goal continuation: if a standing goal is active, ask
+                    # the judge whether the turn satisfied it. If not, and
+                    # there's no real user message already queued, push the
+                    # continuation prompt back into _pending_input so the
+                    # next loop iteration picks it up naturally (and any
+                    # user input that arrives in between still preempts).
+                    try:
+                        self._maybe_continue_goal_after_turn()
+                    except Exception as _goal_exc:
+                        logging.debug("goal continuation hook failed: %s", _goal_exc)
+
+                    # Continuous voice: auto-restart recording after agent responds.
+                    # Dispatch to a daemon thread so play_beep (sd.wait) and
+                    # AudioRecorder.start (lock acquire) never block process_loop —
+                    # otherwise queued user input would stall silently.
+                    if self._voice_mode and self._voice_continuous and not self._voice_recording:
+                        def _restart_recording():
+                            try:
+                                if self._voice_tts:
+                                    self._voice_tts_done.wait(timeout=60)
+                                    time.sleep(0.3)
+                                self._voice_start_recording()
+                                self._app.invalidate()
+                            except Exception as e:
+                                _cprint(f"{_DIM}Voice auto-restart failed: {e}{_RST}")
+                        threading.Thread(target=_restart_recording, daemon=True).start()
+
+                    # Drain process notifications (completions + watch matches)
+                    # that arrived while the agent was running.
+                    try:
+                        from tools.process_registry import process_registry
+                        for _evt, _synth in process_registry.drain_notifications():
+                            self._pending_input.put(_synth)
+                    except Exception:
+                        pass  # Non-fatal — don't break the main loop
+
+            except Exception as e:
+                logger.warning("process_loop unhandled error (msg may be lost): %s", e)
+
 
 
 # ============================================================================
