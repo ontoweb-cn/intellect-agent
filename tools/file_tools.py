@@ -250,8 +250,13 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
         f"Refusing to write to sensitive system path: {filepath}\n"
         "Use the terminal tool with sudo if you need to modify system files."
     )
+    # macOS user temp directories live under /private/var/folders/ — don't block.
+    _TEMP_EXCEPTIONS = ("/private/var/folders/", "/private/tmp/")
     for prefix in _SENSITIVE_PATH_PREFIXES:
         if resolved.startswith(prefix) or normalized.startswith(prefix):
+            if any(resolved.startswith(ex) or normalized.startswith(ex)
+                   for ex in _TEMP_EXCEPTIONS):
+                continue
             return _err
     if resolved in _SENSITIVE_EXACT_PATHS or normalized in _SENSITIVE_EXACT_PATHS:
         return _err

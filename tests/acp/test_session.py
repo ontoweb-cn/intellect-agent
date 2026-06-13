@@ -18,8 +18,11 @@ def _mock_agent():
 
 
 @pytest.fixture()
-def manager():
-    """SessionManager with a mock agent factory (avoids needing API keys)."""
+def manager(tmp_path, monkeypatch):
+    """SessionManager with a mock agent factory and isolated INTELLECT_HOME."""
+    home = tmp_path / ".intellect"
+    home.mkdir()
+    monkeypatch.setenv("INTELLECT_HOME", str(home))
     return SessionManager(agent_factory=_mock_agent)
 
 

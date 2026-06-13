@@ -260,6 +260,8 @@ testpaths = ["tests"]
 markers = [
     "integration: marks tests requiring external services (API keys, Modal, etc.)",
     "real_concurrent_gate: opt out of the autouse stub that disables _detect_concurrent_intellect_instances",
+    "ssh: marks tests requiring SSH access to remote hosts",
+    "slow: marks tests known to take longer than average",
     "no_isolate: pure unit file — run_tests_parallel may batch with other no_isolate files (one subprocess)",
 ]
 # pytest-timeout: per-test 30s hard cap with signal method.

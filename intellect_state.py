@@ -291,7 +291,7 @@ class SessionDB:
     _CHECKPOINT_EVERY_N_WRITES = 50
 
     def __init__(self, db_path: Path = None):
-        self.db_path = db_path or DEFAULT_DB_PATH
+        self.db_path = db_path or (get_intellect_home() / "state.db")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._write_count = 0
