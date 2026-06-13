@@ -133,7 +133,7 @@ impl StreamAccumulator {
         }
 
         // Pass 1: strip trailing commas before } or ]
-        let re = fancy_regex::Regex::new(r",\s*([}\]])").unwrap();
+        let re = regex::Regex::new(r",\s*([}\]])").unwrap();
         let mut fixed = re.replace_all(raw, "${1}").to_string();
 
         // Pass 2: close unclosed structures

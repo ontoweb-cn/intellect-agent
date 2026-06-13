@@ -7,7 +7,7 @@
 use std::sync::OnceLock;
 
 use pyo3::prelude::*;
-use fancy_regex::Regex;
+use regex::Regex;
 
 // ── Pattern storage ─────────────────────────────────────────────────────────
 
@@ -59,7 +59,7 @@ fn dangerous_patterns() -> &'static PatternList {
             (r"\bdd\s+.*if=".into(), "disk copy"),
             (r">\s*/dev/sd".into(), "write to block device"),
             (r"\bDROP\s+(TABLE|DATABASE)\b".into(), "SQL DROP"),
-            (r"\bDELETE\s+FROM\b(?![^\n]*\bWHERE\b)".into(), "SQL DELETE without WHERE"),
+            (r"\bDELETE\s+FROM\b".into(), "SQL DELETE FROM"),
             (r"\bTRUNCATE\s+(TABLE)?\s*\w".into(), "SQL TRUNCATE"),
             (format!(">\\s*({})", sys_cfg), "overwrite system config"),
             (r"\bsystemctl\s+(-[^\s]+\s+)*(stop|restart|disable|mask)\b".into(), "stop/restart system service"),
@@ -126,17 +126,12 @@ fn sudo_stdin_re() -> &'static Regex {
 // ── Detection functions ─────────────────────────────────────────────────────
 
 /// Pattern match helper — returns the description of the first match.
-/// On regex runtime error, fail-closed: treat as a match (block the command).
+/// The regex crate uses a DFA engine: if a pattern compiles, matching never
+/// produces a runtime error (unlike backtracking engines).  Match is infallible.
 fn first_match(normalized: &str, patterns: &'static PatternList) -> Option<String> {
     for (re, desc) in patterns {
-        match re.is_match(normalized) {
-            Ok(true) => return Some(desc.to_string()),
-            Err(e) => {
-                // Runtime regex error — fail closed to avoid silently allowing
-                // dangerous commands through. Logging goes through Python.
-                return Some(format!("sandbox regex error (blocked): {}", e));
-            }
-            _ => {}
+        if re.is_match(normalized) {
+            return Some(desc.to_string());
         }
     }
     None
@@ -152,12 +147,8 @@ fn detect_hardline_impl(normalized: &str) -> Option<String> {
 /// Returns (pattern_key, description) if matched, None otherwise.
 fn detect_dangerous_impl(normalized: &str) -> Option<(String, String)> {
     for (re, desc) in dangerous_patterns() {
-        match re.is_match(normalized) {
-            Ok(true) => return Some((desc.to_string(), desc.to_string())),
-            Err(e) => {
-                return Some((format!("sandbox regex error: {}", e), format!("sandbox regex error: {}", e)));
-            }
-            _ => {}
+        if re.is_match(normalized) {
+            return Some((desc.to_string(), desc.to_string()));
         }
     }
     None
@@ -166,10 +157,10 @@ fn detect_dangerous_impl(normalized: &str) -> Option<(String, String)> {
 /// Check for sudo -S password guessing via stdin.
 /// Returns description if blocked, None otherwise.
 fn check_sudo_stdin_impl(normalized: &str) -> Option<String> {
-    match sudo_stdin_re().is_match(normalized) {
-        Ok(true) => Some("sudo password guessing via stdin (sudo -S)".to_string()),
-        Err(_) => Some("sandbox regex error: sudo stdin check failed (blocked)".to_string()),
-        Ok(false) => None,
+    if sudo_stdin_re().is_match(normalized) {
+        Some("sudo password guessing via stdin (sudo -S)".to_string())
+    } else {
+        None
     }
 }
 
@@ -690,9 +681,8 @@ mod tests {
         assert!(detect_dangerous_impl("DROP TABLE users").is_some());
         assert!(detect_dangerous_impl("DROP DATABASE prod").is_some());
         assert!(detect_dangerous_impl("TRUNCATE TABLE logs").is_some());
-        // DELETE without WHERE is caught
+        // DELETE FROM is caught (with or without WHERE — regex crate no lookahead)
         assert!(detect_dangerous_impl("DELETE FROM users").is_some());
-        // DELETE with WHERE is safe
-        assert!(detect_dangerous_impl("DELETE FROM users WHERE id = 1").is_none());
+        assert!(detect_dangerous_impl("DELETE FROM users WHERE id = 1").is_some());
     }
 }

@@ -321,136 +321,20 @@ def _sudo_stdin_block_result(description: str) -> dict:
 # Dangerous command patterns
 # =========================================================================
 
-DANGEROUS_PATTERNS = [
-    (r'\brm\s+(-[^\s]*\s+)*/', "delete in root path"),
-    (r'\brm\s+-[^\s]*r', "recursive delete"),
-    (r'\brm\s+--recursive\b', "recursive delete (long flag)"),
-    (r'\bchmod\s+(-[^\s]*\s+)*(777|666|o\+[rwx]*w|a\+[rwx]*w)\b', "world/other-writable permissions"),
-    (r'\bchmod\s+--recursive\b.*(777|666|o\+[rwx]*w|a\+[rwx]*w)', "recursive world/other-writable (long flag)"),
-    (r'\bchown\s+(-[^\s]*)?R\s+root', "recursive chown to root"),
-    (r'\bchown\s+--recursive\b.*root', "recursive chown to root (long flag)"),
-    (r'\bmkfs\b', "format filesystem"),
-    (r'\bdd\s+.*if=', "disk copy"),
-    (r'>\s*/dev/sd', "write to block device"),
-    (r'\bDROP\s+(TABLE|DATABASE)\b', "SQL DROP"),
-    # Use [^\n]* instead of .* so DOTALL mode does not cause a WHERE clause on the
-    # *next* line to satisfy the negative lookahead, silently allowing DELETE without WHERE.
-    (r'\bDELETE\s+FROM\b(?![^\n]*\bWHERE\b)', "SQL DELETE without WHERE"),
-    (r'\bTRUNCATE\s+(TABLE)?\s*\w', "SQL TRUNCATE"),
-    (rf'>\s*{_SYSTEM_CONFIG_PATH}', "overwrite system config"),
-    (r'\bsystemctl\s+(-[^\s]+\s+)*(stop|restart|disable|mask)\b', "stop/restart system service"),
-    (r'\bkill\s+-9\s+-1\b', "kill all processes"),
-    (r'\bpkill\s+-9\b', "force kill processes"),
-    # killall with SIGKILL (parallel to pkill -9). Catches -9 / -KILL /
-    # -s KILL / -SIGKILL forms, and also `killall -r <regex>` broad sweeps
-    # that can wipe out unrelated processes by accident.
-    # Inspired by Claude Code 2.1.113 expanded deny rules.
-    (r'\bkillall\s+(-[^\s]*\s+)*-(9|KILL|SIGKILL)\b', "force kill processes (killall -KILL)"),
-    (r'\bkillall\s+(-[^\s]*\s+)*-s\s+(KILL|SIGKILL|9)\b', "force kill processes (killall -s KILL)"),
-    (r'\bkillall\s+(-[^\s]*\s+)*-r\b', "kill processes by regex (killall -r)"),
-    (r':\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:', "fork bomb"),
-    # Any shell invocation via -c or combined flags like -lc, -ic, etc.
-    (r'\b(bash|sh|zsh|ksh)\s+-[^\s]*c(\s+|$)', "shell command via -c/-lc flag"),
-    # Rust sandbox requires a dangerous function/token in the payload; benign
-    # `python -c 'print(1)'` is allowed while `python -c 'import os; os.system(...)'`
-    # is blocked. The description must match what Rust sandbox.rs returns.
-    (r'\b(python[23]?|perl|ruby|node)\s+-[ec][^\n]*?(os\.system|os\.popen|os\.remove|os\.unlink|os\.rmdir|os\.exec|subprocess|shutil\.rmtree|__import__|\bexec\b|\beval\b|urllib|requests\.|socket\.|ctypes\.|pickle\.|\.rmdir\s*\(|\.unlink\s*\(|\.write_bytes\s*\(|\.write_text\s*\(|open\s*\(\s*[\x22\x27][^\x22\x27]*[\x22\x27]\s*,\s*[\x22\x27][wa][b+]*[\x22\x27])', "script execution via -e/-c flag with dangerous call"),
-    (r'\b(curl|wget)\b.*\|\s*(?:[/\w]*/)?(?:ba)?sh(?:\s|$|-c)', "pipe remote content to shell"),
-    (r'\b(bash|sh|zsh|ksh)\s+<\s*<?\s*\(\s*(curl|wget)\b', "execute remote script via process substitution"),
-    (rf'\btee\b.*["\']?{_SENSITIVE_WRITE_TARGET}', "overwrite system file via tee"),
-    (rf'>>?\s*["\']?{_SENSITIVE_WRITE_TARGET}', "overwrite system file via redirection"),
-    (rf'\btee\b.*["\']?{_PROJECT_SENSITIVE_WRITE_TARGET}["\']?{_COMMAND_TAIL}', "overwrite project env/config via tee"),
-    (rf'>>?\s*["\']?{_PROJECT_SENSITIVE_WRITE_TARGET}["\']?{_COMMAND_TAIL}', "overwrite project env/config via redirection"),
-    (r'\bxargs\s+.*\brm\b', "xargs with rm"),
-    # find -exec rm / -execdir rm — the -execdir variant (same semantics,
-    # runs in the directory of each match) was previously missed. Claude
-    # Code 2.1.113 tightened their equivalent find rule to stop auto-
-    # approving -exec / -delete flags.
-    (r'\bfind\b.*-exec(?:dir)?\s+(/\S*/)?rm\b', "find -exec/-execdir rm"),
-    (r'\bfind\b.*-delete\b', "find -delete"),
-    # Gateway lifecycle protection: prevent the agent from killing its own
-    # gateway process.  These commands trigger a gateway restart/stop that
-    # terminates all running agents mid-work.
-    (r'\bintellect\s+gateway\s+(stop|restart)\b', "stop/restart intellect gateway (kills running agents)"),
-    (r'\bintellect\s+update\b', "intellect update (restarts gateway, kills running agents)"),
-    # Docker container lifecycle — any user with docker.sock mounted (a common
-    # Docker Compose pattern) gives the agent the ability to restart/stop/kill
-    # containers without approval.  These are agent-initiated lifecycle operations
-    # that should always require user consent, just like `intellect gateway restart`
-    # already does for the gateway process.
-    (r'\bdocker\s+compose\s+(restart|stop|kill|down)\b', "docker compose restart/stop/kill/down (container lifecycle)"),
-    (r'\bdocker\s+(restart|stop|kill)\b', "docker restart/stop/kill (container lifecycle)"),
-    # Gateway protection: never start gateway outside systemd management
-    (r'gateway\s+run\b.*(&\s*$|&\s*;|\bdisown\b|\bsetsid\b)', "start gateway outside systemd (use 'systemctl --user restart intellect-gateway')"),
-    (r'\bnohup\b.*gateway\s+run\b', "start gateway outside systemd (use 'systemctl --user restart intellect-gateway')"),
-    # Self-termination protection: prevent agent from killing its own process
-    (r'\b(pkill|killall)\b.*\b(intellect|gateway|cli\.py)\b', "kill intellect/gateway process (self-termination)"),
-    # Self-termination via kill + command substitution (pgrep/pidof).
-    # The name-based pattern above catches `pkill intellect` but not
-    # `kill -9 $(pgrep -f intellect)` because the substitution is opaque
-    # to regex at detection time. Catch the structural pattern instead.
-    (r'\bkill\b.*\$\(\s*pgrep\b', "kill process via pgrep expansion (self-termination)"),
-    (r'\bkill\b.*`\s*pgrep\b', "kill process via backtick pgrep expansion (self-termination)"),
-    # File copy/move/edit into sensitive system paths (/etc/ and macOS
-    # /private/etc/ mirror).
-    (rf'\b(cp|mv|install)\b.*\s{_SYSTEM_CONFIG_PATH}', "copy/move file into system config path"),
-    (rf'\b(cp|mv|install)\b.*\s["\']?{_PROJECT_SENSITIVE_WRITE_TARGET}["\']?{_COMMAND_TAIL}', "overwrite project env/config file"),
-    (rf'\bsed\s+-[^\s]*i.*\s{_SYSTEM_CONFIG_PATH}', "in-place edit of system config"),
-    (rf'\bsed\s+--in-place\b.*\s{_SYSTEM_CONFIG_PATH}', "in-place edit of system config (long flag)"),
-    # Script execution via heredoc — bypasses the -e/-c flag patterns above.
-    # `python3 << 'EOF'` feeds arbitrary code via stdin without -c/-e flags.
-    (r'\b(python[23]?|perl|ruby|node)\s+<<', "script execution via heredoc"),
-    # Git destructive operations that can lose uncommitted work or rewrite
-    # shared history. Not captured by rm/chmod/etc patterns.
-    (r'\bgit\s+reset\s+--hard\b', "git reset --hard (destroys uncommitted changes)"),
-    (r'\bgit\s+push\b.*--force\b', "git force push (rewrites remote history)"),
-    (r'\bgit\s+push\b.*-f\b', "git force push short flag (rewrites remote history)"),
-    (r'\bgit\s+clean\s+-[^\s]*f', "git clean with force (deletes untracked files)"),
-    (r'\bgit\s+branch\s+-D\b', "git branch force delete"),
-    # Script execution after chmod +x — catches the two-step pattern where
-    # a script is first made executable then immediately run. The script
-    # content may contain dangerous commands that individual patterns miss.
-    (r'\bchmod\s+\+x\b.*[;&|]+\s*\./', "chmod +x followed by immediate execution"),
-    # Sudo with stdin / askpass / shell / list-privs flags. An LLM-driven
-    # agent has no TTY, so sudo invocations that succeed without human
-    # interaction are those reading the password from stdin (-S/--stdin)
-    # or via an askpass helper (-A/--askpass). The shell-launch (-s) and
-    # list-privileges (-a) flags are also gated since they are
-    # privilege-relevant invocations the agent can chain after acquiring
-    # the password (e.g. read SUDO_PASSWORD from .env -> sudo -S -s ->
-    # root shell). Plain `sudo cmd` (no flag) is TTY-bound and excluded.
-    # `_normalize_command_for_detection` lowercases input before pattern
-    # matching, so case variants of S/s and A/a collapse — both forms
-    # are gated below. Lazy `[^;|&\n]*?` allows flag arguments (e.g.
-    # `sudo -u root -S whoami`) without spanning command separators. See
-    # #17873 category 4.
-    (r'\bsudo\b[^;|&\n]*?\s+(?:-s\b|--stdin\b|-a\b|--askpass\b)',
-     "sudo with privilege flag (stdin/askpass/shell/list)"),
-    # Combined short-flag form: -nS, -ns, -sa, -las — sudo flags packed
-    # into a single -X token. Catches the same threat class.
-    (r'\bsudo\b[^;|&\n]*?\s+-[a-z]*[sa][a-z]*\b',
-     "sudo with combined-flag privilege escalation"),
+# Pattern descriptions known to the approval alias system.
+# Detection is handled entirely by the Rust extension (sandbox.rs);
+# this list exists only for _PATTERN_KEY_ALIASES backward compatibility
+# so legacy session approvals survive description-string changes.
+# When Rust adds a new pattern description, add it here if it has a
+# legacy predecessor that users may have saved approvals for.
+_KNOWN_PATTERN_DESCRIPTIONS: list[str] = [
+    # If you need to alias an old→new description change, add both here
+    # and in the _PATTERN_KEY_ALIASES cross-link block below.
 ]
 
-
-# Pre-compiled variant (same rationale as HARDLINE_PATTERNS_COMPILED above).
-DANGEROUS_PATTERNS_COMPILED = [
-    (re.compile(pattern, _RE_FLAGS), description)
-    for pattern, description in DANGEROUS_PATTERNS
-]
-
-
-def _legacy_pattern_key(pattern: str) -> str:
-    """Reproduce the old regex-derived approval key for backwards compatibility."""
-    return pattern.split(r'\b')[1] if r'\b' in pattern else pattern[:20]
-
-
-_PATTERN_KEY_ALIASES: dict[str, set[str]] = {}
-for _pattern, _description in DANGEROUS_PATTERNS:
-    _legacy_key = _legacy_pattern_key(_pattern)
-    _canonical_key = _description
-    _PATTERN_KEY_ALIASES.setdefault(_canonical_key, set()).update({_canonical_key, _legacy_key})
-    _PATTERN_KEY_ALIASES.setdefault(_legacy_key, set()).update({_legacy_key, _canonical_key})
+# Legacy stub — kept as a no-op for any external code that may reference it.
+DANGEROUS_PATTERNS: list = []  # type: ignore[no-redef]
+DANGEROUS_PATTERNS_COMPILED: list = []
 
 
 def _approval_key_aliases(pattern_key: str) -> set[str]:
@@ -462,6 +346,12 @@ def _approval_key_aliases(pattern_key: str) -> set[str]:
     """
     return _PATTERN_KEY_ALIASES.get(pattern_key, {pattern_key})
 
+
+# Pattern key alias map — maps each description string to a set of equivalent
+# keys.  Detection is handled by Rust (sandbox.rs); this map exists solely so
+# session/permanent approvals stored under older description strings continue
+# to resolve after descriptions are updated.
+_PATTERN_KEY_ALIASES: dict[str, set[str]] = {}
 
 # Backwards compatibility: the Rust sandbox (sandbox.rs) returns a different
 # description string than the historical Python DANGEROUS_PATTERNS list.
