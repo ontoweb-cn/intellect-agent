@@ -2888,111 +2888,8 @@ def save_config_value(key_path: str, value: any) -> bool:
 
 class IntellectCLI:
     """
-
-    # Dispatch table: canonical command name → method name.
-    # Used by process_command() for fast lookup of simple handlers.
-    _COMMAND_DISPATCH = {
-        "agents": "_handle_agents_command",
-        "background": "_handle_background_command",
-        "branch": "_handle_branch_command",
-        "browser": "_handle_browser_command",
-        "bundles": "_handle_bundles_command",
-        "busy": "_handle_busy_command",
-        "codex-runtime": "_handle_codex_runtime",
-        "compress": "_manual_compress",
-        "config": "show_config",
-        "copy": "_handle_copy_command",
-        "cron": "_handle_cron_command",
-        "curator": "_handle_curator_command",
-        "debug": "_handle_debug_command",
-        "fast": "_handle_fast_command",
-        "footer": "_handle_footer_command",
-        "goal": "_handle_goal_command",
-        "gquota": "_handle_gquota_command",
-        "help": "show_help",
-        "history": "show_history",
-        "image": "_handle_image_command",
-        "insights": "_show_insights",
-        "kanban": "_handle_kanban_command",
-        "model": "_handle_model_switch",
-        "paste": "_handle_paste_command",
-        "personality": "_handle_personality_command",
-        "platforms": "_show_gateway_status",
-        "profile": "_handle_profile_command",
-        "reasoning": "_handle_reasoning_command",
-        "reload-mcp": "_confirm_and_reload_mcp",
-        "resume": "_handle_resume_command",
-        "rollback": "_handle_rollback_command",
-        "save": "save_conversation",
-        "sessions": "_handle_sessions_command",
-        "skin": "_handle_skin_command",
-        "snapshot": "_handle_snapshot_command",
-        "status": "_show_session_status",
-        "stop": "_handle_stop_command",
-        "subgoal": "_handle_subgoal_command",
-        "tools": "_handle_tools_command",
-        "toolsets": "show_toolsets",
-        "usage": "_show_usage",
-        "verbose": "_toggle_verbose",
-        "voice": "_handle_voice_command",
-        "yolo": "_toggle_yolo",
-    }
-    Interactive CLI for the Intellect Agent.
-
-    Provides a REPL interface with rich formatting, command history,
-    and tool execution capabilities.
     """
 
-    # Fast dispatch table: canonical command name → method name.
-    # Used by process_command() for simple one-line handlers.
-    # Complex handlers (quit, clear, new, retry, etc.) stay in the
-    # elif chain because they have special logic.
-    _COMMAND_DISPATCH = {
-        "agents": "_handle_agents_command",
-        "background": "_handle_background_command",
-        "branch": "_handle_branch_command",
-        "browser": "_handle_browser_command",
-        "bundles": "_handle_bundles_command",
-        "busy": "_handle_busy_command",
-        "codex-runtime": "_handle_codex_runtime",
-        "compress": "_manual_compress",
-        "config": "show_config",
-        "copy": "_handle_copy_command",
-        "cron": "_handle_cron_command",
-        "curator": "_handle_curator_command",
-        "debug": "_handle_debug_command",
-        "fast": "_handle_fast_command",
-        "footer": "_handle_footer_command",
-        "goal": "_handle_goal_command",
-        "gquota": "_handle_gquota_command",
-        "help": "show_help",
-        "history": "show_history",
-        "image": "_handle_image_command",
-        "insights": "_show_insights",
-        "kanban": "_handle_kanban_command",
-        "model": "_handle_model_switch",
-        "paste": "_handle_paste_command",
-        "personality": "_handle_personality_command",
-        "platforms": "_show_gateway_status",
-        "profile": "_handle_profile_command",
-        "reasoning": "_handle_reasoning_command",
-        "reload-mcp": "_confirm_and_reload_mcp",
-        "resume": "_handle_resume_command",
-        "rollback": "_handle_rollback_command",
-        "save": "save_conversation",
-        "sessions": "_handle_sessions_command",
-        "skin": "_handle_skin_command",
-        "snapshot": "_handle_snapshot_command",
-        "status": "_show_session_status",
-        "stop": "_handle_stop_command",
-        "subgoal": "_handle_subgoal_command",
-        "tools": "_handle_tools_command",
-        "toolsets": "show_toolsets",
-        "usage": "_show_usage",
-        "verbose": "_toggle_verbose",
-        "voice": "_handle_voice_command",
-        "yolo": "_toggle_yolo",
-    }
 
     def __init__(
         self,
@@ -8507,11 +8404,6 @@ class IntellectCLI:
             getattr(self, _handler_name)(cmd_original)
             return True
 
-        # ── Fast dispatch table for simple commands ──────────────
-        _handler_name = _COMMAND_DISPATCH.get(canonical)
-        if _handler_name is not None:
-            getattr(self, _handler_name)(cmd_original)
-            return True
 
     
     def _handle_background_command(self, cmd: str):
