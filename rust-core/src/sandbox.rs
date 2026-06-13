@@ -34,58 +34,48 @@ fn hardline_patterns() -> &'static PatternList {
     })
 }
 
-/// Dangerous Python/Perl/Ruby/Node tokens checked inside `-c`/`-e` payloads.
+/// Dangerous tokens checked inside `-c`/`-e` payloads — each with its own
+/// description so the approval system and logs can distinguish threat types.
 ///
-/// Each entry is a regex fragment alternated into the script-execution pattern.
-/// Add new dangerous APIs here — no need to touch the regex construction below.
-///
-/// Categories:
-///   code execution — exec, eval, __import__
-///   subprocess spawn — os.system, os.popen, os.exec*, os.spawn*, os.posix_spawn*, subprocess
-///   file destruction — os.remove, os.unlink, os.rmdir, shutil.rmtree, .rmdir(), .unlink()
-///   destructive writes — open(…, "w"/"a"/"wb"/"w+"), .write_bytes(), .write_text()
-///   native library loading — ctypes
-///   deserialization — pickle
-///   network exfil — urllib, requests, socket
-///   dynamic access — getattr
-static SCRIPT_EXEC_DANGEROUS_TOKENS: &[&str] = &[
+/// Each entry: (regex_fragment, short_description)
+/// The description is appended to "script execution via -e/-c flag: ".
+/// Add new dangerous APIs here.
+static SCRIPT_EXEC_TOKEN_ENTRIES: &[(&str, &str)] = &[
     // -- code execution --
-    r"\bexec\b",
-    r"\beval\b",
-    r"__import__",
+    (r"\bexec\b",              "exec()"),
+    (r"\beval\b",              "eval()"),
+    (r"__import__",            "__import__()"),
     // -- subprocess spawning --
-    r"os\.system",
-    r"os\.popen",
-    r"os\.exec",
-    r"os\.spawn",
-    r"os\.posix_spawn",
-    r"subprocess",
+    (r"os\.system",            "os.system()"),
+    (r"os\.popen",             "os.popen()"),
+    (r"os\.exec",              "os.exec*()"),
+    (r"os\.spawn",             "os.spawn*()"),
+    (r"os\.posix_spawn",       "os.posix_spawn*()"),
+    (r"subprocess",            "subprocess"),
     // -- file destruction --
-    r"os\.remove",
-    r"os\.unlink",
-    r"os\.rmdir",
-    r"shutil\.rmtree",
-    r"\.rmdir\s*\(",
-    r"\.unlink\s*\(",
+    (r"os\.remove",            "os.remove()"),
+    (r"os\.unlink",            "os.unlink()"),
+    (r"os\.rmdir",             "os.rmdir()"),
+    (r"shutil\.rmtree",        "shutil.rmtree()"),
+    (r"\.rmdir\s*\(",           "Path.rmdir()"),
+    (r"\.unlink\s*\(",          "Path.unlink()"),
     // -- destructive file writes --
-    r"\.write_bytes\s*\(",
-    r"\.write_text\s*\(",
-    // open("path", "w"/"a"/"wb"/"w+") -- write/append modes
-    // Uses [\x22\x27] for quote chars (raw string can't contain literal ")
-    r"open\s*\(\s*[\x22\x27][^\x22\x27]*[\x22\x27]\s*,\s*[\x22\x27][wa][b+]*[\x22\x27]",
+    (r"\.write_bytes\s*\(",     "Path.write_bytes()"),
+    (r"\.write_text\s*\(",      "Path.write_text()"),
+    (r"open\s*\(\s*[\x22\x27][^\x22\x27]*[\x22\x27]\s*,\s*[\x22\x27][wa][b+]*[\x22\x27]", "open(…, 'w'/'a')"),
     // -- native library loading --
-    r"ctypes\.",
+    (r"ctypes\.",              "ctypes"),
     // -- deserialization --
-    r"pickle\.",
-    r"marshal\.",          // marshal.loads is pickle-equivalent for bytecode
+    (r"pickle\.",              "pickle"),
+    (r"marshal\.",             "marshal"),
     // -- dynamic compilation --
-    r"compile\s*\(",       // compile() + exec() two-step bypass
+    (r"compile\s*\(",          "compile()"),
     // -- network exfil --
-    r"urllib",
-    r"requests\.",
-    r"socket\.",
+    (r"urllib",                "urllib"),
+    (r"requests\.",            "requests"),
+    (r"socket\.",              "socket"),
     // -- dynamic attribute access obfuscation --
-    r"getattr\s*\(",
+    (r"getattr\s*\(",          "getattr()"),
 ];
 
 fn dangerous_patterns() -> &'static PatternList {
@@ -101,7 +91,7 @@ fn dangerous_patterns() -> &'static PatternList {
         // Mirrors Python's _COMMAND_TAIL: (?:\s*(?:&&|\|\||;).*)?$
         let cmd_tail = r"(?:\s*(?:&&|\|\||;).*)?$";
 
-        let patterns: Vec<(String, &str)> = vec![
+        let mut patterns: Vec<(String, &str)> = vec![
             (r"\brm\s+(-[^\s]*\s+)*/".into(), "delete in root path"),
             (r"\brm\s+-[^\s]*r".into(), "recursive delete"),
             (r"\brm\s+--recursive\b".into(), "recursive delete (long flag)"),
@@ -128,12 +118,8 @@ fn dangerous_patterns() -> &'static PatternList {
             // invocations like `python -c 'print(1)'` are allowed while
             // `python -c 'import os; os.system("rm -rf /")'` is still blocked.
             //
-            // The dangerous-token list below is built from SCRIPT_EXEC_DANGEROUS_TOKENS.
-            // Add new dangerous Python functions there, not here.
-            (format!(
-                r"\b(python[23]?|perl|ruby|node)\s+-[ec][^\n]*?({})",
-                SCRIPT_EXEC_DANGEROUS_TOKENS.join("|")
-            ).into(), "script execution via -e/-c flag with dangerous call"),
+            // Script execution via -e/-c flag with dangerous payload.
+            // Individual patterns built from SCRIPT_EXEC_TOKEN_ENTRIES below.
             (r"\b(curl|wget)\b.*\|\s*(?:[/\w]*/)?(?:ba)?sh(?:\s|$|-c)".into(), "pipe remote content to shell"),
             (r"\b(bash|sh|zsh|ksh)\s+<\s*<?\s*\(\s*(curl|wget)\b".into(), "execute remote script via process substitution"),
             (format!("\\btee\\b.*[\\\"']?({})", sys_cfg), "overwrite system file via tee"),
@@ -166,6 +152,21 @@ fn dangerous_patterns() -> &'static PatternList {
             (r"\bsudo\b[^;|&\n]*?\s+(?:-s\b|--stdin\b|-a\b|--askpass\b)".into(), "sudo with privilege flag (stdin/askpass/shell/list)"),
             (r"\bsudo\b[^;|&\n]*?\s+-[a-z]*[sa][a-z]*\b".into(), "sudo with combined-flag privilege escalation"),
         ];
+
+        // Build individual patterns from SCRIPT_EXEC_TOKEN_ENTRIES so each
+        // dangerous token gets a specific description (e.g. "exec()" vs
+        // "ctypes") for the approval system and logs.
+        // Box::leak is safe — patterns live for the program lifetime.
+        let prefix = r"\b(python[23]?|perl|ruby|node)\s+-[ec][^\n]*?(";
+        let suffix = ")";
+        for (fragment, desc) in SCRIPT_EXEC_TOKEN_ENTRIES {
+            let full_pattern = format!("{}{}{}", prefix, fragment, suffix);
+            let full_desc: &'static str = Box::leak(
+                format!("script execution via -e/-c flag: {}", desc).into_boxed_str()
+            );
+            patterns.push((full_pattern, full_desc));
+        }
+
         patterns.into_iter().map(|(p, d)| (Regex::new(&format!("(?is){}", p)).unwrap(), d)).collect()
     })
 }
