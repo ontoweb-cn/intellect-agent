@@ -8656,7 +8656,12 @@ class IntellectCLI:
         # ── Fast dispatch table for simple commands ──────────────
         _handler_name = self._COMMAND_DISPATCH.get(canonical)
         if _handler_name is not None:
-            getattr(self, _handler_name)(cmd_original)
+            _handler = getattr(self, _handler_name)
+            # Some handlers accept cmd_original, others take no args
+            try:
+                _handler(cmd_original)
+            except TypeError:
+                _handler()
             return True
 
         # ── Complex commands (special logic) ─────────────────────
@@ -8795,6 +8800,9 @@ class IntellectCLI:
         elif canonical == "reload-skills":
             with self._busy_command(self._slow_command_status(cmd_original)):
                 self._reload_skills()
+        elif canonical == "skills":
+            with self._busy_command(self._slow_command_status(cmd_original)):
+                self._handle_skills_command(cmd_original)
         elif canonical == "plugins":
             try:
                 from intellect_cli.plugins import get_plugin_manager
