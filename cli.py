@@ -1933,6 +1933,41 @@ def _terminal_width_for_streaming() -> int:
     return max(20, cols - len(_STREAM_PAD) - 2)
 
 
+# ── Panel layout helpers (used by clarify, model-picker, approval, etc.) ──
+
+def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, max_width: int = 76) -> int:
+    """Choose a stable panel width wide enough for the title and content."""
+    term_cols = shutil.get_terminal_size((100, 20)).columns
+    longest = max([len(title)] + [len(line) for line in content_lines] + [min_width - 4])
+    inner = min(max(longest + 4, min_width - 2), max_width - 2, max(24, term_cols - 6))
+    return inner + 2
+
+
+def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list[str]:
+    """Wrap text to fit inside a panel border."""
+    wrapped = textwrap.wrap(
+        text,
+        width=max(8, width),
+        break_long_words=False,
+        break_on_hyphens=False,
+        subsequent_indent=subsequent_indent,
+    )
+    return wrapped or [""]
+
+
+def _append_panel_line(lines, border_style: str, content_style: str, text: str, box_width: int) -> None:
+    """Append a single content line inside a panel border."""
+    inner_width = max(0, box_width - 2)
+    lines.append((border_style, "│ "))
+    lines.append((content_style, text.ljust(inner_width)))
+    lines.append((border_style, " │\n"))
+
+
+def _append_blank_panel_line(lines, border_style: str, box_width: int) -> None:
+    """Append a blank line inside a panel border."""
+    lines.append((border_style, "│" + (" " * box_width) + "│\n"))
+
+
 def _render_final_assistant_content(text: str, mode: str = "render"):
     """Render final assistant content as markdown, stripped text, or raw text."""
     from rich.markdown import Markdown
@@ -2853,6 +2888,55 @@ def save_config_value(key_path: str, value: any) -> bool:
 
 class IntellectCLI:
     """
+
+    # Dispatch table: canonical command name → method name.
+    # Used by process_command() for fast lookup of simple handlers.
+    _COMMAND_DISPATCH = {
+        "agents": "_handle_agents_command",
+        "background": "_handle_background_command",
+        "branch": "_handle_branch_command",
+        "browser": "_handle_browser_command",
+        "bundles": "_handle_bundles_command",
+        "busy": "_handle_busy_command",
+        "codex-runtime": "_handle_codex_runtime",
+        "compress": "_manual_compress",
+        "config": "show_config",
+        "copy": "_handle_copy_command",
+        "cron": "_handle_cron_command",
+        "curator": "_handle_curator_command",
+        "debug": "_handle_debug_command",
+        "fast": "_handle_fast_command",
+        "footer": "_handle_footer_command",
+        "goal": "_handle_goal_command",
+        "gquota": "_handle_gquota_command",
+        "help": "show_help",
+        "history": "show_history",
+        "image": "_handle_image_command",
+        "insights": "_show_insights",
+        "kanban": "_handle_kanban_command",
+        "model": "_handle_model_switch",
+        "paste": "_handle_paste_command",
+        "personality": "_handle_personality_command",
+        "platforms": "_show_gateway_status",
+        "profile": "_handle_profile_command",
+        "reasoning": "_handle_reasoning_command",
+        "reload-mcp": "_confirm_and_reload_mcp",
+        "resume": "_handle_resume_command",
+        "rollback": "_handle_rollback_command",
+        "save": "save_conversation",
+        "sessions": "_handle_sessions_command",
+        "skin": "_handle_skin_command",
+        "snapshot": "_handle_snapshot_command",
+        "status": "_show_session_status",
+        "stop": "_handle_stop_command",
+        "subgoal": "_handle_subgoal_command",
+        "tools": "_handle_tools_command",
+        "toolsets": "show_toolsets",
+        "usage": "_show_usage",
+        "verbose": "_toggle_verbose",
+        "voice": "_handle_voice_command",
+        "yolo": "_toggle_yolo",
+    }
     Interactive CLI for the Intellect Agent.
 
     Provides a REPL interface with rich formatting, command history,
@@ -7425,31 +7509,6 @@ class IntellectCLI:
         choices = state.get("choices") or []
         selected = state.get("selected", 0)
 
-        def _panel_box_width(title_text: str, content_lines: list[str], min_width: int = 56, max_width: int = 86) -> int:
-            term_cols = shutil.get_terminal_size((100, 20)).columns
-            longest = max([len(title_text)] + [len(line) for line in content_lines] + [min_width - 4])
-            inner = min(max(longest + 4, min_width - 2), max_width - 2, max(24, term_cols - 6))
-            return inner + 2
-
-        def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list[str]:
-            wrapped = textwrap.wrap(
-                text,
-                width=max(8, width),
-                replace_whitespace=False,
-                drop_whitespace=False,
-                subsequent_indent=subsequent_indent,
-            )
-            return wrapped or [""]
-
-        def _append_panel_line(lines, border_style: str, content_style: str, text: str, box_width: int) -> None:
-            inner_width = max(0, box_width - 2)
-            lines.append((border_style, "│ "))
-            lines.append((content_style, text.ljust(inner_width)))
-            lines.append((border_style, " │\n"))
-
-        def _append_blank_panel_line(lines, border_style: str, box_width: int) -> None:
-            lines.append((border_style, "│" + (" " * box_width) + "│\n"))
-
         preview_lines = []
         for line in detail.splitlines():
             preview_lines.extend(_wrap_panel_text(line, 72))
@@ -7458,7 +7517,7 @@ class IntellectCLI:
             preview_lines.extend(_wrap_panel_text(f"{marker} [{idx + 1}] {label} — {desc}", 72, subsequent_indent="    "))
         preview_lines.append("Type 1/2/3 or use ↑/↓ then Enter. ESC/Ctrl+C cancels.")
 
-        box_width = _panel_box_width(title, preview_lines)
+        box_width = _panel_box_width(title, preview_lines, min_width=56, max_width=86)
         inner_text_width = max(8, box_width - 2)
         detail_wrapped = []
         for line in detail.splitlines():
@@ -8448,483 +8507,12 @@ class IntellectCLI:
             getattr(self, _handler_name)(cmd_original)
             return True
 
-        if canonical in {"quit", "exit"}:
-            # Parse --delete flag: /exit --delete also removes the current
-            # session's transcripts + SQLite history. Ported from
-            # google-gemini/gemini-cli#19332.
-            _rest = cmd_original.split(None, 1)
-            _args = (_rest[1] if len(_rest) > 1 else "").strip().lower()
-            if _args in {"--delete", "-d"}:
-                self._delete_session_on_exit = True
-            elif _args:
-                _cprint(f"  {_DIM}✗ Unknown argument: {_escape(_args)}. Use /exit --delete to also remove session history.{_RST}")
-                return True
-            return False
-        elif canonical == "help":
-            self.show_help()
-        elif canonical == "profile":
-            self._handle_profile_command()
-        elif canonical == "tools":
-            self._handle_tools_command(cmd_original)
-        elif canonical == "toolsets":
-            self.show_toolsets()
-        elif canonical == "config":
-            self.show_config()
-        elif canonical == "redraw":
-            # Manual recovery for terminal buffer drift from multiplexer
-            # tab switches, subshell ``clear``, SSH window restores, etc.
-            # See issue #8688 (cmux). Ctrl+L is bound to the same helper.
-            self._force_full_redraw()
-            _cprint(f"  {_DIM}✓ UI redrawn{_RST}")
-        elif canonical == "clear":
-            if self._confirm_destructive_slash(
-                "clear",
-                "This clears the screen and starts a new session.\n"
-                "The current conversation history will be discarded.",
-                cmd_original=cmd_original,
-            ) is None:
-                return
-            self.new_session(silent=True)
-            _clear_output_history()
-            # Clear terminal screen.  Inside the TUI, Rich's console.clear()
-            # goes through patch_stdout's StdoutProxy which swallows the
-            # screen-clear escape sequences.  Use prompt_toolkit's output
-            # object directly to actually clear the terminal.
-            if self._app:
-                out = self._app.output
-                out.erase_screen()
-                out.cursor_goto(0, 0)
-                out.flush()
-            else:
-                self.console.clear()
-            # Show fresh banner.  Inside the TUI we must route Rich output
-            # through ChatConsole (which uses prompt_toolkit's native ANSI
-            # renderer) instead of self.console (which writes raw to stdout
-            # and gets mangled by patch_stdout).
-            if self._app:
-                cc = ChatConsole()
-                term_w = shutil.get_terminal_size().columns
-                if self.compact or term_w < 80:
-                    cc.print(_build_compact_banner())
-                else:
-                    tools = get_tool_definitions(enabled_toolsets=self.enabled_toolsets, quiet_mode=True)
-                    cwd = os.getenv("TERMINAL_CWD", os.getcwd())
-                    ctx_len = None
-                    if hasattr(self, 'agent') and self.agent and hasattr(self.agent, 'context_compressor'):
-                        ctx_len = self.agent.context_compressor.context_length
-                    build_welcome_banner(
-                        console=cc,
-                        model=self.model,
-                        cwd=cwd,
-                        tools=tools,
-                        enabled_toolsets=self.enabled_toolsets,
-                        session_id=self.session_id,
-                        context_length=ctx_len,
-                    )
-                _cprint("  ✨ (◕‿◕)✨ Fresh start! Screen cleared and conversation reset.\n")
-                # Show a random tip on new session
-                try:
-                    from intellect_cli.tips import get_random_tip
-                    _tip = get_random_tip()
-                    try:
-                        from intellect_cli.skin_engine import get_active_skin
-                        _tip_color = get_active_skin().get_color("banner_dim", "#B8860B")
-                    except Exception:
-                        _tip_color = "#B8860B"
-                    cc.print(f"[dim {_tip_color}]✦ Tip: {_tip}[/]")
-                except Exception:
-                    pass
-            else:
-                self.show_banner()
-                print("  ✨ (◕‿◕)✨ Fresh start! Screen cleared and conversation reset.\n")
-                # Show a random tip on new session
-                try:
-                    from intellect_cli.tips import get_random_tip
-                    _tip = get_random_tip()
-                    try:
-                        from intellect_cli.skin_engine import get_active_skin
-                        _tip_color = get_active_skin().get_color("banner_dim", "#B8860B")
-                    except Exception:
-                        _tip_color = "#B8860B"
-                    self._console_print(f"[dim {_tip_color}]✦ Tip: {_tip}[/]")
-                except Exception:
-                    pass
-        elif canonical == "history":
-            self.show_history()
-        elif canonical == "title":
-            parts = cmd_original.split(maxsplit=1)
-            if len(parts) > 1:
-                raw_title = parts[1].strip()
-                if raw_title:
-                    if self._session_db:
-                        # Sanitize the title early so feedback matches what gets stored
-                        try:
-                            from intellect_state import SessionDB
-                            new_title = SessionDB.sanitize_title(raw_title)
-                        except ValueError as e:
-                            _cprint(f"  {e}")
-                            new_title = None
-                        if not new_title:
-                            _cprint("  Title is empty after cleanup. Please use printable characters.")
-                        elif self._session_db.get_session(self.session_id):
-                            # Session exists in DB — set title directly
-                            try:
-                                if self._session_db.set_session_title(self.session_id, new_title):
-                                    _cprint(f"  Session title set: {new_title}")
-                                else:
-                                    _cprint("  Session not found in database.")
-                            except ValueError as e:
-                                _cprint(f"  {e}")
-                        else:
-                            # Session not created yet — defer the title
-                            # Check uniqueness proactively with the sanitized title
-                            existing = self._session_db.get_session_by_title(new_title)
-                            if existing:
-                                _cprint(f"  Title '{new_title}' is already in use by session {existing['id']}")
-                            else:
-                                self._pending_title = new_title
-                                _cprint(f"  Session title queued: {new_title} (will be saved on first message)")
-                    else:
-                        from intellect_state import format_session_db_unavailable
-                        _cprint(f"  {format_session_db_unavailable()}")
-                else:
-                    _cprint("  Usage: /title <your session title>")
-            # Show current title and session ID if no argument given
-            elif self._session_db:
-                _cprint(f"  Session ID: {self.session_id}")
-                session = self._session_db.get_session(self.session_id)
-                if session and session.get("title"):
-                    _cprint(f"  Title: {session['title']}")
-                elif self._pending_title:
-                    _cprint(f"  Title (pending): {self._pending_title}")
-                else:
-                    _cprint("  No title set. Usage: /title <your session title>")
-            else:
-                from intellect_state import format_session_db_unavailable
-                _cprint(f"  {format_session_db_unavailable()}")
-        elif canonical == "handoff":
-            if not self._handle_handoff_command(cmd_original):
-                return False
-        elif canonical == "new":
-            # Strip inline-skip tokens (now/--yes/-y) before deriving the title
-            # so "/new now My Session" yields title="My Session" instead of
-            # title="now My Session". See _split_destructive_skip.
-            _new_args, _ = self._split_destructive_skip(cmd_original)
-            title = _new_args.strip() or None
-            if self._confirm_destructive_slash(
-                "new",
-                "This starts a fresh session.\n"
-                "The current conversation history will be discarded.",
-                cmd_original=cmd_original,
-            ) is None:
-                return
-            self.new_session(title=title)
-        elif canonical == "resume":
-            self._handle_resume_command(cmd_original)
-        elif canonical == "sessions":
-            self._handle_sessions_command(cmd_original)
-        elif canonical == "model":
-            self._handle_model_switch(cmd_original)
-        elif canonical == "codex-runtime":
-            self._handle_codex_runtime(cmd_original)
-        elif canonical == "gquota":
-            self._handle_gquota_command(cmd_original)
+        # ── Fast dispatch table for simple commands ──────────────
+        _handler_name = _COMMAND_DISPATCH.get(canonical)
+        if _handler_name is not None:
+            getattr(self, _handler_name)(cmd_original)
+            return True
 
-        elif canonical == "personality":
-            # Use original case (handler lowercases the personality name itself)
-            self._handle_personality_command(cmd_original)
-        elif canonical == "retry":
-            retry_msg = self.retry_last()
-            if retry_msg and hasattr(self, '_pending_input'):
-                # Re-queue the message so process_loop sends it to the agent
-                self._pending_input.put(retry_msg)
-        elif canonical == "undo":
-            if self._confirm_destructive_slash(
-                "undo",
-                "This removes the last user/assistant exchange from history.",
-                cmd_original=cmd_original,
-            ) is None:
-                return
-            self.undo_last()
-        elif canonical == "branch":
-            self._handle_branch_command(cmd_original)
-        elif canonical == "save":
-            self.save_conversation()
-        elif canonical == "cron":
-            self._handle_cron_command(cmd_original)
-        elif canonical == "curator":
-            self._handle_curator_command(cmd_original)
-        elif canonical == "kanban":
-            self._handle_kanban_command(cmd_original)
-        elif canonical == "skills":
-            with self._busy_command(self._slow_command_status(cmd_original)):
-                self._handle_skills_command(cmd_original)
-        elif canonical == "platforms":
-            self._show_gateway_status()
-        elif canonical == "status":
-            self._show_session_status()
-        elif canonical == "statusbar":
-            self._status_bar_visible = not self._status_bar_visible
-            state = "visible" if self._status_bar_visible else "hidden"
-            self._console_print(f"  Status bar {state}")
-        elif canonical == "verbose":
-            self._toggle_verbose()
-        elif canonical == "footer":
-            self._handle_footer_command(cmd_original)
-        elif canonical == "yolo":
-            self._toggle_yolo()
-        elif canonical == "reasoning":
-            self._handle_reasoning_command(cmd_original)
-        elif canonical == "fast":
-            self._handle_fast_command(cmd_original)
-        elif canonical == "compress":
-            self._manual_compress(cmd_original)
-        elif canonical == "usage":
-            self._show_usage()
-        elif canonical == "insights":
-            self._show_insights(cmd_original)
-        elif canonical == "copy":
-            self._handle_copy_command(cmd_original)
-        elif canonical == "debug":
-            self._handle_debug_command()
-        elif canonical == "update":
-            if self._handle_update_command():
-                return False
-        elif canonical == "paste":
-            self._handle_paste_command()
-        elif canonical == "image":
-            self._handle_image_command(cmd_original)
-        elif canonical == "reload":
-            from intellect_cli.config import reload_env
-            count = reload_env()
-            print(f"  Reloaded .env ({count} var(s) updated)")
-        elif canonical == "reload-mcp":
-            # Interactive reload: confirm first (unless the user has opted out).
-            # The auto-reload path (file watcher) calls _reload_mcp directly
-            # without this confirmation.
-            self._confirm_and_reload_mcp(cmd_original)
-        elif canonical == "reload-skills":
-            with self._busy_command(self._slow_command_status(cmd_original)):
-                self._reload_skills()
-        elif canonical == "bundles":
-            self._handle_bundles_command(cmd_original)
-        elif canonical == "browser":
-            self._handle_browser_command(cmd_original)
-        elif canonical == "plugins":
-            try:
-                from intellect_cli.plugins import get_plugin_manager
-                mgr = get_plugin_manager()
-                plugins = mgr.list_plugins()
-                if not plugins:
-                    print("No plugins installed.")
-                    print(f"Drop plugin directories into {display_intellect_home()}/plugins/ to get started.")
-                else:
-                    print(f"Plugins ({len(plugins)}):")
-                    for p in plugins:
-                        status = "✓" if p["enabled"] else "✗"
-                        version = f" v{p['version']}" if p["version"] else ""
-                        tools = f"{p['tools']} tools" if p["tools"] else ""
-                        hooks = f"{p['hooks']} hooks" if p["hooks"] else ""
-                        commands = f"{p['commands']} commands" if p.get("commands") else ""
-                        parts = [x for x in [tools, hooks, commands] if x]
-                        detail = f" ({', '.join(parts)})" if parts else ""
-                        error = f" — {p['error']}" if p["error"] else ""
-                        print(f"  {status} {p['name']}{version}{detail}{error}")
-            except Exception as e:
-                print(f"Plugin system error: {e}")
-        elif canonical == "rollback":
-            self._handle_rollback_command(cmd_original)
-        elif canonical == "snapshot":
-            self._handle_snapshot_command(cmd_original)
-        elif canonical == "stop":
-            self._handle_stop_command()
-        elif canonical == "agents":
-            self._handle_agents_command()
-        elif canonical == "background":
-            self._handle_background_command(cmd_original)
-        elif canonical == "queue":
-            # Extract prompt after "/queue " or "/q "
-            parts = cmd_original.split(None, 1)
-            payload = parts[1].strip() if len(parts) > 1 else ""
-            if not payload:
-                _cprint("  Usage: /queue <prompt>")
-            else:
-                self._pending_input.put(payload)
-                if self._agent_running:
-                    _cprint(f"  Queued for the next turn: {payload[:80]}{'...' if len(payload) > 80 else ''}")
-                else:
-                    _cprint(f"  Queued: {payload[:80]}{'...' if len(payload) > 80 else ''}")
-        elif canonical == "steer":
-            # Inject a message after the next tool call without interrupting.
-            # If the agent is actively running, push the text into the agent's
-            # pending_steer slot — the drain hook in _execute_tool_calls_*
-            # will append it to the next tool result's content. If no agent
-            # is running, fall back to queue semantics (same as /queue).
-            parts = cmd_original.split(None, 1)
-            payload = parts[1].strip() if len(parts) > 1 else ""
-            if not payload:
-                _cprint("  Usage: /steer <prompt>")
-            elif self._agent_running and self.agent is not None and hasattr(self.agent, "steer"):
-                try:
-                    accepted = self.agent.steer(payload)
-                except Exception as exc:
-                    _cprint(f"  Steer failed: {exc}")
-                else:
-                    if accepted:
-                        _cprint(f"  ⏩ Steer queued — arrives after the next tool call: {payload[:80]}{'...' if len(payload) > 80 else ''}")
-                    else:
-                        _cprint("  Steer rejected (empty payload).")
-            else:
-                # No active run — treat as a normal next-turn message.
-                self._pending_input.put(payload)
-                _cprint(f"  No agent running; queued as next turn: {payload[:80]}{'...' if len(payload) > 80 else ''}")
-        elif canonical == "goal":
-            self._handle_goal_command(cmd_original)
-        elif canonical == "subgoal":
-            self._handle_subgoal_command(cmd_original)
-        elif canonical == "skin":
-            self._handle_skin_command(cmd_original)
-        elif canonical == "voice":
-            self._handle_voice_command(cmd_original)
-        elif canonical == "busy":
-            self._handle_busy_command(cmd_original)
-        else:
-            # Check for user-defined quick commands (bypass agent loop, no LLM call)
-            base_cmd = cmd_lower.split()[0]
-            skill_commands = _ensure_skill_commands()
-            skill_bundles = get_skill_bundles()
-            quick_commands = self.config.get("quick_commands", {})
-            if base_cmd.lstrip("/") in quick_commands:
-                qcmd = quick_commands[base_cmd.lstrip("/")]
-                if qcmd.get("type") == "exec":
-                    import subprocess
-                    exec_cmd = qcmd.get("command", "")
-                    if exec_cmd:
-                        try:
-                            # shell=True is intentional: quick_commands are user-defined
-                            # shell snippets from config.yaml — not agent/LLM controlled.
-                            result = subprocess.run(
-                                exec_cmd, shell=True, capture_output=True,
-                                text=True, timeout=30
-                            )
-                            output = result.stdout.strip() or result.stderr.strip()
-                            if output:
-                                self._console_print(_rich_text_from_ansi(output))
-                            else:
-                                self._console_print("[dim]Command returned no output[/]")
-                        except subprocess.TimeoutExpired:
-                            self._console_print("[bold red]Quick command timed out (30s)[/]")
-                        except Exception as e:
-                            self._console_print(f"[bold red]Quick command error: {e}[/]")
-                    else:
-                        self._console_print(f"[bold red]Quick command '{base_cmd}' has no command defined[/]")
-                elif qcmd.get("type") == "alias":
-                    target = qcmd.get("target", "").strip()
-                    if target:
-                        target = target if target.startswith("/") else f"/{target}"
-                        user_args = cmd_original[len(base_cmd):].strip()
-                        aliased_command = f"{target} {user_args}".strip()
-                        return self.process_command(aliased_command)
-                    else:
-                        self._console_print(f"[bold red]Quick command '{base_cmd}' has no target defined[/]")
-                else:
-                    self._console_print(f"[bold red]Quick command '{base_cmd}' has unsupported type (supported: 'exec', 'alias')[/]")
-            # Check for plugin-registered slash commands
-            elif base_cmd.lstrip("/") in _get_plugin_cmd_handler_names():
-                from intellect_cli.plugins import (
-                    get_plugin_command_handler,
-                    resolve_plugin_command_result,
-                )
-                plugin_handler = get_plugin_command_handler(base_cmd.lstrip("/"))
-                if plugin_handler:
-                    user_args = cmd_original[len(base_cmd):].strip()
-                    try:
-                        result = resolve_plugin_command_result(
-                            plugin_handler(user_args)
-                        )
-                        if result:
-                            _cprint(str(result))
-                    except Exception as e:
-                        _cprint(f"\033[1;31mPlugin command error: {e}{_RST}")
-            # Skill bundles take precedence over individual skills — /<bundle>
-            # loads multiple skills at once. Rescans cheaply when files change.
-            elif base_cmd in skill_bundles:
-                user_instruction = cmd_original[len(base_cmd):].strip()
-                bundle_result = build_bundle_invocation_message(
-                    base_cmd, user_instruction, task_id=self.session_id
-                )
-                if bundle_result:
-                    msg, loaded_names, missing = bundle_result
-                    bundle_info = skill_bundles[base_cmd]
-                    print(
-                        f"\n⚡ Loading bundle: {bundle_info['name']} "
-                        f"({len(loaded_names)} skills)"
-                    )
-                    if missing:
-                        ChatConsole().print(
-                            f"[yellow]Skipped missing skills: {', '.join(missing)}[/]"
-                        )
-                    if hasattr(self, '_pending_input'):
-                        self._pending_input.put(msg)
-                else:
-                    ChatConsole().print(
-                        f"[bold red]Failed to load bundle for {base_cmd}[/]"
-                    )
-            # Check for skill slash commands (/gif-search, /axolotl, etc.)
-            elif base_cmd in skill_commands:
-                user_instruction = cmd_original[len(base_cmd):].strip()
-                msg = build_skill_invocation_message(
-                    base_cmd, user_instruction, task_id=self.session_id
-                )
-                if msg:
-                    skill_name = skill_commands[base_cmd]["name"]
-                    print(f"\n⚡ Loading skill: {skill_name}")
-                    if hasattr(self, '_pending_input'):
-                        self._pending_input.put(msg)
-                else:
-                    ChatConsole().print(f"[bold red]Failed to load skill for {base_cmd}[/]")
-            else:
-                # Prefix matching: if input uniquely identifies one command, execute it.
-                # Matches against both built-in COMMANDS and installed skill commands so
-                # that execution-time resolution agrees with tab-completion.
-                from intellect_cli.commands import COMMANDS
-                typed_base = cmd_lower.split()[0]
-                all_known = set(COMMANDS) | set(skill_commands) | set(skill_bundles)
-                matches = [c for c in all_known if c.startswith(typed_base)]
-                if len(matches) > 1:
-                    # Prefer an exact match (typed the full command name)
-                    exact = [c for c in matches if c == typed_base]
-                    if len(exact) == 1:
-                        matches = exact
-                    else:
-                        # Prefer the unique shortest match:
-                        # /qui → /quit (5) wins over /quint-pipeline (15)
-                        min_len = min(len(c) for c in matches)
-                        shortest = [c for c in matches if len(c) == min_len]
-                        if len(shortest) == 1:
-                            matches = shortest
-                if len(matches) == 1:
-                    # Expand the prefix to the full command name, preserving arguments.
-                    # Guard against redispatching the same token to avoid infinite
-                    # recursion when the expanded name still doesn't hit an exact branch
-                    # (e.g. /config with extra args that are not yet handled above).
-                    full_name = matches[0]
-                    if full_name == typed_base:
-                        # Already an exact token — no expansion possible; fall through
-                        _cprint(f"\033[1;31mUnknown command: {cmd_lower}{_RST}")
-                        _cprint(f"{_DIM}{_ACCENT}Type /help for available commands{_RST}")
-                    else:
-                        remainder = cmd_original.strip()[len(typed_base):]
-                        full_cmd = full_name + remainder
-                        return self.process_command(full_cmd)
-                elif len(matches) > 1:
-                    _cprint(f"{_ACCENT}Ambiguous command: {cmd_lower}{_RST}")
-                    _cprint(f"{_DIM}Did you mean: {', '.join(sorted(matches))}?{_RST}")
-                else:
-                    _cprint(f"\033[1;31mUnknown command: {cmd_lower}{_RST}")
-                    _cprint(f"{_DIM}{_ACCENT}Type /help for available commands{_RST}")
-        
-        return True
     
     def _handle_background_command(self, cmd: str):
         """Handle /background <prompt> — run a prompt in a separate background session.
@@ -11590,31 +11178,6 @@ class IntellectCLI:
         if not state:
             return []
 
-        def _panel_box_width(title_text: str, content_lines: list[str], min_width: int = 46, max_width: int = 76) -> int:
-            term_cols = shutil.get_terminal_size((100, 20)).columns
-            longest = max([len(title_text)] + [len(line) for line in content_lines] + [min_width - 4])
-            inner = min(max(longest + 4, min_width - 2), max_width - 2, max(24, term_cols - 6))
-            return inner + 2
-
-        def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list[str]:
-            wrapped = textwrap.wrap(
-                text,
-                width=max(8, width),
-                replace_whitespace=False,
-                drop_whitespace=False,
-                subsequent_indent=subsequent_indent,
-            )
-            return wrapped or [""]
-
-        def _append_panel_line(lines, border_style: str, content_style: str, text: str, box_width: int) -> None:
-            inner_width = max(0, box_width - 2)
-            lines.append((border_style, "│ "))
-            lines.append((content_style, text.ljust(inner_width)))
-            lines.append((border_style, " │\n"))
-
-        def _append_blank_panel_line(lines, border_style: str, box_width: int) -> None:
-            lines.append((border_style, "│" + (" " * box_width) + "│\n"))
-
         command = state["command"]
         description = state["description"]
         choices = state["choices"]
@@ -11787,6 +11350,7 @@ class IntellectCLI:
                 self._app.current_buffer.reset()
             except Exception:
                 pass
+
 
     def _maybe_auto_title(self, message: str, response: str) -> None:
         """Auto-generate session title after first exchange (non-blocking)."""
@@ -13843,31 +13407,6 @@ class IntellectCLI:
 
         # --- Clarify tool: dynamic display widget for questions + choices ---
 
-        def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, max_width: int = 76) -> int:
-            """Choose a stable panel width wide enough for the title and content."""
-            term_cols = shutil.get_terminal_size((100, 20)).columns
-            longest = max([len(title)] + [len(line) for line in content_lines] + [min_width - 4])
-            inner = min(max(longest + 4, min_width - 2), max_width - 2, max(24, term_cols - 6))
-            return inner + 2  # account for the single leading/trailing spaces inside borders
-
-        def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list[str]:
-            wrapped = textwrap.wrap(
-                text,
-                width=max(8, width),
-                break_long_words=False,
-                break_on_hyphens=False,
-                subsequent_indent=subsequent_indent,
-            )
-            return wrapped or [""]
-
-        def _append_panel_line(lines, border_style: str, content_style: str, text: str, box_width: int) -> None:
-            inner_width = max(0, box_width - 2)
-            lines.append((border_style, "│ "))
-            lines.append((content_style, text.ljust(inner_width)))
-            lines.append((border_style, " │\n"))
-
-        def _append_blank_panel_line(lines, border_style: str, box_width: int) -> None:
-            lines.append((border_style, "│" + (" " * box_width) + "│\n"))
 
         def _get_clarify_display():
             """Build styled text for the clarify question/choices panel.
