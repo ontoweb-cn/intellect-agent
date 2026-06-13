@@ -16,9 +16,9 @@ pub mod usage;
 
 use pyo3::prelude::*;
 
-/// Python module: `import intellect_core`
+/// Python module: `import intellect_community_core`
 #[pymodule]
-fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── Standalone functions (Stage 1b compat — pass db_path) ────────────
     m.add_function(wrap_pyfunction!(fts::is_fts5_unavailable_error, m)?)?;
     m.add_function(wrap_pyfunction!(fts::drop_fts_triggers_rs, m)?)?;
@@ -35,6 +35,7 @@ fn intellect_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sandbox::detect_hardline_command_rs, m)?)?;
     m.add_function(wrap_pyfunction!(sandbox::detect_dangerous_command_rs, m)?)?;
     m.add_function(wrap_pyfunction!(sandbox::check_sudo_stdin_guard_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(sandbox::is_forbidden_path_rs, m)?)?;
 
     // ── Stage 3a/3b: Usage normalization + accumulation ─────────────────
     m.add_function(wrap_pyfunction!(usage::normalize_usage_rs, m)?)?;

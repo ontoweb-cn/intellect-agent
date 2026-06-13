@@ -191,6 +191,75 @@ pub fn check_sudo_stdin_guard_rs(
     check_sudo_stdin_impl(normalized)
 }
 
+// ── Path safety ─────────────────────────────────────────────────────────────
+
+/// Check if a file path targets a sensitive system location.
+///
+/// Returns ``Some(reason)`` if the path is forbidden, ``None`` if it looks safe.
+/// This is a fast pre-check — callers should still do ``resolve() + relative_to()``
+/// containment checks for directory-scoped access.
+#[pyfunction]
+pub fn is_forbidden_path_rs(path: &str) -> Option<String> {
+    is_forbidden_path_impl(path)
+}
+
+fn is_forbidden_path_impl(path: &str) -> Option<String> {
+    let lower = path.to_lowercase();
+
+    // Always-blocked system paths
+    let always_blocked = [
+        ("/etc/shadow", "system shadow file"),
+        ("/etc/gshadow", "system group shadow file"),
+        ("/etc/master.passwd", "system master passwd"),
+        ("/etc/sudoers", "sudoers configuration"),
+        ("/etc/ssh/ssh_host_", "SSH host private key"),
+        ("/proc/kcore", "kernel memory image"),
+        ("/proc/sysrq-trigger", "kernel sysrq trigger"),
+        ("/dev/mem", "physical memory device"),
+        ("/dev/kmem", "kernel memory device"),
+    ];
+
+    for (pattern, reason) in &always_blocked {
+        if lower.starts_with(pattern) || lower.contains(pattern) {
+            return Some(reason.to_string());
+        }
+    }
+
+    // Sensitive user directories (expanded)
+    let sensitive_dirs = [
+        (".ssh/", "SSH credentials directory"),
+        (".gnupg/", "GPG keyring directory"),
+        (".aws/", "AWS credentials directory"),
+        (".kube/", "Kubernetes config directory"),
+        (".docker/config", "Docker config (may contain registry creds)"),
+        (".intellect/.env", "Intellect secrets file"),
+        (".netrc", "netrc credentials file"),
+        (".pgpass", "PostgreSQL password file"),
+        (".npmrc", "npm config (may contain tokens)"),
+        (".pypirc", "PyPI config (may contain tokens)"),
+    ];
+
+    for (pattern, reason) in &sensitive_dirs {
+        if lower.contains(pattern) {
+            return Some(reason.to_string());
+        }
+    }
+
+    // Private key files
+    if lower.ends_with(".pem") || lower.ends_with(".key") || lower.ends_with(".p12")
+        || lower.ends_with(".pfx") || lower.ends_with(".jks")
+        || lower.contains("id_rsa") || lower.contains("id_ed25519")
+        || lower.contains("id_ecdsa") || lower.contains("id_dsa")
+    {
+        // Only block if in a sensitive context (not /tmp, not current dir)
+        if lower.starts_with('/') || lower.contains("/.ssh/") || lower.contains("/.gnupg/") {
+            return Some("private key file".to_string());
+        }
+    }
+
+    None
+}
+
 // ── Rust tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -283,6 +352,40 @@ mod tests {
     fn test_sudo_combined_flag() {
         let result = detect_dangerous_impl("sudo -s whoami");
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_forbidden_path_system_files() {
+        assert!(is_forbidden_path_impl("/etc/shadow").is_some());
+        assert!(is_forbidden_path_impl("/etc/gshadow").is_some());
+        assert!(is_forbidden_path_impl("/etc/sudoers").is_some());
+        assert!(is_forbidden_path_impl("/etc/ssh/ssh_host_rsa_key").is_some());
+        assert!(is_forbidden_path_impl("/proc/kcore").is_some());
+        assert!(is_forbidden_path_impl("/dev/mem").is_some());
+    }
+
+    #[test]
+    fn test_forbidden_path_ssh_keys() {
+        assert!(is_forbidden_path_impl("/home/user/.ssh/id_rsa").is_some());
+        assert!(is_forbidden_path_impl("~/.ssh/id_ed25519").is_some());
+        assert!(is_forbidden_path_impl("/root/.ssh/authorized_keys").is_none());
+    }
+
+    #[test]
+    fn test_forbidden_path_sensitive_dirs() {
+        assert!(is_forbidden_path_impl("/home/user/.aws/credentials").is_some());
+        assert!(is_forbidden_path_impl("/home/user/.gnupg/secring.gpg").is_some());
+        assert!(is_forbidden_path_impl("/home/user/.kube/config").is_some());
+        assert!(is_forbidden_path_impl("/home/user/.intellect/.env").is_some());
+        assert!(is_forbidden_path_impl("/home/user/.netrc").is_some());
+    }
+
+    #[test]
+    fn test_forbidden_path_safe() {
+        assert!(is_forbidden_path_impl("/tmp/test.txt").is_none());
+        assert!(is_forbidden_path_impl("/home/user/project/main.py").is_none());
+        assert!(is_forbidden_path_impl("./src/lib.rs").is_none());
+        assert!(is_forbidden_path_impl("README.md").is_none());
     }
 
     #[test]
