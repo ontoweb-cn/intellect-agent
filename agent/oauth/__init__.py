@@ -15,7 +15,7 @@ from urllib.parse import quote as _url_quote, urlencode as _url_encode
 
 # ── Stage 5: Rust crypto acceleration ──────────────────────────────────────
 try:
-    from intellect_core import (  # type: ignore[import-not-found]
+    from intellect_community_core import (  # type: ignore[import-not-found]
         pkce_challenge as _rust_pkce_challenge,
         secure_token_hex as _rust_secure_hex,
     )

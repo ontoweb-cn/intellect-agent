@@ -259,7 +259,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "intellect-core"
+name = "intellect-community-core"
 version = "0.1.0"
 dependencies = [
  "aes",

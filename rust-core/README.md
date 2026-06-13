@@ -1,6 +1,6 @@
 # Intellect Core — Rust (PyO3) Native Extension
 
-Rust 加速层，通过 PyO3 编译为 Python 原生扩展模块 `intellect_core`。
+Rust 加速层，通过 PyO3 编译为 Python 原生扩展模块 `intellect_community_core`。
 覆盖存储、安全、Agent、加密、Gateway 五个核心域。
 
 ## Build

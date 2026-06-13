@@ -315,7 +315,7 @@ jobs:
       - name: Upload Rust wheel artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: intellect-core-wheel
+          name: intellect-community-core-wheel
           path: rust-core/target/wheels/*.whl
           retention-days: 7
 
@@ -332,10 +332,10 @@ jobs:
           PYTHONPATH=. python -c "
           from tools.approval import _normalize_command_for_detection, _HAS_RUST_SANDBOX
           assert _HAS_RUST_SANDBOX, 'Rust sandbox not loaded'
-          import intellect_core
+          import intellect_community_core
           n = _normalize_command_for_detection('rm -rf /').lower()
-          assert intellect_core.detect_hardline_command_rs(n) is not None
+          assert intellect_community_core.detect_hardline_command_rs(n) is not None
           n = _normalize_command_for_detection('echo hello').lower()
-          assert intellect_core.detect_dangerous_command_rs(n) is None
+          assert intellect_community_core.detect_dangerous_command_rs(n) is None
           print('Sandbox patterns OK')
           "

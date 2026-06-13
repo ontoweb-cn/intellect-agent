@@ -53,7 +53,7 @@ import stat
 
 # ── Stage 5: Rust crypto ───────────────────────────────────────────────────
 try:
-    from intellect_core import pkce_challenge as _rust_pkce_challenge  # type: ignore[import-not-found]
+    from intellect_community_core import pkce_challenge as _rust_pkce_challenge  # type: ignore[import-not-found]
     _HAS_RUST_CRYPTO_GOOGLE = True
 except (ImportError, AttributeError):
     _HAS_RUST_CRYPTO_GOOGLE = False

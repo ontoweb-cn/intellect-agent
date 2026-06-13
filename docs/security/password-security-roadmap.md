@@ -117,9 +117,9 @@ _SENSITIVE_QUERY_KEYS = {"password", "token", "api_key", "apikey", "secret", "ke
 
 1. `save_config()` 写入后调用 `os.chmod(path, 0o600)`
 2. 添加 `intellect config check` 检测项：扫描 config.yaml 中是否有 `api_key` / `api_secret` 等敏感字段，有则警告
-3. 提供迁移命令：`intellect config migrate-sensitive` 将 config.yaml 中的 API key 迁至 `.env` 或密钥链
+3. ~~提供迁移命令：`intellect config migrate-sensitive` 将 config.yaml 中的 API key 迁至 `.env` 或密钥链~~ ✅ 已完成：`intellect secrets store migrate-api-keys`（Fernet 加密存储至 SecretStore）
 
-**涉及文件：** `intellect_cli/config.py`、`intellect_cli/doctor.py`
+**涉及文件：** `intellect_cli/config.py`、`intellect_cli/doctor.py`、`agent/secret_store.py`、`intellect_cli/api_key_secrets.py`
 
 ---
 

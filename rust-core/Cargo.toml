@@ -1,11 +1,11 @@
 [package]
-name = "intellect-core"
+name = "intellect-community-core"
 version = "0.1.0"
 edition = "2021"
 description = "Intellect Agent core layer — Rust (PyO3) native extension"
 
 [lib]
-name = "intellect_core"
+name = "intellect_community_core"
 crate-type = ["cdylib", "rlib"]
 
 [features]

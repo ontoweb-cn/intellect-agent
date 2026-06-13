@@ -23,7 +23,7 @@ from utils import env_var_enabled, is_truthy_value
 
 # ── Stage 2: Rust sandbox acceleration ───────────────────────────────────────
 try:
-    from intellect_core import (  # type: ignore[import-not-found]
+    from intellect_community_core import (  # type: ignore[import-not-found]
         detect_hardline_command_rs as _rust_detect_hardline,
         detect_dangerous_command_rs as _rust_detect_dangerous,
         check_sudo_stdin_guard_rs as _rust_check_sudo_stdin,

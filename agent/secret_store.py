@@ -37,8 +37,8 @@ from intellect_constants import get_intellect_home
 
 # ── Stage 5b: Rust Fernet ──────────────────────────────────────────────────
 try:
-    from intellect_core import fernet_encrypt as _rust_fernet_encrypt  # type: ignore[import-not-found]
-    from intellect_core import fernet_decrypt as _rust_fernet_decrypt
+    from intellect_community_core import fernet_encrypt as _rust_fernet_encrypt  # type: ignore[import-not-found]
+    from intellect_community_core import fernet_decrypt as _rust_fernet_decrypt
     _HAS_RUST_FERNET = True
 except (ImportError, AttributeError):
     _HAS_RUST_FERNET = False

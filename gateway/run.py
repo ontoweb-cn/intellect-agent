@@ -1079,6 +1079,18 @@ def _resolve_runtime_agent_kwargs() -> dict:
 
 def _try_resolve_fallback_provider() -> dict | None:
     """Attempt to resolve credentials from the fallback_model/fallback_providers config."""
+    import time as _time
+    _t0 = _time.perf_counter()
+    try:
+        return _try_resolve_fallback_provider_inner()
+    finally:
+        _elapsed = _time.perf_counter() - _t0
+        if _elapsed > 0.050:
+            logger.debug("timing _try_resolve_fallback_provider: %.3fs", _elapsed)
+
+
+def _try_resolve_fallback_provider_inner() -> dict | None:
+    """Core logic for fallback provider resolution (unwrapped)."""
     from intellect_cli.runtime_provider import resolve_runtime_provider
     try:
         import yaml as _y
@@ -1099,6 +1111,22 @@ def _try_resolve_fallback_provider() -> dict | None:
                     ).strip()
                     if key_env:
                         explicit_api_key = os.getenv(key_env, "").strip() or None
+                # Check SecretStore before giving up on api_key
+                if not explicit_api_key:
+                    try:
+                        from intellect_cli.api_key_secrets import (
+                            resolve_secret_store_provider_key,
+                        )
+                        _pid = str(entry.get("provider") or "").strip()
+                        if _pid:
+                            _store_key, _ = resolve_secret_store_provider_key(_pid)
+                            if _store_key:
+                                explicit_api_key = _store_key
+                    except Exception:
+                        logger.debug(
+                            "SecretStore lookup failed for fallback provider",
+                            exc_info=True,
+                        )
                 runtime = resolve_runtime_provider(
                     requested=entry.get("provider"),
                     explicit_base_url=entry.get("base_url"),

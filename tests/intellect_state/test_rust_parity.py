@@ -1,4 +1,4 @@
-"""Verify Rust (intellect_core) functions produce identical results to Python.
+"""Verify Rust (intellect_community_core) functions produce identical results to Python.
 
 These tests confirm the Stage 1 PyO3 migration is correct: every Rust-backed
 function must behave exactly like its pure-Python counterpart.
@@ -310,12 +310,12 @@ class TestRustAvailability:
     """Verify Rust module is properly installed and configured."""
 
     def test_rust_is_importable(self):
-        import intellect_core
-        assert hasattr(intellect_core, "is_fts5_unavailable_error")
-        assert hasattr(intellect_core, "drop_fts_triggers_rs")
-        assert hasattr(intellect_core, "fts_trigger_count_rs")
-        assert hasattr(intellect_core, "rebuild_fts_indexes_rs")
-        assert hasattr(intellect_core, "get_compression_tip_rs")
+        import intellect_community_core
+        assert hasattr(intellect_community_core, "is_fts5_unavailable_error")
+        assert hasattr(intellect_community_core, "drop_fts_triggers_rs")
+        assert hasattr(intellect_community_core, "fts_trigger_count_rs")
+        assert hasattr(intellect_community_core, "rebuild_fts_indexes_rs")
+        assert hasattr(intellect_community_core, "get_compression_tip_rs")
 
     def test_has_rust_flag_is_true(self):
         from state import fts, compression

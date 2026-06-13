@@ -28,7 +28,7 @@ def cli_obj(_isolate):
         from cli import IntellectCLI
         obj = IntellectCLI.__new__(IntellectCLI)
         obj.model = "test-model"
-        obj.enabled_toolsets = ["intellect-core"]
+        obj.enabled_toolsets = ["intellect-community-core"]
         obj.compact = False
         obj.console = MagicMock()
         obj.session_id = None

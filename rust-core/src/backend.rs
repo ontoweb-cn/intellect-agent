@@ -402,7 +402,7 @@ impl SQLiteBackend {
             Err(e) => {
                 // Log but don't crash — search is best-effort
                 let py_warn = pyo3::types::PyModule::import_bound(py, "logging")
-                    .and_then(|m| m.call_method1("getLogger", ("intellect_core",)));
+                    .and_then(|m| m.call_method1("getLogger", ("intellect_community_core",)));
                 if let Ok(logger) = py_warn {
                     let _ = logger.call_method1("warning", (format!("search_fts5 mutex poison: {:?}", e),));
                 }
@@ -415,7 +415,7 @@ impl SQLiteBackend {
             Err(e) => {
                 if !e.to_string().contains("locked") && !e.to_string().contains("busy") {
                     let py_warn = pyo3::types::PyModule::import_bound(py, "logging")
-                        .and_then(|m| m.call_method1("getLogger", ("intellect_core",)));
+                        .and_then(|m| m.call_method1("getLogger", ("intellect_community_core",)));
                     if let Ok(logger) = py_warn {
                         let _ = logger.call_method1("warning", (format!("search_fts5 prepare error: {:?}", e),));
                     }
@@ -674,6 +674,525 @@ impl SQLiteBackend {
         }
         let conn = self.conn.lock().unwrap();
         conn.execute_batch(ddl).map_err(_map_rusqlite_err)
+    }
+
+    // ── Session CRUD (Stage 1h) ──────────────────────────────────────────
+
+    /// Create a new session row.
+    /// Returns the session ID.
+    #[pyo3(signature = (session_id, source, started_at=None, member_id=None, team_id=None, project_id=None))]
+    fn create_session(
+        &self,
+        session_id: &str,
+        source: &str,
+        started_at: Option<f64>,
+        member_id: Option<&str>,
+        team_id: Option<&str>,
+        project_id: Option<&str>,
+    ) -> PyResult<()> {
+        let ts = started_at.unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64()
+        });
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO sessions (id, source, started_at, member_id, team_id, project_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![session_id, source, ts, member_id, team_id, project_id],
+        ).map_err(_map_rusqlite_err)?;
+        Ok(())
+    }
+
+    /// End a session by setting ended_at and end_reason.
+    fn end_session(&self, session_id: &str, reason: &str) -> PyResult<bool> {
+        let conn = self.conn.lock().unwrap();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
+        let affected = conn.execute(
+            "UPDATE sessions SET ended_at = ?1, end_reason = ?2 WHERE id = ?3 AND ended_at IS NULL",
+            rusqlite::params![ts, reason, session_id],
+        ).map_err(_map_rusqlite_err)?;
+        Ok(affected > 0)
+    }
+
+    /// Get session metadata as a Python dict. Returns None if not found.
+    fn get_session_info(
+        &self,
+        py: Python<'_>,
+        session_id: &str,
+    ) -> PyResult<Option<PyObject>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, source, started_at, ended_at, end_reason, \
+                     message_count, tool_call_count, \
+                     member_id, team_id, project_id \
+             FROM sessions WHERE id = ?1",
+        ).map_err(_map_rusqlite_err)?;
+
+        let result = stmt.query_row(rusqlite::params![session_id], |row| {
+            let dict = pyo3::types::PyDict::new_bound(py);
+            let _ = dict.set_item("id", row.get::<_, String>(0).unwrap_or_default());
+            let _ = dict.set_item("source", row.get::<_, String>(1).unwrap_or_default());
+            let _ = dict.set_item("started_at", row.get::<_, Option<f64>>(2).unwrap_or(None));
+            let _ = dict.set_item("ended_at", row.get::<_, Option<f64>>(3).unwrap_or(None));
+            let _ = dict.set_item("end_reason", row.get::<_, Option<String>>(4).unwrap_or(None));
+            let _ = dict.set_item("message_count", row.get::<_, i64>(5).unwrap_or(0));
+            let _ = dict.set_item("tool_call_count", row.get::<_, i64>(6).unwrap_or(0));
+            let _ = dict.set_item("member_id", row.get::<_, Option<String>>(7).unwrap_or(None));
+            let _ = dict.set_item("team_id", row.get::<_, Option<String>>(8).unwrap_or(None));
+            let _ = dict.set_item("project_id", row.get::<_, Option<String>>(9).unwrap_or(None));
+            Ok(dict)
+        });
+
+        match result {
+            Ok(dict) => Ok(Some(dict.into())),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(_map_rusqlite_err(e)),
+        }
+    }
+
+    /// List sessions with optional filters. Returns list of dicts.
+    #[pyo3(signature = (member_id=None, limit=50, offset=0, active_only=false))]
+    fn list_sessions(
+        &self,
+        py: Python<'_>,
+        member_id: Option<&str>,
+        limit: i64,
+        offset: i64,
+        active_only: bool,
+    ) -> PyResult<Vec<PyObject>> {
+        let conn = self.conn.lock().unwrap();
+
+        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = {
+            let mut clauses = Vec::new();
+            let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+            if active_only {
+                clauses.push("ended_at IS NULL".to_string());
+            }
+            if let Some(mid) = member_id {
+                clauses.push(format!("member_id = ?{}", p.len() + 1));
+                p.push(Box::new(mid.to_string()));
+            }
+
+            let where_clause = if clauses.is_empty() {
+                String::new()
+            } else {
+                format!("WHERE {}", clauses.join(" AND "))
+            };
+
+            let sql = format!(
+                "SELECT id, source, started_at, ended_at, end_reason, \
+                        message_count, tool_call_count, member_id \
+                 FROM sessions {} ORDER BY started_at DESC LIMIT ?{} OFFSET ?{}",
+                where_clause,
+                p.len() + 1,
+                p.len() + 2,
+            );
+            p.push(Box::new(limit));
+            p.push(Box::new(offset));
+            (sql, p)
+        };
+
+        let mut stmt = conn.prepare(&sql).map_err(_map_rusqlite_err)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let rows = stmt.query_map(rusqlite::params_from_iter(param_refs), |row| {
+            let dict = pyo3::types::PyDict::new_bound(py);
+            let _ = dict.set_item("id", row.get::<_, String>(0).unwrap_or_default());
+            let _ = dict.set_item("source", row.get::<_, String>(1).unwrap_or_default());
+            let _ = dict.set_item("started_at", row.get::<_, Option<f64>>(2).unwrap_or(None));
+            let _ = dict.set_item("ended_at", row.get::<_, Option<f64>>(3).unwrap_or(None));
+            let _ = dict.set_item("end_reason", row.get::<_, Option<String>>(4).unwrap_or(None));
+            let _ = dict.set_item("message_count", row.get::<_, i64>(5).unwrap_or(0));
+            let _ = dict.set_item("tool_call_count", row.get::<_, i64>(6).unwrap_or(0));
+            let _ = dict.set_item("member_id", row.get::<_, Option<String>>(7).unwrap_or(None));
+            Ok(dict)
+        }).map_err(_map_rusqlite_err)?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            if let Ok(dict) = row {
+                results.push(dict.into());
+            }
+        }
+        Ok(results)
+    }
+
+    /// Get messages for a session. Returns list of dicts.
+    #[pyo3(signature = (session_id, limit=100, offset=0, role=None))]
+    fn get_messages(
+        &self,
+        py: Python<'_>,
+        session_id: &str,
+        limit: i64,
+        offset: i64,
+        role: Option<&str>,
+    ) -> PyResult<Vec<PyObject>> {
+        let conn = self.conn.lock().unwrap();
+
+        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = {
+            let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            p.push(Box::new(session_id.to_string()));
+
+            let role_filter = if let Some(r) = role {
+                p.push(Box::new(r.to_string()));
+                format!(" AND role = ?{}", p.len())
+            } else {
+                String::new()
+            };
+
+            let sql = format!(
+                "SELECT id, role, content, tool_call_id, tool_calls, tool_name, \
+                        timestamp, token_count, finish_reason, reasoning, \
+                        reasoning_content, platform_message_id, observed \
+                 FROM messages WHERE session_id = ?1{} \
+                 ORDER BY timestamp ASC, id ASC LIMIT ?{} OFFSET ?{}",
+                role_filter,
+                p.len() + 1,
+                p.len() + 2,
+            );
+            p.push(Box::new(limit));
+            p.push(Box::new(offset));
+            (sql, p)
+        };
+
+        let mut stmt = conn.prepare(&sql).map_err(_map_rusqlite_err)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let rows = stmt.query_map(rusqlite::params_from_iter(param_refs), |row| {
+            let dict = pyo3::types::PyDict::new_bound(py);
+            let _ = dict.set_item("id", row.get::<_, i64>(0).unwrap_or(0));
+            let _ = dict.set_item("role", row.get::<_, String>(1).unwrap_or_default());
+            let _ = dict.set_item("content", row.get::<_, Option<String>>(2).unwrap_or(None));
+            let _ = dict.set_item("tool_call_id", row.get::<_, Option<String>>(3).unwrap_or(None));
+            let _ = dict.set_item("tool_calls", row.get::<_, Option<String>>(4).unwrap_or(None));
+            let _ = dict.set_item("tool_name", row.get::<_, Option<String>>(5).unwrap_or(None));
+            let _ = dict.set_item("timestamp", row.get::<_, Option<f64>>(6).unwrap_or(None));
+            let _ = dict.set_item("token_count", row.get::<_, Option<i64>>(7).unwrap_or(None));
+            let _ = dict.set_item("finish_reason", row.get::<_, Option<String>>(8).unwrap_or(None));
+            let _ = dict.set_item("reasoning", row.get::<_, Option<String>>(9).unwrap_or(None));
+            let _ = dict.set_item("reasoning_content", row.get::<_, Option<String>>(10).unwrap_or(None));
+            let _ = dict.set_item("platform_message_id", row.get::<_, Option<String>>(11).unwrap_or(None));
+            let _ = dict.set_item("observed", row.get::<_, Option<i64>>(12).unwrap_or(Some(0)).unwrap_or(0) != 0);
+            Ok(dict)
+        }).map_err(_map_rusqlite_err)?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            if let Ok(dict) = row {
+                results.push(dict.into());
+            }
+        }
+        Ok(results)
+    }
+
+    /// Count messages in a session.
+    fn count_messages(&self, session_id: &str) -> PyResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE session_id = ?1",
+            rusqlite::params![session_id],
+            |r| r.get(0),
+        ).map_err(_map_rusqlite_err)?;
+        Ok(count)
+    }
+
+    /// Update session token counters.
+    fn update_session_tokens(
+        &self,
+        session_id: &str,
+        input_tokens: i64,
+        output_tokens: i64,
+        total_tokens: i64,
+    ) -> PyResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE sessions SET input_tokens = ?1, output_tokens = ?2, total_tokens = ?3 \
+             WHERE id = ?4",
+            rusqlite::params![input_tokens, output_tokens, total_tokens, session_id],
+        ).map_err(_map_rusqlite_err)?;
+        Ok(())
+    }
+
+    /// Execute a read-only query and return results as Python dicts.
+    /// For arbitrary SELECT queries. Returns empty list on error.
+    #[pyo3(signature = (sql, params=None))]
+    fn query(
+        &self,
+        py: Python<'_>,
+        sql: &str,
+        params: Option<Vec<PyObject>>,
+    ) -> PyResult<Vec<PyObject>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(e) => return Err(_map_rusqlite_err(e)),
+        };
+
+        let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
+
+        let sql_params: Vec<rusqlite::types::Value> = params
+            .unwrap_or_default()
+            .iter()
+            .map(|p| py_to_rusqlite_value(p, py))
+            .collect();
+
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(sql_params.iter()),
+            |row| {
+                let dict = pyo3::types::PyDict::new_bound(py);
+                for (i, col) in columns.iter().enumerate() {
+                    let val = crate::connection::SqlValue::from_row(row, i).ok();
+                    if let Some(v) = val {
+                        let py_val = val_to_py(&v, py);
+                        let _ = dict.set_item(col.as_str(), py_val);
+                    }
+                }
+                Ok(dict)
+            },
+        ).map_err(_map_rusqlite_err)?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            if let Ok(dict) = row {
+                results.push(dict.into());
+            }
+        }
+        Ok(results)
+    }
+
+    // ── search_messages (Stage 1i) ──────────────────────────────────────
+
+    /// Execute FTS5 search with session JOIN and return structured results.
+    /// Replaces the Python search_messages SQL construction + execution.
+    ///
+    /// This handles the core FTS5 MATCH path. CJK detection and LIKE
+    /// fallback remain in Python.
+    #[pyo3(signature = (query, source_filter=None, exclude_sources=None, role_filter=None, limit=20, offset=0, sort=None))]
+    fn search_messages(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        source_filter: Option<Vec<String>>,
+        exclude_sources: Option<Vec<String>>,
+        role_filter: Option<Vec<String>>,
+        limit: i64,
+        offset: i64,
+        sort: Option<&str>,
+    ) -> PyResult<Vec<PyObject>> {
+        let conn = self.conn.lock().unwrap();
+
+        // Build ORDER BY
+        let order_by = match sort.unwrap_or("") {
+            "newest" => "ORDER BY m.timestamp DESC, rank",
+            "oldest" => "ORDER BY m.timestamp ASC, rank",
+            _ => "ORDER BY rank",
+        };
+
+        // Build WHERE clauses
+        let mut where_parts = vec!["messages_fts MATCH ?".to_string()];
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        params.push(Box::new(query.to_string()));
+
+        if let Some(ref sources) = source_filter {
+            let base = params.len();
+            let ph: Vec<String> = sources.iter().enumerate().map(|(i, _)| format!("?{}", base + i + 1)).collect();
+            where_parts.push(format!("s.source IN ({})", ph.join(",")));
+            for s in sources { params.push(Box::new(s.clone())); }
+        }
+        if let Some(ref excludes) = exclude_sources {
+            let base = params.len();
+            let ph: Vec<String> = excludes.iter().enumerate().map(|(i, _)| format!("?{}", base + i + 1)).collect();
+            where_parts.push(format!("s.source NOT IN ({})", ph.join(",")));
+            for s in excludes { params.push(Box::new(s.clone())); }
+        }
+        if let Some(ref roles) = role_filter {
+            let base = params.len();
+            let ph: Vec<String> = roles.iter().enumerate().map(|(i, _)| format!("?{}", base + i + 1)).collect();
+            where_parts.push(format!("m.role IN ({})", ph.join(",")));
+            for r in roles { params.push(Box::new(r.clone())); }
+        }
+
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let sql = format!(
+            "SELECT m.id, m.session_id, m.role, \
+                    snippet(messages_fts, 0, '>>>', '<<<', '...', 40) AS snippet, \
+                    m.content, m.timestamp, m.tool_name, \
+                    s.source, s.model, s.started_at AS session_started \
+             FROM messages_fts \
+             JOIN messages m ON m.id = messages_fts.rowid \
+             JOIN sessions s ON s.id = m.session_id \
+             WHERE {} \
+             {} \
+             LIMIT ?{} OFFSET ?{}",
+            where_parts.join(" AND "),
+            order_by,
+            params.len() - 1,
+            params.len(),
+        );
+
+        let mut stmt = match conn.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
+
+        let rows = match stmt.query_map(
+            rusqlite::params_from_iter(param_refs),
+            |row| {
+                let dict = pyo3::types::PyDict::new_bound(py);
+                for (i, col) in columns.iter().enumerate() {
+                    let val = crate::connection::SqlValue::from_row(row, i).ok();
+                    if let Some(v) = val {
+                        let py_val = val_to_py(&v, py);
+                        let _ = dict.set_item(col.as_str(), py_val);
+                    }
+                }
+                Ok(dict)
+            },
+        ) {
+            Ok(r) => r,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let mut results = Vec::new();
+        for row in rows {
+            if let Ok(dict) = row {
+                results.push(dict.into());
+            }
+        }
+        Ok(results)
+    }
+
+    // ── list_sessions_basic (Stage 1j) ──────────────────────────────────
+
+    /// List sessions with preview and last_active in a single query.
+    /// Simplified version of Python's list_sessions_rich — handles the
+    /// common case without compression chain projection.
+    #[pyo3(signature = (source=None, exclude_sources=None, limit=20, offset=0, member_id=None))]
+    fn list_sessions_basic(
+        &self,
+        py: Python<'_>,
+        source: Option<&str>,
+        exclude_sources: Option<Vec<String>>,
+        limit: i64,
+        offset: i64,
+        member_id: Option<&str>,
+    ) -> PyResult<Vec<PyObject>> {
+        let conn = self.conn.lock().unwrap();
+
+        let mut where_parts = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        // Exclude child sessions (subagent/compression continuations)
+        where_parts.push(
+            "(s.parent_session_id IS NULL OR EXISTS \
+             (SELECT 1 FROM sessions p WHERE p.id = s.parent_session_id \
+              AND p.end_reason = 'branched' AND s.started_at >= p.ended_at))"
+                .to_string(),
+        );
+
+        if let Some(src) = source {
+            params.push(Box::new(src.to_string()));
+            where_parts.push(format!("s.source = ?{}", params.len()));
+        }
+        if let Some(ref excludes) = exclude_sources {
+            let base = params.len();
+            let ph: Vec<String> = excludes.iter().enumerate()
+                .map(|(i, _)| format!("?{}", base + i + 1)).collect();
+            where_parts.push(format!("s.source NOT IN ({})", ph.join(",")));
+            for s in excludes { params.push(Box::new(s.clone())); }
+        }
+        if let Some(mid) = member_id {
+            params.push(Box::new(mid.to_string()));
+            where_parts.push(format!("s.member_id = ?{}", params.len()));
+        }
+
+        params.push(Box::new(limit));
+        params.push(Box::new(offset));
+
+        let where_sql = if where_parts.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", where_parts.join(" AND "))
+        };
+
+        let sql = format!(
+            "SELECT s.id, s.source, s.model, s.title, s.started_at, s.ended_at, \
+                    s.message_count, s.member_id, s.team_id, s.project_id, \
+                    COALESCE(first_msg.preview, '') AS preview, \
+                    COALESCE(msg.last_ts, s.started_at) AS last_active \
+             FROM sessions s \
+             LEFT JOIN ( \
+                 SELECT session_id, \
+                        SUBSTR(REPLACE(REPLACE(content, X'0A', ' '), X'0D', ' '), 1, 63) AS preview, \
+                        ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp, id) AS rn \
+                 FROM messages WHERE role = 'user' AND content IS NOT NULL \
+             ) first_msg ON first_msg.session_id = s.id AND first_msg.rn = 1 \
+             LEFT JOIN ( \
+                 SELECT session_id, MAX(timestamp) AS last_ts \
+                 FROM messages GROUP BY session_id \
+             ) msg ON msg.session_id = s.id \
+             {} ORDER BY s.started_at DESC LIMIT ?{} OFFSET ?{}",
+            where_sql,
+            params.len() - 1,
+            params.len(),
+        );
+
+        let mut stmt = match conn.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
+
+        let rows = match stmt.query_map(
+            rusqlite::params_from_iter(param_refs),
+            |row| {
+                let dict = pyo3::types::PyDict::new_bound(py);
+                for (i, col) in columns.iter().enumerate() {
+                    let val = crate::connection::SqlValue::from_row(row, i).ok();
+                    if let Some(v) = val {
+                        let py_val = val_to_py(&v, py);
+                        let _ = dict.set_item(col.as_str(), py_val);
+                    }
+                }
+                Ok(dict)
+            },
+        ) {
+            Ok(r) => r,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let mut results = Vec::new();
+        for row in rows {
+            if let Ok(dict) = row {
+                // Build preview string
+                let raw: String = dict.get_item("preview")
+                    .ok()
+                    .flatten()
+                    .and_then(|v| v.extract().ok())
+                    .unwrap_or_default();
+                let preview = if raw.len() > 60 {
+                    format!("{}...", &raw[..60])
+                } else {
+                    raw
+                };
+                let _ = dict.set_item("preview", &preview);
+                results.push(dict.into());
+            }
+        }
+        Ok(results)
     }
 }
 

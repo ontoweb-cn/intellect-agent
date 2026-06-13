@@ -9,8 +9,8 @@ from agent.oauth import OAuthProviderConfig
 
 # ── Stage 5: Rust crypto ───────────────────────────────────────────────────
 try:
-    from intellect_core import pkce_challenge as _rust_pkce_challenge  # type: ignore[import-not-found]
-    from intellect_core import secure_token_hex as _rust_secure_hex
+    from intellect_community_core import pkce_challenge as _rust_pkce_challenge  # type: ignore[import-not-found]
+    from intellect_community_core import secure_token_hex as _rust_secure_hex
     _HAS_RUST_CRYPTO = True
 except (ImportError, AttributeError):
     _HAS_RUST_CRYPTO = False
@@ -148,7 +148,7 @@ def start_login_session(
             verifier, challenge = generate_pkce_pair()
     elif cfg.pkce and verifier:
         if _HAS_RUST_CRYPTO:
-            from intellect_core import pkce_challenge_from_verifier as _rust_pkce_from
+            from intellect_community_core import pkce_challenge_from_verifier as _rust_pkce_from
             challenge = _rust_pkce_from(verifier)
         else:
             import base64, hashlib

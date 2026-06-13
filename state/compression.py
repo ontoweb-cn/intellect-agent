@@ -8,7 +8,7 @@ from typing import Optional
 
 # ── Opt-in Rust acceleration ────────────────────────────────────────────────
 try:
-    from intellect_core import (  # type: ignore[import-not-found]
+    from intellect_community_core import (  # type: ignore[import-not-found]
         get_compression_tip_rs as _rust_get_compression_tip,
     )
     _HAS_RUST = True

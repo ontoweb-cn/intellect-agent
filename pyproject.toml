@@ -3,18 +3,18 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 # ── Rust extension (optional) ──────────────────────────────────────────────
-# The intellect_core native extension is built separately via maturin:
+# The intellect_community_core native extension is built separately via maturin:
 #   pip install maturin && cd rust-core && maturin develop
 # It is optional at runtime — all paths have pure-Python fallbacks.
 
 [tool.maturin]
 manifest = "rust-core/Cargo.toml"
-module-name = "intellect_core"
+module-name = "intellect_community_core"
 python-source = "."
 
 [project]
 name = "intellect-agent"
-version = "0.5.0"
+version = "0.6.1"
 description = "The self-improving AI agent — creates skills from experience, improves them during use, and runs anywhere"
 readme = "README.md"
 requires-python = ">=3.12"

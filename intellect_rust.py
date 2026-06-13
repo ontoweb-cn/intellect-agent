@@ -1,6 +1,6 @@
 """Centralised Rust extension imports and availability flags.
 
-Instead of scattering ``try: from intellect_core import ...`` blocks
+Instead of scattering ``try: from intellect_community_core import ...`` blocks
 across every module, import flags from here::
 
     from intellect_rust import HAS_SANDBOX, rust_detect_dangerous
@@ -17,7 +17,7 @@ from typing import Any, Callable, Optional
 # ── Try the single import that gates everything ─────────────────────────────
 
 try:
-    import intellect_core as _core  # type: ignore[import-not-found]
+    import intellect_community_core as _core  # type: ignore[import-not-found]
     _CORE = _core
 except ImportError:
     _CORE = None

@@ -122,7 +122,7 @@ from agent.usage_pricing import normalize_usage
 
 # ── Stage 3b: Rust TokenAccumulator ─────────────────────────────────────────
 try:
-    from intellect_core import TokenAccumulator as _TokenAccumulator  # type: ignore[import-not-found]
+    from intellect_community_core import TokenAccumulator as _TokenAccumulator  # type: ignore[import-not-found]
     _HAS_TOKEN_ACC = True
 except (ImportError, AttributeError):
     _TokenAccumulator = None

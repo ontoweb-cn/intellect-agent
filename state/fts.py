@@ -14,7 +14,7 @@ from state.schema import (
 
 # ── Opt-in Rust acceleration ────────────────────────────────────────────────
 try:
-    from intellect_core import (  # type: ignore[import-not-found]
+    from intellect_community_core import (  # type: ignore[import-not-found]
         is_fts5_unavailable_error as _rust_is_fts5_unavailable_error,
     )
     _HAS_RUST = True
@@ -41,7 +41,7 @@ def drop_fts_triggers(
         # Legacy path: standalone function (new connection per call).
         # Prefer the backend path above — it uses a persistent connection
         # that shares WAL visibility with the Python connection.
-        from intellect_core import drop_fts_triggers_rs as _rust_fn
+        from intellect_community_core import drop_fts_triggers_rs as _rust_fn
         _rust_fn(db_path)
         return
     for trigger in _FTS_TRIGGERS:
@@ -59,7 +59,7 @@ def fts_trigger_count(
     if _HAS_RUST and backend is not None:
         return backend.fts_trigger_count()
     if _HAS_RUST and db_path is not None:
-        from intellect_core import fts_trigger_count_rs as _rust_fn
+        from intellect_community_core import fts_trigger_count_rs as _rust_fn
         return _rust_fn(db_path)
     placeholders = ",".join("?" for _ in _FTS_TRIGGERS)
     row = cursor.execute(
@@ -78,7 +78,7 @@ def rebuild_fts_indexes(
         backend.rebuild_fts_indexes()
         return
     if _HAS_RUST and db_path is not None:
-        from intellect_core import rebuild_fts_indexes_rs as _rust_fn
+        from intellect_community_core import rebuild_fts_indexes_rs as _rust_fn
         _rust_fn(db_path)
         return
     validate_fts_identifier("messages_fts", _FTS_TABLES)

@@ -1612,17 +1612,22 @@ class SessionDB:
                     GROUP BY root_id
                 )
                 SELECT s.*,
-                    COALESCE(
-                        (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
-                         FROM messages m
-                         WHERE m.session_id = s.id AND m.role = 'user' AND m.content IS NOT NULL
-                         ORDER BY m.timestamp, m.id LIMIT 1),
-                        ''
-                    ) AS _preview_raw,
+                    COALESCE(first_msg.first_user_text, '') AS _preview_raw,
                     COALESCE(msg.last_ts, s.started_at) AS last_active,
                     COALESCE(cm.effective_last_active, s.started_at) AS _effective_last_active
                 FROM sessions s
                 LEFT JOIN chain_max cm ON cm.root_id = s.id
+                LEFT JOIN (
+                    SELECT session_id, first_user_text
+                    FROM (
+                        SELECT session_id,
+                               SUBSTR(REPLACE(REPLACE(content, X'0A', ' '), X'0D', ' '), 1, 63) AS first_user_text,
+                               ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp, id) AS rn
+                        FROM messages
+                        WHERE role = 'user' AND content IS NOT NULL
+                    )
+                    WHERE rn = 1
+                ) first_msg ON first_msg.session_id = s.id
                 LEFT JOIN (
                     SELECT session_id, MAX(timestamp) AS last_ts
                     FROM messages GROUP BY session_id
@@ -1636,15 +1641,20 @@ class SessionDB:
         else:
             query = f"""
                 SELECT s.*,
-                    COALESCE(
-                        (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
-                         FROM messages m
-                         WHERE m.session_id = s.id AND m.role = 'user' AND m.content IS NOT NULL
-                         ORDER BY m.timestamp, m.id LIMIT 1),
-                        ''
-                    ) AS _preview_raw,
+                    COALESCE(first_msg.first_user_text, '') AS _preview_raw,
                     COALESCE(msg.last_ts, s.started_at) AS last_active
                 FROM sessions s
+                LEFT JOIN (
+                    SELECT session_id, first_user_text
+                    FROM (
+                        SELECT session_id,
+                               SUBSTR(REPLACE(REPLACE(content, X'0A', ' '), X'0D', ' '), 1, 63) AS first_user_text,
+                               ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp, id) AS rn
+                        FROM messages
+                        WHERE role = 'user' AND content IS NOT NULL
+                    )
+                    WHERE rn = 1
+                ) first_msg ON first_msg.session_id = s.id
                 LEFT JOIN (
                     SELECT session_id, MAX(timestamp) AS last_ts
                     FROM messages GROUP BY session_id

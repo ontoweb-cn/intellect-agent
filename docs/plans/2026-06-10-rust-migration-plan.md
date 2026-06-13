@@ -2,7 +2,7 @@
 
 ## Overview
 
-将性能关键的核心层（~30K 行）逐步迁移到 Rust，通过 PyO3 编译为 Python 原生扩展模块，保留 Python 工具层（~270 文件）不动。
+将性能关键的核心层（~30K 行）逐步迁移到 Rust，通过 PyO3 编译为 Python 原生扩展模块，保留 Python 工具层（~270 文件）不动。Rust 核心层已有 3,696 行，覆盖 Stage 1-5，Phase A 完成。
 
 ## 方案选型：PyO3 嵌入式
 
@@ -137,7 +137,43 @@ Rust 宿主统一管理，插件只需选一种语言：
 | 高性能 I/O | 快速迭代功能 |
 | 安全关键路径 | 生态依赖（PIL、BS4、Playwright） |
 
-## Progress (2026-06-10)
+## Progress (2026-06-12)
+
+### ✅ Stage 1-5: Rust Core Module (3,177 lines → 3,467 lines)
+
+| Module | Lines | Stage | Status |
+|--------|-------|-------|--------|
+| `backend.rs` | 1,455 | 1 | ✅ SQLiteBackend + append_message + replace_messages + search_messages + list_sessions_basic + SessionDB CRUD |
+| `connection.rs` | 258 | 1 | ✅ RustConnection + RustCursor + value conversion |
+| `schema.rs` | 47 | 1 | ✅ Schema management |
+| `fts.rs` | 189 | 1 | ✅ FTS5 triggers + rebuild + search |
+| `compression.rs` | 144 | 1 | ✅ Compression tip chain walking |
+| `sandbox.rs` | 298 | 2 | ✅ Command injection detection (hardline + dangerous) |
+| `usage.rs` | 325 | 3 | ✅ TokenAccumulator + normalize_usage |
+| `stream.rs` | 288 | 3 | ✅ StreamAccumulator (SSE delta state machine) |
+| `gateway.rs` | 297 | 4 | ✅ session_key + reset_policy + backoff + TokenBucket |
+| `crypto.rs` | 327 | 5 | ✅ PKCE + Fernet + JWT + secure_random |
+| `lib.rs` | 68 | — | ✅ PyO3 module registration |
+
+### ✅ Stage 1h: SessionDB CRUD (2026-06-12)
+
+Added to `backend.rs`:
+- `create_session(session_id, source, ...)` — 创建会话
+- `end_session(session_id, reason)` — 结束会话
+- `get_session_info(session_id)` — 会话元数据
+- `list_sessions(member_id, limit, offset, active_only)` — 会话列表
+- `get_messages(session_id, limit, offset, role)` — 消息查询
+- `count_messages(session_id)` — 消息计数
+- `update_session_tokens(session_id, ...)` — Token 计数更新
+- `query(sql, params)` — 通用只读查询
+
+### ✅ Python Integration (2026-06-12)
+
+- `agent/storage/sqlite_backend.py` — RustSQLiteBackend 新增 CRUD 代理方法
+- `intellect_rust.py` — 集中导入 + 可用性标志
+- `Makefile` — 构建脚本 (rust-build, rust-dev, rust-check, rust-test)
+
+### ✅ Completed: Large-File Split
 
 ### ✅ Completed: Large-File Split
 
@@ -157,12 +193,22 @@ New package structure ready for Rust Stage 1 migration.
 - O(n²) dedup → O(n) hash-set
 - Skills scan mtime cache
 - Config mtime cache for gateway hot path
-- 119 bare `except:pass` → `logger.debug(exc_info=True)`
+- 121 bare `except:pass` → `logger.debug(exc_info=True)`（cli.py），main.py 已全部有合理处理
 - WebSocket auth (`TUI_AUTH_TOKEN`)
 - Health endpoint info leak fixed
 - CORS wildcard warning
 - ThreadPoolExecutor for agent eviction
 - Session key entropy: 24 → 128 bits
+
+## 后续计划
+
+详见 [Rust Phase A 实施计划](2026-06-12-rust-phase-a-plan.md)。
+
+四阶段迁移路线：
+- **Phase A** ✅ 完成: search_messages / list_sessions_basic / append/replace 完全集成到 Rust
+- **Phase B** (2-4 周): Agent 核心循环下沉 — 消息预处理、工具调用解析
+- **Phase C** (1-2 月): Gateway 事件循环 — SessionStore、消息队列、限流
+- **Phase D** (与 B/C 并行): 安全路径加固 — URL/路径检查 Rust 化
 
 ## 参考
 

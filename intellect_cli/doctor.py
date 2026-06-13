@@ -873,10 +873,86 @@ def run_doctor_storage() -> int:
     return 0
 
 
+def run_doctor_perf() -> int:
+    """Quick performance diagnostics (``intellect doctor --perf``)."""
+    import subprocess
+    import time
+
+    print()
+    print(color("┌─────────────────────────────────────────────────────────┐", Colors.CYAN))
+    print(color("│              ⚡ Intellect Doctor — Performance            │", Colors.CYAN))
+    print(color("└─────────────────────────────────────────────────────────┘", Colors.CYAN))
+    print()
+
+    results = []
+
+    # 1. Gateway import time
+    t0 = time.perf_counter()
+    try:
+        subprocess.run(
+            [sys.executable, "-c", "import gateway.run"],
+            capture_output=True, timeout=15,
+        )
+        elapsed = time.perf_counter() - t0
+        status = color("✓", Colors.GREEN) if elapsed < 2.0 else color("⚠", Colors.YELLOW)
+        results.append(("Gateway import", f"{elapsed:.3f}s", status))
+    except subprocess.TimeoutExpired:
+        results.append(("Gateway import", "timeout (>15s)", color("✗", Colors.RED)))
+    except Exception as exc:
+        results.append(("Gateway import", str(exc), color("✗", Colors.RED)))
+
+    # 2. Config load time
+    t0 = time.perf_counter()
+    try:
+        from intellect_cli.config import load_config
+        cfg = load_config()
+        elapsed = time.perf_counter() - t0
+        status = color("✓", Colors.GREEN) if elapsed < 0.5 else color("⚠", Colors.YELLOW)
+        results.append(("Config load", f"{elapsed:.3f}s", status))
+    except Exception as exc:
+        results.append(("Config load", str(exc), color("✗", Colors.RED)))
+
+    # 3. SessionDB init time
+    t0 = time.perf_counter()
+    try:
+        from intellect_state import SessionDB
+        db = SessionDB()
+        elapsed = time.perf_counter() - t0
+        status = color("✓", Colors.GREEN) if elapsed < 1.0 else color("⚠", Colors.YELLOW)
+        results.append(("SessionDB init", f"{elapsed:.3f}s", status))
+        db.close()
+    except Exception as exc:
+        results.append(("SessionDB init", str(exc), color("✗", Colors.RED)))
+
+    # 4. FTS5 availability
+    try:
+        from intellect_state import _sqlite_supports_fts5
+        fts5 = _sqlite_supports_fts5()
+        results.append(("FTS5 support", "yes" if fts5 else "no",
+                        color("✓", Colors.GREEN) if fts5 else color("⚠", Colors.YELLOW)))
+    except Exception as exc:
+        results.append(("FTS5 support", str(exc), color("✗", Colors.RED)))
+
+    # 5. Python version + platform
+    results.append(("Python", f"{sys.version.split()[0]} ({sys.platform})", color("ℹ", Colors.CYAN)))
+
+    # Print results
+    max_label = max(len(r[0]) for r in results)
+    max_val = max(len(r[1]) for r in results)
+    for label, val, status in results:
+        print(f"  {status}  {label:<{max_label}}  {val}")
+
+    print()
+    return 0
+
+
 def run_doctor(args):
     """Run diagnostic checks."""
     if getattr(args, "storage", False):
         sys.exit(run_doctor_storage())
+
+    if getattr(args, "perf", False):
+        sys.exit(run_doctor_perf())
 
     should_fix = getattr(args, 'fix', False)
     ack_target = getattr(args, 'ack', None)
