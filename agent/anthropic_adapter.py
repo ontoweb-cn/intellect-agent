@@ -23,10 +23,17 @@ from urllib.parse import urlparse
 
 # ── Stage 5: Rust crypto ───────────────────────────────────────────────────
 try:
-    from intellect_core import pkce_challenge as _rust_pkce  # type: ignore[import-not-found]
+    from intellect_community_core import pkce_challenge as _rust_pkce  # type: ignore[import-not-found]
     _HAS_RUST_CRYPTO_ANTH = True
 except (ImportError, AttributeError):
     _HAS_RUST_CRYPTO_ANTH = False
+
+# ── Stage 3: Rust model name normalization ────────────────────────────────
+try:
+    from intellect_community_core import normalize_model_name_rs as _rust_normalize_model_name  # type: ignore[import-not-found]
+    _HAS_RUST_MODEL_NORM = True
+except (ImportError, AttributeError):
+    _HAS_RUST_MODEL_NORM = False
 
 from intellect_constants import get_intellect_home
 from typing import Any, Dict, List, Optional, Tuple
@@ -1474,18 +1481,19 @@ def normalize_model_name(model: str, preserve_dots: bool = False) -> str:
       regional inference profiles (``us.anthropic.claude-*``) whose dots
       are namespace separators, not version separators.
     """
+    if _HAS_RUST_MODEL_NORM:
+        return _rust_normalize_model_name(model, preserve_dots)
+    return _normalize_model_name_py(model, preserve_dots)
+
+
+def _normalize_model_name_py(model: str, preserve_dots: bool) -> str:
+    """Pure Python fallback for model name normalization."""
     lower = model.lower()
     if lower.startswith("anthropic/"):
         model = model[len("anthropic/"):]
     if not preserve_dots:
-        # Bedrock model IDs use dots as namespace separators
-        # (e.g. "anthropic.claude-opus-4-7", "us.anthropic.claude-*").
-        # These must not be converted to hyphens.  See issue #12295.
         if _is_bedrock_model_id(model):
             return model
-        # Only convert dots to hyphens for Anthropic/Claude models.
-        # Non-Anthropic models (gpt-5.4, gemini-2.5, etc.) use dots
-        # as part of their canonical names.  See issue #17171.
         _lower = model.lower()
         if _lower.startswith("claude-") or _lower.startswith("anthropic/"):
             model = model.replace(".", "-")

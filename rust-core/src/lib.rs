@@ -40,6 +40,7 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // ── Stage 3a/3b: Usage normalization + accumulation ─────────────────
     m.add_function(wrap_pyfunction!(usage::normalize_usage_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(usage::normalize_model_name_rs, m)?)?;
     m.add_class::<usage::TokenAccumulator>()?;
 
     // ── Stage 3d: Stream delta accumulator ──────────────────────────────

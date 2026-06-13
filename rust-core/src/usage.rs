@@ -56,6 +56,63 @@ pub fn normalize_usage_rs(
     (input, output, cache_read, cache_write, reasoning_tokens_detail)
 }
 
+// ── Model name normalization ─────────────────────────────────────────────────
+
+/// Normalize a model name for API calls.
+///
+/// - Strips 'anthropic/' prefix (OpenRouter format)
+/// - Converts dots to hyphens in Claude/Anthropic version numbers
+///   (claude-opus-4.6 → claude-opus-4-6)
+/// - Preserves Bedrock model IDs (anthropic.claude-opus-4-7)
+/// - Preserves non-Anthropic model names (gpt-5.4, gemini-2.5)
+#[pyfunction]
+pub fn normalize_model_name_rs(model: &str, preserve_dots: bool) -> String {
+    normalize_model_name_impl(model, preserve_dots)
+}
+
+fn normalize_model_name_impl(model: &str, preserve_dots: bool) -> String {
+    let lower = model.to_lowercase();
+
+    // Strip 'anthropic/' prefix (OpenRouter format)
+    let stripped = if lower.starts_with("anthropic/") {
+        &model[10..]
+    } else {
+        model
+    };
+
+    if !preserve_dots {
+        // Bedrock model IDs use dots as namespace separators
+        // (e.g. "anthropic.claude-opus-4-7", "us.anthropic.claude-*")
+        if is_bedrock_model_id(stripped) {
+            return stripped.to_string();
+        }
+
+        // Only convert dots to hyphens for Anthropic/Claude models
+        let stripped_lower = stripped.to_lowercase();
+        if stripped_lower.starts_with("claude-") || stripped_lower.starts_with("anthropic/") {
+            return stripped.replace('.', "-");
+        }
+    }
+
+    stripped.to_string()
+}
+
+fn is_bedrock_model_id(model: &str) -> bool {
+    // Bedrock IDs have at least two dots: "anthropic.claude-*" or "us.anthropic.claude-*"
+    let lower = model.to_lowercase();
+    if lower.starts_with("anthropic.") {
+        return true;
+    }
+    // Regional prefix: "us.anthropic.", "eu.anthropic.", etc.
+    if let Some(pos) = lower.find('.') {
+        let rest = &lower[pos + 1..];
+        if rest.starts_with("anthropic.") {
+            return true;
+        }
+    }
+    false
+}
+
 // ── Rust unit tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -321,5 +378,37 @@ mod acc_tests {
         assert_eq!(acc.input_tokens(), 0);
         assert_eq!(acc.output_tokens(), 0);
         assert_eq!(acc.api_calls(), 0);
+    }
+
+    #[test]
+    fn test_normalize_model_name_strip_anthropic_prefix() {
+        assert_eq!(normalize_model_name_impl("anthropic/claude-opus-4", false), "claude-opus-4");
+        assert_eq!(normalize_model_name_impl("ANTHROPIC/claude-sonnet-4", false), "claude-sonnet-4");
+    }
+
+    #[test]
+    fn test_normalize_model_name_dots_to_hyphens() {
+        assert_eq!(normalize_model_name_impl("claude-opus-4.6", false), "claude-opus-4-6");
+        assert_eq!(normalize_model_name_impl("claude-sonnet-4.5", false), "claude-sonnet-4-5");
+    }
+
+    #[test]
+    fn test_normalize_model_name_preserve_dots() {
+        assert_eq!(normalize_model_name_impl("claude-opus-4.6", true), "claude-opus-4.6");
+        assert_eq!(normalize_model_name_impl("qwen3.5-plus", true), "qwen3.5-plus");
+    }
+
+    #[test]
+    fn test_normalize_model_name_bedrock() {
+        // Bedrock IDs should not have dots converted
+        assert_eq!(normalize_model_name_impl("anthropic.claude-opus-4-7", false), "anthropic.claude-opus-4-7");
+        assert_eq!(normalize_model_name_impl("us.anthropic.claude-opus-4-7", false), "us.anthropic.claude-opus-4-7");
+    }
+
+    #[test]
+    fn test_normalize_model_name_non_anthropic() {
+        // Non-Anthropic models should keep dots
+        assert_eq!(normalize_model_name_impl("gpt-5.4", false), "gpt-5.4");
+        assert_eq!(normalize_model_name_impl("gemini-2.5", false), "gemini-2.5");
     }
 }
