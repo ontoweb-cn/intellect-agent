@@ -41,7 +41,7 @@ fn hardline_patterns() -> &'static PatternList {
 ///
 /// Categories:
 ///   code execution — exec, eval, __import__
-///   subprocess spawn — os.system, os.popen, os.exec*, os.spawn*, subprocess
+///   subprocess spawn — os.system, os.popen, os.exec*, os.spawn*, os.posix_spawn*, subprocess
 ///   file destruction — os.remove, os.unlink, os.rmdir, shutil.rmtree, .rmdir(), .unlink()
 ///   destructive writes — open(…, "w"/"a"/"wb"/"w+"), .write_bytes(), .write_text()
 ///   native library loading — ctypes
@@ -58,6 +58,7 @@ static SCRIPT_EXEC_DANGEROUS_TOKENS: &[&str] = &[
     r"os\.popen",
     r"os\.exec",
     r"os\.spawn",
+    r"os\.posix_spawn",
     r"subprocess",
     // -- file destruction --
     r"os\.remove",
@@ -76,6 +77,9 @@ static SCRIPT_EXEC_DANGEROUS_TOKENS: &[&str] = &[
     r"ctypes\.",
     // -- deserialization --
     r"pickle\.",
+    r"marshal\.",          // marshal.loads is pickle-equivalent for bytecode
+    // -- dynamic compilation --
+    r"compile\s*\(",       // compile() + exec() two-step bypass
     // -- network exfil --
     r"urllib",
     r"requests\.",
@@ -595,6 +599,16 @@ mod tests {
         // getattr-based obfuscation (skipping the dynamic exec/eval detection) must be flagged.
         assert!(detect_dangerous_impl("python -c 'import builtins; getattr(builtins, \"exec\")(\"id()\")'").is_some());
         assert!(detect_dangerous_impl("python -c 'getattr(__import__(\"os\"), \"system\")(\"id\")'").is_some());
+    }
+
+    #[test]
+    fn test_dangerous_python_c_marshal_compile() {
+        // marshal.loads — bytecode deserialization attack
+        assert!(detect_dangerous_impl("python -c 'import marshal; exec(marshal.loads(b\"...\"))'").is_some());
+        // compile() + exec() two-step bypass
+        assert!(detect_dangerous_impl("python -c 'c = compile(\"import os; os.system(\\\"id\\\")\", \"\", \"exec\"); exec(c)'").is_some());
+        // os.posix_spawn — subprocess spawning
+        assert!(detect_dangerous_impl("python -c 'import os; os.posix_spawnp(\"/bin/sh\", [\"sh\", \"-c\", \"id\"], {})'").is_some());
     }
 
     #[test]
