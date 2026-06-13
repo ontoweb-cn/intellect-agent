@@ -1933,6 +1933,205 @@ def _terminal_width_for_streaming() -> int:
     return max(20, cols - len(_STREAM_PAD) - 2)
 
 
+# ── Clarify display builder (extracted from run() for testability) ──
+
+def _build_clarify_display(state: dict, is_freetext: bool) -> list:
+    """Build styled text for the clarify question/choices panel.
+
+    Layout priority: choices + Other option must always render even if
+    the question is very long. The question is budgeted to leave enough
+    rows for the choices and trailing chrome; anything over the budget
+    is truncated with a marker.
+    """
+    question = state["question"]
+    choices = state.get("choices") or []
+    selected = state.get("selected", 0)
+    preview_lines = _wrap_panel_text(question, 60)
+    for i, choice in enumerate(choices):
+        if i < 9:
+            num_prefix = str(i + 1)
+        elif i == 9:
+            num_prefix = '0'
+        else:
+            num_prefix = ' '
+        if i == selected and not is_freetext:
+            prefix = f"❯ {num_prefix}. "
+        else:
+            prefix = f"  {num_prefix}. "
+        preview_lines.extend(_wrap_panel_text(f"{prefix}{choice}", 60, subsequent_indent="    "))
+    other_num = len(choices) + 1
+    if other_num < 10:
+        other_num_prefix = str(other_num)
+    elif other_num == 10:
+        other_num_prefix = '0'
+    else:
+        other_num_prefix = ' '
+    other_label = (
+        f"❯ {other_num_prefix}. Other (type below)" if is_freetext
+        else f"❯ {other_num_prefix}. Other (type your answer)" if selected == len(choices)
+        else f"  {other_num_prefix}. Other (type your answer)"
+    )
+    preview_lines.extend(_wrap_panel_text(other_label, 60, subsequent_indent="    "))
+    box_width = _panel_box_width("Intellect needs your input", preview_lines)
+    inner_text_width = max(8, box_width - 2)
+
+    choice_wrapped: list[tuple[int, str]] = []
+    if choices:
+        for i, choice in enumerate(choices):
+            if i < 9:
+                num_prefix = str(i + 1)
+            elif i == 9:
+                num_prefix = '0'
+            else:
+                num_prefix = ' '
+            if i == selected and not is_freetext:
+                prefix = f'❯ {num_prefix}. '
+            else:
+                prefix = f'  {num_prefix}. '
+            for wrapped in _wrap_panel_text(f"{prefix}{choice}", inner_text_width, subsequent_indent="    "):
+                choice_wrapped.append((i, wrapped))
+        other_idx = len(choices)
+        other_num = other_idx + 1
+        if other_num < 10:
+            other_num_prefix = str(other_num)
+        elif other_num == 10:
+            other_num_prefix = '0'
+        else:
+            other_num_prefix = ' '
+        if selected == other_idx and not is_freetext:
+            other_label_mand = f'❯ {other_num_prefix}. Other (type your answer)'
+        elif is_freetext:
+            other_label_mand = f'❯ {other_num_prefix}. Other (type below)'
+        else:
+            other_label_mand = f'  {other_num_prefix}. Other (type your answer)'
+        other_wrapped = _wrap_panel_text(other_label_mand, inner_text_width, subsequent_indent="    ")
+    elif is_freetext:
+        other_wrapped = _wrap_panel_text(
+            "Type your answer in the prompt below, then press Enter.",
+            inner_text_width,
+        )
+    else:
+        other_wrapped = []
+
+    term_rows = shutil.get_terminal_size((100, 24)).lines
+    chrome_full = 5
+    chrome_tight = 2
+    reserved_below = 6
+    available = max(0, term_rows - reserved_below)
+    mandatory_full = chrome_full + 1 + len(choice_wrapped) + len(other_wrapped)
+    use_compact_chrome = mandatory_full > available
+    chrome_rows = chrome_tight if use_compact_chrome else chrome_full
+    max_question_rows = max(1, available - chrome_rows - len(choice_wrapped) - len(other_wrapped))
+    max_question_rows = min(max_question_rows, 12)
+    choices_overflow = chrome_rows + len(choice_wrapped) + len(other_wrapped) >= available
+    if choices_overflow:
+        max_question_rows = 0
+
+    question_wrapped = _wrap_panel_text(question, inner_text_width)
+    if max_question_rows <= 0:
+        question_wrapped = []
+    elif len(question_wrapped) > max_question_rows:
+        keep = max(0, max_question_rows - 1)
+        question_wrapped = question_wrapped[:keep] + ["… (question truncated)"]
+
+    lines = []
+    lines.append(('class:clarify-border', '╭─ '))
+    lines.append(('class:clarify-title', 'Intellect needs your input'))
+    lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len("Intellect needs your input") - 3)) + '╮\n'))
+    if not use_compact_chrome:
+        _append_blank_panel_line(lines, 'class:clarify-border', box_width)
+    for wrapped in question_wrapped:
+        _append_panel_line(lines, 'class:clarify-border', 'class:clarify-question', wrapped, box_width)
+    if not use_compact_chrome:
+        _append_blank_panel_line(lines, 'class:clarify-border', box_width)
+    if is_freetext and not choices:
+        for wrapped in other_wrapped:
+            _append_panel_line(lines, 'class:clarify-border', 'class:clarify-choice', wrapped, box_width)
+        if not use_compact_chrome:
+            _append_blank_panel_line(lines, 'class:clarify-border', box_width)
+    if choices:
+        for i, wrapped in choice_wrapped:
+            style = 'class:clarify-selected' if i == selected and not is_freetext else 'class:clarify-choice'
+            _append_panel_line(lines, 'class:clarify-border', style, wrapped, box_width)
+        other_idx = len(choices)
+        other_num = other_idx + 1
+        if other_num < 10:
+            other_num_prefix = str(other_num)
+        elif other_num == 10:
+            other_num_prefix = '0'
+        else:
+            other_num_prefix = ' '
+        if selected == other_idx and not is_freetext:
+            other_style = 'class:clarify-selected'
+        elif is_freetext:
+            other_style = 'class:clarify-active-other'
+        else:
+            other_style = 'class:clarify-choice'
+        for wrapped in other_wrapped:
+            _append_panel_line(lines, 'class:clarify-border', other_style, wrapped, box_width)
+    if not use_compact_chrome:
+        _append_blank_panel_line(lines, 'class:clarify-border', box_width)
+    lines.append(('class:clarify-border', '╰' + ('─' * box_width) + '╯\n'))
+    return lines
+
+
+def _build_model_picker_display(state: dict) -> list:
+    """Build styled text for the model picker panel."""
+    stage = state.get("stage", "provider")
+    if stage == "provider":
+        title = "⚙ Model Picker — Select Provider"
+        choices = []
+        _providers = state.get("providers")
+        for p in _providers if isinstance(_providers, list) else []:
+            count = p.get("total_models", len(p.get("models", [])))
+            label = f"{p['name']} ({count} model{'s' if count != 1 else ''})"
+            if p.get("is_current"):
+                label += "  ← current"
+            choices.append(label)
+        choices.append("Cancel")
+        hint = f"Current: {state.get('current_model', 'unknown')} on {state.get('current_provider', 'unknown')}"
+    else:
+        provider_data = state.get("provider_data") or {}
+        model_list = state.get("model_list") or []
+        title = f"⚙ Model Picker — {provider_data.get('name', provider_data.get('slug', 'Provider'))}"
+        choices = list(model_list) + ["← Back", "Cancel"]
+        if model_list:
+            hint = f"Select a model ({len(model_list)} available)"
+        else:
+            hint = "No models listed for this provider. Use Back or Cancel."
+
+    box_width = _panel_box_width(title, [hint] + choices, min_width=46, max_width=84)
+    inner_text_width = max(8, box_width - 6)
+    selected = state.get("selected", 0)
+
+    try:
+        from prompt_toolkit.application import get_app
+        term_rows = get_app().output.get_size().rows
+    except Exception:
+        term_rows = shutil.get_terminal_size((100, 24)).lines
+    scroll_offset, visible = IntellectCLI._compute_model_picker_viewport(
+        selected, state.get("_scroll_offset", 0), len(choices), term_rows,
+    )
+    state["_scroll_offset"] = scroll_offset
+
+    lines = []
+    lines.append(('class:clarify-border', '╭─ '))
+    lines.append(('class:clarify-title', title))
+    lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len(title) - 3)) + '╮\n'))
+    _append_blank_panel_line(lines, 'class:clarify-border', box_width)
+    _append_panel_line(lines, 'class:clarify-border', 'class:clarify-hint', hint, box_width)
+    _append_blank_panel_line(lines, 'class:clarify-border', box_width)
+    for idx in range(scroll_offset, scroll_offset + visible):
+        choice = choices[idx]
+        style = 'class:clarify-selected' if idx == selected else 'class:clarify-choice'
+        prefix = '❯ ' if idx == selected else '  '
+        for wrapped in _wrap_panel_text(prefix + choice, inner_text_width, subsequent_indent='  '):
+            _append_panel_line(lines, 'class:clarify-border', style, wrapped, box_width)
+    _append_blank_panel_line(lines, 'class:clarify-border', box_width)
+    lines.append(('class:clarify-border', '╰' + ('─' * box_width) + '╯\n'))
+    return lines
+
+
 # ── Panel layout helpers (used by clarify, model-picker, approval, etc.) ──
 
 def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, max_width: int = 76) -> int:
@@ -13301,190 +13500,11 @@ class IntellectCLI:
 
 
         def _get_clarify_display():
-            """Build styled text for the clarify question/choices panel.
-
-            Layout priority: choices + Other option must always render even if
-            the question is very long. The question is budgeted to leave enough
-            rows for the choices and trailing chrome; anything over the budget
-            is truncated with a marker.
-            """
+            """Build styled text for the clarify question/choices panel."""
             state = cli_ref._clarify_state
             if not state:
                 return []
-
-            question = state["question"]
-            choices = state.get("choices") or []
-            selected = state.get("selected", 0)
-            preview_lines = _wrap_panel_text(question, 60)
-            for i, choice in enumerate(choices):
-                # Show number prefix for quick selection (1-9 for items 1-9, 0 for 10th item)
-                if i < 9:
-                    num_prefix = str(i + 1)
-                elif i == 9:
-                    num_prefix = '0'
-                else:
-                    num_prefix = ' '
-                if i == selected and not cli_ref._clarify_freetext:
-                    prefix = f"❯ {num_prefix}. "
-                else:
-                    prefix = f"  {num_prefix}. "
-                preview_lines.extend(_wrap_panel_text(f"{prefix}{choice}", 60, subsequent_indent="    "))
-            # "Other" option in preview
-            other_num = len(choices) + 1
-            if other_num < 10:
-                other_num_prefix = str(other_num)
-            elif other_num == 10:
-                other_num_prefix = '0'
-            else:
-                other_num_prefix = ' '
-            other_label = (
-                f"❯ {other_num_prefix}. Other (type below)" if cli_ref._clarify_freetext
-                else f"❯ {other_num_prefix}. Other (type your answer)" if selected == len(choices)
-                else f"  {other_num_prefix}. Other (type your answer)"
-            )
-            preview_lines.extend(_wrap_panel_text(other_label, 60, subsequent_indent="    "))
-            box_width = _panel_box_width("Intellect needs your input", preview_lines)
-            inner_text_width = max(8, box_width - 2)
-
-            # Pre-wrap choices + Other option — these are mandatory.
-            choice_wrapped: list[tuple[int, str]] = []
-            if choices:
-                for i, choice in enumerate(choices):
-                    # Show number prefix for quick selection (1-9 for items 1-9, 0 for 10th item)
-                    if i < 9:
-                        num_prefix = str(i + 1)
-                    elif i == 9:
-                        num_prefix = '0'
-                    else:
-                        num_prefix = ' '
-                    if i == selected and not cli_ref._clarify_freetext:
-                        prefix = f'❯ {num_prefix}. '
-                    else:
-                        prefix = f'  {num_prefix}. '
-                    for wrapped in _wrap_panel_text(f"{prefix}{choice}", inner_text_width, subsequent_indent="    "):
-                        choice_wrapped.append((i, wrapped))
-                # Trailing Other row(s)
-                other_idx = len(choices)
-                other_num = other_idx + 1
-                if other_num < 10:
-                    other_num_prefix = str(other_num)
-                elif other_num == 10:
-                    other_num_prefix = '0'
-                else:
-                    other_num_prefix = ' '
-                if selected == other_idx and not cli_ref._clarify_freetext:
-                    other_label_mand = f'❯ {other_num_prefix}. Other (type your answer)'
-                elif cli_ref._clarify_freetext:
-                    other_label_mand = f'❯ {other_num_prefix}. Other (type below)'
-                else:
-                    other_label_mand = f'  {other_num_prefix}. Other (type your answer)'
-                other_wrapped = _wrap_panel_text(other_label_mand, inner_text_width, subsequent_indent="    ")
-            elif cli_ref._clarify_freetext:
-                # Freetext-only mode: the guidance line takes the place of choices.
-                other_wrapped = _wrap_panel_text(
-                    "Type your answer in the prompt below, then press Enter.",
-                    inner_text_width,
-                )
-            else:
-                other_wrapped = []
-
-            # Budget the question so mandatory rows always render.
-            # Chrome layouts:
-            #   full : top border + blank_after_title + blank_after_question
-            #          + blank_before_bottom + bottom border = 5 rows
-            #   tight: top border + bottom border = 2 rows (drop all blanks)
-            #
-            # reserved_below matches the approval-panel budget (~6 rows for
-            # spinner/tool-progress + status + input + separators + prompt).
-            term_rows = shutil.get_terminal_size((100, 24)).lines
-            chrome_full = 5
-            chrome_tight = 2
-            reserved_below = 6
-
-            available = max(0, term_rows - reserved_below)
-            # The compact decision must reserve room for at least one question
-            # row on top of the choices, otherwise full chrome (3 blank
-            # separators) gets kept when there is no room for it and the panel
-            # overflows the viewport — HSplit then clips the panel's tail,
-            # silently dropping the choices (the reported bug).
-            mandatory_full = chrome_full + 1 + len(choice_wrapped) + len(other_wrapped)
-
-            use_compact_chrome = mandatory_full > available
-            chrome_rows = chrome_tight if use_compact_chrome else chrome_full
-
-            max_question_rows = max(1, available - chrome_rows - len(choice_wrapped) - len(other_wrapped))
-            max_question_rows = min(max_question_rows, 12)  # soft cap on huge terminals
-
-            # When the choices alone (plus compact chrome) already exceed the
-            # viewport, drop the question entirely — the choices are the only
-            # thing the user must see to make a selection. Without this the
-            # question would still claim its 1-row floor above and push the
-            # tail of the choices off-screen (HSplit clips the overflow).
-            choices_overflow = chrome_rows + len(choice_wrapped) + len(other_wrapped) >= available
-            if choices_overflow:
-                max_question_rows = 0
-
-            question_wrapped = _wrap_panel_text(question, inner_text_width)
-            if max_question_rows <= 0:
-                question_wrapped = []
-            elif len(question_wrapped) > max_question_rows:
-                # The truncation marker is itself a row, so it must count
-                # against the budget. With a 1-row budget there is no room for
-                # both a question line and the marker — show the marker alone
-                # so the rendered question never exceeds max_question_rows.
-                keep = max(0, max_question_rows - 1)
-                question_wrapped = question_wrapped[:keep] + ["… (question truncated)"]
-
-            lines = []
-            # Box top border
-            lines.append(('class:clarify-border', '╭─ '))
-            lines.append(('class:clarify-title', 'Intellect needs your input'))
-            lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len("Intellect needs your input") - 3)) + '╮\n'))
-            if not use_compact_chrome:
-                _append_blank_panel_line(lines, 'class:clarify-border', box_width)
-
-            # Question text (bounded)
-            for wrapped in question_wrapped:
-                _append_panel_line(lines, 'class:clarify-border', 'class:clarify-question', wrapped, box_width)
-            if not use_compact_chrome:
-                _append_blank_panel_line(lines, 'class:clarify-border', box_width)
-
-            if cli_ref._clarify_freetext and not choices:
-                for wrapped in other_wrapped:
-                    _append_panel_line(lines, 'class:clarify-border', 'class:clarify-choice', wrapped, box_width)
-                if not use_compact_chrome:
-                    _append_blank_panel_line(lines, 'class:clarify-border', box_width)
-
-            if choices:
-                # Multiple-choice mode: show selectable options
-                for i, wrapped in choice_wrapped:
-                    style = 'class:clarify-selected' if i == selected and not cli_ref._clarify_freetext else 'class:clarify-choice'
-                    _append_panel_line(lines, 'class:clarify-border', style, wrapped, box_width)
-
-                # "Other" option (trailing row(s), only shown when choices exist)
-                other_idx = len(choices)
-                # Calculate number prefix for "Other" option
-                other_num = other_idx + 1
-                if other_num < 10:
-                    other_num_prefix = str(other_num)
-                elif other_num == 10:
-                    other_num_prefix = '0'
-                else:
-                    other_num_prefix = ' '
-                
-                if selected == other_idx and not cli_ref._clarify_freetext:
-                    other_style = 'class:clarify-selected'
-                elif cli_ref._clarify_freetext:
-                    other_style = 'class:clarify-active-other'
-                else:
-                    other_style = 'class:clarify-choice'
-                for wrapped in other_wrapped:
-                    _append_panel_line(lines, 'class:clarify-border', other_style, wrapped, box_width)
-
-            if not use_compact_chrome:
-                _append_blank_panel_line(lines, 'class:clarify-border', box_width)
-            lines.append(('class:clarify-border', '╰' + ('─' * box_width) + '╯\n'))
-            return lines
+            return _build_clarify_display(state, cli_ref._clarify_freetext)
 
         clarify_widget = ConditionalContainer(
             Window(
@@ -13583,66 +13603,11 @@ class IntellectCLI:
 
         # --- /model picker: display widget ---
         def _get_model_picker_display():
+            """Build styled text for the model picker panel."""
             state = cli_ref._model_picker_state
             if not state:
                 return []
-            stage = state.get("stage", "provider")
-            if stage == "provider":
-                title = "⚙ Model Picker — Select Provider"
-                choices = []
-                _providers = state.get("providers")
-                for p in _providers if isinstance(_providers, list) else []:
-                    count = p.get("total_models", len(p.get("models", [])))
-                    label = f"{p['name']} ({count} model{'s' if count != 1 else ''})"
-                    if p.get("is_current"):
-                        label += "  ← current"
-                    choices.append(label)
-                choices.append("Cancel")
-                hint = f"Current: {state.get('current_model', 'unknown')} on {state.get('current_provider', 'unknown')}"
-            else:
-                provider_data = state.get("provider_data") or {}
-                model_list = state.get("model_list") or []
-                title = f"⚙ Model Picker — {provider_data.get('name', provider_data.get('slug', 'Provider'))}"
-                choices = list(model_list) + ["← Back", "Cancel"]
-                if model_list:
-                    hint = f"Select a model ({len(model_list)} available)"
-                else:
-                    hint = "No models listed for this provider. Use Back or Cancel."
-
-            box_width = _panel_box_width(title, [hint] + choices, min_width=46, max_width=84)
-            inner_text_width = max(8, box_width - 6)
-            selected = state.get("selected", 0)
-
-            # Scrolling viewport: the panel renders into a Window with no max
-            # height, so without limiting visible items the bottom border and
-            # any items past the available terminal rows get clipped on long
-            # provider catalogs (e.g. Ollama Cloud's 36+ models).
-            try:
-                from prompt_toolkit.application import get_app
-                term_rows = get_app().output.get_size().rows
-            except Exception:
-                term_rows = shutil.get_terminal_size((100, 24)).lines
-            scroll_offset, visible = IntellectCLI._compute_model_picker_viewport(
-                selected, state.get("_scroll_offset", 0), len(choices), term_rows,
-            )
-            state["_scroll_offset"] = scroll_offset
-
-            lines = []
-            lines.append(('class:clarify-border', '╭─ '))
-            lines.append(('class:clarify-title', title))
-            lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len(title) - 3)) + '╮\n'))
-            _append_blank_panel_line(lines, 'class:clarify-border', box_width)
-            _append_panel_line(lines, 'class:clarify-border', 'class:clarify-hint', hint, box_width)
-            _append_blank_panel_line(lines, 'class:clarify-border', box_width)
-            for idx in range(scroll_offset, scroll_offset + visible):
-                choice = choices[idx]
-                style = 'class:clarify-selected' if idx == selected else 'class:clarify-choice'
-                prefix = '❯ ' if idx == selected else '  '
-                for wrapped in _wrap_panel_text(prefix + choice, inner_text_width, subsequent_indent='  '):
-                    _append_panel_line(lines, 'class:clarify-border', style, wrapped, box_width)
-            _append_blank_panel_line(lines, 'class:clarify-border', box_width)
-            lines.append(('class:clarify-border', '╰' + ('─' * box_width) + '╯\n'))
-            return lines
+            return _build_model_picker_display(state)
 
         model_picker_widget = ConditionalContainer(
             Window(
