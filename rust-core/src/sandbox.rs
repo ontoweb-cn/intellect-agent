@@ -206,13 +206,12 @@ pub fn is_forbidden_path_rs(path: &str) -> Option<String> {
 fn is_forbidden_path_impl(path: &str) -> Option<String> {
     let lower = path.to_lowercase();
 
-    // Always-blocked system paths
+    // Always-blocked system paths (exact prefix matches)
     let always_blocked = [
         ("/etc/shadow", "system shadow file"),
         ("/etc/gshadow", "system group shadow file"),
         ("/etc/master.passwd", "system master passwd"),
         ("/etc/sudoers", "sudoers configuration"),
-        ("/etc/ssh/ssh_host_", "SSH host private key"),
         ("/proc/kcore", "kernel memory image"),
         ("/proc/sysrq-trigger", "kernel sysrq trigger"),
         ("/dev/mem", "physical memory device"),
@@ -220,39 +219,58 @@ fn is_forbidden_path_impl(path: &str) -> Option<String> {
     ];
 
     for (pattern, reason) in &always_blocked {
-        if lower.starts_with(pattern) || lower.contains(pattern) {
+        if lower.starts_with(pattern) {
             return Some(reason.to_string());
         }
     }
 
-    // Sensitive user directories (expanded)
-    let sensitive_dirs = [
-        (".ssh/", "SSH credentials directory"),
-        (".gnupg/", "GPG keyring directory"),
-        (".aws/", "AWS credentials directory"),
-        (".kube/", "Kubernetes config directory"),
-        (".docker/config", "Docker config (may contain registry creds)"),
-        (".intellect/.env", "Intellect secrets file"),
-        (".netrc", "netrc credentials file"),
-        (".pgpass", "PostgreSQL password file"),
-        (".npmrc", "npm config (may contain tokens)"),
-        (".pypirc", "PyPI config (may contain tokens)"),
+    // SSH host private keys (not .pub public keys)
+    if lower.starts_with("/etc/ssh/ssh_host_") && !lower.ends_with(".pub") {
+        return Some("SSH host private key".to_string());
+    }
+
+    // Sensitive user directories — only block credential files, not
+    // non-secret files like known_hosts or authorized_keys
+    let sensitive_files = [
+        ("/.ssh/id_rsa", "SSH private key"),
+        ("/.ssh/id_ed25519", "SSH private key"),
+        ("/.ssh/id_ecdsa", "SSH private key"),
+        ("/.ssh/id_dsa", "SSH private key"),
+        ("/.gnupg/secring", "GPG secret keyring"),
+        ("/.gnupg/private-keys", "GPG private keys"),
+        ("/.aws/credentials", "AWS credentials file"),
+        ("/.kube/config", "Kubernetes config"),
+        ("/.docker/config.json", "Docker config (may contain registry creds)"),
+        ("/.intellect/.env", "Intellect secrets file"),
     ];
 
-    for (pattern, reason) in &sensitive_dirs {
+    for (pattern, reason) in &sensitive_files {
         if lower.contains(pattern) {
             return Some(reason.to_string());
         }
     }
 
-    // Private key files
-    if lower.ends_with(".pem") || lower.ends_with(".key") || lower.ends_with(".p12")
-        || lower.ends_with(".pfx") || lower.ends_with(".jks")
-        || lower.contains("id_rsa") || lower.contains("id_ed25519")
-        || lower.contains("id_ecdsa") || lower.contains("id_dsa")
-    {
-        // Only block if in a sensitive context (not /tmp, not current dir)
-        if lower.starts_with('/') || lower.contains("/.ssh/") || lower.contains("/.gnupg/") {
+    // Standalone credential files
+    let credential_files = [
+        ".netrc", ".pgpass", ".npmrc", ".pypirc",
+    ];
+
+    // Extract filename from path
+    let filename = path.rsplit('/').next().unwrap_or(path);
+    let filename_lower = filename.to_lowercase();
+
+    for pattern in &credential_files {
+        if filename_lower == *pattern {
+            return Some(format!("credentials file: {}", pattern));
+        }
+    }
+
+    // Private key files by extension — only block in absolute paths
+    // (not relative paths which are likely project files)
+    if path.starts_with('/') {
+        if lower.ends_with(".pem") || lower.ends_with(".key") || lower.ends_with(".p12")
+            || lower.ends_with(".pfx") || lower.ends_with(".jks")
+        {
             return Some("private key file".to_string());
         }
     }
@@ -359,20 +377,33 @@ mod tests {
         assert!(is_forbidden_path_impl("/etc/shadow").is_some());
         assert!(is_forbidden_path_impl("/etc/gshadow").is_some());
         assert!(is_forbidden_path_impl("/etc/sudoers").is_some());
-        assert!(is_forbidden_path_impl("/etc/ssh/ssh_host_rsa_key").is_some());
         assert!(is_forbidden_path_impl("/proc/kcore").is_some());
         assert!(is_forbidden_path_impl("/dev/mem").is_some());
     }
 
     #[test]
-    fn test_forbidden_path_ssh_keys() {
-        assert!(is_forbidden_path_impl("/home/user/.ssh/id_rsa").is_some());
-        assert!(is_forbidden_path_impl("~/.ssh/id_ed25519").is_some());
-        assert!(is_forbidden_path_impl("/root/.ssh/authorized_keys").is_none());
+    fn test_forbidden_path_ssh_host_keys() {
+        // Private host keys are blocked
+        assert!(is_forbidden_path_impl("/etc/ssh/ssh_host_rsa_key").is_some());
+        assert!(is_forbidden_path_impl("/etc/ssh/ssh_host_ed25519_key").is_some());
+        // Public keys (.pub) are NOT blocked
+        assert!(is_forbidden_path_impl("/etc/ssh/ssh_host_rsa_key.pub").is_none());
+        assert!(is_forbidden_path_impl("/etc/ssh/ssh_host_ed25519_key.pub").is_none());
     }
 
     #[test]
-    fn test_forbidden_path_sensitive_dirs() {
+    fn test_forbidden_path_ssh_user_keys() {
+        // SSH private keys are blocked
+        assert!(is_forbidden_path_impl("/home/user/.ssh/id_rsa").is_some());
+        assert!(is_forbidden_path_impl("/home/user/.ssh/id_ed25519").is_some());
+        // Non-credential SSH files are NOT blocked
+        assert!(is_forbidden_path_impl("/home/user/.ssh/known_hosts").is_none());
+        assert!(is_forbidden_path_impl("/home/user/.ssh/authorized_keys").is_none());
+        assert!(is_forbidden_path_impl("/home/user/.ssh/config").is_none());
+    }
+
+    #[test]
+    fn test_forbidden_path_sensitive_files() {
         assert!(is_forbidden_path_impl("/home/user/.aws/credentials").is_some());
         assert!(is_forbidden_path_impl("/home/user/.gnupg/secring.gpg").is_some());
         assert!(is_forbidden_path_impl("/home/user/.kube/config").is_some());
@@ -381,11 +412,24 @@ mod tests {
     }
 
     #[test]
+    fn test_forbidden_path_private_key_extensions() {
+        // Private key extensions in absolute paths are blocked
+        assert!(is_forbidden_path_impl("/home/user/certs/server.key").is_some());
+        assert!(is_forbidden_path_impl("/home/user/certs/ca.pem").is_some());
+        // But relative paths are not blocked (likely project files)
+        assert!(is_forbidden_path_impl("certs/server.key").is_none());
+        assert!(is_forbidden_path_impl("./certs/ca.pem").is_none());
+    }
+
+    #[test]
     fn test_forbidden_path_safe() {
         assert!(is_forbidden_path_impl("/tmp/test.txt").is_none());
         assert!(is_forbidden_path_impl("/home/user/project/main.py").is_none());
         assert!(is_forbidden_path_impl("./src/lib.rs").is_none());
         assert!(is_forbidden_path_impl("README.md").is_none());
+        // Documentation files with key-like names are not blocked
+        assert!(is_forbidden_path_impl("/home/user/docs/id_rsa_guide.md").is_none());
+        assert!(is_forbidden_path_impl("/home/user/project/test_id_rsa_data.json").is_none());
     }
 
     #[test]

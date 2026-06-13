@@ -2147,6 +2147,8 @@ def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list
     wrapped = textwrap.wrap(
         text,
         width=max(8, width),
+        replace_whitespace=False,
+        drop_whitespace=False,
         break_long_words=False,
         break_on_hyphens=False,
         subsequent_indent=subsequent_indent,
@@ -3087,8 +3089,62 @@ def save_config_value(key_path: str, value: any) -> bool:
 
 class IntellectCLI:
     """
+    Interactive CLI for the Intellect Agent.
+
+    Provides a REPL interface with rich formatting, command history,
+    and tool execution capabilities.
     """
 
+    # Fast dispatch table: canonical command name → method name.
+    # Used by process_command() for simple one-line handlers.
+    # Complex handlers (quit, clear, new, retry, etc.) stay in the
+    # elif chain because they have special logic.
+    _COMMAND_DISPATCH = {
+        "agents": "_handle_agents_command",
+        "background": "_handle_background_command",
+        "branch": "_handle_branch_command",
+        "browser": "_handle_browser_command",
+        "bundles": "_handle_bundles_command",
+        "busy": "_handle_busy_command",
+        "codex-runtime": "_handle_codex_runtime",
+        "compress": "_manual_compress",
+        "config": "show_config",
+        "copy": "_handle_copy_command",
+        "cron": "_handle_cron_command",
+        "curator": "_handle_curator_command",
+        "debug": "_handle_debug_command",
+        "fast": "_handle_fast_command",
+        "footer": "_handle_footer_command",
+        "goal": "_handle_goal_command",
+        "gquota": "_handle_gquota_command",
+        "help": "show_help",
+        "history": "show_history",
+        "image": "_handle_image_command",
+        "insights": "_show_insights",
+        "kanban": "_handle_kanban_command",
+        "model": "_handle_model_switch",
+        "paste": "_handle_paste_command",
+        "personality": "_handle_personality_command",
+        "platforms": "_show_gateway_status",
+        "profile": "_handle_profile_command",
+        "reasoning": "_handle_reasoning_command",
+        "reload-mcp": "_confirm_and_reload_mcp",
+        "resume": "_handle_resume_command",
+        "rollback": "_handle_rollback_command",
+        "save": "save_conversation",
+        "sessions": "_handle_sessions_command",
+        "skin": "_handle_skin_command",
+        "snapshot": "_handle_snapshot_command",
+        "status": "_show_session_status",
+        "stop": "_handle_stop_command",
+        "subgoal": "_handle_subgoal_command",
+        "tools": "_handle_tools_command",
+        "toolsets": "show_toolsets",
+        "usage": "_show_usage",
+        "verbose": "_toggle_verbose",
+        "voice": "_handle_voice_command",
+        "yolo": "_toggle_yolo",
+    }
 
     def __init__(
         self,
@@ -8603,8 +8659,267 @@ class IntellectCLI:
             getattr(self, _handler_name)(cmd_original)
             return True
 
+        # ── Complex commands (special logic) ─────────────────────
+        if canonical in {"quit", "exit"}:
+            _rest = cmd_original.split(None, 1)
+            _args = (_rest[1] if len(_rest) > 1 else "").strip().lower()
+            if _args in {"--delete", "-d"}:
+                self._delete_session_on_exit = True
+            elif _args:
+                _cprint(f"  {_DIM}✗ Unknown argument: {_escape(_args)}. Use /exit --delete to also remove session history.{_RST}")
+                return True
+            return False
+        elif canonical == "redraw":
+            self._force_full_redraw()
+            _cprint(f"  {_DIM}✓ UI redrawn{_RST}")
+        elif canonical == "clear":
+            if self._confirm_destructive_slash(
+                "clear",
+                "This clears the screen and starts a new session.\n"
+                "The current conversation history will be discarded.",
+                cmd_original=cmd_original,
+            ) is None:
+                return
+            self.new_session(silent=True)
+            _clear_output_history()
+            if self._app:
+                out = self._app.output
+                out.erase_screen()
+                out.cursor_goto(0, 0)
+                out.flush()
+            else:
+                self.console.clear()
+            if self._app:
+                cc = ChatConsole()
+                term_w = shutil.get_terminal_size().columns
+                if self.compact or term_w < 80:
+                    cc.print(_build_compact_banner())
+                else:
+                    tools = get_tool_definitions(enabled_toolsets=self.enabled_toolsets, quiet_mode=True)
+                    cwd = os.getenv("TERMINAL_CWD", os.getcwd())
+                    ctx_len = None
+                    if hasattr(self, 'agent') and self.agent and hasattr(self.agent, 'context_compressor'):
+                        ctx_len = self.agent.context_compressor.context_length
+                    build_welcome_banner(
+                        console=cc, model=self.model, cwd=cwd, tools=tools,
+                        enabled_toolsets=self.enabled_toolsets, session_id=self.session_id,
+                        context_length=ctx_len,
+                    )
+                _cprint("  ✨ (◕‿◕)✨ Fresh start! Screen cleared and conversation reset.\n")
+            else:
+                self.show_banner()
+                print("  ✨ (◕‿◕)✨ Fresh start! Screen cleared and conversation reset.\n")
+        elif canonical == "title":
+            parts = cmd_original.split(maxsplit=1)
+            if len(parts) > 1:
+                raw_title = parts[1].strip()
+                if raw_title:
+                    if self._session_db:
+                        try:
+                            from intellect_state import SessionDB
+                            new_title = SessionDB.sanitize_title(raw_title)
+                        except ValueError as e:
+                            _cprint(f"  {e}")
+                            new_title = None
+                        if not new_title:
+                            _cprint("  Title is empty after cleanup. Please use printable characters.")
+                        elif self._session_db.get_session(self.session_id):
+                            try:
+                                if self._session_db.set_session_title(self.session_id, new_title):
+                                    _cprint(f"  Session title set: {new_title}")
+                                else:
+                                    _cprint("  Session not found in database.")
+                            except ValueError as e:
+                                _cprint(f"  {e}")
+                        else:
+                            existing = self._session_db.get_session_by_title(new_title)
+                            if existing:
+                                _cprint(f"  Title '{new_title}' is already in use by session {existing['id']}")
+                            else:
+                                self._pending_title = new_title
+                                _cprint(f"  Session title queued: {new_title} (will be saved on first message)")
+                    else:
+                        from intellect_state import format_session_db_unavailable
+                        _cprint(f"  {format_session_db_unavailable()}")
+                else:
+                    _cprint("  Usage: /title <your session title>")
+            elif self._session_db:
+                _cprint(f"  Session ID: {self.session_id}")
+                session = self._session_db.get_session(self.session_id)
+                if session and session.get("title"):
+                    _cprint(f"  Title: {session['title']}")
+                elif self._pending_title:
+                    _cprint(f"  Title (pending): {self._pending_title}")
+                else:
+                    _cprint("  No title set. Usage: /title <your session title>")
+            else:
+                from intellect_state import format_session_db_unavailable
+                _cprint(f"  {format_session_db_unavailable()}")
+        elif canonical == "handoff":
+            if not self._handle_handoff_command(cmd_original):
+                return False
+        elif canonical == "new":
+            _new_args, _ = self._split_destructive_skip(cmd_original)
+            title = _new_args.strip() or None
+            if self._confirm_destructive_slash(
+                "new",
+                "This starts a fresh session.\n"
+                "The current conversation history will be discarded.",
+                cmd_original=cmd_original,
+            ) is None:
+                return
+            self.new_session(title=title)
+        elif canonical == "retry":
+            retry_msg = self.retry_last()
+            if retry_msg and hasattr(self, '_pending_input'):
+                self._pending_input.put(retry_msg)
+        elif canonical == "undo":
+            if self._confirm_destructive_slash(
+                "undo",
+                "This removes the last user/assistant exchange from history.",
+                cmd_original=cmd_original,
+            ) is None:
+                return
+            self.undo_last()
+        elif canonical == "statusbar":
+            self._status_bar_visible = not self._status_bar_visible
+            state = "visible" if self._status_bar_visible else "hidden"
+            self._console_print(f"  Status bar {state}")
+        elif canonical == "update":
+            if self._handle_update_command():
+                return False
+        elif canonical == "reload":
+            from intellect_cli.config import reload_env
+            count = reload_env()
+            print(f"  Reloaded .env ({count} var(s) updated)")
+        elif canonical == "reload-skills":
+            with self._busy_command(self._slow_command_status(cmd_original)):
+                self._reload_skills()
+        elif canonical == "plugins":
+            try:
+                from intellect_cli.plugins import get_plugin_manager
+                mgr = get_plugin_manager()
+                plugins = mgr.list_plugins()
+                if not plugins:
+                    print("No plugins installed.")
+                    print(f"Drop plugin directories into {display_intellect_home()}/plugins/ to get started.")
+                else:
+                    print(f"Plugins ({len(plugins)}):")
+                    for p in plugins:
+                        status = "✓" if p["enabled"] else "✗"
+                        version = f" v{p['version']}" if p["version"] else ""
+                        tools = f"{p['tools']} tools" if p["tools"] else ""
+                        hooks = f"{p['hooks']} hooks" if p["hooks"] else ""
+                        commands = f"{p['commands']} commands" if p.get("commands") else ""
+                        parts = [x for x in [tools, hooks, commands] if x]
+                        detail = f" ({', '.join(parts)})" if parts else ""
+                        error = f" — {p['error']}" if p["error"] else ""
+                        print(f"  {status} {p['name']}{version}{detail}{error}")
+            except Exception as e:
+                print(f"Plugin system error: {e}")
+        elif canonical == "queue":
+            parts = cmd_original.split(None, 1)
+            payload = parts[1].strip() if len(parts) > 1 else ""
+            if not payload:
+                _cprint("  Usage: /queue <prompt>")
+            else:
+                self._pending_input.put(payload)
+                if self._agent_running:
+                    _cprint(f"  Queued for the next turn: {payload[:80]}{'...' if len(payload) > 80 else ''}")
+                else:
+                    _cprint(f"  Queued: {payload[:80]}{'...' if len(payload) > 80 else ''}")
+        elif canonical == "steer":
+            parts = cmd_original.split(None, 1)
+            payload = parts[1].strip() if len(parts) > 1 else ""
+            if not payload:
+                _cprint("  Usage: /steer <prompt>")
+            elif self._agent_running and self.agent is not None and hasattr(self.agent, "steer"):
+                try:
+                    accepted = self.agent.steer(payload)
+                except Exception as exc:
+                    _cprint(f"  Steer failed: {exc}")
+                else:
+                    if accepted:
+                        _cprint(f"  ⏩ Steer queued — arrives after the next tool call: {payload[:80]}{'...' if len(payload) > 80 else ''}")
+                    else:
+                        _cprint("  Steer rejected (empty payload).")
+            else:
+                self._pending_input.put(payload)
+                _cprint(f"  No agent running; queued as next turn: {payload[:80]}{'...' if len(payload) > 80 else ''}")
+        else:
+            # Check for user-defined quick commands
+            base_cmd = cmd_lower.split()[0]
+            skill_commands = _ensure_skill_commands()
+            skill_bundles = get_skill_bundles()
+            quick_commands = self.config.get("quick_commands", {})
+            if base_cmd.lstrip("/") in quick_commands:
+                qcmd = quick_commands[base_cmd.lstrip("/")]
+                if qcmd.get("type") == "exec":
+                    import subprocess
+                    exec_cmd = qcmd.get("command", "")
+                    if exec_cmd:
+                        try:
+                            result = subprocess.run(
+                                exec_cmd, shell=True, capture_output=True,
+                                text=True, timeout=30
+                            )
+                            output = result.stdout.strip() or result.stderr.strip()
+                            if output:
+                                self._console_print(_rich_text_from_ansi(output))
+                            else:
+                                self._console_print("[dim]Command returned no output[/]")
+                        except subprocess.TimeoutExpired:
+                            self._console_print("[bold red]Quick command timed out (30s)[/]")
+                        except Exception as e:
+                            self._console_print(f"[bold red]Quick command error: {e}[/]")
+                    else:
+                        self._console_print(f"[bold red]Quick command '{base_cmd}' has no command defined[/]")
+                elif qcmd.get("type") == "alias":
+                    target = qcmd.get("target", "").strip()
+                    if target:
+                        target = target if target.startswith("/") else f"/{target}"
+                        user_args = cmd_original[len(base_cmd):].strip()
+                        aliased_command = f"{target} {user_args}".strip()
+                        return self.process_command(aliased_command)
+                    else:
+                        self._console_print(f"[bold red]Quick command '{base_cmd}' has no target defined[/]")
+                else:
+                    self._console_print(f"[bold red]Quick command '{base_cmd}' has unsupported type[/]")
+            elif base_cmd.lstrip("/") in _get_plugin_cmd_handler_names():
+                from intellect_cli.plugins import (
+                    get_plugin_command_handler,
+                    resolve_plugin_command_result,
+                )
+                plugin_handler = get_plugin_command_handler(base_cmd.lstrip("/"))
+                if plugin_handler:
+                    user_args = cmd_original[len(base_cmd):].strip()
+                    try:
+                        result = resolve_plugin_command_result(plugin_handler(user_args))
+                        if result:
+                            _cprint(str(result))
+                    except Exception as e:
+                        _cprint(f"\033[1;31mPlugin command error: {e}{_RST}")
+            elif base_cmd in skill_bundles:
+                user_instruction = cmd_original[len(base_cmd):].strip()
+                bundle_result = build_bundle_invocation_message(
+                    base_cmd, user_instruction, task_id=self.session_id
+                )
+                if bundle_result:
+                    msg, loaded_names, missing = bundle_result
+                    self._pending_input.put(msg)
+                    _cprint(f"  Loaded skill bundle: {', '.join(loaded_names)}")
+                    if missing:
+                        _cprint(f"  {_DIM}Missing skills: {', '.join(missing)}{_RST}")
+            elif base_cmd in skill_commands:
+                skill_result = skill_commands[base_cmd]
+                if skill_result:
+                    self._pending_input.put(str(skill_result))
+            else:
+                _cprint(f"\033[1;31mUnknown command: {canonical}{_RST}")
+                _cprint(f"{_DIM}{_ACCENT}Type /help for available commands{_RST}")
 
-    
+        return True
+
     def _handle_background_command(self, cmd: str):
         """Handle /background <prompt> — run a prompt in a separate background session.
 
@@ -13878,7 +14193,7 @@ class IntellectCLI:
         # Background thread to process inputs and run agent
         
         # Start processing thread
-        process_thread = threading.Thread(target=process_loop, daemon=True)
+        process_thread = threading.Thread(target=self._process_loop, daemon=True)
         process_thread.start()
         
         # Register atexit cleanup so resources are freed even on unexpected exit
