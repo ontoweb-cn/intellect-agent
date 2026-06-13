@@ -1469,3 +1469,99 @@ class TestApprovalTimeoutIsNotConsent:
         assert last_post.get("choice") == "timeout", (
             f"hook choice should be 'timeout' on no-response, got {last_post.get('choice')!r}"
         )
+
+
+class TestIsForbiddenPath:
+    """Integration tests for Rust is_forbidden_path_rs via Python bridge."""
+
+    @staticmethod
+    def _is_forbidden(path: str) -> bool:
+        from tools.path_security import is_forbidden_path
+        return is_forbidden_path(path) is not None
+
+    def test_system_files_blocked(self):
+        assert self._is_forbidden("/etc/shadow")
+        assert self._is_forbidden("/etc/sudoers")
+        assert self._is_forbidden("/proc/kcore")
+        assert self._is_forbidden("/dev/mem")
+
+    def test_ssh_host_keys_blocked(self):
+        # Private host keys are blocked
+        assert self._is_forbidden("/etc/ssh/ssh_host_rsa_key")
+        assert self._is_forbidden("/etc/ssh/ssh_host_ed25519_key")
+        # Public keys (.pub) are NOT blocked
+        assert not self._is_forbidden("/etc/ssh/ssh_host_rsa_key.pub")
+
+    def test_ssh_user_keys_blocked(self):
+        assert self._is_forbidden("/home/user/.ssh/id_rsa")
+        assert self._is_forbidden("/home/user/.ssh/id_ed25519")
+        # Non-credential SSH files are NOT blocked
+        assert not self._is_forbidden("/home/user/.ssh/known_hosts")
+        assert not self._is_forbidden("/home/user/.ssh/config")
+
+    def test_sensitive_files_blocked(self):
+        assert self._is_forbidden("/home/user/.aws/credentials")
+        assert self._is_forbidden("/home/user/.gnupg/secring.gpg")
+        assert self._is_forbidden("/home/user/.kube/config")
+        assert self._is_forbidden("/home/user/.netrc")
+
+    def test_private_key_extensions_blocked_absolute(self):
+        # Absolute paths with private key extensions are blocked
+        assert self._is_forbidden("/home/user/certs/server.key")
+        assert self._is_forbidden("/home/user/certs/ca.pem")
+        # Relative paths are NOT blocked (likely project files)
+        assert not self._is_forbidden("certs/server.key")
+        assert not self._is_forbidden("./certs/ca.pem")
+
+    def test_safe_paths_allowed(self):
+        assert not self._is_forbidden("/tmp/test.txt")
+        assert not self._is_forbidden("/home/user/project/main.py")
+        assert not self._is_forbidden("./src/lib.rs")
+        assert not self._is_forbidden("README.md")
+
+    def test_docs_not_blocked(self):
+        # Documentation files with key-like names are not blocked
+        assert not self._is_forbidden("/home/user/docs/id_rsa_guide.md")
+        assert not self._is_forbidden("/home/user/project/test_id_rsa_data.json")
+
+
+class TestIsIpBlocked:
+    """Integration tests for Rust is_ip_blocked_rs via Python bridge."""
+
+    @staticmethod
+    def _is_blocked(ip: str) -> bool:
+        from tools.url_safety import _rust_is_ip_blocked
+        return _rust_is_ip_blocked(ip) is not None
+
+    def test_cloud_metadata_blocked(self):
+        assert self._is_blocked("169.254.169.254")   # AWS IMDSv1
+        assert self._is_blocked("169.254.170.2")      # AWS IMDSv2
+        assert self._is_blocked("100.100.100.200")     # Alibaba Cloud
+
+    def test_link_local_blocked(self):
+        assert self._is_blocked("169.254.1.1")
+        assert self._is_blocked("169.254.0.1")
+
+    def test_loopback_blocked(self):
+        assert self._is_blocked("127.0.0.1")
+        assert self._is_blocked("::1")
+
+    def test_private_blocked(self):
+        assert self._is_blocked("10.0.0.1")
+        assert self._is_blocked("172.16.0.1")
+        assert self._is_blocked("192.168.1.1")
+
+    def test_cgnat_blocked(self):
+        assert self._is_blocked("100.64.0.1")
+        assert self._is_blocked("100.127.255.255")
+
+    def test_public_allowed(self):
+        assert not self._is_blocked("8.8.8.8")
+        assert not self._is_blocked("1.1.1.1")
+        assert not self._is_blocked("2001:4860:4860::8888")
+
+    def test_ipv4_mapped_ipv6_blocked(self):
+        # IPv4-mapped IPv6 checked as embedded IPv4
+        assert self._is_blocked("::ffff:169.254.169.254")
+        assert self._is_blocked("::ffff:10.0.0.1")
+        assert not self._is_blocked("::ffff:8.8.8.8")
