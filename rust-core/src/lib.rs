@@ -61,10 +61,12 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── Stage 5c: JWT claims decode ────────────────────────────────────
     m.add_function(wrap_pyfunction!(crypto::decode_jwt_claims_rs, m)?)?;
 
-    // ── Stage 4a-4d: Gateway utilities ─────────────────────────────────
+    // ── Stage 4a-4e: Gateway utilities ─────────────────────────────────
     m.add_function(wrap_pyfunction!(gateway::build_session_key_rs, m)?)?;
     m.add_function(wrap_pyfunction!(gateway::evaluate_reset_policy_rs, m)?)?;
     m.add_function(wrap_pyfunction!(gateway::backoff_delay_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(gateway::check_session_expiry_batch_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(gateway::backoff_delay_batch_rs, m)?)?;
     m.add_class::<gateway::TokenBucket>()?;
 
     Ok(())

@@ -68,10 +68,17 @@ from utils import atomic_replace
 
 # ── Stage 4a: Rust session key builder ─────────────────────────────────────
 try:
-    from intellect_core import build_session_key_rs as _rust_build_key  # type: ignore[import-not-found]
+    from intellect_community_core import build_session_key_rs as _rust_build_key  # type: ignore[import-not-found]
     _HAS_RUST_GATEWAY = True
 except (ImportError, AttributeError):
     _HAS_RUST_GATEWAY = False
+
+# ── Stage 4e: Rust batch session expiry check ─────────────────────────────
+try:
+    from intellect_community_core import check_session_expiry_batch_rs as _rust_check_expiry_batch  # type: ignore[import-not-found]
+    _HAS_RUST_BATCH_EXPIRY = True
+except (ImportError, AttributeError):
+    _HAS_RUST_BATCH_EXPIRY = False
 
 
 @dataclass
@@ -736,6 +743,8 @@ class SessionStore:
         self._loaded = False
         self._lock = threading.Lock()
         self._has_active_processes_fn = has_active_processes_fn
+        self._save_timer: threading.Timer | None = None
+        self._save_delay: float = 0.5  # debounce window in seconds
 
         # Initialize SQLite session database (used for both messages + index)
         self._db = None
@@ -839,10 +848,42 @@ class SessionStore:
         self._loaded = True
 
     def _save(self) -> None:
-        """Write sessions index to SQLite (immediate — WAL-backed, no fsync needed)."""
+        """Debounced save — coalesces rapid updates within *self._save_delay* seconds."""
         with self._lock:
+            if self._save_timer is not None:
+                self._save_timer.cancel()
+            self._save_timer = threading.Timer(self._save_delay, self._save_now)
+            self._save_timer.daemon = True
+            self._save_timer.start()
+
+    def _save_now(self) -> None:
+        """Immediate save — called by debounce timer or :meth:`_flush`."""
+        with self._lock:
+            self._save_timer = None
             if self._db is not None:
                 self._save_impl()
+
+    def _flush(self) -> None:
+        """Cancel pending debounce and write immediately.
+
+        Call this before shutdown to ensure no data is lost.
+        """
+        with self._lock:
+            if self._save_timer is not None:
+                self._save_timer.cancel()
+                self._save_timer = None
+            if self._db is not None:
+                self._save_impl()
+
+    def close(self) -> None:
+        """Flush pending writes and release resources."""
+        self._flush()
+        if self._db is not None:
+            try:
+                self._db.close()
+            except Exception:
+                pass
+            self._db = None
 
     def _save_impl(self) -> None:
         """Write all entries to SQLite session_index table. Lock held by caller."""
@@ -922,6 +963,52 @@ class SessionStore:
                 return True
 
         return False
+
+    def find_expired_sessions_batch(self, entries: list[tuple[str, "SessionEntry"]]) -> list[str]:
+        """Find expired sessions using Rust batch check when available.
+
+        Takes a list of (session_key, entry) pairs and returns the session_keys
+        of expired sessions. Falls back to per-session Python check when Rust
+        is unavailable.
+        """
+        if not entries:
+            return []
+
+        # Filter out sessions with active processes
+        candidates = []
+        for key, entry in entries:
+            if entry.expiry_finalized:
+                continue
+            if self._has_active_processes_fn and self._has_active_processes_fn(key):
+                continue
+            candidates.append((key, entry))
+
+        if not candidates:
+            return []
+
+        if _HAS_RUST_BATCH_EXPIRY:
+            now = _now()
+            now_ts = now.timestamp()
+            modes = []
+            idle_minutes = []
+            at_hours = []
+            updated_ats = []
+
+            for _key, entry in candidates:
+                policy = self.config.get_reset_policy(
+                    platform=entry.platform,
+                    session_type=entry.chat_type,
+                )
+                modes.append(policy.mode)
+                idle_minutes.append(policy.idle_minutes)
+                at_hours.append(policy.at_hour)
+                updated_ats.append(entry.updated_at.timestamp() if hasattr(entry.updated_at, 'timestamp') else 0.0)
+
+            expired_indices = _rust_check_expiry_batch(modes, idle_minutes, at_hours, updated_ats, now_ts)
+            return [candidates[i][0] for i in expired_indices if i < len(candidates)]
+
+        # Python fallback
+        return [key for key, entry in candidates if self._is_session_expired(entry)]
 
     def _should_reset(self, entry: SessionEntry, source: SessionSource) -> Optional[str]:
         """

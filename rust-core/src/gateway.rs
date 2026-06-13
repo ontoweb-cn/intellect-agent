@@ -230,6 +230,69 @@ impl TokenBucket {
     }
 }
 
+// ── Batch session expiry check (Stage 4e) ───────────────────────────────────
+
+/// Check multiple sessions for expiry in a single call.
+///
+/// Takes parallel arrays of session data and returns the indices of expired
+/// sessions. This is more efficient than calling evaluate_reset_policy_rs
+/// in a Python loop for large session stores.
+///
+/// Parameters:
+/// - modes: reset policy mode per session ("none", "idle", "daily", "both")
+/// - idle_minutes: idle timeout per session
+/// - at_hours: daily reset hour per session
+/// - updated_ats: last update timestamp per session (Unix seconds)
+/// - now: current timestamp (Unix seconds)
+///
+/// Returns: Vec of indices of expired sessions.
+#[pyfunction]
+pub fn check_session_expiry_batch_rs(
+    modes: Vec<String>,
+    idle_minutes: Vec<f64>,
+    at_hours: Vec<u32>,
+    updated_ats: Vec<f64>,
+    now: f64,
+) -> Vec<usize> {
+    let len = modes.len().min(idle_minutes.len()).min(at_hours.len()).min(updated_ats.len());
+    let mut expired = Vec::new();
+
+    for i in 0..len {
+        let reason = evaluate_reset_policy_rs(
+            &modes[i],
+            idle_minutes[i],
+            at_hours[i],
+            updated_ats[i],
+            now,
+        );
+        if reason.is_some() {
+            expired.push(i);
+        }
+    }
+
+    expired
+}
+
+/// Compute next retry delays for multiple sessions in batch.
+///
+/// Takes parallel arrays and returns the delay for each.
+/// More efficient than calling backoff_delay_rs in a Python loop.
+#[pyfunction]
+pub fn backoff_delay_batch_rs(
+    attempts: Vec<u32>,
+    base_seconds: Vec<f64>,
+    max_seconds: Vec<f64>,
+) -> Vec<f64> {
+    let len = attempts.len().min(base_seconds.len()).min(max_seconds.len());
+    let mut delays = Vec::with_capacity(len);
+
+    for i in 0..len {
+        delays.push(backoff_delay_rs(attempts[i], base_seconds[i], max_seconds[i]));
+    }
+
+    delays
+}
+
 // ── Rust unit tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -293,5 +356,37 @@ mod tests {
         assert!(key.contains(":member:mem_1"));
         assert!(key.contains(":team:team_1"));
         assert!(key.contains(":project:proj_1"));
+    }
+
+    #[test]
+    fn test_batch_expiry_empty() {
+        let expired = check_session_expiry_batch_rs(vec![], vec![], vec![], vec![], 1000.0);
+        assert!(expired.is_empty());
+    }
+
+    #[test]
+    fn test_batch_expiry_mixed() {
+        let modes = vec!["idle".to_string(), "none".to_string(), "idle".to_string()];
+        let idle_minutes = vec![5.0, 5.0, 5.0];
+        let at_hours = vec![0, 0, 0];
+        let updated_ats = vec![0.0, 0.0, 900.0]; // first and third expired (idle 5min = 300s)
+        let now = 600.0;
+
+        let expired = check_session_expiry_batch_rs(modes, idle_minutes, at_hours, updated_ats, now);
+        assert_eq!(expired, vec![0, 2]);
+    }
+
+    #[test]
+    fn test_batch_backoff() {
+        let attempts = vec![0, 1, 2];
+        let base = vec![1.0, 1.0, 1.0];
+        let max = vec![60.0, 60.0, 60.0];
+
+        let delays = backoff_delay_batch_rs(attempts, base, max);
+        assert_eq!(delays.len(), 3);
+        // First delay should be ~1s (base * 2^0 = 1, with jitter)
+        assert!(delays[0] > 0.5 && delays[0] < 1.5);
+        // Second delay should be ~2s
+        assert!(delays[1] > 1.0 && delays[1] < 3.0);
     }
 }
