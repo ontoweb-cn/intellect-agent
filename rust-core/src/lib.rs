@@ -68,6 +68,7 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gateway::check_session_expiry_batch_rs, m)?)?;
     m.add_function(wrap_pyfunction!(gateway::backoff_delay_batch_rs, m)?)?;
     m.add_class::<gateway::TokenBucket>()?;
+    m.add_class::<gateway::PlatformRetryScheduler>()?;
 
     Ok(())
 }

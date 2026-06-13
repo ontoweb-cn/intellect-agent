@@ -80,6 +80,13 @@ try:
 except (ImportError, AttributeError):
     _HAS_RUST_BATCH_EXPIRY = False
 
+# ── Stage 4f: Rust platform retry scheduler ────────────────────────────────
+try:
+    from intellect_community_core import PlatformRetryScheduler as _RustPlatformRetryScheduler  # type: ignore[import-not-found]
+    _HAS_RUST_RETRY_SCHEDULER = True
+except (ImportError, AttributeError):
+    _HAS_RUST_RETRY_SCHEDULER = False
+
 
 @dataclass
 class SessionSource:
