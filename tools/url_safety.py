@@ -35,6 +35,13 @@ from utils import is_truthy_value
 
 logger = logging.getLogger(__name__)
 
+# ── Rust-accelerated IP safety ───────────────────────────────────────────────
+try:
+    from intellect_community_core import is_ip_blocked_rs as _rust_is_ip_blocked
+    _HAS_RUST_IP = True
+except ImportError:
+    _HAS_RUST_IP = False
+
 # Hostnames that should always be blocked regardless of IP resolution
 # or any config toggle.  These are cloud metadata endpoints that an
 # attacker could use to steal instance credentials.
@@ -175,6 +182,13 @@ def is_safe_peer_ip(ip_str: str) -> bool:
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Return True if the IP should be blocked for SSRF protection."""
+    if _HAS_RUST_IP:
+        return _rust_is_ip_blocked(str(ip)) is not None
+    return _is_blocked_ip_py(ip)
+
+
+def _is_blocked_ip_py(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Pure Python fallback for IP blocking check."""
     # IPv4-mapped IPv6 addresses (``::ffff:x.x.x.x``) should be checked
     # by their embedded IPv4 address, not as IPv6
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:

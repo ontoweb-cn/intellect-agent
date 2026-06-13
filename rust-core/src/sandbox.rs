@@ -278,6 +278,134 @@ fn is_forbidden_path_impl(path: &str) -> Option<String> {
     None
 }
 
+// ── IP safety (SSRF protection) ─────────────────────────────────────────────
+
+/// Check if an IP address is blocked for outbound requests.
+///
+/// Returns ``Some(reason)`` if the IP is blocked, ``None`` if it looks safe.
+/// This is the core SSRF check — Python calls it after DNS resolution.
+///
+/// Blocked categories:
+/// - Cloud metadata endpoints (169.254.169.254, etc.)
+/// - Link-local range (169.254.0.0/16)
+/// - Loopback (127.0.0.0/8, ::1)
+/// - Private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+/// - CGNAT (100.64.0.0/10)
+/// - Unspecified (::, 0.0.0.0)
+/// - Multicast
+#[pyfunction]
+pub fn is_ip_blocked_rs(ip_str: &str) -> Option<String> {
+    is_ip_blocked_impl(ip_str)
+}
+
+fn is_ip_blocked_impl(ip_str: &str) -> Option<String> {
+    // Strip IPv6 zone id (e.g. fe80::1%en0)
+    let cleaned = ip_str.split('%').next().unwrap_or(ip_str).trim();
+
+    // Parse the IP address
+    let ip: std::net::IpAddr = match cleaned.parse() {
+        Ok(ip) => ip,
+        Err(_) => return Some("invalid IP address".to_string()),
+    };
+
+    match ip {
+        std::net::IpAddr::V4(v4) => check_ipv4(v4),
+        std::net::IpAddr::V6(v6) => check_ipv6(v6),
+    }
+}
+
+fn check_ipv4(ip: std::net::Ipv4Addr) -> Option<String> {
+    // Always-blocked cloud metadata IPs
+    let always_blocked: &[std::net::Ipv4Addr] = &[
+        std::net::Ipv4Addr::new(169, 254, 169, 254),  // AWS/GCP/Azure/DO metadata
+        std::net::Ipv4Addr::new(169, 254, 170, 2),    // AWS ECS task metadata
+        std::net::Ipv4Addr::new(169, 254, 169, 253),  // Azure IMDS
+        std::net::Ipv4Addr::new(100, 100, 100, 200),  // Alibaba Cloud metadata
+    ];
+
+    if always_blocked.contains(&ip) {
+        return Some("cloud metadata endpoint".to_string());
+    }
+
+    // Link-local (169.254.0.0/16) — always blocked
+    if ip.is_link_local() {
+        return Some("link-local address".to_string());
+    }
+
+    // Loopback (127.0.0.0/8)
+    if ip.is_loopback() {
+        return Some("loopback address".to_string());
+    }
+
+    // Unspecified (0.0.0.0)
+    if ip.is_unspecified() {
+        return Some("unspecified address".to_string());
+    }
+
+    // Multicast
+    if ip.is_multicast() {
+        return Some("multicast address".to_string());
+    }
+
+    // Private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+    if ip.is_private() {
+        return Some("private/internal address".to_string());
+    }
+
+    // CGNAT (100.64.0.0/10) — not covered by is_private
+    let octets = ip.octets();
+    if octets[0] == 100 && (octets[1] >= 64 && octets[1] <= 127) {
+        return Some("CGNAT address (100.64.0.0/10)".to_string());
+    }
+
+    // Benchmark range (198.18.0.0/15) — used by some VPNs/proxies
+    if octets[0] == 198 && (octets[1] == 18 || octets[1] == 19) {
+        return Some("benchmark range address (198.18.0.0/15)".to_string());
+    }
+
+    None
+}
+
+fn check_ipv6(ip: std::net::Ipv6Addr) -> Option<String> {
+    // Loopback (::1)
+    if ip.is_loopback() {
+        return Some("loopback address".to_string());
+    }
+
+    // Unspecified (::)
+    if ip.is_unspecified() {
+        return Some("unspecified address".to_string());
+    }
+
+    // Multicast
+    if ip.is_multicast() {
+        return Some("multicast address".to_string());
+    }
+
+    // IPv4-mapped IPv6 (::ffff:x.x.x.x) — check the embedded IPv4
+    if let Some(v4) = ip.to_ipv4_mapped() {
+        return check_ipv4(v4);
+    }
+
+    // Link-local (fe80::/10)
+    if (ip.segments()[0] & 0xffc0) == 0xfe80 {
+        return Some("link-local address".to_string());
+    }
+
+    // Unique local (fc00::/7) — IPv6 equivalent of private
+    if (ip.segments()[0] & 0xfe00) == 0xfc00 {
+        return Some("unique local address (IPv6 private)".to_string());
+    }
+
+    // AWS metadata IPv6 (fd00:ec2::254)
+    let segs = ip.segments();
+    if segs[0] == 0xfd00 && segs[1] == 0xec2 && segs[7] == 0x254 {
+        return Some("cloud metadata endpoint (IPv6)".to_string());
+    }
+
+    None
+}
+
 // ── Rust tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -430,6 +558,55 @@ mod tests {
         // Documentation files with key-like names are not blocked
         assert!(is_forbidden_path_impl("/home/user/docs/id_rsa_guide.md").is_none());
         assert!(is_forbidden_path_impl("/home/user/project/test_id_rsa_data.json").is_none());
+    }
+
+    #[test]
+    fn test_ip_blocked_cloud_metadata() {
+        assert!(is_ip_blocked_impl("169.254.169.254").is_some());
+        assert!(is_ip_blocked_impl("169.254.170.2").is_some());
+        assert!(is_ip_blocked_impl("169.254.169.253").is_some());
+        assert!(is_ip_blocked_impl("100.100.100.200").is_some());
+    }
+
+    #[test]
+    fn test_ip_blocked_link_local() {
+        assert!(is_ip_blocked_impl("169.254.1.1").is_some());
+        assert!(is_ip_blocked_impl("169.254.0.1").is_some());
+    }
+
+    #[test]
+    fn test_ip_blocked_loopback() {
+        assert!(is_ip_blocked_impl("127.0.0.1").is_some());
+        assert!(is_ip_blocked_impl("127.0.0.2").is_some());
+        assert!(is_ip_blocked_impl("::1").is_some());
+    }
+
+    #[test]
+    fn test_ip_blocked_private() {
+        assert!(is_ip_blocked_impl("10.0.0.1").is_some());
+        assert!(is_ip_blocked_impl("172.16.0.1").is_some());
+        assert!(is_ip_blocked_impl("192.168.1.1").is_some());
+    }
+
+    #[test]
+    fn test_ip_blocked_cgnat() {
+        assert!(is_ip_blocked_impl("100.64.0.1").is_some());
+        assert!(is_ip_blocked_impl("100.127.255.255").is_some());
+    }
+
+    #[test]
+    fn test_ip_allowed_public() {
+        assert!(is_ip_blocked_impl("8.8.8.8").is_none());
+        assert!(is_ip_blocked_impl("1.1.1.1").is_none());
+        assert!(is_ip_blocked_impl("2001:4860:4860::8888").is_none());
+    }
+
+    #[test]
+    fn test_ip_blocked_ipv6_mapped() {
+        // IPv4-mapped IPv6 should be checked as the embedded IPv4
+        assert!(is_ip_blocked_impl("::ffff:169.254.169.254").is_some());
+        assert!(is_ip_blocked_impl("::ffff:10.0.0.1").is_some());
+        assert!(is_ip_blocked_impl("::ffff:8.8.8.8").is_none());
     }
 
     #[test]
