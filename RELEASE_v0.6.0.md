@@ -2,7 +2,7 @@
 
 ## Overview
 
-Intellect Agent v0.6.0 引入 Rust (PyO3) 原生扩展 `intellect_core`，将存储、安全、
+Intellect Agent v0.6.0 引入 Rust (PyO3) 原生扩展 `intellect_community_core`，将存储、安全、
 Agent 核心、加密和 Gateway 工具五个关键域的计算密集型代码从 Python 迁移到 Rust。
 所有路径均保留纯 Python 回退（`_HAS_RUST` 模式），Rust 扩展为可选运行时加速。
 
@@ -54,6 +54,25 @@ cd rust-core
 maturin develop         # dev install
 maturin build --release # release wheel
 ```
+
+## CLI 重构
+
+v0.6.0 同时包含 cli.py 的大规模重构：
+
+| 改动 | 说明 |
+|------|------|
+| Mixin lazy import | 修复 `cli_slash_handlers.py` 中 24 个方法的 `NameError`（`_cprint` 等符号） |
+| 命令包迁移 | `commands.py` → `commands/registry.py`（包结构） |
+| `_process_loop` 提取 | 149 行从 `run()` 提取为独立方法 |
+| `_handle_enter` 提取 | 190 行从 `run()` 提取为独立方法 |
+| `_COMMAND_DISPATCH` | 44 entries 的命令快速分发表 |
+| 辅助函数模块化 | `_panel_box_width` 等 4 个函数去重为模块级 |
+| `_display_chat_response` | 35 行从 `chat()` 提取 |
+| `_maybe_auto_title` | 27 行从 `chat()` 提取 |
+| 缺失方法恢复 | 12 个被删除的方法恢复 + 240 行死代码清除 |
+| 测试覆盖 | 新增 `test_mixin_lazy_imports.py`（19 个 bytecode 验证测试） |
+
+**效果**: cli.py 从 15,527 行降至 15,133 行（-394），run() 从 2,341 降至 2,022 行，chat() 从 627 降至 573 行。
 
 ## Breaking Changes
 

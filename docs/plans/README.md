@@ -1,16 +1,18 @@
 # Plans Index & Status
 
-> Updated 2026-06-10 | 49 documents (28 archived to `archive/`)
+> Updated 2026-06-12 | 53 documents (31 archived to `archive/`)
 
 See also: [WebUI Documentation](../webui/) — user guide and architecture overview.
 
 ## Status Key
-- ✅ Complete (archived) | 📋 Planned | 📦 Archive
+- ✅ Complete (archived) | 🔄 In Progress | 📋 Planned | 📦 Archive
 
-## Active Plans (📋)
+## Active Plans
 
 | Status | Date | Document | Topic |
 |--------|------|----------|-------|
+| 🔄 | 2026-06-12 | `2026-06-12-cli-refactoring-plan.md` | cli.py 重构（-394 行，进行中） |
+| ✅ | 2026-06-10 | `2026-06-10-perf-security-optimization-plan.md` | 性能/安全/架构优化（36/36 完成） |
 | 📋 | 2026-06-10 | `rag-memory-collaboration-architecture.md` | RAG+Memory 协同架构 |
 | 📋 | 2026-06-02 | `2026-06-02-model-registry-agent-implementation.md` | Agent-side registry design |
 | 📋 | 2026-06-02 | `2026-06-02-provider-registry-db-unification-design.md` | Provider registry design |
@@ -26,9 +28,10 @@ See also: [WebUI Documentation](../webui/) — user guide and architecture overv
 
 ## Archived (📦)
 
-28 completed plans moved to `archive/`. See individual files for implementation history.
+28 completed plans moved to `archive/`, plus 3 additional plans archived on 2026-06-12 (openai-api-server, streaming-support, gemini-oauth-provider — code already implemented). See individual files for implementation history.
 
 | Year | Count | Topics |
 |------|-------|--------|
+| 2026-06 | 3 | Archived outdated plans (API server, streaming, Gemini OAuth) |
 | 2026-05 | 10 | OAuth design, multi-entity spec, Telegram topics |
 | 2026-04 | 18 | Architecture, RBAC, storage, teams, webui |
