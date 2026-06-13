@@ -11788,6 +11788,67 @@ class IntellectCLI:
             except Exception:
                 pass
 
+    def _maybe_auto_title(self, message: str, response: str) -> None:
+        """Auto-generate session title after first exchange (non-blocking)."""
+        try:
+            from agent.title_generator import maybe_auto_title
+            _title_failure_cb = getattr(
+                self.agent, "_emit_auxiliary_failure", None
+            ) if self.agent else None
+            maybe_auto_title(
+                self._session_db,
+                self.session_id,
+                message,
+                response,
+                self.conversation_history,
+                failure_callback=_title_failure_cb,
+                main_runtime={
+                    "model": self.model,
+                    "provider": self.provider,
+                    "base_url": self.base_url,
+                    "api_key": self.api_key,
+                    "api_mode": self.api_mode,
+                },
+            )
+        except Exception:
+            pass
+
+    def _display_chat_response(
+        self, response: str, result: dict | None,
+        *, use_streaming_tts: bool = False, streaming_box_opened: bool = False,
+    ) -> None:
+        """Display the agent's response in a Rich Panel or close the streaming box."""
+        try:
+            from intellect_cli.skin_engine import get_active_skin
+            _skin = get_active_skin()
+            label = _skin.get_branding("response_label", "⚕ Intellect")
+            _resp_color = _maybe_remap_for_light_mode(_skin.get_color("response_border", "#CD7F32"))
+            _resp_text = _maybe_remap_for_light_mode(_skin.get_color("banner_text", "#FFF8DC"))
+        except Exception:
+            label = "⚕ Intellect"
+            _resp_color = _maybe_remap_for_light_mode("#CD7F32")
+            _resp_text = _maybe_remap_for_light_mode("#FFF8DC")
+
+        is_error_response = result and (result.get("failed") or result.get("partial"))
+        already_streamed = self._stream_started and self._stream_box_opened and not is_error_response
+        if use_streaming_tts and streaming_box_opened and not is_error_response:
+            w = self._scrollback_box_width()
+            _cprint(f"\n{_ACCENT}╰{'─' * (w - 2)}╯{_RST}")
+        elif already_streamed:
+            pass
+        else:
+            _chat_console = ChatConsole()
+            _chat_console.print(Panel(
+                _render_final_assistant_content(response, mode=self.final_response_markdown),
+                title=f"[{_resp_color} bold]{label}[/]",
+                title_align="left",
+                border_style=_resp_color,
+                style=_resp_text,
+                box=rich_box.HORIZONTALS,
+                padding=(1, 4),
+                width=self._scrollback_box_width(),
+            ))
+
     def chat(self, message, images: list = None) -> Optional[str]:
         """
         Send a message to the agent and get a response.
@@ -12228,32 +12289,7 @@ class IntellectCLI:
 
             # Auto-generate session title after first exchange (non-blocking)
             if response and result and not result.get("failed") and not result.get("partial"):
-                try:
-                    from agent.title_generator import maybe_auto_title
-                    # Route title-generation failures through the agent's
-                    # user-visible warning channel so a depleted auxiliary
-                    # provider doesn't silently leave sessions untitled
-                    # (issue #15775).
-                    _title_failure_cb = getattr(
-                        self.agent, "_emit_auxiliary_failure", None
-                    ) if self.agent else None
-                    maybe_auto_title(
-                        self._session_db,
-                        self.session_id,
-                        message,
-                        response,
-                        self.conversation_history,
-                        failure_callback=_title_failure_cb,
-                        main_runtime={
-                            "model": self.model,
-                            "provider": self.provider,
-                            "base_url": self.base_url,
-                            "api_key": self.api_key,
-                            "api_mode": self.api_mode,
-                        },
-                    )
-                except Exception:
-                    pass
+                self._maybe_auto_title(message, response)
 
             # Handle failed or partial results (e.g., non-retryable errors, rate limits,
             # truncated output, invalid tool calls). Both "failed" and "partial" with
@@ -12306,40 +12342,11 @@ class IntellectCLI:
                     _cprint(f"\n{r_top}\n{_DIM}{display_reasoning}{_RST}\n{r_bot}")
 
             if response and not response_previewed:
-                # Use skin engine for label/color with fallback
-                try:
-                    from intellect_cli.skin_engine import get_active_skin
-                    _skin = get_active_skin()
-                    label = _skin.get_branding("response_label", "⚕ Intellect")
-                    _resp_color = _maybe_remap_for_light_mode(_skin.get_color("response_border", "#CD7F32"))
-                    _resp_text = _maybe_remap_for_light_mode(_skin.get_color("banner_text", "#FFF8DC"))
-                except Exception:
-                    label = "⚕ Intellect"
-                    _resp_color = _maybe_remap_for_light_mode("#CD7F32")
-                    _resp_text = _maybe_remap_for_light_mode("#FFF8DC")
-
-                is_error_response = result and (result.get("failed") or result.get("partial"))
-                already_streamed = self._stream_started and self._stream_box_opened and not is_error_response
-                if use_streaming_tts and _streaming_box_opened and not is_error_response:
-                    # Text was already printed sentence-by-sentence; just close the box
-                    w = self._scrollback_box_width()
-                    _cprint(f"\n{_ACCENT}╰{'─' * (w - 2)}╯{_RST}")
-                elif already_streamed:
-                    # Response was already streamed token-by-token with box framing;
-                    # _flush_stream() already closed the box. Skip Rich Panel.
-                    pass
-                else:
-                    _chat_console = ChatConsole()
-                    _chat_console.print(Panel(
-                        _render_final_assistant_content(response, mode=self.final_response_markdown),
-                        title=f"[{_resp_color} bold]{label}[/]",
-                        title_align="left",
-                        border_style=_resp_color,
-                        style=_resp_text,
-                        box=rich_box.HORIZONTALS,
-                        padding=(1, 4),
-                        width=self._scrollback_box_width(),
-                    ))
+                self._display_chat_response(
+                    response, result,
+                    use_streaming_tts=use_streaming_tts,
+                    streaming_box_opened=_streaming_box_opened,
+                )
 
 
             # Play terminal bell when agent finishes (if enabled).
