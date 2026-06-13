@@ -9,6 +9,29 @@ Instructions for AI coding assistants and developers working on the intellect-ag
 source .venv/bin/activate   # or: source venv/bin/activate
 ```
 
+### Network / PyPI mirror
+
+PyPI direct connection (`pypi.org`) is unreachable from mainland China dev environments.
+Use a mirror. If your shell has no `UV_INDEX_URL` set:
+
+```bash
+export UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+uv sync --frozen
+```
+
+For ad-hoc installs: `UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ uv pip install <pkg>`.
+The same mirror is already configured for `pip` via `~/.pip/pip.conf` on most dev boxes.
+
+## Known Issues / TODO
+
+Deferred follow-ups from current development live in **`TODO.md`** at the repo root.
+Notable items as of v0.6.2:
+
+- **31 orphaned Python tests** reference modules removed in the v0.6.2 refactor (Rust-only requirement).
+  Run pytest with `--ignore` flags or delete the files; full list in `TODO.md` (TODO-001).
+- **`tests/acp/`** conflicts with the PyPI `acp` package — exclude or namespace (TODO-002).
+- **Python test suite runs slowly** — investigate the post-collection hang (TODO-003).
+
 `scripts/run_tests.sh` probes `.venv` first, then `venv`, then
 `$HOME/.intellect/intellect-agent/venv` (for worktrees that share a venv with the
 main checkout).

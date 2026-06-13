@@ -5,7 +5,9 @@ dist/
 build/
 .venv/
 rust-core/target/
+intellect_community_core/*.so
 venv/
+.pytest-cache/
 *.egg
 .idea/
 .vscode/

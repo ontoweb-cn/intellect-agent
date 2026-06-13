@@ -70,7 +70,20 @@ fn dangerous_patterns() -> &'static PatternList {
             (r"\bkillall\s+(-[^\s]*\s+)*-r\b".into(), "kill processes by regex (killall -r)"),
             (r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:".into(), "fork bomb"),
             (r"\b(bash|sh|zsh|ksh)\s+-[^\s]*c(\s+|$)".into(), "shell command via -c/-lc flag"),
-            (r"\b(python[23]?|perl|ruby|node)\s+-[ec]\s+".into(), "script execution via -e/-c flag"),
+            // Require a dangerous function/token in the payload so that benign
+            // invocations like `python -c 'print(1)'` are allowed while
+            // `python -c 'import os; os.system("rm -rf /")'` is still blocked.
+            // Require a dangerous function/token in the payload so that benign
+            // invocations like `python -c 'print(1)'` are allowed while
+            // `python -c 'import os; os.system("rm -rf /")'` is still blocked.
+            //
+            // Dangerous categories: code execution (exec/eval/__import__), subprocess
+            // spawning (os.system/popen, subprocess), file destruction (os.remove/unlink/
+            // rmdir, shutil.rmtree, .rmdir(), .unlink()), destructive file writes
+            // (open with 'w'/'a' mode, .write_bytes, .write_text), native library
+            // loading (ctypes), deserialization attacks (pickle), network exfil
+            // (urllib, requests, socket).
+            (r"\b(python[23]?|perl|ruby|node)\s+-[ec][^\n]*?(os\.system|os\.popen|os\.remove|os\.unlink|os\.rmdir|os\.exec|subprocess|shutil\.rmtree|__import__|\bexec\b|\beval\b|urllib|requests\.|socket\.|ctypes\.|pickle\.|\.rmdir\s*\(|\.unlink\s*\(|\.write_bytes\s*\(|\.write_text\s*\(|open\s*\(\s*[\x22\x27][^\x22\x27]*[\x22\x27]\s*,\s*[\x22\x27][wa][\x22\x27])".into(), "script execution via -e/-c flag with dangerous call"),
             (r"\b(curl|wget)\b.*\|\s*(?:[/\w]*/)?(?:ba)?sh(?:\s|$|-c)".into(), "pipe remote content to shell"),
             (r"\b(bash|sh|zsh|ksh)\s+<\s*<?\s*\(\s*(curl|wget)\b".into(), "execute remote script via process substitution"),
             (format!("\\btee\\b.*[\\\"']?({})", sys_cfg), "overwrite system file via tee"),
@@ -480,6 +493,40 @@ mod tests {
         assert!(detect_dangerous_impl("echo hello").is_none());
         assert!(detect_dangerous_impl("git status").is_none());
         assert!(detect_dangerous_impl("python -c 'print(1)'").is_none());
+    }
+
+    #[test]
+    fn test_dangerous_python_c_payload() {
+        // Benign python -c payloads must pass.
+        assert!(detect_dangerous_impl("python3 -c 'import json; print(json.dumps({\"a\": 1}))'").is_none());
+        // Dangerous payloads (os.system, subprocess, eval, exec, __import__) must still be flagged.
+        assert!(detect_dangerous_impl("python -c 'import os; os.system(\"rm -rf /\")'").is_some());
+        assert!(detect_dangerous_impl("python -c 'import subprocess; subprocess.call([\"sh\", \"-c\", \"id\"])'").is_some());
+        assert!(detect_dangerous_impl("python -c 'eval(\"__import__(\\\"os\\\").system(\\\"id\\\")\")'").is_some());
+        assert!(detect_dangerous_impl("python -c '__import__(\"os\").system(\"id\")'").is_some());
+    }
+
+    #[test]
+    fn test_dangerous_python_c_edge_cases() {
+        // Edge case: ctypes native library loading
+        assert!(detect_dangerous_impl("python -c 'import ctypes; ctypes.CDLL(\"libc.so.6\")'").is_some());
+        // Edge case: pickle deserialization
+        assert!(detect_dangerous_impl("python -c 'import pickle; pickle.loads(b\"...\")'").is_some());
+        assert!(detect_dangerous_impl("python -c 'import pickle; pickle.load(open(\"bad.pkl\",\"rb\"))'").is_some());
+        // Edge case: exec with base64-obfuscated payload
+        assert!(detect_dangerous_impl("python -c 'import base64, sys; exec(base64.b64decode(\"...\"))'").is_some());
+        // Edge case: pathlib destructive operations
+        assert!(detect_dangerous_impl("python -c 'from pathlib import Path; Path(\"/etc\").rmdir()'").is_some());
+        // Edge case: open file in write mode (destructive write)
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/passwd\",\"w\").write(\"...\")'").is_some());
+        assert!(detect_dangerous_impl("python -c \"open('/root/.ssh/authorized_keys','a').write('...')\"").is_some());
+        // Edge case: Path.write_bytes / Path.write_text destructive writes
+        assert!(detect_dangerous_impl("python -c 'from pathlib import Path; Path(\"/etc/cron.d/job\").write_text(\"...\")'").is_some());
+        // Benign: open in read mode (no mode = read, or explicit 'r') should pass
+        assert!(detect_dangerous_impl("python -c 'import json; print(json.load(open(\"config.json\")))'").is_none());
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/hosts\",\"r\").read()'").is_none());
+        // Benign: no dangerous call, just regular computation
+        assert!(detect_dangerous_impl("python -c 'import json; print(json.dumps({\"a\": 1}))'").is_none());
     }
 
     #[test]

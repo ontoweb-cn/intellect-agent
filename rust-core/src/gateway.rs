@@ -464,7 +464,7 @@ mod tests {
         let idle_minutes = vec![5.0, 5.0, 5.0];
         let at_hours = vec![0, 0, 0];
         let updated_ats = vec![0.0, 0.0, 900.0]; // first and third expired (idle 5min = 300s)
-        let now = 600.0;
+        let now = 1500.0; // 1500 - 0 = 1500 > 300 (idx 0); 1500 - 900 = 600 > 300 (idx 2)
 
         let expired = check_session_expiry_batch_rs(modes, idle_minutes, at_hours, updated_ats, now);
         assert_eq!(expired, vec![0, 2]);
