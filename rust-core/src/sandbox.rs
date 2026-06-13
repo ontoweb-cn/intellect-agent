@@ -76,6 +76,7 @@ static SCRIPT_EXEC_TOKEN_ENTRIES: &[(&str, &str)] = &[
     (r"socket\.",              "socket"),
     // -- dynamic attribute access obfuscation --
     (r"getattr\s*\(",          "getattr()"),
+    (r"__dict__\s*\[",        "__dict__[]"),
 ];
 
 fn dangerous_patterns() -> &'static PatternList {
