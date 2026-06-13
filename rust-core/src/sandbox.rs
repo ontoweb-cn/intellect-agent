@@ -73,17 +73,15 @@ fn dangerous_patterns() -> &'static PatternList {
             // Require a dangerous function/token in the payload so that benign
             // invocations like `python -c 'print(1)'` are allowed while
             // `python -c 'import os; os.system("rm -rf /")'` is still blocked.
-            // Require a dangerous function/token in the payload so that benign
-            // invocations like `python -c 'print(1)'` are allowed while
-            // `python -c 'import os; os.system("rm -rf /")'` is still blocked.
             //
             // Dangerous categories: code execution (exec/eval/__import__), subprocess
-            // spawning (os.system/popen, subprocess), file destruction (os.remove/unlink/
-            // rmdir, shutil.rmtree, .rmdir(), .unlink()), destructive file writes
-            // (open with 'w'/'a' mode, .write_bytes, .write_text), native library
-            // loading (ctypes), deserialization attacks (pickle), network exfil
-            // (urllib, requests, socket).
-            (r"\b(python[23]?|perl|ruby|node)\s+-[ec][^\n]*?(os\.system|os\.popen|os\.remove|os\.unlink|os\.rmdir|os\.exec|subprocess|shutil\.rmtree|__import__|\bexec\b|\beval\b|urllib|requests\.|socket\.|ctypes\.|pickle\.|\.rmdir\s*\(|\.unlink\s*\(|\.write_bytes\s*\(|\.write_text\s*\(|open\s*\(\s*[\x22\x27][^\x22\x27]*[\x22\x27]\s*,\s*[\x22\x27][wa][\x22\x27])".into(), "script execution via -e/-c flag with dangerous call"),
+            // spawning (os.system/popen/spawn*, subprocess), file destruction
+            // (os.remove/unlink/rmdir, shutil.rmtree, .rmdir(), .unlink()),
+            // destructive file writes (open with 'w'/'a'/'wb'/'w+' mode,
+            // .write_bytes, .write_text), native library loading (ctypes),
+            // deserialization attacks (pickle), network exfil
+            // (urllib, requests, socket), dynamic attribute access (getattr).
+            (r"\b(python[23]?|perl|ruby|node)\s+-[ec][^\n]*?(os\.system|os\.popen|os\.remove|os\.unlink|os\.rmdir|os\.exec|os\.spawn|subprocess|shutil\.rmtree|__import__|\bexec\b|\beval\b|urllib|requests\.|socket\.|ctypes\.|pickle\.|getattr\s*\(|\.rmdir\s*\(|\.unlink\s*\(|\.write_bytes\s*\(|\.write_text\s*\(|open\s*\(\s*[\x22\x27][^\x22\x27]*[\x22\x27]\s*,\s*[\x22\x27][wa][b+]*[\x22\x27])".into(), "script execution via -e/-c flag with dangerous call"),
             (r"\b(curl|wget)\b.*\|\s*(?:[/\w]*/)?(?:ba)?sh(?:\s|$|-c)".into(), "pipe remote content to shell"),
             (r"\b(bash|sh|zsh|ksh)\s+<\s*<?\s*\(\s*(curl|wget)\b".into(), "execute remote script via process substitution"),
             (format!("\\btee\\b.*[\\\"']?({})", sys_cfg), "overwrite system file via tee"),
@@ -527,6 +525,37 @@ mod tests {
         assert!(detect_dangerous_impl("python -c 'open(\"/etc/hosts\",\"r\").read()'").is_none());
         // Benign: no dangerous call, just regular computation
         assert!(detect_dangerous_impl("python -c 'import json; print(json.dumps({\"a\": 1}))'").is_none());
+    }
+
+    #[test]
+    fn test_dangerous_python_c_multi_char_modes() {
+        // Multi-character write modes (wb, ab, w+, a+, w+b) must be blocked.
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/passwd\",\"wb\").write(b\"...\")'").is_some());
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/passwd\",\"ab\").write(b\"...\")'").is_some());
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/passwd\",\"w+\").write(\"...\")'").is_some());
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/passwd\",\"a+\").write(\"...\")'").is_some());
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/passwd\",\"w+b\").write(b\"...\")'").is_some());
+        // Single-char w/a still blocked.
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/passwd\",\"w\").write(\"...\")'").is_some());
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/passwd\",\"a\").write(\"...\")'").is_some());
+        // Read modes must still pass.
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/hosts\",\"r\").read()'").is_none());
+        assert!(detect_dangerous_impl("python -c 'open(\"/etc/hosts\",\"rb\").read()'").is_none());
+    }
+
+    #[test]
+    fn test_dangerous_python_c_os_spawn() {
+        // os.spawn* family must be blocked.
+        assert!(detect_dangerous_impl("python -c 'import os; os.spawnl(os.P_WAIT, \"/bin/sh\", \"sh\", \"-c\", \"id\")'").is_some());
+        assert!(detect_dangerous_impl("python -c 'import os; os.spawnv(os.P_WAIT, \"/bin/sh\", [\"sh\", \"-c\", \"id\"])'").is_some());
+        assert!(detect_dangerous_impl("python -c 'import os; os.spawnve(os.P_WAIT, \"/bin/sh\", [], {})'").is_some());
+    }
+
+    #[test]
+    fn test_dangerous_python_c_getattr_obfuscation() {
+        // getattr-based obfuscation (skipping the dynamic exec/eval detection) must be flagged.
+        assert!(detect_dangerous_impl("python -c 'import builtins; getattr(builtins, \"exec\")(\"id()\")'").is_some());
+        assert!(detect_dangerous_impl("python -c 'getattr(__import__(\"os\"), \"system\")(\"id\")'").is_some());
     }
 
     #[test]

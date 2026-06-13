@@ -351,7 +351,10 @@ DANGEROUS_PATTERNS = [
     (r':\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:', "fork bomb"),
     # Any shell invocation via -c or combined flags like -lc, -ic, etc.
     (r'\b(bash|sh|zsh|ksh)\s+-[^\s]*c(\s+|$)', "shell command via -c/-lc flag"),
-    (r'\b(python[23]?|perl|ruby|node)\s+-[ec]\s+', "script execution via -e/-c flag"),
+    # Rust sandbox requires a dangerous function/token in the payload; benign
+    # `python -c 'print(1)'` is allowed while `python -c 'import os; os.system(...)'`
+    # is blocked. The description must match what Rust sandbox.rs returns.
+    (r'\b(python[23]?|perl|ruby|node)\s+-[ec][^\n]*?(os\.system|os\.popen|os\.remove|os\.unlink|os\.rmdir|os\.exec|subprocess|shutil\.rmtree|__import__|\bexec\b|\beval\b|urllib|requests\.|socket\.|ctypes\.|pickle\.|\.rmdir\s*\(|\.unlink\s*\(|\.write_bytes\s*\(|\.write_text\s*\(|open\s*\(\s*[\x22\x27][^\x22\x27]*[\x22\x27]\s*,\s*[\x22\x27][wa][b+]*[\x22\x27])', "script execution via -e/-c flag with dangerous call"),
     (r'\b(curl|wget)\b.*\|\s*(?:[/\w]*/)?(?:ba)?sh(?:\s|$|-c)', "pipe remote content to shell"),
     (r'\b(bash|sh|zsh|ksh)\s+<\s*<?\s*\(\s*(curl|wget)\b', "execute remote script via process substitution"),
     (rf'\btee\b.*["\']?{_SENSITIVE_WRITE_TARGET}', "overwrite system file via tee"),
@@ -458,6 +461,21 @@ def _approval_key_aliases(pattern_key: str) -> set[str]:
     historical regex-derived key.
     """
     return _PATTERN_KEY_ALIASES.get(pattern_key, {pattern_key})
+
+
+# Backwards compatibility: the Rust sandbox (sandbox.rs) returns a different
+# description string than the historical Python DANGEROUS_PATTERNS list.
+# Old: "script execution via -e/-c flag"
+# New: "script execution via -e/-c flag with dangerous call"
+# Cross-link both directions so legacy approvals survive upgrades.
+_OLD_PYTHON_EC_DESC = "script execution via -e/-c flag"
+_NEW_RUST_EC_DESC = "script execution via -e/-c flag with dangerous call"
+# Seed entries for both descriptions.
+_PATTERN_KEY_ALIASES.setdefault(_NEW_RUST_EC_DESC, {_NEW_RUST_EC_DESC})
+_PATTERN_KEY_ALIASES.setdefault(_OLD_PYTHON_EC_DESC, {_OLD_PYTHON_EC_DESC})
+# Cross-link: old ↔ new.
+_PATTERN_KEY_ALIASES[_NEW_RUST_EC_DESC].add(_OLD_PYTHON_EC_DESC)
+_PATTERN_KEY_ALIASES[_OLD_PYTHON_EC_DESC].add(_NEW_RUST_EC_DESC)
 
 
 # =========================================================================
@@ -895,7 +913,7 @@ def _smart_approve(command: str, description: str) -> str:
 Command: {command}
 Flagged reason: {description}
 
-Assess the ACTUAL risk of this command. Many flagged commands are false positives — for example, `python -c "print('hello')"` is flagged as "script execution via -c flag" but is completely harmless.
+Assess the ACTUAL risk of this command. Many flagged commands are false positives — for example, `rm some_file.txt` is flagged as "recursive delete" but only removes a single file, and `chmod 755 script.sh` is flagged as "permissive chmod" but is standard for executables.
 
 Rules:
 - APPROVE if the command is clearly safe (benign script execution, safe file operations, development tools, package installs, git operations, etc.)
