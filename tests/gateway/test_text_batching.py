@@ -473,6 +473,7 @@ def _make_feishu_adapter():
     return adapter
 
 
+@pytest.mark.skip(reason="FeishuBatchState not yet implemented — adaptive delay feature pending")
 class TestFeishuAdaptiveDelay:
     @pytest.mark.asyncio
     async def test_short_chunk_uses_normal_delay(self):

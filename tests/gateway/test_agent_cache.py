@@ -12,6 +12,8 @@ Verifies that the agent cache correctly:
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 
 def _make_runner():
@@ -968,6 +970,7 @@ class TestAgentCacheActiveSafety:
         )
 
 
+@pytest.mark.integration
 class TestAgentCacheSpilloverLive:
     """Live E2E: fill cache with real AIAgent instances and stress it."""
 
