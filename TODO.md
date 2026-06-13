@@ -100,4 +100,36 @@
 
 ---
 
-最后更新: 2026-06-13 (本次会话)
+---
+
+## 🔵 Phase C — 架构改进（长期）
+
+### [TODO-007] AST 解析方案跟踪
+
+**状态**: 待启动
+**来源**: Code review finding G2 — 正则黑名单无法穷举 Python 危险 API（marshal.load、
+os.posix_spawn、compile()、动态 getattr 混淆等均确认可绕过）
+
+**详情**: 当前 Python `-c` 检测基于正则黑名单，每发现一个 bypass 需要手动追加 token。
+长期应迁移到 AST 级分析（使用 Python `ast` 模块解析 `-c` 载荷并检查危险节点类型）。
+
+**行动**:
+1. 在 issue tracker 中创建正式任务
+2. 设计 AST 方案技术规格（需检查的节点类型：`Call` to dangerous functions,
+   `Import`/`ImportFrom` of dangerous modules, `Exec`/`Eval` builtins）
+3. 与 `check_execute_code_guard`（approval.py:1476）集成
+4. 评估性能影响（每次 `-c` 调用额外 AST 解析开销）
+
+---
+
+## 📝 Phase A/B 完成归档
+
+- ✅ **A1: fancy-regex → regex 迁移**: 消除 ReDoS，87/87 pass
+- ✅ **A2: Python DANGEROUS_PATTERNS 死代码删除**: ~110 行移除
+- ✅ **A3: filelock 依赖修复**: 解决 gateway 测试并行 AST 扫描争抢
+- ✅ **B2: 危险函数注册机制**: `SCRIPT_EXEC_DANGEROUS_TOKENS` 常量切片，新增 token 只需追加一行
+- 📋 **B3: 跨命令误报**: 接受为安全策略（宁可误报不可漏报）
+
+---
+
+最后更新: 2026-06-14 (Phase A/B 完成)
