@@ -6,31 +6,7 @@ import sqlite3
 import threading
 from typing import Optional
 
-# ── Opt-in Rust acceleration ────────────────────────────────────────────────
-try:
-    from intellect_community_core import (  # type: ignore[import-not-found]
-        get_compression_tip_rs as _rust_get_compression_tip,
-    )
-    _HAS_RUST = True
-except ImportError:
-    _HAS_RUST = False
-
-
-_COMPRESSION_TIP_SQL = """\
-WITH RECURSIVE chain AS (
-    SELECT id, parent_session_id, started_at, 0 AS depth
-    FROM sessions WHERE id = ?
-    UNION ALL
-    SELECT s.id, s.parent_session_id, s.started_at, c.depth + 1
-    FROM sessions s
-    JOIN chain c ON s.parent_session_id = c.id
-    WHERE s.started_at >= (
-        SELECT ended_at FROM sessions
-        WHERE id = c.id AND end_reason = 'compression'
-    )
-    AND c.depth < 100
-)
-SELECT id FROM chain ORDER BY depth DESC LIMIT 1"""
+from intellect_rust import rust_get_compression_tip
 
 
 def get_compression_tip(
@@ -42,13 +18,11 @@ def get_compression_tip(
 ) -> Optional[str]:
     """Walk the compression-continuation chain and return the tip.
 
-    Uses a single WITH RECURSIVE CTE instead of iterative lock/acquire
-    per hop — reduces up to 100 sequential queries to 1.
+    Uses the Rust extension for fast traversal via its own read-only
+    connection — no Python-side lock needed.
     """
-    if _HAS_RUST and db_path is not None:
-        # Rust path opens its own read-only connection — no lock needed.
-        return _rust_get_compression_tip(db_path, session_id)
-    with lock:
-        cursor = conn.execute(_COMPRESSION_TIP_SQL, (session_id,))
-        row = cursor.fetchone()
-    return row["id"] if row else session_id
+    if db_path is None:
+        raise ValueError(
+            "db_path is required — the Rust extension opens its own connection"
+        )
+    return rust_get_compression_tip(db_path, session_id)

@@ -66,26 +66,7 @@ from .whatsapp_identity import (
 )
 from utils import atomic_replace
 
-# ── Stage 4a: Rust session key builder ─────────────────────────────────────
-try:
-    from intellect_community_core import build_session_key_rs as _rust_build_key  # type: ignore[import-not-found]
-    _HAS_RUST_GATEWAY = True
-except (ImportError, AttributeError):
-    _HAS_RUST_GATEWAY = False
-
-# ── Stage 4e: Rust batch session expiry check ─────────────────────────────
-try:
-    from intellect_community_core import check_session_expiry_batch_rs as _rust_check_expiry_batch  # type: ignore[import-not-found]
-    _HAS_RUST_BATCH_EXPIRY = True
-except (ImportError, AttributeError):
-    _HAS_RUST_BATCH_EXPIRY = False
-
-# ── Stage 4f: Rust platform retry scheduler ────────────────────────────────
-try:
-    from intellect_community_core import PlatformRetryScheduler as _RustPlatformRetryScheduler  # type: ignore[import-not-found]
-    _HAS_RUST_RETRY_SCHEDULER = True
-except (ImportError, AttributeError):
-    _HAS_RUST_RETRY_SCHEDULER = False
+from intellect_rust import PlatformRetryScheduler as _RustPlatformRetryScheduler, rust_build_session_key as _rust_build_key, rust_check_expiry_batch as _rust_check_expiry_batch
 
 
 @dataclass
@@ -656,82 +637,23 @@ def build_session_key(
       All extensions are additive and backward-compatible — omitting them
       produces the identical key as before.
     """
-    # ── Stage 4a: Rust session key builder ──────────────────────────────
-    if _HAS_RUST_GATEWAY:
-        chat_id = source.chat_id or ""
-        if source.chat_type == "dm" and source.platform == Platform.WHATSAPP:
-            chat_id = canonical_whatsapp_identifier(source.chat_id) or ""
-        participant = ""
-        if source.chat_type != "dm":
-            p = source.user_id_alt or source.user_id or ""
-            if p and source.platform == Platform.WHATSAPP:
-                p = canonical_whatsapp_identifier(str(p)) or p
-            participant = str(p)
-        return _rust_build_key(
-            source.platform.value, source.chat_type, chat_id,
-            source.thread_id or "", source.user_id or "",
-            source.user_id_alt or "" if source.chat_type == "dm" else participant,
-            group_sessions_per_user, thread_sessions_per_user,
-            member_id or "", team_id or "", project_id or "",
-        )
-
-    platform = source.platform.value
-    if source.chat_type == "dm":
-        dm_chat_id = source.chat_id
-        if source.platform == Platform.WHATSAPP:
-            dm_chat_id = canonical_whatsapp_identifier(source.chat_id)
-
-        key_parts = ["agent:main", platform, "dm"]
-        if dm_chat_id:
-            key_parts.append(dm_chat_id)
-        if source.thread_id:
-            key_parts.append(source.thread_id)
-        key = ":".join(key_parts)
-        # Append multi-user / multi-project extensions before returning.
-        if member_id:
-            key = f"{key}:member:{member_id}"
-        if team_id:
-            key = f"{key}:team:{team_id}"
-        if project_id:
-            key = f"{key}:project:{project_id}"
-        return key
-
-    participant_id = source.user_id_alt or source.user_id
-    if participant_id and source.platform == Platform.WHATSAPP:
-        # Same JID/LID-flip bug as the DM case: without canonicalisation, a
-        # single group member gets two isolated per-user sessions when the
-        # bridge reshuffles alias forms.
-        participant_id = canonical_whatsapp_identifier(str(participant_id)) or participant_id
-    key_parts = ["agent:main", platform, source.chat_type]
-
-    if source.chat_id:
-        key_parts.append(source.chat_id)
-    if source.thread_id:
-        key_parts.append(source.thread_id)
-
-    # In threads, default to shared sessions (all participants see the same
-    # conversation).  Per-user isolation only applies when explicitly enabled
-    # via thread_sessions_per_user, or when there is no thread (regular group).
-    isolate_user = group_sessions_per_user
-    if source.thread_id and not thread_sessions_per_user:
-        isolate_user = False
-
-    if isolate_user and participant_id:
-        key_parts.append(str(participant_id))
-
-    key = ":".join(key_parts)
-
-    # Multi-user / multi-project extensions (additive, backward-compatible).
-    # Each extension is appended as a separate colon-separated segment so
-    # that _parse_session_key() can still extract the base components.
-    if member_id:
-        key = f"{key}:member:{member_id}"
-    if team_id:
-        key = f"{key}:team:{team_id}"
-    if project_id:
-        key = f"{key}:project:{project_id}"
-
-    return key
+    # ── Rust session key builder ──────────────────────────────────────
+    chat_id = source.chat_id or ""
+    if source.chat_type == "dm" and source.platform == Platform.WHATSAPP:
+        chat_id = canonical_whatsapp_identifier(source.chat_id) or ""
+    participant = ""
+    if source.chat_type != "dm":
+        p = source.user_id_alt or source.user_id or ""
+        if p and source.platform == Platform.WHATSAPP:
+            p = canonical_whatsapp_identifier(str(p)) or p
+        participant = str(p)
+    return _rust_build_key(
+        source.platform.value, source.chat_type, chat_id,
+        source.thread_id or "", source.user_id or "",
+        source.user_id_alt or "" if source.chat_type == "dm" else participant,
+        group_sessions_per_user, thread_sessions_per_user,
+        member_id or "", team_id or "", project_id or "",
+    )
 
 
 class SessionStore:
@@ -972,11 +894,10 @@ class SessionStore:
         return False
 
     def find_expired_sessions_batch(self, entries: list[tuple[str, "SessionEntry"]]) -> list[str]:
-        """Find expired sessions using Rust batch check when available.
+        """Find expired sessions using Rust batch check.
 
         Takes a list of (session_key, entry) pairs and returns the session_keys
-        of expired sessions. Falls back to per-session Python check when Rust
-        is unavailable.
+        of expired sessions.
         """
         if not entries:
             return []
@@ -993,29 +914,25 @@ class SessionStore:
         if not candidates:
             return []
 
-        if _HAS_RUST_BATCH_EXPIRY:
-            now = _now()
-            now_ts = now.timestamp()
-            modes = []
-            idle_minutes = []
-            at_hours = []
-            updated_ats = []
+        now = _now()
+        now_ts = now.timestamp()
+        modes = []
+        idle_minutes = []
+        at_hours = []
+        updated_ats = []
 
-            for _key, entry in candidates:
-                policy = self.config.get_reset_policy(
-                    platform=entry.platform,
-                    session_type=entry.chat_type,
-                )
-                modes.append(policy.mode)
-                idle_minutes.append(policy.idle_minutes)
-                at_hours.append(policy.at_hour)
-                updated_ats.append(entry.updated_at.timestamp() if hasattr(entry.updated_at, 'timestamp') else 0.0)
+        for _key, entry in candidates:
+            policy = self.config.get_reset_policy(
+                platform=entry.platform,
+                session_type=entry.chat_type,
+            )
+            modes.append(policy.mode)
+            idle_minutes.append(policy.idle_minutes)
+            at_hours.append(policy.at_hour)
+            updated_ats.append(entry.updated_at.timestamp() if hasattr(entry.updated_at, 'timestamp') else 0.0)
 
-            expired_indices = _rust_check_expiry_batch(modes, idle_minutes, at_hours, updated_ats, now_ts)
-            return [candidates[i][0] for i in expired_indices if i < len(candidates)]
-
-        # Python fallback
-        return [key for key, entry in candidates if self._is_session_expired(entry)]
+        expired_indices = _rust_check_expiry_batch(modes, idle_minutes, at_hours, updated_ats, now_ts)
+        return [candidates[i][0] for i in expired_indices if i < len(candidates)]
 
     def _should_reset(self, entry: SessionEntry, source: SessionSource) -> Optional[str]:
         """

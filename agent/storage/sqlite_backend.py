@@ -160,25 +160,14 @@ class SQLiteBackend:
         )
 
 
-# ── Rust backend wrapper (Stage 1c) ──────────────────────────────────────────
+# ── Rust backend wrapper ────────────────────────────────────────────────────
 
-try:
-    from intellect_core import SQLiteBackend as _RustSQLiteBackend  # type: ignore[import-not-found]
-    _HAS_RUST_BACKEND = True
-except ImportError:
-    _RustSQLiteBackend = None
-    _HAS_RUST_BACKEND = False
+from intellect_rust import SQLiteBackend as _RustSQLiteBackend
 
 
 def create_backend(db_path, config=None):
-    """Factory: return the best available SQLite backend.
-
-    Returns RustSQLiteBackend when the native extension is installed,
-    otherwise falls back to the pure-Python SQLiteBackend.
-    """
-    if _HAS_RUST_BACKEND:
-        return RustSQLiteBackend(db_path, config=config)
-    return SQLiteBackend(config=config, db_path=db_path)
+    """Factory: return the Rust SQLite backend."""
+    return RustSQLiteBackend(db_path, config=config)
 
 
 class RustSQLiteBackend:

@@ -21,19 +21,7 @@ import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
-# ── Stage 5: Rust crypto ───────────────────────────────────────────────────
-try:
-    from intellect_community_core import pkce_challenge as _rust_pkce  # type: ignore[import-not-found]
-    _HAS_RUST_CRYPTO_ANTH = True
-except (ImportError, AttributeError):
-    _HAS_RUST_CRYPTO_ANTH = False
-
-# ── Stage 3: Rust model name normalization ────────────────────────────────
-try:
-    from intellect_community_core import normalize_model_name_rs as _rust_normalize_model_name  # type: ignore[import-not-found]
-    _HAS_RUST_MODEL_NORM = True
-except (ImportError, AttributeError):
-    _HAS_RUST_MODEL_NORM = False
+from intellect_rust import rust_normalize_model_name as _rust_normalize_model_name, rust_pkce_challenge as _rust_pkce
 
 from intellect_constants import get_intellect_home
 from typing import Any, Dict, List, Optional, Tuple
@@ -1238,17 +1226,7 @@ _intellect_OAUTH_FILE = get_intellect_home() / ".anthropic_oauth.json"
 
 def _generate_pkce() -> tuple:
     """Generate PKCE code_verifier and code_challenge (S256)."""
-    if _HAS_RUST_CRYPTO_ANTH:
-        return _rust_pkce()
-    import base64
-    import hashlib
-    import secrets
-
-    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
-    challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(verifier.encode()).digest()
-    ).rstrip(b"=").decode()
-    return verifier, challenge
+    return _rust_pkce()
 
 
 def run_intellect_oauth_login_pure() -> Optional[Dict[str, Any]]:
@@ -1481,23 +1459,7 @@ def normalize_model_name(model: str, preserve_dots: bool = False) -> str:
       regional inference profiles (``us.anthropic.claude-*``) whose dots
       are namespace separators, not version separators.
     """
-    if _HAS_RUST_MODEL_NORM:
-        return _rust_normalize_model_name(model, preserve_dots)
-    return _normalize_model_name_py(model, preserve_dots)
-
-
-def _normalize_model_name_py(model: str, preserve_dots: bool) -> str:
-    """Pure Python fallback for model name normalization."""
-    lower = model.lower()
-    if lower.startswith("anthropic/"):
-        model = model[len("anthropic/"):]
-    if not preserve_dots:
-        if _is_bedrock_model_id(model):
-            return model
-        _lower = model.lower()
-        if _lower.startswith("claude-") or _lower.startswith("anthropic/"):
-            model = model.replace(".", "-")
-    return model
+    return _rust_normalize_model_name(model, preserve_dots)
 
 
 def _sanitize_tool_id(tool_id: str) -> str:

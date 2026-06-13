@@ -21,16 +21,7 @@ from intellect_cli.config import cfg_get
 
 from utils import env_var_enabled, is_truthy_value
 
-# ── Stage 2: Rust sandbox acceleration ───────────────────────────────────────
-try:
-    from intellect_community_core import (  # type: ignore[import-not-found]
-        detect_hardline_command_rs as _rust_detect_hardline,
-        detect_dangerous_command_rs as _rust_detect_dangerous,
-        check_sudo_stdin_guard_rs as _rust_check_sudo_stdin,
-    )
-    _HAS_RUST_SANDBOX = True
-except (ImportError, AttributeError):
-    _HAS_RUST_SANDBOX = False
+from intellect_rust import rust_check_sudo_stdin as _rust_check_sudo_stdin, rust_detect_dangerous as _rust_detect_dangerous, rust_detect_hardline as _rust_detect_hardline
 
 logger = logging.getLogger(__name__)
 
@@ -277,13 +268,9 @@ def _check_sudo_stdin_guard(command: str) -> tuple:
     if "SUDO_PASSWORD" in os.environ:
         return (False, None)
     normalized = _normalize_command_for_detection(command).lower()
-    if _HAS_RUST_SANDBOX:
-        result = _rust_check_sudo_stdin(normalized, False)
-        if result is not None:
-            return (True, result)
-        return (False, None)
-    if _SUDO_STDIN_RE.search(normalized):
-        return (True, "sudo password guessing via stdin (sudo -S)")
+    result = _rust_check_sudo_stdin(normalized, False)
+    if result is not None:
+        return (True, result)
     return (False, None)
 
 
@@ -294,15 +281,9 @@ def detect_hardline_command(command: str) -> tuple:
         (is_hardline, description) or (False, None)
     """
     normalized = _normalize_command_for_detection(command).lower()
-    # Stage 2: Rust-accelerated pattern matching
-    if _HAS_RUST_SANDBOX:
-        result = _rust_detect_hardline(normalized)
-        if result is not None:
-            return (True, result)
-        return (False, None)
-    for pattern_re, description in HARDLINE_PATTERNS_COMPILED:
-        if pattern_re.search(normalized):
-            return (True, description)
+    result = _rust_detect_hardline(normalized)
+    if result is not None:
+        return (True, result)
     return (False, None)
 
 
@@ -508,17 +489,10 @@ def detect_dangerous_command(command: str) -> tuple:
         (is_dangerous, pattern_key, description) or (False, None, None)
     """
     command_lower = _normalize_command_for_detection(command).lower()
-    # Stage 2: Rust-accelerated pattern matching
-    if _HAS_RUST_SANDBOX:
-        result = _rust_detect_dangerous(command_lower)
-        if result is not None:
-            desc = result[0] if isinstance(result, tuple) else result
-            return (True, desc, desc)
-        return (False, None, None)
-    for pattern_re, description in DANGEROUS_PATTERNS_COMPILED:
-        if pattern_re.search(command_lower):
-            pattern_key = description
-            return (True, pattern_key, description)
+    result = _rust_detect_dangerous(command_lower)
+    if result is not None:
+        desc = result[0] if isinstance(result, tuple) else result
+        return (True, desc, desc)
     return (False, None, None)
 
 

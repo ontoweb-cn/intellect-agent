@@ -36,12 +36,7 @@ from agent.message_sanitization import (
 from tools.terminal_tool import is_persistent_env
 from utils import base_url_host_matches, base_url_hostname
 
-# ── Stage 3d: Rust StreamAccumulator ────────────────────────────────────────
-try:
-    from intellect_core import StreamAccumulator as _StreamAccumulator  # type: ignore[import-not-found]
-    _HAS_RUST_STREAM = True
-except (ImportError, AttributeError):
-    _HAS_RUST_STREAM = False
+from intellect_rust import StreamAccumulator as _StreamAccumulator
 
 logger = logging.getLogger(__name__)
 
@@ -1763,10 +1758,8 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         reasoning_parts: list = []
         usage_obj = None
 
-        # ── Stage 3d: Rust StreamAccumulator (parallel accumulation) ─────
-        _rust_acc = None
-        if _HAS_RUST_STREAM:
-            _rust_acc = _StreamAccumulator()
+        # ── Rust StreamAccumulator (parallel accumulation) ──────────────
+        _rust_acc = _StreamAccumulator()
         for chunk in stream:
             last_chunk_time["t"] = time.time()
             agent._touch_activity("receiving stream response")

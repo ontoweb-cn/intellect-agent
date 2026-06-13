@@ -1845,13 +1845,12 @@ def run_conversation(
                         agent.context_compressor._context_probed = False
                         agent.context_compressor._context_probe_persistable = False
 
-                    # ── Stage 3b: Rust TokenAccumulator as primary counter ─
+                    # ── Rust TokenAccumulator as primary counter ─────
                     acc = getattr(agent, '_token_acc', None)
                     if acc is None:
-                        from run_agent import _HAS_TOKEN_ACC, _TokenAccumulator
-                        if _HAS_TOKEN_ACC:
-                            agent._token_acc = _TokenAccumulator()
-                            acc = agent._token_acc
+                        from run_agent import _TokenAccumulator
+                        agent._token_acc = _TokenAccumulator()
+                        acc = agent._token_acc
                     if acc is not None:
                         acc.add(
                             canonical_usage.input_tokens,
@@ -1862,15 +1861,15 @@ def run_conversation(
                             1, 0,
                         )
                         # Sync Python counters for backward compat
-                        agent.session_input_tokens = acc.input_tokens()
-                        agent.session_output_tokens = acc.output_tokens()
-                        agent.session_cache_read_tokens = acc.cache_read_tokens()
-                        agent.session_cache_write_tokens = acc.cache_write_tokens()
-                        agent.session_reasoning_tokens = acc.reasoning_tokens()
-                        agent.session_prompt_tokens = acc.input_tokens() + acc.cache_read_tokens() + acc.cache_write_tokens()
-                        agent.session_completion_tokens = acc.output_tokens()
+                        agent.session_input_tokens = acc.input_tokens
+                        agent.session_output_tokens = acc.output_tokens
+                        agent.session_cache_read_tokens = acc.cache_read_tokens
+                        agent.session_cache_write_tokens = acc.cache_write_tokens
+                        agent.session_reasoning_tokens = acc.reasoning_tokens
+                        agent.session_prompt_tokens = acc.input_tokens + acc.cache_read_tokens + acc.cache_write_tokens
+                        agent.session_completion_tokens = acc.output_tokens
                         agent.session_total_tokens = agent.session_prompt_tokens + agent.session_output_tokens
-                        agent.session_api_calls = acc.api_calls()
+                        agent.session_api_calls = acc.api_calls
                     else:
                         agent.session_prompt_tokens += prompt_tokens
                         agent.session_completion_tokens += completion_tokens
@@ -4676,9 +4675,9 @@ def run_conversation(
         "cost_source": agent.session_cost_source,
         "session_id": agent.session_id,
     }
-    # ── Stage 3b: prefer Rust TokenAccumulator when available ────────
+    # ── Rust TokenAccumulator snapshot ────────────────────────────────
     _acc = getattr(agent, '_token_acc', None)
-    if _acc is not None and _acc.api_calls() > 0:
+    if _acc is not None and _acc.api_calls > 0:
         _snap = _acc.snapshot()
         _in, _out, _cr, _cw, _rsn, _api, _cost = _snap
         result["input_tokens"] = _in

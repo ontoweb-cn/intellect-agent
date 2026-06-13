@@ -34,14 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from intellect_constants import get_intellect_home
-
-# ── Stage 5b: Rust Fernet ──────────────────────────────────────────────────
-try:
-    from intellect_community_core import fernet_encrypt as _rust_fernet_encrypt  # type: ignore[import-not-found]
-    from intellect_community_core import fernet_decrypt as _rust_fernet_decrypt
-    _HAS_RUST_FERNET = True
-except (ImportError, AttributeError):
-    _HAS_RUST_FERNET = False
+from intellect_rust import rust_fernet_decrypt, rust_fernet_encrypt
 
 logger = logging.getLogger(__name__)
 
@@ -345,11 +338,8 @@ def _generate_key() -> bytes:
 
 def _encrypt_bytes(plaintext: bytes, key: bytes) -> bytes:
     """Encrypt *plaintext* with the given Fernet *key*."""
-    if _HAS_RUST_FERNET:
-        token = _rust_fernet_encrypt(key.decode(), plaintext.decode())
-        return (token + "=").encode()  # Fernet tokens may need padding
-    from cryptography.fernet import Fernet
-    return Fernet(key).encrypt(plaintext)
+    token = rust_fernet_encrypt(key.decode(), plaintext.decode())
+    return (token + "=").encode()  # Fernet tokens may need padding
 
 
 def _decrypt_bytes(raw: bytes, key: bytes | None = None) -> str:
@@ -365,12 +355,8 @@ def _decrypt_bytes(raw: bytes, key: bytes | None = None) -> str:
     if key is None:
         from intellect_constants import get_intellect_home
         key = _get_or_create_key(get_intellect_home())
-    if _HAS_RUST_FERNET:
-        token_str = payload.decode()
-        # Strip header padding if present
-        return _rust_fernet_decrypt(key.decode(), token_str)
-    from cryptography.fernet import Fernet
-    return Fernet(key).decrypt(payload).decode("utf-8")
+    token_str = payload.decode()
+    return rust_fernet_decrypt(key.decode(), token_str)
 
 
 def _atomic_write(path: Path, data: bytes) -> None:

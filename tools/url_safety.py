@@ -35,12 +35,7 @@ from utils import is_truthy_value
 
 logger = logging.getLogger(__name__)
 
-# ── Rust-accelerated IP safety ───────────────────────────────────────────────
-try:
-    from intellect_community_core import is_ip_blocked_rs as _rust_is_ip_blocked
-    _HAS_RUST_IP = True
-except ImportError:
-    _HAS_RUST_IP = False
+from intellect_rust import rust_is_ip_blocked as _rust_is_ip_blocked
 
 # Hostnames that should always be blocked regardless of IP resolution
 # or any config toggle.  These are cloud metadata endpoints that an
@@ -182,31 +177,7 @@ def is_safe_peer_ip(ip_str: str) -> bool:
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Return True if the IP should be blocked for SSRF protection."""
-    if _HAS_RUST_IP:
-        return _rust_is_ip_blocked(str(ip)) is not None
-    return _is_blocked_ip_py(ip)
-
-
-def _is_blocked_ip_py(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Pure Python fallback for IP blocking check."""
-    # IPv4-mapped IPv6 addresses (``::ffff:x.x.x.x``) should be checked
-    # by their embedded IPv4 address, not as IPv6
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        embedded_ip = ip.ipv4_mapped
-        return (embedded_ip.is_private or embedded_ip.is_loopback or
-                embedded_ip.is_link_local or embedded_ip.is_reserved or
-                embedded_ip.is_multicast or embedded_ip.is_unspecified or
-                embedded_ip in _CGNAT_NETWORK)
-
-    # Standard IPv4/IPv6 address checking
-    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-        return True
-    if ip.is_multicast or ip.is_unspecified:
-        return True
-    # CGNAT range not covered by is_private
-    if ip in _CGNAT_NETWORK:
-        return True
-    return False
+    return _rust_is_ip_blocked(str(ip)) is not None
 
 
 def is_always_blocked_url(url: str) -> bool:

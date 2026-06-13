@@ -100,7 +100,7 @@ def main():
         cache_read_input_tokens = 0
         cache_creation_input_tokens = 0
 
-    from agent.usage_pricing import normalize_usage, _HAS_RUST_USAGE
+    from agent.usage_pricing import normalize_usage
 
     def py_norm():
         return normalize_usage(FakeUsage(), provider="openai", api_mode="")
@@ -128,14 +128,14 @@ def main():
         if has_rust:
             for i in range(1000):
                 acc.add(i, i, i, i, i, 1, 0)
-            return acc.input_tokens()
+            return acc.input_tokens
         return py_accumulate()
 
     bench("token_accumulator (1000 adds)", py_accumulate, rust_accumulate, 100)
 
     # ── 5. Command sandbox ────────────────────────────────────────────────
     print("\n--- Command Sandbox (50,000 matches) ---")
-    from tools.approval import detect_dangerous_command, _HAS_RUST_SANDBOX, _normalize_command_for_detection
+    from tools.approval import detect_dangerous_command, _normalize_command_for_detection
 
     test_cmds = [
         "rm -rf /tmp/data",

@@ -1501,7 +1501,7 @@ class SessionDB:
         return f"{base} #{max_num + 1}"
 
     def get_compression_tip(self, session_id: str) -> Optional[str]:
-        return _get_tip(self._conn, self._lock, session_id)
+        return _get_tip(self._conn, self._lock, session_id, db_path=str(self.db_path))
 
     def list_sessions_rich(
         self,

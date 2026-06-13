@@ -6,14 +6,7 @@ import logging
 from typing import Any
 
 from agent.oauth import OAuthProviderConfig
-
-# ── Stage 5: Rust crypto ───────────────────────────────────────────────────
-try:
-    from intellect_community_core import pkce_challenge as _rust_pkce_challenge  # type: ignore[import-not-found]
-    from intellect_community_core import secure_token_hex as _rust_secure_hex
-    _HAS_RUST_CRYPTO = True
-except (ImportError, AttributeError):
-    _HAS_RUST_CRYPTO = False
+from intellect_rust import rust_pkce_challenge as _rust_pkce_challenge, rust_pkce_from_verifier as _rust_pkce_from, rust_secure_hex as _rust_secure_hex
 
 logger = logging.getLogger(__name__)
 
@@ -142,26 +135,13 @@ def start_login_session(
     verifier = code_verifier or ""
     challenge = None
     if cfg.pkce and not verifier:
-        if _HAS_RUST_CRYPTO:
-            verifier, challenge = _rust_pkce_challenge()
-        else:
-            verifier, challenge = generate_pkce_pair()
+        verifier, challenge = _rust_pkce_challenge()
     elif cfg.pkce and verifier:
-        if _HAS_RUST_CRYPTO:
-            from intellect_community_core import pkce_challenge_from_verifier as _rust_pkce_from
-            challenge = _rust_pkce_from(verifier)
-        else:
-            import base64, hashlib
-            digest = hashlib.sha256(verifier.encode()).digest()
-            challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+        challenge = _rust_pkce_from(verifier)
 
     flow_state = state
     if not flow_state:
-        if _HAS_RUST_CRYPTO:
-            flow_state = _rust_secure_hex(16)
-        else:
-            import secrets
-            flow_state = secrets.token_hex(16)
+        flow_state = _rust_secure_hex(16)
 
     auth_url = build_authorization_url(cfg, redirect_uri, flow_state, challenge)
     if not auth_url:

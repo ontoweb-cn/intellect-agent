@@ -27,6 +27,19 @@ def _has() -> bool:
     return _CORE is not None
 
 
+def ensure_rust_available() -> None:
+    """Raise at startup if the Rust extension is missing.
+
+    Call this once during application initialization to fail fast with a
+    clear error message instead of silently falling back to Python.
+    """
+    if not _has():
+        raise RuntimeError(
+            "The intellect_community_core Rust extension is not installed. "
+            "Build it with: cd rust-core && maturin develop --release"
+        )
+
+
 # ── Storage ──────────────────────────────────────────────────────────────────
 
 HAS_BACKEND: bool = _has()
@@ -35,20 +48,20 @@ HAS_FTS: bool = _has()
 # ── Sandbox (Stage 2) ──────────────────────────────────────────────────────
 
 HAS_SANDBOX: bool = _has()
-rust_detect_hardline: Optional[Callable] = (
+rust_detect_hardline: Callable = (
     _CORE.detect_hardline_command_rs if _has() else None
 )
-rust_detect_dangerous: Optional[Callable] = (
+rust_detect_dangerous: Callable = (
     _CORE.detect_dangerous_command_rs if _has() else None
 )
-rust_check_sudo_stdin: Optional[Callable] = (
+rust_check_sudo_stdin: Callable = (
     _CORE.check_sudo_stdin_guard_rs if _has() else None
 )
 
 # ── Usage (Stage 3a/3b) ────────────────────────────────────────────────────
 
 HAS_USAGE: bool = _has()
-rust_normalize_usage: Optional[Callable] = (
+rust_normalize_usage: Callable = (
     _CORE.normalize_usage_rs if _has() else None
 )
 TokenAccumulator: Any = _CORE.TokenAccumulator if _has() else None
@@ -62,22 +75,22 @@ StreamAccumulator: Any = _CORE.StreamAccumulator if _has() else None
 # ── Crypto (Stage 5) ───────────────────────────────────────────────────────
 
 HAS_CRYPTO: bool = _has()
-rust_pkce_challenge: Optional[Callable] = (
+rust_pkce_challenge: Callable = (
     _CORE.pkce_challenge if _has() else None
 )
-rust_pkce_from_verifier: Optional[Callable] = (
+rust_pkce_from_verifier: Callable = (
     _CORE.pkce_challenge_from_verifier if _has() else None
 )
-rust_secure_hex: Optional[Callable] = (
+rust_secure_hex: Callable = (
     _CORE.secure_token_hex if _has() else None
 )
-rust_fernet_encrypt: Optional[Callable] = (
+rust_fernet_encrypt: Callable = (
     _CORE.fernet_encrypt if _has() else None
 )
-rust_fernet_decrypt: Optional[Callable] = (
+rust_fernet_decrypt: Callable = (
     _CORE.fernet_decrypt if _has() else None
 )
-rust_generate_fernet_key: Optional[Callable] = (
+rust_generate_fernet_key: Callable = (
     _CORE.generate_fernet_key if _has() else None
 )
 HAS_FERNET: bool = _has()
@@ -85,11 +98,58 @@ HAS_FERNET: bool = _has()
 # ── Gateway (Stage 4a/4b) ──────────────────────────────────────────────────
 
 HAS_GATEWAY: bool = _has()
-rust_build_session_key: Optional[Callable] = (
+rust_build_session_key: Callable = (
     _CORE.build_session_key_rs if _has() else None
 )
-rust_evaluate_reset_policy: Optional[Callable] = (
+rust_evaluate_reset_policy: Callable = (
     _CORE.evaluate_reset_policy_rs if _has() else None
+)
+rust_check_expiry_batch: Callable = (
+    _CORE.check_session_expiry_batch_rs if _has() else None
+)
+HAS_BATCH_EXPIRY: bool = _has()
+PlatformRetryScheduler: Any = (
+    _CORE.PlatformRetryScheduler if _has() else None
+)
+HAS_RETRY_SCHEDULER: bool = _has()
+
+# ── Compression ────────────────────────────────────────────────────────────
+
+rust_get_compression_tip: Callable = (
+    _CORE.get_compression_tip_rs if _has() else None
+)
+
+# ── FTS ────────────────────────────────────────────────────────────────────
+
+rust_is_fts5_unavailable_error: Callable = (
+    _CORE.is_fts5_unavailable_error if _has() else None
+)
+rust_drop_fts_triggers: Callable = (
+    _CORE.drop_fts_triggers_rs if _has() else None
+)
+rust_fts_trigger_count: Callable = (
+    _CORE.fts_trigger_count_rs if _has() else None
+)
+rust_rebuild_fts_indexes: Callable = (
+    _CORE.rebuild_fts_indexes_rs if _has() else None
+)
+
+# ── Path safety ────────────────────────────────────────────────────────────
+
+rust_is_forbidden_path: Callable = (
+    _CORE.is_forbidden_path_rs if _has() else None
+)
+
+# ── URL / IP safety ────────────────────────────────────────────────────────
+
+rust_is_ip_blocked: Callable = (
+    _CORE.is_ip_blocked_rs if _has() else None
+)
+
+# ── Model normalization ───────────────────────────────────────────────────
+
+rust_normalize_model_name: Callable = (
+    _CORE.normalize_model_name_rs if _has() else None
 )
 
 # ── SQLiteBackend class ────────────────────────────────────────────────────

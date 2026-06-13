@@ -13,15 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote as _url_quote, urlencode as _url_encode
 
-# ── Stage 5: Rust crypto acceleration ──────────────────────────────────────
-try:
-    from intellect_community_core import (  # type: ignore[import-not-found]
-        pkce_challenge as _rust_pkce_challenge,
-        secure_token_hex as _rust_secure_hex,
-    )
-    _HAS_RUST_CRYPTO = True
-except (ImportError, AttributeError):
-    _HAS_RUST_CRYPTO = False
+from intellect_rust import rust_pkce_challenge as _rust_pkce_challenge, rust_secure_hex as _rust_secure_hex
 
 logger = logging.getLogger(__name__)
 
@@ -551,20 +543,11 @@ class OAuthEngine:
         self, provider: OAuthProviderConfig, usage: str, **kwargs
     ) -> tuple[OAuthSession | None, str | None]:
         if provider.pkce:
-            if _HAS_RUST_CRYPTO:
-                verifier, challenge = _rust_pkce_challenge()
-            else:
-                import hashlib, base64
-                verifier = self._secrets.token_urlsafe(64)[:64]
-                digest = hashlib.sha256(verifier.encode()).digest()
-                challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+            verifier, challenge = _rust_pkce_challenge()
         else:
             verifier = ""
             challenge = ""
-        state = (
-            _rust_secure_hex(16) if _HAS_RUST_CRYPTO
-            else self._secrets.token_hex(16)
-        )
+        state = _rust_secure_hex(16)
         redirect_uri = kwargs.get("redirect_uri", "http://127.0.0.1:18923/callback")
 
         params = {

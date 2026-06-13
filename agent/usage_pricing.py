@@ -7,14 +7,8 @@ from decimal import Decimal
 from typing import Any, Dict, Literal, Optional
 
 from agent.model_metadata import fetch_endpoint_model_metadata, fetch_model_metadata
+from intellect_rust import rust_normalize_usage as _rust_normalize
 from utils import base_url_host_matches
-
-# ── Stage 3a: Rust usage normalization ──────────────────────────────────────
-try:
-    from intellect_core import normalize_usage_rs as _rust_normalize  # type: ignore[import-not-found]
-    _HAS_RUST_USAGE = True
-except (ImportError, AttributeError):
-    _HAS_RUST_USAGE = False
 
 DEFAULT_PRICING = {"input": 0.0, "output": 0.0}
 
@@ -727,91 +721,41 @@ def normalize_usage(
     provider_name = (provider or "").strip().lower()
     mode = (api_mode or "").strip().lower()
 
-    # ── Stage 3a: Rust fast path ─────────────────────────────────────────
-    if _HAS_RUST_USAGE:
-        in_details = getattr(response_usage, "input_tokens_details", None)
-        prompt_details = getattr(response_usage, "prompt_tokens_details", None)
-        out_details = getattr(response_usage, "output_tokens_details", None)
+    # ── Rust normalization ──────────────────────────────────────────────
+    in_details = getattr(response_usage, "input_tokens_details", None)
+    prompt_details = getattr(response_usage, "prompt_tokens_details", None)
+    out_details = getattr(response_usage, "output_tokens_details", None)
 
-        # Cached tokens: OpenAI uses prompt_tokens_details, Codex uses
-        # input_tokens_details.  Read both and take the non-zero one.
-        cached_detail = max(
-            _to_int(getattr(prompt_details, "cached_tokens", 0) if prompt_details else 0),
-            _to_int(getattr(in_details, "cached_tokens", 0) if in_details else 0),
-        )
-        # Cache writes: OpenAI uses prompt_tokens_details.cache_write_tokens,
-        # Codex uses input_tokens_details.cache_creation_tokens.
-        cache_write_detail = max(
-            _to_int(getattr(prompt_details, "cache_write_tokens", 0) if prompt_details else 0),
-            _to_int(getattr(in_details, "cache_creation_tokens", 0) if in_details else 0),
-        )
+    # Cached tokens: OpenAI uses prompt_tokens_details, Codex uses
+    # input_tokens_details.  Read both and take the non-zero one.
+    cached_detail = max(
+        _to_int(getattr(prompt_details, "cached_tokens", 0) if prompt_details else 0),
+        _to_int(getattr(in_details, "cached_tokens", 0) if in_details else 0),
+    )
+    # Cache writes: OpenAI uses prompt_tokens_details.cache_write_tokens,
+    # Codex uses input_tokens_details.cache_creation_tokens.
+    cache_write_detail = max(
+        _to_int(getattr(prompt_details, "cache_write_tokens", 0) if prompt_details else 0),
+        _to_int(getattr(in_details, "cache_creation_tokens", 0) if in_details else 0),
+    )
 
-        result = _rust_normalize(
-            mode,
-            provider_name,
-            _to_int(getattr(response_usage, "input_tokens", 0)),
-            _to_int(getattr(response_usage, "output_tokens", 0)),
-            _to_int(getattr(response_usage, "prompt_tokens", 0)),
-            _to_int(getattr(response_usage, "completion_tokens", 0)),
-            _to_int(getattr(response_usage, "cache_read_input_tokens", 0)),
-            _to_int(getattr(response_usage, "cache_creation_input_tokens", 0)),
-            cached_detail,
-            cache_write_detail,
-            _to_int(getattr(out_details, "reasoning_tokens", 0) if out_details else 0),
-        )
-        return CanonicalUsage(
-            input_tokens=result[0], output_tokens=result[1],
-            cache_read_tokens=result[2], cache_write_tokens=result[3],
-            reasoning_tokens=result[4],
-        )
-
-    if mode == "anthropic_messages" or provider_name == "anthropic":
-        input_tokens = _to_int(getattr(response_usage, "input_tokens", 0))
-        output_tokens = _to_int(getattr(response_usage, "output_tokens", 0))
-        cache_read_tokens = _to_int(getattr(response_usage, "cache_read_input_tokens", 0))
-        cache_write_tokens = _to_int(getattr(response_usage, "cache_creation_input_tokens", 0))
-    elif mode == "codex_responses":
-        input_total = _to_int(getattr(response_usage, "input_tokens", 0))
-        output_tokens = _to_int(getattr(response_usage, "output_tokens", 0))
-        details = getattr(response_usage, "input_tokens_details", None)
-        cache_read_tokens = _to_int(getattr(details, "cached_tokens", 0) if details else 0)
-        cache_write_tokens = _to_int(
-            getattr(details, "cache_creation_tokens", 0) if details else 0
-        )
-        input_tokens = max(0, input_total - cache_read_tokens - cache_write_tokens)
-    else:
-        prompt_total = _to_int(getattr(response_usage, "prompt_tokens", 0))
-        output_tokens = _to_int(getattr(response_usage, "completion_tokens", 0))
-        details = getattr(response_usage, "prompt_tokens_details", None)
-        # Primary: OpenAI-style prompt_tokens_details. Fallback: Anthropic-style
-        # top-level fields that some OpenAI-compatible proxies (OpenRouter, Cline)
-        # expose when routing Claude models — without this
-        # fallback, cache writes are undercounted as 0 and cache reads can be
-        # missed when the proxy only surfaces them at the top level.
-        # Port of cline/cline#10266.
-        cache_read_tokens = _to_int(getattr(details, "cached_tokens", 0) if details else 0)
-        if not cache_read_tokens:
-            cache_read_tokens = _to_int(getattr(response_usage, "cache_read_input_tokens", 0))
-        cache_write_tokens = _to_int(
-            getattr(details, "cache_write_tokens", 0) if details else 0
-        )
-        if not cache_write_tokens:
-            cache_write_tokens = _to_int(
-                getattr(response_usage, "cache_creation_input_tokens", 0)
-            )
-        input_tokens = max(0, prompt_total - cache_read_tokens - cache_write_tokens)
-
-    reasoning_tokens = 0
-    output_details = getattr(response_usage, "output_tokens_details", None)
-    if output_details:
-        reasoning_tokens = _to_int(getattr(output_details, "reasoning_tokens", 0))
-
+    result = _rust_normalize(
+        mode,
+        provider_name,
+        _to_int(getattr(response_usage, "input_tokens", 0)),
+        _to_int(getattr(response_usage, "output_tokens", 0)),
+        _to_int(getattr(response_usage, "prompt_tokens", 0)),
+        _to_int(getattr(response_usage, "completion_tokens", 0)),
+        _to_int(getattr(response_usage, "cache_read_input_tokens", 0)),
+        _to_int(getattr(response_usage, "cache_creation_input_tokens", 0)),
+        cached_detail,
+        cache_write_detail,
+        _to_int(getattr(out_details, "reasoning_tokens", 0) if out_details else 0),
+    )
     return CanonicalUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cache_read_tokens=cache_read_tokens,
-        cache_write_tokens=cache_write_tokens,
-        reasoning_tokens=reasoning_tokens,
+        input_tokens=result[0], output_tokens=result[1],
+        cache_read_tokens=result[2], cache_write_tokens=result[3],
+        reasoning_tokens=result[4],
     )
 
 
