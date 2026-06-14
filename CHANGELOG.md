@@ -8,6 +8,13 @@ roadmap.
 
 | Date | Highlights |
 |------|------------|
+| **2026-06-14** | **v0.6.3 — 沙箱架构升级 + AST 双层防御 + ReDoS 消除** |
+|                | 架构: RegexSet O(n) DFA + Python AST 双层 (7 类检测 + auto-deny) |
+|                | 安全: 31 token 独立描述, 渗透 0 bypasses, dangerous import 检测 |
+|                | 性能: fancy-regex→regex (ReDoS 免疫), 匹配 O(n×m)→O(n) |
+|                | 清理: 31 孤儿测试 + Python DANGEROUS_PATTERNS 死代码 (~110行) |
+|                | 修复: open() 多字符模式绕过, getattr 混淆, acp 包冲突 |
+|                | 测试: Rust 88/88, Python 26,834/0 errors, acp 294/0 |
 | **2026-06-13** | **v0.6.2 — Rust-Only 强制 + 沙箱/Gateway 修复** |
 |                | ⚠️ Breaking: 移除 Python fallback，Rust 扩展变为强制依赖 |
 |                | Rust 新增: `PlatformRetryScheduler` (gateway), `check_session_expiry_batch_rs`, `backoff_delay_batch_rs`, `is_ip_blocked_rs` (SSRF), `normalize_model_name_rs` |
