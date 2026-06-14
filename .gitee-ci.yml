@@ -1,0 +1,19 @@
+# Gitee CI configuration — overrides the default Python build plugin.
+# The actual CI pipeline runs via .github/workflows/tests.yml (Rust + Python).
+# This file prevents Gitee from running its generic "pip install -r requirements.txt
+# && python ./main.py" steps which don't match this project's layout.
+#
+# Project requirements: Python 3.12, uv, maturin, pyproject.toml (no setup.py/requirements.txt)
+
+image: ubuntu-24.04
+
+stages:
+  - name: check
+    image: ubuntu-24.04
+    steps:
+      - name: verify project structure
+        run: |
+          echo "Intellect Agent — CI runs via GitHub Actions (.github/workflows/tests.yml)"
+          echo "Python 3.12+ required, uses uv + maturin + pyproject.toml"
+          test -f pyproject.toml && echo "pyproject.toml: OK"
+          test -f rust-core/Cargo.toml && echo "Cargo.toml: OK"
