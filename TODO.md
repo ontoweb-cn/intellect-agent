@@ -106,7 +106,19 @@
 
 ### [TODO-007] AST 解析方案跟踪
 
-**状态**: 待启动
+**状态**: 设计完成，待实现 (2026-06-14)
+
+**技术方案**: 在 approval.py check_execute_code_guard() 中集成 ast.parse()
+对 Python -c 载荷做 AST 级节点检查（Call/Import/ImportFrom），
+与正则互补：正则初筛 + AST 深度确认。
+
+**参考**: tools/skills_ast_audit.py 已有 ast.NodeVisitor 模式可复用。
+
+**行动**:
+- [ ] 实现 _check_python_ast() 函数
+- [ ] 集成到 check_execute_code_guard
+- [ ] 添加单元测试
+- [ ] 评估正则 token 精简
 **来源**: Code review finding G2 — 正则黑名单无法穷举 Python 危险 API（marshal.load、
 os.posix_spawn、compile()、动态 getattr 混淆等均确认可绕过）
 
