@@ -145,3 +145,18 @@ os.posix_spawn、compile()、动态 getattr 混淆等均确认可绕过）
 ---
 
 最后更新: 2026-06-14 (Phase A/B 完成)
+
+---
+
+## AST vs Regex 覆盖分析 (2026-06-14)
+
+30 个攻击向量的双层覆盖:
+
+| 层级 | 数量 | 代表 |
+|------|------|------|
+| **Both** | 23 | exec, os.system, subprocess, pickle, ctypes, ... |
+| **Regex only** | 4 | Path.rmdir(), Path.unlink(), Path.write_bytes(), Path.write_text() |
+| **AST only** | 1 | importlib.import_module().system() |
+| **Neither** (benign) | 3 | print, json, list comprehension |
+
+**结论**: 两层互补已验证 — Regex 擅长通用模式匹配（`.rmdir(`），AST 擅长结构化分析（importlib 链 + import 语句检测）。两者缺一不可。
