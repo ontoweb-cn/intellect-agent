@@ -7,16 +7,24 @@
 use std::sync::OnceLock;
 
 use pyo3::prelude::*;
-use regex::Regex;
+use regex::{Regex, RegexSet};
 
 // ── Pattern storage ─────────────────────────────────────────────────────────
 
-type PatternList = Vec<(Regex, &'static str)>;
+/// A set of compiled regex patterns with descriptions.
+///
+/// Uses ``RegexSet`` for O(n) single-pass DFA matching — all patterns are
+/// checked simultaneously in one linear scan of the input.  Descriptions
+/// are stored separately and indexed by the pattern number.
+struct PatternSet {
+    set: RegexSet,
+    descriptions: Vec<&'static str>,
+}
 
-fn hardline_patterns() -> &'static PatternList {
-    static P: OnceLock<PatternList> = OnceLock::new();
+fn hardline_patterns() -> &'static PatternSet {
+    static P: OnceLock<PatternSet> = OnceLock::new();
     P.get_or_init(|| {
-        let patterns: Vec<(&str, &str)> = vec![
+        let raw: Vec<(&str, &str)> = vec![
             (r"\brm\s+(-[^\s]*\s+)*(/|/\*|/ \*)(\s|$)", "recursive delete of root filesystem"),
             (r"\brm\s+(-[^\s]*\s+)*(/home|/home/\*|/root|/root/\*|/etc|/etc/\*|/usr|/usr/\*|/var|/var/\*|/bin|/bin/\*|/sbin|/sbin/\*|/boot|/boot/\*|/lib|/lib/\*)(\s|$)", "recursive delete of system directory"),
             (r"\brm\s+(-[^\s]*\s+)*(~|\$HOME)(/?|/\*)?(\s|$)", "recursive delete of home directory"),
@@ -30,7 +38,12 @@ fn hardline_patterns() -> &'static PatternList {
             (r"(?:^|[;&|\n`]|\$\()\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*systemctl\s+(poweroff|reboot|halt|kexec)\b", "systemctl poweroff/reboot"),
             (r"(?:^|[;&|\n`]|\$\()\s*(?:sudo\s+(?:-[^\s]+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?(?:(?:exec|nohup|setsid|time)\s+)*\s*telinit\s+[06]\b", "telinit 0/6 (shutdown/reboot)"),
         ];
-        patterns.into_iter().map(|(p, d)| (Regex::new(&format!("(?is){}", p)).unwrap(), d)).collect()
+        let descs: Vec<&'static str> = raw.iter().map(|(_, d)| *d).collect();
+        let re_strings: Vec<String> = raw.iter().map(|(p, _)| format!("(?is){}", p)).collect();
+        PatternSet {
+            set: RegexSet::new(&re_strings).expect("hardline RegexSet compilation"),
+            descriptions: descs,
+        }
     })
 }
 
@@ -79,8 +92,8 @@ static SCRIPT_EXEC_TOKEN_ENTRIES: &[(&str, &str)] = &[
     (r"__dict__\s*\[",        "__dict__[]"),
 ];
 
-fn dangerous_patterns() -> &'static PatternList {
-    static P: OnceLock<PatternList> = OnceLock::new();
+fn dangerous_patterns() -> &'static PatternSet {
+    static P: OnceLock<PatternSet> = OnceLock::new();
     P.get_or_init(|| {
         // Mirrors Python's _SYSTEM_CONFIG_PATH: (?:/etc/|/private/(?:etc|var|tmp|home)/)
         let sys_cfg = "(?:/etc/|/private/(?:etc|var|tmp|home)/)";
@@ -178,7 +191,18 @@ fn dangerous_patterns() -> &'static PatternList {
             patterns.push((full_pattern, full_desc));
         }
 
-        patterns.into_iter().map(|(p, d)| (Regex::new(&format!("(?is){}", p)).unwrap(), d)).collect()
+        // All descriptions are either string literals or Box::leak'd —
+        // both have 'static lifetime.  Transmute is safe here.
+        let descs: Vec<&'static str> = patterns.iter()
+            .map(|(_, d)| unsafe { std::mem::transmute::<&str, &'static str>(*d) })
+            .collect();
+        let re_strings: Vec<String> = patterns.iter()
+            .map(|(p, _)| format!("(?is){}", p))
+            .collect();
+        PatternSet {
+            set: RegexSet::new(&re_strings).expect("dangerous RegexSet compilation"),
+            descriptions: descs,
+        }
     })
 }
 
@@ -190,13 +214,15 @@ fn sudo_stdin_re() -> &'static Regex {
 // ── Detection functions ─────────────────────────────────────────────────────
 
 /// Pattern match helper — returns the description of the first match.
-/// The regex crate uses a DFA engine: if a pattern compiles, matching never
-/// produces a runtime error (unlike backtracking engines).  Match is infallible.
-fn first_match(normalized: &str, patterns: &'static PatternList) -> Option<String> {
-    for (re, desc) in patterns {
-        if re.is_match(normalized) {
-            return Some(desc.to_string());
-        }
+///
+/// Uses ``RegexSet`` for O(n) single-pass DFA matching over all patterns
+/// simultaneously.  When the set reports matches, we return the description
+/// of the first matching pattern (lowest index).
+fn first_match(normalized: &str, patterns: &'static PatternSet) -> Option<String> {
+    let matches = patterns.set.matches(normalized);
+    // iter() yields matched pattern indices in ascending order
+    for idx in matches.iter() {
+        return Some(patterns.descriptions[idx].to_string());
     }
     None
 }
@@ -210,10 +236,11 @@ fn detect_hardline_impl(normalized: &str) -> Option<String> {
 /// Check if the command matches dangerous-pattern blocklist.
 /// Returns (pattern_key, description) if matched, None otherwise.
 fn detect_dangerous_impl(normalized: &str) -> Option<(String, String)> {
-    for (re, desc) in dangerous_patterns() {
-        if re.is_match(normalized) {
-            return Some((desc.to_string(), desc.to_string()));
-        }
+    let patterns = dangerous_patterns();
+    let matches = patterns.set.matches(normalized);
+    for idx in matches.iter() {
+        let desc = patterns.descriptions[idx];
+        return Some((desc.to_string(), desc.to_string()));
     }
     None
 }
