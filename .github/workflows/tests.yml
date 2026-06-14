@@ -280,11 +280,25 @@ jobs:
           key: rust-${{ runner.os }}-${{ hashFiles('rust-core/Cargo.lock') }}
           restore-keys: rust-${{ runner.os }}-
 
-      - name: Run Rust unit tests
+      - name: Run Rust unit tests (fast path, no Python linking)
         run: |
           cd rust-core
-          # extension-module feature is required for #[pyclass] types.
-          # PYO3_PYTHON tells pyo3-build-config which interpreter to link against.
+          # Run without extension-module feature first — pure Rust tests
+          # don't need Python linking and finish in < 1s.
+          cargo test --no-default-features -- --test-threads=2
+          echo "Rust unit tests (pure): OK"
+
+      - name: Assert minimum Rust test count
+        run: |
+          cd rust-core
+          COUNT=$(cargo test --no-default-features -- --list 2>&1 | grep -c 'test .*\.rs:' || echo 0)
+          echo "Rust test count: $COUNT"
+          python3 -c "assert $COUNT >= 84, f'Expected >= 84 Rust tests, got {$COUNT}'"
+          echo "Test count assertion: OK"
+
+      - name: Run Rust unit tests (with extension module)
+        run: |
+          cd rust-core
           PYO3_PYTHON=$(which python3) cargo test
 
       - name: Install uv
@@ -338,4 +352,53 @@ jobs:
           n = _normalize_command_for_detection('echo hello').lower()
           assert intellect_community_core.detect_dangerous_command_rs(n) is None
           print('Sandbox patterns OK')
+          "
+
+      - name: Verify AST code checker
+        run: |
+          source .venv/bin/activate
+          cd rust-core/..
+          PYTHONPATH=. python -c "
+          from tools.approval import _check_python_ast
+
+          # Dangerous code must be caught
+          assert _check_python_ast('import os; os.system(\"id\")') is not None, 'os.system not caught'
+          assert _check_python_ast('exec(\"id()\")') is not None, 'exec not caught'
+          assert _check_python_ast('import pickle; pickle.loads(b\"...\")') is not None, 'pickle not caught'
+          assert _check_python_ast('import ctypes; ctypes.CDLL(\"libc.so.6\")') is not None, 'ctypes not caught'
+
+          # Obfuscation must be caught
+          assert _check_python_ast('import builtins; getattr(builtins, \"exec\")(\"id()\")') is not None, 'getattr not caught'
+          assert _check_python_ast('import os; os.__dict__[\"system\"](\"id\")') is not None, '__dict__ not caught'
+          assert _check_python_ast('import importlib; importlib.import_module(\"os\").system(\"id\")') is not None, 'importlib not caught'
+
+          # Safe code must pass
+          assert _check_python_ast('print(\"hello\")') is None, 'safe print false positive'
+          assert _check_python_ast('import json; print(json.dumps({\"a\":1}))') is None, 'safe json false positive'
+          assert _check_python_ast('x = [i**2 for i in range(10)]') is None, 'safe comprehension false positive'
+
+          print('AST checker OK (7 dangerous caught, 3 safe passed)')
+          "
+
+      - name: Verify token descriptions (B1)
+        run: |
+          source .venv/bin/activate
+          cd rust-core/..
+          PYTHONPATH=. python -c "
+          import intellect_community_core as icc
+
+          # Each token should return a distinct, specific description
+          result = icc.detect_dangerous_command_rs('python -c \"exec(\\\\\"id()\\\\\")\"')
+          assert result is not None and 'exec()' in result[0], f'Bad exec desc: {result}'
+
+          result = icc.detect_dangerous_command_rs('python -c \"import os; os.system(\\\\\"id\\\\\")\"')
+          assert result is not None and 'os.system()' in result[0], f'Bad os.system desc: {result}'
+
+          result = icc.detect_dangerous_command_rs('python -c \"import ctypes; ctypes.CDLL(\\\\\"libc.so.6\\\\\")\"')
+          assert result is not None and 'ctypes' in result[0], f'Bad ctypes desc: {result}'
+
+          # Benign must pass
+          assert icc.detect_dangerous_command_rs('python -c \"print(1)\"') is None
+
+          print('Token descriptions OK')
           "
