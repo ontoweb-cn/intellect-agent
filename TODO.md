@@ -106,7 +106,7 @@
 
 ### [TODO-007] AST 解析方案跟踪
 
-**状态**: 设计完成，待实现 (2026-06-14)
+**状态**: ✅ 已实现 (2026-06-14) — _check_python_ast() 已集成到 check_execute_code_guard，支持 7 类检测 + auto-deny，12 单元测试
 
 **技术方案**: 在 approval.py check_execute_code_guard() 中集成 ast.parse()
 对 Python -c 载荷做 AST 级节点检查（Call/Import/ImportFrom），
