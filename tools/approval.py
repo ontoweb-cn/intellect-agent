@@ -1363,6 +1363,88 @@ def check_all_command_guards(command: str, env_type: str,
             "user_approved": True, "description": combined_desc}
 
 
+# ---------------------------------------------------------------------------
+# AST-based Python code analysis (Layer 2 — complements regex pre-filter)
+# ---------------------------------------------------------------------------
+
+# Direct function calls that are inherently dangerous in -c payloads.
+_AST_DANGEROUS_NAMES: frozenset[str] = frozenset({
+    "exec", "eval", "compile", "__import__", "open",
+})
+
+# Qualified attribute calls: module.function() patterns.
+_AST_DANGEROUS_ATTRS: frozenset[tuple[str, str]] = frozenset({
+    ("os", "system"), ("os", "popen"),
+    ("os", "spawnl"), ("os", "spawnv"), ("os", "spawnve"),
+    ("os", "spawnlp"), ("os", "spawnvp"),
+    ("os", "posix_spawn"), ("os", "posix_spawnp"),
+    ("subprocess", "call"), ("subprocess", "Popen"),
+    ("subprocess", "run"), ("subprocess", "check_output"),
+    ("shutil", "rmtree"), ("shutil", "copy"),
+    ("pickle", "loads"), ("pickle", "load"),
+    ("marshal", "loads"), ("marshal", "load"),
+    ("ctypes", "CDLL"), ("ctypes", "cdll"),
+})
+
+
+def _check_python_ast(code: str) -> str | None:
+    """Analyze Python code via AST for dangerous function calls.
+
+    Returns an error message if a dangerous call is detected, or None
+    if the code appears structurally safe.  This complements (not replaces)
+    the regex-based sandbox in sandbox.rs.
+
+    Performance: ``ast.parse()`` on typical -c payloads takes < 0.5ms.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(code.strip())
+    except SyntaxError:
+        return None  # Malformed code — let the regex layer handle it
+
+    for node in ast.walk(tree):
+        # --- direct calls: exec(...), eval(...), compile(...) ---
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in _AST_DANGEROUS_NAMES:
+                return f"dangerous built-in call: {node.func.id}()"
+
+        # --- getattr-based access: getattr(__builtins__, "exec") ---
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr"
+                and len(node.args) >= 2):
+            if isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+                attr = node.args[1].value
+                if attr in _AST_DANGEROUS_NAMES:
+                    return f"dangerous dynamic call: getattr(..., '{attr}')"
+
+        # --- attribute calls: os.system(...), subprocess.call(...) ---
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)):
+            key = (node.func.value.id, node.func.attr)
+            if key in _AST_DANGEROUS_ATTRS:
+                return f"dangerous call: {key[0]}.{key[1]}()"
+
+        # --- dict-access invocation: os.__dict__['system'](...) ---
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Subscript)
+                and isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == "__dict__"):
+            if isinstance(node.func.slice, ast.Constant) and isinstance(node.func.slice.value, str):
+                name = node.func.slice.value
+                if name in _AST_DANGEROUS_NAMES or name in {
+                    "system", "popen", "spawnl", "spawnv", "spawnve",
+                    "spawnlp", "spawnvp", "posix_spawn", "posix_spawnp",
+                    "call", "Popen", "run", "check_output",
+                    "rmtree", "copy", "loads", "load", "CDLL", "cdll",
+                }:
+                    return f"dangerous dict-access call: .__dict__['{name}']"
+
+    return None
+
+
 def check_execute_code_guard(code: str, env_type: str) -> dict:
     """Approve an execute_code script before its child process is spawned.
 
@@ -1433,6 +1515,15 @@ def check_execute_code_guard(code: str, env_type: str) -> dict:
     # Built only now (past the early-return gates) so the common non-approval
     # paths don't pay to copy a potentially-large script into this string.
     command = f"execute_code <<'PY'\n{code}\nPY"
+
+    # AST-based analysis (Layer 2) — structural check of the Python code itself.
+    # This catches obfuscated/bypass patterns the regex layer may miss.
+    # When AST flags dangerous calls, surface them in the description so the
+    # smart-approve LLM and the user see the specific threat identified.
+    ast_warning = _check_python_ast(code)
+    if ast_warning:
+        logger.info("AST check flagged execute_code: %s", ast_warning)
+        description = f"{description} [AST: {ast_warning}]"
 
     # Smart mode: ask the aux LLM about the whole script. An APPROVE here only
     # suppresses the redundant whole-script prompt; the per-call terminal()

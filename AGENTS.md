@@ -934,6 +934,81 @@ in config.yaml (or `intellect_BACKGROUND_NOTIFICATIONS` env var):
 
 ---
 
+## Sandbox Architecture
+
+Command safety detection has two layers:
+
+### Layer 1 — Rust Regex (fast path, always on)
+
+**File:** `rust-core/src/sandbox.rs`
+
+All user commands pass through `detect_dangerous_command_rs()` which checks 64+
+pre-compiled regex patterns in two tiers:
+
+- **Hardline** (14 patterns): Unconditional blocks — `rm -rf /`, `mkfs`, `shutdown`,
+  fork bombs, `kill -9 -1`. No approval bypass possible.
+- **Dangerous** (52 patterns): Requires user approval. Covers recursive delete,
+  chmod 777, curl|sh, SQL DROP, git force push, sudo -S, etc.
+
+Script execution (`python -c`, `ruby -e`, etc.) uses a token registry approach:
+31 dangerous Python/Perl/Ruby/Node APIs are each compiled as individual regex
+patterns with distinct descriptions so the approval system and logs can
+distinguish threat types.
+
+**Token registry** (`SCRIPT_EXEC_TOKEN_ENTRIES`):
+```
+exec() | eval() | __import__()              ← code execution
+os.system() | os.popen() | subprocess       ← subprocess spawning
+os.remove() | shutil.rmtree() | .rmdir()   ← file destruction
+open(…, 'w'/'a') | .write_bytes()           ← destructive writes
+ctypes | pickle | marshal                   ← native lib / deserialization
+compile()                                   ← dynamic compilation
+urllib | requests | socket                  ← network exfil
+getattr() | __dict__[]                      ← dynamic access
+```
+
+**Adding a new dangerous API:**
+1. Append one line to `SCRIPT_EXEC_TOKEN_ENTRIES` in `rust-core/src/sandbox.rs`:
+   ```rust
+   (r"your\.pattern", "Your description"),
+   ```
+2. Add a test in the corresponding `#[test]` function
+3. Run `cargo test` (target: 88+ passing)
+
+### Layer 2 — AST Analysis (planned, not yet active)
+
+**File:** `tools/approval.py` (future), see `TODO.md` TODO-007
+
+The regex approach cannot exhaustively enumerate all dangerous Python APIs.
+The planned AST layer will use Python's `ast` module to parse `-c` payloads
+and walk the AST for dangerous `Call`/`Import`/`ImportFrom` nodes. This
+complements the regex layer: regex pre-filters, AST confirms.
+
+### Approval Flow
+
+```
+User command
+  → _normalize_command_for_detection()   # ANSI strip, NFKC, lowercase
+  → detect_dangerous_command_rs()        # Rust regex (Layer 1)
+  → if matched:
+      → check yolo / cron / gateway modes
+      → is_approved() ? session/permanent approval check
+      → if not approved: prompt user / smart-approve via LLM
+  → execute or block
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `rust-core/src/sandbox.rs` | Regex patterns, token registry, detection engine |
+| `tools/approval.py` | Python-side wrappers, approval state machine |
+| `tools/path_security.py` | `is_forbidden_path()` — SSH keys, credentials |
+| `tools/url_safety.py` | `is_ip_blocked()` — SSRF prevention |
+| `tools/file_tools.py` | `_check_sensitive_path()` — write guard for system paths |
+
+---
+
 ## Profiles: Multi-Instance Support
 
 Intellect supports **profiles** — multiple fully isolated instances, each with its own

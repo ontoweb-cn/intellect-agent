@@ -114,6 +114,48 @@ class TestDetectSqlPatterns:
         assert desc is not None
 
 
+class TestPythonASTCheck:
+    """Unit tests for _check_python_ast — Layer 2 AST analysis."""
+
+    @staticmethod
+    def _check(code: str) -> bool:
+        from tools.approval import _check_python_ast
+        return _check_python_ast(code) is not None
+
+    def test_direct_exec_detected(self):
+        assert self._check("exec('id()')")
+
+    def test_direct_eval_detected(self):
+        assert self._check("eval('1+1')")
+
+    def test_os_system_detected(self):
+        assert self._check("import os; os.system('id')")
+
+    def test_subprocess_call_detected(self):
+        assert self._check("import subprocess; subprocess.call(['sh', '-c', 'id'])")
+
+    def test_pickle_loads_detected(self):
+        assert self._check("import pickle; pickle.loads(b'...')")
+
+    def test_getattr_exec_obfuscation_detected(self):
+        assert self._check("import builtins; getattr(builtins, 'exec')('id()')")
+
+    def test_dict_access_detected(self):
+        assert self._check("import os; os.__dict__['system']('id')")
+
+    def test_safe_print_allowed(self):
+        assert not self._check("print('hello')")
+
+    def test_safe_json_allowed(self):
+        assert not self._check("import json; print(json.dumps({'a': 1}))")
+
+    def test_safe_math_allowed(self):
+        assert not self._check("import math; print(math.sqrt(16))")
+
+    def test_syntax_error_returns_none(self):
+        assert not self._check("this is not valid python!!!!")
+
+
 class TestSafeCommand:
     def test_echo_is_safe(self):
         is_dangerous, key, desc = detect_dangerous_command("echo hello world")
