@@ -106,12 +106,12 @@ class TestDetectSqlPatterns:
         assert "delete" in desc.lower()
 
     def test_delete_with_where_safe(self):
-        # regex crate does not support lookahead — all DELETE FROM are now caught.
-        # This is a minor false positive (still safer than missing a bare DELETE).
+        # DELETE FROM WHERE is caught with a distinct "has WHERE clause" description.
+        # The approval system can auto-approve this variant.
         is_dangerous, key, desc = detect_dangerous_command("DELETE FROM users WHERE id = 1")
         assert is_dangerous is True
         assert key is not None
-        assert desc is not None
+        assert "WHERE" in desc
 
 
 class TestPythonASTCheck:
@@ -151,6 +151,9 @@ class TestPythonASTCheck:
 
     def test_safe_math_allowed(self):
         assert not self._check("import math; print(math.sqrt(16))")
+
+    def test_importlib_import_module_detected(self):
+        assert self._check("import importlib; importlib.import_module('os').system('id')")
 
     def test_syntax_error_returns_none(self):
         assert not self._check("this is not valid python!!!!")

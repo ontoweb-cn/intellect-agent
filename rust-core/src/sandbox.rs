@@ -105,6 +105,11 @@ fn dangerous_patterns() -> &'static PatternList {
             (r">>?\s*/dev/sd".into(), "write to block device"),
             (r"\btee\b.*/dev/sd[a-z]*\b".into(), "tee to block device"),
             (r"\bDROP\s+(TABLE|DATABASE)\b".into(), "SQL DROP"),
+            // DELETE FROM with WHERE — less dangerous (targeted delete), placed
+            // before the generic pattern so the WHERE case gets a distinct
+            // description.  Both still require approval, but the smart-approve
+            // LLM can auto-approve the WHERE variant.
+            (r"\bDELETE\s+FROM\b[^\n]*\bWHERE\b".into(), "SQL DELETE FROM (has WHERE clause)"),
             (r"\bDELETE\s+FROM\b".into(), "SQL DELETE FROM"),
             (r"\bTRUNCATE\s+(TABLE)?\s*\w".into(), "SQL TRUNCATE"),
             (format!(">\\s*({})", sys_cfg), "overwrite system config"),
@@ -750,8 +755,11 @@ mod tests {
         assert!(detect_dangerous_impl("DROP TABLE users").is_some());
         assert!(detect_dangerous_impl("DROP DATABASE prod").is_some());
         assert!(detect_dangerous_impl("TRUNCATE TABLE logs").is_some());
-        // DELETE FROM is caught (with or without WHERE — regex crate no lookahead)
+        // DELETE FROM without WHERE → blocked (generic pattern)
         assert!(detect_dangerous_impl("DELETE FROM users").is_some());
-        assert!(detect_dangerous_impl("DELETE FROM users WHERE id = 1").is_some());
+        // DELETE FROM with WHERE → also blocked, but with distinct description
+        let result = detect_dangerous_impl("DELETE FROM users WHERE id = 1");
+        assert!(result.is_some());
+        assert!(result.unwrap().0.contains("WHERE"));
     }
 }

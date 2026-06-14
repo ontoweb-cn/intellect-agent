@@ -1427,6 +1427,23 @@ def _check_python_ast(code: str) -> str | None:
             if key in _AST_DANGEROUS_ATTRS:
                 return f"dangerous call: {key[0]}.{key[1]}()"
 
+        # --- importlib.import_module("os").system("id") dynamic import ---
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Call)
+                and isinstance(node.func.value.func, ast.Attribute)
+                and isinstance(node.func.value.func.value, ast.Name)
+                and node.func.value.func.value.id == "importlib"
+                and node.func.value.func.attr == "import_module"):
+            if (node.func.value.args
+                    and isinstance(node.func.value.args[0], ast.Constant)
+                    and isinstance(node.func.value.args[0].value, str)):
+                mod = node.func.value.args[0].value
+                attr = node.func.attr
+                key = (mod, attr)
+                if key in _AST_DANGEROUS_ATTRS:
+                    return f"dangerous dynamic import: importlib.import_module('{mod}').{attr}()"
+
         # --- dict-access invocation: os.__dict__['system'](...) ---
         if (isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Subscript)
