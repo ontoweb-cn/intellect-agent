@@ -155,6 +155,25 @@ class TestPythonASTCheck:
     def test_importlib_import_module_detected(self):
         assert self._check("import importlib; importlib.import_module('os').system('id')")
 
+    def test_import_os_detected(self):
+        assert self._check("import os")
+
+    def test_import_subprocess_detected(self):
+        assert self._check("import subprocess")
+
+    def test_from_os_import_system_detected(self):
+        assert self._check("from os import system")
+
+    def test_from_subprocess_import_call_detected(self):
+        assert self._check("from subprocess import call")
+
+    def test_import_json_allowed(self):
+        # json is not in the dangerous modules list
+        assert not self._check("import json")
+
+    def test_from_json_import_loads_allowed(self):
+        assert not self._check("from json import loads")
+
     def test_syntax_error_returns_none(self):
         assert not self._check("this is not valid python!!!!")
 

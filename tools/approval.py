@@ -1386,6 +1386,12 @@ _AST_DANGEROUS_ATTRS: frozenset[tuple[str, str]] = frozenset({
     ("ctypes", "CDLL"), ("ctypes", "cdll"),
 })
 
+# Modules whose import alone is suspicious in a -c context.
+_AST_DANGEROUS_MODULES: frozenset[str] = frozenset({
+    "os", "subprocess", "pickle", "ctypes", "marshal", "shutil",
+    "socket", "urllib", "requests", "builtins",
+})
+
 
 def _check_python_ast(code: str) -> str | None:
     """Analyze Python code via AST for dangerous function calls.
@@ -1404,6 +1410,22 @@ def _check_python_ast(code: str) -> str | None:
         return None  # Malformed code — let the regex layer handle it
 
     for node in ast.walk(tree):
+        # --- import dangerous modules: import os, import subprocess ---
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                base = alias.name.split(".")[0]
+                if base in _AST_DANGEROUS_MODULES:
+                    return f"dangerous import: {alias.name}"
+
+        # --- from os import system, from subprocess import call ---
+        if isinstance(node, ast.ImportFrom):
+            if node.module and node.module.split(".")[0] in _AST_DANGEROUS_MODULES:
+                for alias in node.names:
+                    if alias.name != "*":  # "from os import *" caught by module name
+                        return f"dangerous import: from {node.module} import {alias.name}"
+                    else:
+                        return f"dangerous import: from {node.module} import *"
+
         # --- direct calls: exec(...), eval(...), compile(...) ---
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id in _AST_DANGEROUS_NAMES:
