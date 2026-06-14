@@ -160,3 +160,5 @@ os.posix_spawn、compile()、动态 getattr 混淆等均确认可绕过）
 | **Neither** (benign) | 3 | print, json, list comprehension |
 
 **结论**: 两层互补已验证 — Regex 擅长通用模式匹配（`.rmdir(`），AST 擅长结构化分析（importlib 链 + import 语句检测）。两者缺一不可。
+
+**Penetration test (2026-06-14)**: 18 adversarial payloads, 0 bypasses. NFKC normalization handles Unicode tricks, AST catches importlib chains, regex catches generic method calls. Fullwidth exec correctly blocked after normalization.
