@@ -102,7 +102,8 @@ fn dangerous_patterns() -> &'static PatternList {
             (r"\bchown\s+--recursive\b.*root".into(), "recursive chown to root (long flag)"),
             (r"\bmkfs\b".into(), "format filesystem"),
             (r"\bdd\s+.*if=".into(), "disk copy"),
-            (r">\s*/dev/sd".into(), "write to block device"),
+            (r">>?\s*/dev/sd".into(), "write to block device"),
+            (r"\btee\b.*/dev/sd[a-z]*\b".into(), "tee to block device"),
             (r"\bDROP\s+(TABLE|DATABASE)\b".into(), "SQL DROP"),
             (r"\bDELETE\s+FROM\b".into(), "SQL DELETE FROM"),
             (r"\bTRUNCATE\s+(TABLE)?\s*\w".into(), "SQL TRUNCATE"),
@@ -127,6 +128,10 @@ fn dangerous_patterns() -> &'static PatternList {
             (format!(">>?\\s*[\\\"']?({})", sys_cfg), "overwrite system file via redirection"),
             (format!("\\btee\\b.*[\\\"']?({})[\\\"']?{}", proj_sensitive, cmd_tail), "overwrite project env/config via tee"),
             (format!(">>?\\s*[\\\"']?({})[\\\"']?{}", proj_sensitive, cmd_tail), "overwrite project env/config via redirection"),
+            // SSH authorized_keys overwrite — common privilege escalation vector.
+            // Covers: tee ~/.ssh/authorized_keys, echo key >> $HOME/.ssh/authorized_keys
+            (r#"\btee\b.*(?:~|\$HOME|/home/\w+)/\.ssh/authorized_keys\b"#.into(), "overwrite SSH authorized_keys via tee"),
+            (r#">>?\s*(?:~|\$HOME|/home/\w+)/\.ssh/authorized_keys\b"#.into(), "overwrite SSH authorized_keys via redirect"),
             (r"\bxargs\s+.*\brm\b".into(), "xargs with rm"),
             (r"\bfind\b.*-exec(?:dir)?\s+(/\S*/)?rm\b".into(), "find -exec/-execdir rm"),
             (r"\bfind\b.*-delete\b".into(), "find -delete"),

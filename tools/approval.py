@@ -1503,6 +1503,28 @@ def check_execute_code_guard(code: str, env_type: str) -> dict:
             }
         return {"approved": True, "message": None}
 
+    # AST-based analysis (Layer 2) — structural check runs FIRST, before
+    # any context-specific guards, so dangerous code is blocked everywhere
+    # (CLI, gateway, cron, ask).  The regex layer may miss obfuscated
+    # patterns that AST structural analysis catches.
+    ast_warning = _check_python_ast(code)
+    if ast_warning:
+        logger.warning("AST check denied execute_code: %s", ast_warning)
+        return {
+            "approved": False,
+            "message": (
+                f"BLOCKED by AST analysis: {ast_warning}. "
+                "The Python code contains a structurally-confirmed dangerous "
+                "function call. Rewrite using non-dangerous APIs, or use the "
+                "terminal tool with explicit command approval."
+            ),
+            "pattern_key": pattern_key,
+            "description": f"{description} [AST: {ast_warning}]",
+            "outcome": "blocked",
+            "user_consent": False,
+            "ast_denied": True,
+        }
+
     # Only gateway/ask contexts get the one-shot whole-script approval.
     #   * CLI interactive: the script's terminal() calls are guarded per-call
     #     (context now propagates into the RPC thread, #33057); a whole-script
@@ -1512,18 +1534,7 @@ def check_execute_code_guard(code: str, env_type: str) -> dict:
         return {"approved": True, "message": None}
 
     session_key = get_current_session_key()
-    # Built only now (past the early-return gates) so the common non-approval
-    # paths don't pay to copy a potentially-large script into this string.
     command = f"execute_code <<'PY'\n{code}\nPY"
-
-    # AST-based analysis (Layer 2) — structural check of the Python code itself.
-    # This catches obfuscated/bypass patterns the regex layer may miss.
-    # When AST flags dangerous calls, surface them in the description so the
-    # smart-approve LLM and the user see the specific threat identified.
-    ast_warning = _check_python_ast(code)
-    if ast_warning:
-        logger.info("AST check flagged execute_code: %s", ast_warning)
-        description = f"{description} [AST: {ast_warning}]"
 
     # Smart mode: ask the aux LLM about the whole script. An APPROVE here only
     # suppresses the redundant whole-script prompt; the per-call terminal()

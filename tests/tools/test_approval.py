@@ -399,13 +399,11 @@ class TestTeePattern:
         assert dangerous is True
         assert key is not None
 
-    @pytest.mark.skip(reason="~/.ssh write patterns not yet ported to Rust sandbox")
     def test_tee_ssh_authorized_keys(self):
         dangerous, key, desc = detect_dangerous_command("cat file | tee ~/.ssh/authorized_keys")
         assert dangerous is True
         assert key is not None
 
-    @pytest.mark.skip(reason="block device write patterns not yet ported to Rust sandbox")
     def test_tee_block_device(self):
         dangerous, key, desc = detect_dangerous_command("echo x | tee /dev/sda")
         assert dangerous is True
@@ -469,13 +467,11 @@ class TestSensitiveRedirectPattern:
         assert dangerous is True
         assert key is not None
 
-    @pytest.mark.skip(reason="~/.ssh redirect patterns not yet ported to Rust sandbox")
     def test_append_to_home_ssh_authorized_keys(self):
         dangerous, key, desc = detect_dangerous_command("cat key >> $HOME/.ssh/authorized_keys")
         assert dangerous is True
         assert key is not None
 
-    @pytest.mark.skip(reason="~/.ssh redirect patterns not yet ported to Rust sandbox")
     def test_append_to_tilde_ssh_authorized_keys(self):
         dangerous, key, desc = detect_dangerous_command("cat key >> ~/.ssh/authorized_keys")
         assert dangerous is True
