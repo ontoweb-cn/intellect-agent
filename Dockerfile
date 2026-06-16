@@ -25,7 +25,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/intellect/.playwright
 # intellect process and per-profile gateways.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    ca-certificates curl iputils-ping python3 python-is-python3 ripgrep ffmpeg gcc python3-dev libffi-dev procps git openssh-client docker-cli xz-utils && \
+    ca-certificates curl iputils-ping python3 python-is-python3 ripgrep ffmpeg \
+    gcc python3-dev libffi-dev procps git openssh-client docker-cli xz-utils \
+    cargo rustc pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
 # ---------- s6-overlay install ----------
@@ -159,6 +161,11 @@ COPY --chown=intellect:intellect . .
 # Build terminal UI assets.
 RUN cd ui-tui && npm run build
 
+# Rust extension (required since v0.6.2 — intellect_community_core).
+RUN . /opt/intellect/.venv/bin/activate && \
+    uv pip install --no-cache-dir maturin && \
+    cd rust-core && maturin develop --release
+
 # ---------- Permissions ----------
 # Make install dir world-readable so any INTELLECT_UID can read it at runtime.
 # The venv needs to be traversable too.
@@ -200,10 +207,15 @@ RUN uv pip install --no-cache-dir --no-deps -e "."
 # (.github/workflows/docker-publish.yml) passes ${{ github.sha }} so
 # every published image has it.
 ARG INTELLECT_GIT_SHA=
+ARG INTELLECT_VERSION=
+ARG INTELLECT_RELEASE_TAG=
 RUN if [ -n "${INTELLECT_GIT_SHA}" ]; then \
         printf '%s\n' "${INTELLECT_GIT_SHA}" > /opt/intellect/.intellect_build_sha && \
         chown intellect:intellect /opt/intellect/.intellect_build_sha; \
     fi
+LABEL org.opencontainers.image.version="${INTELLECT_VERSION}"
+LABEL io.intellect.release.tag="${INTELLECT_RELEASE_TAG}"
+LABEL io.intellect.rust.version="0.1.0"
 
 # ---------- s6-overlay service wiring ----------
 # Static service declared at build time: main-intellect.

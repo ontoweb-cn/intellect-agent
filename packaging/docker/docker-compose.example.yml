@@ -1,0 +1,27 @@
+# Docker Compose example — pin image version to SemVer from Gitee Release.
+# Docs: docs/packaging/docker.md
+
+services:
+  intellect-gateway:
+    image: ontoweb/intellect-agent:0.6.3
+    volumes:
+      - intellect-data:/home/intellect/.intellect
+    environment:
+      INTELLECT_HOME: /home/intellect/.intellect
+    command: intellect gateway
+    restart: unless-stopped
+
+  # Interactive CLI (one-shot)
+  intellect-chat:
+    image: ontoweb/intellect-agent:0.6.3
+    profiles: ["cli"]
+    stdin_open: true
+    tty: true
+    volumes:
+      - intellect-data:/home/intellect/.intellect
+    environment:
+      INTELLECT_HOME: /home/intellect/.intellect
+    command: intellect chat
+
+volumes:
+  intellect-data:

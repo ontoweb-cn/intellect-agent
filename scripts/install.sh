@@ -6,7 +6,7 @@
 # Uses uv for desktop/server installs and Python's stdlib venv + pip on Termux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
+#   curl -fsSL https://gitee.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 #
 # Or with options:
 #   curl -fsSL ... | bash -s -- --no-venv --skip-setup
@@ -1131,8 +1131,135 @@ setup_venv() {
     log_success "Virtual environment ready (Python $PYTHON_VERSION)"
 }
 
+# ── Rust extension (intellect_community_core) — required since v0.6.2 ────────
+
+_rust_pip_python() {
+    if [ "$USE_VENV" = true ]; then
+        echo "$INSTALL_DIR/venv/bin/python"
+    else
+        echo "$PYTHON_PATH"
+    fi
+}
+
+_rust_wheel_platform_hint() {
+    case "$(uname -s)" in
+        Linux)
+            case "$(uname -m)" in
+                x86_64) echo "manylinux_2_28_x86_64" ;;
+                aarch64|arm64) echo "manylinux_2_28_aarch64" ;;
+                *) return 1 ;;
+            esac
+            ;;
+        Darwin) echo "macosx_11_0_universal2" ;;
+        *) return 1 ;;
+    esac
+}
+
+rust_extension_installed() {
+    "$(_rust_pip_python)" -c "import intellect_community_core" 2>/dev/null
+}
+
+try_download_gitee_rust_wheel() {
+    local hint pip_py url tmp
+    hint="$(_rust_wheel_platform_hint)" || return 1
+    pip_py="$(_rust_pip_python)"
+
+    url="$(
+        INTELLECT_RELEASE_TAG="${INTELLECT_RELEASE_TAG:-}" \
+        _RUST_HINT="$hint" \
+        "$pip_py" - <<'PY'
+import json, os, urllib.parse, urllib.request
+
+owner, repo = "ontoweb", "intellect-agent"
+tag = os.environ.get("INTELLECT_RELEASE_TAG", "").strip()
+hint = os.environ.get("_RUST_HINT", "").lower()
+base = f"https://gitee.com/api/v5/repos/{owner}/{repo}/releases"
+try:
+    if tag:
+        enc = urllib.parse.quote(tag, safe="")
+        with urllib.request.urlopen(f"{base}/tags/{enc}", timeout=30) as resp:
+            release = json.load(resp)
+    else:
+        with urllib.request.urlopen(
+            f"{base}?page=1&per_page=1&direction=desc", timeout=30
+        ) as resp:
+            releases = json.load(resp)
+        release = releases[0] if releases else None
+except Exception:
+    raise SystemExit(1)
+if not release:
+    raise SystemExit(1)
+for asset in release.get("assets") or []:
+    name = (asset.get("name") or "").lower()
+    if "intellect_community_core" not in name or not name.endswith(".whl"):
+        continue
+    if hint in name or "universal2" in name and "macosx" in hint:
+        url = asset.get("browser_download_url") or asset.get("url") or ""
+        if url:
+            print(url)
+            break
+else:
+    raise SystemExit(1)
+PY
+    )" || return 1
+
+    [ -n "$url" ] || return 1
+    tmp="$(mktemp "${TMPDIR:-/tmp}/intellect-rust-XXXXXX.whl")"
+    log_info "Downloading Rust extension from Gitee Release..."
+    if ! curl -fsSL -o "$tmp" "$url"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    if ! "$pip_py" -m pip install -q "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    rm -f "$tmp"
+    log_success "Installed intellect_community_core from Gitee Release"
+    return 0
+}
+
+try_build_rust_local() {
+    local pip_py="$(_rust_pip_python)"
+    if ! command -v cargo >/dev/null 2>&1; then
+        return 1
+    fi
+    log_info "Building Rust extension locally (maturin)..."
+    if ! command -v maturin >/dev/null 2>&1; then
+        "$pip_py" -m pip install -q maturin || return 1
+    fi
+    if (cd "$INSTALL_DIR/rust-core" && maturin develop --release); then
+        log_success "Built intellect_community_core via maturin"
+        return 0
+    fi
+    return 1
+}
+
+install_rust_extension() {
+    if rust_extension_installed; then
+        return 0
+    fi
+    if [ "$DISTRO" != "termux" ]; then
+        if try_download_gitee_rust_wheel; then
+            return 0
+        fi
+    fi
+    if try_build_rust_local; then
+        return 0
+    fi
+    log_error "The intellect_community_core Rust extension is required (since v0.6.2)."
+    log_info "Options:"
+    log_info "  1. Export INTELLECT_RELEASE_TAG=vYYYY.M.D and re-run (Gitee Release wheel)"
+    log_info "  2. Install Rust (https://rustup.rs) and re-run the installer"
+    log_info "  3. cd $INSTALL_DIR/rust-core && maturin develop --release"
+    log_info "Docs: https://gitee.com/ontoweb/intellect-agent/tree/main/docs/packaging"
+    return 1
+}
+
 install_deps() {
     log_info "Installing dependencies..."
+
+    install_rust_extension || exit 1
 
     if [ "$DISTRO" = "termux" ]; then
         if [ "$USE_VENV" = true ]; then

@@ -1173,8 +1173,104 @@ function Install-Venv {
     Write-Success "Virtual environment ready (Python $PythonVersion)"
 }
 
+function Get-RustExtensionPython {
+    if (-not $NoVenv) {
+        return "$InstallDir\venv\Scripts\python.exe"
+    }
+    return (& $UvCmd python find $PythonVersion)
+}
+
+function Test-RustExtensionInstalled {
+    param([string]$PythonExe)
+    if (-not (Test-Path $PythonExe)) { return $false }
+    & $PythonExe -c "import intellect_community_core" 2>$null
+    return $LASTEXITCODE -eq 0
+}
+
+function Install-RustExtensionFromGitee {
+    param([string]$PythonExe)
+    $tag = $env:INTELLECT_RELEASE_TAG
+    if (-not $tag) { $tag = "" }
+    $script = @'
+import json, os, sys, urllib.parse, urllib.request
+owner, repo = "ontoweb", "intellect-agent"
+tag = os.environ.get("INTELLECT_RELEASE_TAG", "").strip()
+hint = "win_amd64"
+base = f"https://gitee.com/api/v5/repos/{owner}/{repo}/releases"
+try:
+    if tag:
+        enc = urllib.parse.quote(tag, safe="")
+        with urllib.request.urlopen(f"{base}/tags/{enc}", timeout=30) as resp:
+            release = json.load(resp)
+    else:
+        with urllib.request.urlopen(f"{base}?page=1&per_page=1&direction=desc", timeout=30) as resp:
+            releases = json.load(resp)
+        release = releases[0] if releases else None
+except Exception:
+    sys.exit(1)
+if not release:
+    sys.exit(1)
+for asset in release.get("assets") or []:
+    name = (asset.get("name") or "").lower()
+    if "intellect_community_core" in name and hint in name and name.endswith(".whl"):
+        url = asset.get("browser_download_url") or asset.get("url") or ""
+        if url:
+            print(url)
+            break
+else:
+    sys.exit(1)
+'@
+    $url = & $PythonExe -c $script 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $url) { return $false }
+    $tmp = Join-Path $env:TEMP ("intellect-rust-{0}.whl" -f [guid]::NewGuid().ToString("n").Substring(0, 8))
+    try {
+        Write-Info "Downloading Rust extension from Gitee Release..."
+        Invoke-WebRequest -Uri $url.Trim() -OutFile $tmp -UseBasicParsing
+        & $PythonExe -m pip install -q $tmp
+        if ($LASTEXITCODE -ne 0) { return $false }
+        Write-Success "Installed intellect_community_core from Gitee Release"
+        return $true
+    } finally {
+        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-RustExtensionLocal {
+    param([string]$PythonExe)
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { return $false }
+    Write-Info "Building Rust extension locally (maturin)..."
+    if (-not (Get-Command maturin -ErrorAction SilentlyContinue)) {
+        & $PythonExe -m pip install -q maturin
+        if ($LASTEXITCODE -ne 0) { return $false }
+    }
+    Push-Location "$InstallDir\rust-core"
+    try {
+        maturin develop --release
+        if ($LASTEXITCODE -ne 0) { return $false }
+        Write-Success "Built intellect_community_core via maturin"
+        return $true
+    } finally {
+        Pop-Location
+    }
+}
+
+function Install-RustExtension {
+    $pythonExe = Get-RustExtensionPython
+    if (Test-RustExtensionInstalled $pythonExe) { return }
+    if (Install-RustExtensionFromGitee $pythonExe) { return }
+    if (Install-RustExtensionLocal $pythonExe) { return }
+    Write-Error "The intellect_community_core Rust extension is required (since v0.6.2)."
+    Write-Info "Options:"
+    Write-Info "  1. `$env:INTELLECT_RELEASE_TAG='vYYYY.M.D' and re-run (Gitee Release wheel)"
+    Write-Info "  2. Install Rust: winget install Rustlang.Rustup"
+    Write-Info "  3. cd $InstallDir\rust-core; maturin develop --release"
+    throw "Rust extension install failed"
+}
+
 function Install-Dependencies {
     Write-Info "Installing dependencies..."
+
+    Install-RustExtension
     
     Push-Location $InstallDir
     

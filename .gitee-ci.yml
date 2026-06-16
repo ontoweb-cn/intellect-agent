@@ -1,9 +1,12 @@
-# Gitee CI configuration — overrides the default Python build plugin.
-# The actual CI pipeline runs via .github/workflows/tests.yml (Rust + Python).
-# This file prevents Gitee from running its generic "pip install -r requirements.txt
-# && python ./main.py" steps which don't match this project's layout.
+# Gitee CI — release builds run via GitHub Actions (mirrors to Gitee Release).
 #
-# Project requirements: Python 3.12, uv, maturin, pyproject.toml (no setup.py/requirements.txt)
+# Workflow: .github/workflows/gitee-release.yml
+# Trigger:  CalVer tag push (v2026.6.16) from scripts/release.py --publish
+#
+# Required secret (GitHub repo settings → Secrets):
+#   GITEE_TOKEN — Gitee private token with repo scope
+#
+# This file prevents Gitee's default Python plugin from failing on pyproject.toml layout.
 
 image: ubuntu-24.04
 
@@ -13,7 +16,8 @@ stages:
     steps:
       - name: verify project structure
         run: |
-          echo "Intellect Agent — CI runs via GitHub Actions (.github/workflows/tests.yml)"
-          echo "Python 3.12+ required, uses uv + maturin + pyproject.toml"
+          echo "Intellect Agent release CI: .github/workflows/gitee-release.yml"
+          echo "Set GITEE_TOKEN in GitHub Actions secrets for Gitee Release upload"
           test -f pyproject.toml && echo "pyproject.toml: OK"
           test -f rust-core/Cargo.toml && echo "Cargo.toml: OK"
+          test -f .github/workflows/gitee-release.yml && echo "gitee-release.yml: OK"

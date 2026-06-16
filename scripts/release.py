@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Intellect Agent Release Script
 
-Generates changelogs and creates GitHub releases with CalVer tags.
+Generates changelogs and creates Gitee releases (primary) with CalVer tags.
 
 Usage:
     # Preview changelog (dry run)
@@ -21,6 +21,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -1536,6 +1537,18 @@ def _update_acp_registry_versions(semver: str) -> None:
         )
 
 
+def _load_gitee_release_module():
+    import importlib.util
+
+    path = REPO_ROOT / "packaging" / "gitee_release.py"
+    spec = importlib.util.spec_from_file_location("intellect_gitee_release", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load Gitee release helper from {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def build_release_artifacts(semver: str) -> list[Path]:
     """Build sdist/wheel artifacts for the current release.
 
@@ -1569,12 +1582,83 @@ def build_release_artifacts(semver: str) -> list[Path]:
         print("    Install uv or the 'build' package to attach sdist/wheel assets.")
         return []
 
+    # Rust extension wheel (current platform — CI matrix builds all targets).
+    maturin_bin = shutil.which("maturin")
+    if maturin_bin:
+        rust_result = subprocess.run(
+            [maturin_bin, "build", "--release"],
+            cwd=str(REPO_ROOT / "rust-core"),
+            capture_output=True,
+            text=True,
+        )
+        if rust_result.returncode == 0:
+            wheel_dir = REPO_ROOT / "rust-core" / "target" / "wheels"
+            for whl in sorted(wheel_dir.glob("intellect_community_core-*.whl")):
+                shutil.copy2(whl, dist_dir / whl.name)
+            print(f"  ✓ Built Rust wheel(s) in {wheel_dir.name}/")
+        else:
+            tail = (rust_result.stderr or rust_result.stdout).strip().splitlines()
+            print("  ⚠ Rust wheel build failed (maturin).")
+            if tail:
+                print(f"    {tail[-1]}")
+    else:
+        print("  ⚠ maturin not found — skipping Rust wheel (install: pip install maturin)")
+
     artifacts = sorted(p for p in dist_dir.iterdir() if p.is_file())
-    matching = [p for p in artifacts if semver in p.name]
-    if not matching:
-        print("  ⚠ Built artifacts did not match the expected release version.")
-        return []
-    return matching
+    if not any(semver in p.name for p in artifacts):
+        print("  ⚠ Built artifacts did not include the expected Python release version.")
+
+    # Checksums for Gitee Release attachments
+    if artifacts:
+        sums_path = dist_dir / "SHA256SUMS"
+        lines = []
+        for path in artifacts:
+            if path.name == "SHA256SUMS":
+                continue
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            lines.append(f"{digest}  {path.name}")
+        sums_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        artifacts = sorted(p for p in dist_dir.iterdir() if p.is_file())
+
+    py_artifacts = [p for p in artifacts if semver in p.name]
+    rust_artifacts = [p for p in artifacts if p.name.startswith("intellect_community_core")]
+    if not py_artifacts:
+        print("  ⚠ Built artifacts did not include the expected Python release version.")
+
+    # Native bundle for the current platform (CI matrix builds all platforms).
+    native_script = REPO_ROOT / "packaging" / "scripts" / "build-native-bundle.sh"
+    if native_script.is_file() and py_artifacts and rust_artifacts:
+        native_result = subprocess.run(
+            ["bash", str(native_script), "--semver", semver],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        if native_result.returncode == 0:
+            native_dir = REPO_ROOT / "dist" / "native"
+            if native_dir.is_dir():
+                for nb in native_dir.iterdir():
+                    if nb.is_file():
+                        shutil.copy2(nb, dist_dir / nb.name)
+            artifacts = sorted(p for p in dist_dir.iterdir() if p.is_file())
+            if artifacts:
+                sums_path = dist_dir / "SHA256SUMS"
+                lines = []
+                for path in artifacts:
+                    if path.name == "SHA256SUMS":
+                        continue
+                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                    lines.append(f"{digest}  {path.name}")
+                sums_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                artifacts = sorted(p for p in dist_dir.iterdir() if p.is_file())
+            print("  ✓ Built native bundle for current platform")
+        else:
+            tail = (native_result.stderr or native_result.stdout).strip().splitlines()
+            print("  ⚠ Native bundle build skipped/failed")
+            if tail:
+                print(f"    {tail[-1]}")
+
+    return artifacts if py_artifacts or rust_artifacts else []
 
 
 def resolve_author(name: str, email: str) -> str:
@@ -1835,7 +1919,13 @@ def main():
     parser.add_argument("--bump", choices=["major", "minor", "patch"],
                         help="Which semver component to bump")
     parser.add_argument("--publish", action="store_true",
-                        help="Actually create the tag and GitHub release (otherwise dry run)")
+                        help="Create tag, push, and trigger CI release pipeline")
+    parser.add_argument(
+        "--gitee-local",
+        action="store_true",
+        help="Upload artifacts to Gitee immediately from this machine (partial — "
+        "CI gitee-release.yml publishes the full platform matrix after tag push)",
+    )
     parser.add_argument("--date", type=str,
                         help="Override CalVer date (format: YYYY.M.D)")
     parser.add_argument("--first-release", action="store_true",
@@ -1944,6 +2034,10 @@ def main():
         push_result = git_result("push", "origin", "HEAD", "--tags")
         if push_result.returncode == 0:
             print(f"  ✓ Pushed to origin")
+            print(
+                "  ℹ CI workflow .github/workflows/gitee-release.yml will build "
+                "full platform matrix and publish to Gitee (needs GITEE_TOKEN secret)."
+            )
         else:
             print(f"  ✗ Failed to push to origin: {push_result.stderr.strip()}")
             print("    Continue manually after fixing access:")
@@ -1957,13 +2051,42 @@ def main():
             for artifact in artifacts:
                 print(f"    - {artifact.relative_to(REPO_ROOT)}")
 
-        # Create GitHub release
+        # Create Gitee release (primary distribution channel)
         changelog_file = REPO_ROOT / ".release_notes.md"
         changelog_file.write_text(changelog, encoding="utf-8")
 
+        release_title = f"Intellect Agent v{new_version} ({calver_date})"
+        gitee_releases_url = "https://gitee.com/ontoweb/intellect-agent/releases"
+        gitee_published = False
+
+        if args.gitee_local:
+            try:
+                gitee = _load_gitee_release_module()
+                gitee_releases_url = gitee.GITEE_RELEASES_PAGE
+                ok, gitee_msg = gitee.publish_gitee_release(
+                    tag_name,
+                    release_title,
+                    changelog,
+                    artifacts,
+                )
+                if ok:
+                    gitee_published = True
+                    print(f"  ✓ {gitee_msg}")
+                    print(f"  🎉 Gitee Release (local/partial): {gitee_releases_url}/tag/{tag_name}")
+                else:
+                    print(f"  ✗ Gitee Release: {gitee_msg}")
+            except Exception as exc:
+                print(f"  ✗ Gitee Release failed: {exc}")
+        else:
+            print(
+                "  ℹ Skipping local Gitee upload (default). "
+                "Use --gitee-local for immediate partial upload, or wait for CI."
+            )
+
+        # Optional: GitHub mirror via gh CLI (legacy / fork sync)
         gh_cmd = [
             "gh", "release", "create", tag_name,
-            "--title", f"Intellect Agent v{new_version} ({calver_date})",
+            "--title", release_title,
             "--notes-file", str(changelog_file),
         ]
         gh_cmd.extend(str(path) for path in artifacts)
@@ -1975,25 +2098,21 @@ def main():
                 capture_output=True, text=True,
                 cwd=str(REPO_ROOT),
             )
-        else:
-            result = None
-
-        if result and result.returncode == 0:
-            changelog_file.unlink(missing_ok=True)
-            print(f"  ✓ GitHub release created: {result.stdout.strip()}")
-            print(f"\n  🎉 Release v{new_version} ({tag_name}) published!")
-        else:
-            if result is None:
-                print("  ✗ GitHub release skipped: `gh` CLI not found.")
-            else:
+            if result.returncode == 0:
+                changelog_file.unlink(missing_ok=True)
+                if not gitee_published:
+                    print(f"  ✓ GitHub release created: {result.stdout.strip()}")
+                    print(f"\n  🎉 Release v{new_version} ({tag_name}) published!")
+            elif not gitee_published:
                 print(f"  ✗ GitHub release failed: {result.stderr.strip()}")
+                print(f"    Release notes kept at: {changelog_file}")
+                print(f"    Create manually on Gitee: {gitee_releases_url}")
+        elif not gitee_published:
+            print("  ✗ No GITEE_TOKEN and no `gh` CLI — release not uploaded.")
             print(f"    Release notes kept at: {changelog_file}")
-            print(f"    Tag was created locally. Create the release manually:")
-            print(
-                f"    gh release create {tag_name} --title 'Intellect Agent v{new_version} ({calver_date})' "
-                f"--notes-file .release_notes.md {' '.join(str(path) for path in artifacts)}"
-            )
-            print(f"\n  ✓ Release artifacts prepared for manual publish: v{new_version} ({tag_name})")
+            print(f"    Upload artifacts manually to Gitee Release {tag_name}")
+        elif gitee_published:
+            changelog_file.unlink(missing_ok=True)
     else:
         print(f"\n{'='*60}")
         print(f"  Dry run complete. To publish, add --publish")

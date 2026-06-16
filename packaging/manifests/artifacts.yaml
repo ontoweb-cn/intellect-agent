@@ -1,0 +1,104 @@
+# Intellect Agent — 发布产物清单（设计规范）
+#
+# 主分发渠道：Gitee https://gitee.com/ontoweb/intellect-agent
+# 文档：docs/packaging/gitee-releases.md / docker.md
+
+release:
+  python_semver: "0.6.3"
+  rust_crate_semver: "0.1.0"
+  calver_tag_pattern: "v20YY.M.D"
+  primary_host: gitee.com
+  repo: ontoweb/intellect-agent
+  release_url: "https://gitee.com/ontoweb/intellect-agent/releases"
+  download_url_template: "https://gitee.com/ontoweb/intellect-agent/releases/download/{tag}/{filename}"
+
+packages:
+  intellect-agent:
+    pypi_name: intellect-agent
+    type: python
+    build: "uv build --sdist --wheel"
+    runtime_requires:
+      - "intellect-community-core=={rust_crate_semver}"
+
+  intellect-community-core:
+    pypi_name: intellect-community-core
+    python_import: intellect_community_core
+    type: rust-pyo3
+    build: "cd rust-core && maturin build --release"
+    mandatory_since: "0.6.2"
+
+# ── Native 自包含包（Gitee Release 主产物，终端用户）────────────────────────────
+
+native_bundles:
+  build: "./packaging/scripts/build-native-bundle.sh"
+  artifacts:
+    - name: "intellect-linux-x86_64-{python_semver}.tar.gz"
+      platform: linux
+      arch: x86_64
+    - name: "intellect-linux-aarch64-{python_semver}.tar.gz"
+      platform: linux
+      arch: aarch64
+    - name: "intellect-darwin-universal2-{python_semver}.tar.gz"
+      platform: darwin
+      arch: universal2
+    - name: "intellect-windows-amd64-{python_semver}.zip"
+      platform: windows
+      arch: amd64
+  contents:
+    - venv/                    # Python 3.12 + 预装 wheel
+    - bin/intellect            # 启动 wrapper
+    - skills/                  # bundled skills 链接或 copy
+    - VERSION
+    - README.txt
+
+rust_wheels:
+  python_versions: ["cp312", "cp313"]
+  targets:
+    linux: [manylinux_2_28_x86_64, manylinux_2_28_aarch64]
+    macos: [macosx_11_0_universal2]
+    windows: [win_amd64]
+
+channels:
+  gitee_ci:
+    workflow: .github/workflows/gitee-release.yml
+    secret: GITEE_TOKEN
+    matrix:
+      - linux/x86_64
+      - linux/aarch64
+      - darwin/universal2
+      - windows/amd64
+    attach:
+      - "intellect_agent-{python_semver}.tar.gz"
+      - "intellect_agent-{python_semver}-py3-none-any.whl"
+      - "intellect_community_core-{rust_crate_semver}-*.whl"
+      - "intellect-linux-x86_64-{python_semver}.tar.gz"
+      - "intellect-linux-aarch64-{python_semver}.tar.gz"
+      - "intellect-darwin-universal2-{python_semver}.tar.gz"
+      - "intellect-windows-amd64-{python_semver}.zip"
+      - "SHA256SUMS"
+
+  pypi:
+    primary: false
+    mirror_of: gitee
+    packages: [intellect-agent, intellect-community-core]
+
+  docker:
+    registry: docker.io/ontoweb/intellect-agent
+    tags_on_release:
+      - "{python_semver}"       # e.g. 0.6.3 — production
+      - "{calver_tag}"          # e.g. v2026.6.16
+    tags_on_main:
+      - latest
+      - main
+    platforms: [linux/amd64, linux/arm64]
+    compose_example: packaging/docker/docker-compose.example.yml
+
+  git_installer:
+    repo: "https://gitee.com/ontoweb/intellect-agent.git"
+    linux_macos: scripts/install.sh
+    windows: scripts/install.ps1
+    prefer_gitee_release_download: true
+
+  homebrew:
+    formula: packaging/homebrew/intellect-agent.rb
+    sdist_from: gitee_release
