@@ -1,7 +1,7 @@
 {
   "id": "intellect-agent",
   "name": "Intellect Agent",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Self-improving open-source AI agent by ONTOWEB with ACP editor integration, persistent memory, skills, and rich tool support.",
   "repository": "https://gitee.com/ontoweb/intellect-agent",
   "website": "https://intellect-agent.ontoweb.cn/docs/user-guide/features/acp",
@@ -11,7 +11,7 @@
   "license": "MIT",
   "distribution": {
     "uvx": {
-      "package": "intellect-agent[acp]==0.6.3",
+      "package": "intellect-agent[acp]==0.6.4",
       "args": [
         "intellect-acp"
       ]
