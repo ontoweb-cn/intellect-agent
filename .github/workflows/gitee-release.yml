@@ -1,16 +1,17 @@
 name: Gitee Release Artifacts
 
 # Builds full cross-platform wheels + native bundles, uploads to Gitee Release.
-# Triggered by CalVer tags from scripts/release.py (v2026.6.16, etc.).
+# Triggered by CalVer tags (v2026.6.16) or SemVer tags (v0.6.4).
 
 on:
   push:
     tags:
-      - 'v20*'
+      - 'v20*'       # CalVer from scripts/release.py --publish
+      - 'v[0-9]*.*'  # SemVer (v0.6.4, v1.0.0, …)
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing CalVer tag (e.g. v2026.6.16)'
+        description: 'Existing release tag (e.g. v0.6.4 or v2026.6.16)'
         required: true
         type: string
 

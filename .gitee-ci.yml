@@ -1,7 +1,7 @@
 # Gitee CI — release builds run via GitHub Actions (mirrors to Gitee Release).
 #
 # Workflow: .github/workflows/gitee-release.yml
-# Trigger:  CalVer tag push (v2026.6.16) from scripts/release.py --publish
+# Trigger:  CalVer tag (v2026.6.16) or SemVer tag (v0.6.4) push, or workflow_dispatch
 #
 # Required secret (GitHub repo settings → Secrets):
 #   GITEE_TOKEN — Gitee private token with repo scope
