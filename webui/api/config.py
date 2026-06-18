@@ -212,15 +212,26 @@ def _discover_python(agent_dir: Path) -> str:
       2. Agent venv at <agent_dir>/venv/bin/python
       3. Local .venv inside this repo
       4. System python3
+
+    On Windows, prefer pythonw.exe (GUI-subsystem, windowless) from the
+    base Python installation over venv python.exe (console-subsystem)
+    to avoid popup console windows from subprocess probes.
     """
     if os.getenv("INTELLECT_WEBUI_PYTHON"):
         return os.getenv("INTELLECT_WEBUI_PYTHON")
 
     if agent_dir:
+        # Windows: prefer pythonw.exe from base prefix (truly windowless)
+        if os.name == "nt":
+            _base = getattr(sys, "base_prefix", sys.prefix)
+            _pyw = os.path.join(_base, "pythonw.exe")
+            if os.path.isfile(_pyw):
+                return _pyw
+
         venv_py = agent_dir / "venv" / "bin" / "python"
         if venv_py.exists():
             return str(venv_py)
-        
+
         venv_py = agent_dir / ".venv" / "bin" / "python"
         if venv_py.exists():
             return str(venv_py)
@@ -229,7 +240,7 @@ def _discover_python(agent_dir: Path) -> str:
         venv_py_win = agent_dir / "venv" / "Scripts" / "python.exe"
         if venv_py_win.exists():
             return str(venv_py_win)
-        
+
         venv_py_win = agent_dir / ".venv" / "Scripts" / "python.exe"
         if venv_py_win.exists():
             return str(venv_py_win)
