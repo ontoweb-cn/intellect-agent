@@ -24,7 +24,7 @@ If you prefer a real POSIX environment (for embedded terminal, `fork` semantics,
 Open **PowerShell** (or Windows Terminal) and run:
 
 ```powershell
-iex (irm https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.ps1)
+iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)
 ```
 
 No admin rights required. The installer goes to `%LOCALAPPDATA%\intellect\` and adds `intellect` to your **User PATH** — open a new terminal after it finishes.
@@ -32,7 +32,7 @@ No admin rights required. The installer goes to `%LOCALAPPDATA%\intellect\` and 
 **Installer options** (requires the scriptblock form to pass parameters):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.ps1))) -NoVenv -SkipSetup -Branch main
+& ([scriptblock]::Create((irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1))) -NoVenv -SkipSetup -Branch main
 ```
 
 | Parameter | Default | Purpose |

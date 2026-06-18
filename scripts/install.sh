@@ -345,7 +345,7 @@ detect_os() {
             OS="windows"
             DISTRO="windows"
             log_error "Windows detected. Please use the PowerShell installer:"
-            log_info "  iex (irm https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.ps1)"
+            log_info "  iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)"
             exit 1
             ;;
         *)

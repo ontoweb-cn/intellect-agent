@@ -24,7 +24,7 @@ Intellect 可在 Windows 10 和 Windows 11 上原生运行——无需 WSL、Cyg
 打开 **PowerShell**（或 Windows Terminal）并运行：
 
 ```powershell
-iex (irm https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.ps1)
+iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)
 ```
 
 无需管理员权限。安装程序会写入 `%LOCALAPPDATA%\intellect\`，并将 `intellect` 添加到你的**用户 PATH**——安装完成后打开新终端即可使用。
@@ -32,7 +32,7 @@ iex (irm https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/
 **安装程序选项**（需要使用 scriptblock 形式传递参数）：
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.ps1))) -NoVenv -SkipSetup -Branch main
+& ([scriptblock]::Create((irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1))) -NoVenv -SkipSetup -Branch main
 ```
 
 | 参数 | 默认值 | 用途 |

@@ -182,8 +182,8 @@ class TestFallbackChain:
 
     PRIMARY = "https://intellect.ontoweb.cn/docs/api/model-catalog.json"
     FALLBACK = (
-        "https://raw.githubusercontent.com/ONTOWEB/intellect-agent"
-        "/main/website/static/api/model-catalog.json"
+        "https://raw.giteeusercontent.com/ontoweb/intellect-agent"
+        "/raw/main/website/static/api/model-catalog.json"
     )
 
     def test_uses_primary_when_it_succeeds(self, isolated_home):

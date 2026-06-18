@@ -18,7 +18,7 @@
 ### Linux, macOS, WSL2
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 ```
 
 > The installer creates a virtual environment, installs Python dependencies, and builds the Rust extension (`intellect_community_core`).
@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/script
 Run this in PowerShell:
 
 ```powershell
-iex (irm https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.ps1)
+iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)
 ```
 
 The installer handles everything: uv, Python 3.12, Node.js, ripgrep, ffmpeg, **and a portable Git Bash** (MinGit, unpacked to `%LOCALAPPDATA%\intellect\git` — no admin required, completely isolated from any system Git install). Intellect uses this bundled Git Bash to run shell commands.

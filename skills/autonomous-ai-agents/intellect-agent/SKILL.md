@@ -35,7 +35,7 @@ People use Intellect for software development, research, system administration, 
 
 ```bash
 # Install
-curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 
 # Interactive chat (default)
 intellect

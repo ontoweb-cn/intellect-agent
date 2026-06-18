@@ -46,7 +46,7 @@ That does not stop Intellect from working well as a phone-native CLI agent — i
 Intellect now ships a Termux-aware installer path:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 ```
 
 On Termux, the installer automatically:

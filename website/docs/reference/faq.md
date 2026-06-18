@@ -33,7 +33,7 @@ Set your provider with `intellect model` or by editing `~/.intellect/.env`. See 
 **Not natively.** Intellect Agent requires a Unix-like environment. On Windows, install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run Intellect from inside it. The standard install command works perfectly in WSL2:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 ```
 
 ### I run Intellect in WSL2. What's the best way to control my normal Windows Chrome?
@@ -61,7 +61,7 @@ Yes — Intellect now has a tested Termux install path for Android phones.
 Quick install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 ```
 
 For the fully explicit manual steps, supported extras, and current limitations, see the [Termux guide](../getting-started/termux.md).
@@ -225,7 +225,7 @@ source ~/.bashrc
 # If you previously installed with sudo, clean up:
 sudo rm /usr/local/bin/intellect
 # Then re-run the standard installer
-curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 ```
 
 ---
@@ -751,7 +751,7 @@ Skills with very long descriptions are truncated to 40 characters in the Telegra
 
 1. Install Intellect Agent on the new machine:
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
+   curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
    ```
 
 2. On the **source machine**, create a full backup:

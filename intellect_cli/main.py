@@ -10062,7 +10062,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 return
             print("✗ Not a git repository. Please reinstall:")
             print(
-                "  curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash"
+                "  curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash"
             )
             sys.exit(1)
 
