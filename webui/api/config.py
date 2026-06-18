@@ -31,7 +31,7 @@ HOME = Path.home()
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 
 
-# ── Network config (env-overridable) ─────────────────────────────────────────
+def _platform_default_intellect_home() -> Path:
     """Return the default Intellect home when INTELLECT_HOME is unset.
 
     Always defaults to ``~/.intellect`` on all platforms — consistent with
@@ -45,6 +45,9 @@ REPO_ROOT = Path(__file__).parent.parent.resolve()
     take precedence upstream and are unaffected.
     """
     return HOME / ".intellect"
+
+
+# ── Network config (env-overridable) ─────────────────────────────────────────
 
 
 # ── Network config (env-overridable) ─────────────────────────────────────────
