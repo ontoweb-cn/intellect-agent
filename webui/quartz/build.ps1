@@ -15,9 +15,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$QuartzContent = Join-Path $ScriptDir "content"
-$QuartzConfig = Join-Path $ScriptDir "quartz.config.ts"
-$QuartzLayout = Join-Path $ScriptDir "quartz.layout.ts"
+$QuartzRepo = Join-Path $ScriptDir "_quartz"
+$QuartzContent = Join-Path $QuartzRepo "content"
+$QuartzConfig = Join-Path $QuartzRepo "quartz.config.ts"
+$QuartzLayout = Join-Path $QuartzRepo "quartz.layout.ts"
 
 # ── Ensure Node.js is available ───────────────────────────────────────
 $node = Get-Command node -ErrorAction SilentlyContinue
@@ -27,19 +28,22 @@ if (-not $node) {
 }
 
 # ── Ensure Quartz is installed ────────────────────────────────────────
-$hasQuartz = $false
-try { $null = npx --no-install quartz --version 2>$null; $hasQuartz = $true } catch { }
-
-if (-not $hasQuartz) {
-    Write-Host "[vault] Installing Quartz dependencies..."
-    Push-Location $ScriptDir
+if (-not (Test-Path (Join-Path $QuartzRepo ".git"))) {
+    Write-Host "[vault] Cloning Quartz (one-time, ~50MB)..."
+    git clone --depth 1 https://github.com/jackyzha0/quartz.git $QuartzRepo 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "[vault] ERROR: Failed to clone Quartz repository"
+        exit 1
+    }
+    Write-Host "[vault] Installing Quartz npm dependencies..."
+    Push-Location $QuartzRepo
     try {
-        npm install --prefer-offline --no-audit quartz 2>&1 | Out-Null
+        npm install --prefer-offline 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "[vault] ERROR: Failed to install Quartz"
+            Write-Error "[vault] ERROR: Failed to install Quartz dependencies"
             exit 1
         }
-        Write-Host "[vault] Quartz installed."
+        Write-Host "[vault] Quartz ready."
     } finally {
         Pop-Location
     }
@@ -149,9 +153,9 @@ export { defaultLayout }
 
 # ── Build ─────────────────────────────────────────────────────────────
 Write-Host "[vault] Building Quartz site from ${WikiPath} -> ${OutputDir}..."
-Push-Location $ScriptDir
+Push-Location $QuartzRepo
 try {
-    npx quartz build --directory $ScriptDir --output $OutputDir --concurrency 4 2>&1
+    npx quartz build --directory $QuartzRepo --output $OutputDir --concurrency 4 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Error "[vault] Quartz build failed (exit code $LASTEXITCODE)"
         exit 1
@@ -161,7 +165,7 @@ try {
 }
 
 # Copy built output if Quartz puts it elsewhere
-$publicDir = Join-Path $ScriptDir "public"
+$publicDir = Join-Path $QuartzRepo "public"
 if ((Test-Path $publicDir) -and ((Resolve-Path $publicDir).Path -ne (Resolve-Path $OutputDir).Path)) {
     Remove-Item -Recurse -Force $OutputDir -ErrorAction SilentlyContinue
     Copy-Item -Recurse -Force "$publicDir\*" $OutputDir

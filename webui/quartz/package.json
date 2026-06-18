@@ -3,9 +3,7 @@
   "private": true,
   "description": "Quartz build workspace for Intellect Vault",
   "scripts": {
-    "build": "npx quartz build"
-  },
-  "dependencies": {
-    "quartz": "^4.4.0"
+    "setup": "git clone --depth 1 https://github.com/jackyzha0/quartz.git _quartz && cd _quartz && npm install",
+    "build": "cd _quartz && npx quartz build"
   }
 }

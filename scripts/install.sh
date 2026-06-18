@@ -1937,13 +1937,17 @@ install_node_deps() {
     fi
 
     # Pre-install Quartz for Vault builds (LLM Wiki → static site)
-    if [ -f "$INSTALL_DIR/webui/quartz/package.json" ]; then
-        log_info "Installing Quartz (Vault site builder)..."
-        cd "$INSTALL_DIR/webui/quartz"
-        npm install --silent --prefer-offline 2>/dev/null || {
-            log_warn "Quartz install failed — Vault build will install on first use"
-        }
-        log_success "Quartz installed"
+    # Quartz is not on npm — clone from GitHub and install its deps.
+    if [ -d "$INSTALL_DIR/webui/quartz" ] && [ ! -d "$INSTALL_DIR/webui/quartz/_quartz/.git" ]; then
+        if command -v git >/dev/null 2>&1; then
+            log_info "Setting up Quartz (Vault site builder — one-time, ~50MB clone)..."
+            cd "$INSTALL_DIR/webui/quartz"
+            git clone --depth 1 https://github.com/jackyzha0/quartz.git _quartz 2>/dev/null && {
+                cd _quartz && npm install --silent --prefer-offline 2>/dev/null && log_success "Quartz ready"
+            } || log_warn "Quartz setup failed — Vault build will set up on first use"
+        else
+            log_warn "git not available — Quartz Vault builds will clone on first use"
+        fi
     fi
 
 

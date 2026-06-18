@@ -15,19 +15,25 @@ TITLE="${3:-LLM Wiki}"
 BASE_PATH="${4:-/vault}"
 
 QUARTZ_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-QUARTZ_CONTENT="$QUARTZ_DIR/content"
-QUARTZ_CONFIG="$QUARTZ_DIR/quartz.config.ts"
-QUARTZ_LAYOUT="$QUARTZ_DIR/quartz.layout.ts"
+QUARTZ_REPO="$QUARTZ_DIR/_quartz"
+QUARTZ_CONTENT="$QUARTZ_REPO/content"
+QUARTZ_CONFIG="$QUARTZ_REPO/quartz.config.ts"
+QUARTZ_LAYOUT="$QUARTZ_REPO/quartz.layout.ts"
 
 # ── Ensure Quartz is installed ──────────────────────────────────────────
-if ! npx --no-install quartz --version &>/dev/null; then
-    echo "[vault] Installing Quartz dependencies..."
-    cd "$QUARTZ_DIR"
-    npm install --prefer-offline --no-audit quartz 2>&1 || {
-        echo "[vault] ERROR: Failed to install Quartz"
+if [ ! -d "$QUARTZ_REPO/.git" ]; then
+    echo "[vault] Cloning Quartz (one-time, ~50MB)..."
+    git clone --depth 1 https://github.com/jackyzha0/quartz.git "$QUARTZ_REPO" 2>&1 || {
+        echo "[vault] ERROR: Failed to clone Quartz repository"
         exit 1
     }
-    echo "[vault] Quartz installed."
+    echo "[vault] Installing Quartz npm dependencies..."
+    cd "$QUARTZ_REPO"
+    npm install --prefer-offline 2>&1 || {
+        echo "[vault] ERROR: Failed to install Quartz dependencies"
+        exit 1
+    }
+    echo "[vault] Quartz ready."
 fi
 
 # ── Symlink wiki content into Quartz content dir ────────────────────────
@@ -122,13 +128,13 @@ fi
 
 # ── Build ────────────────────────────────────────────────────────────────
 echo "[vault] Building Quartz site from ${WIKI_PATH} → ${OUTPUT_DIR}..."
-cd "$QUARTZ_DIR"
-npx quartz build --directory "$QUARTZ_DIR" --output "$OUTPUT_DIR" --concurrency 4 2>&1
+cd "$QUARTZ_REPO"
+npx quartz build --directory "$QUARTZ_REPO" --output "$OUTPUT_DIR" --concurrency 4 2>&1
 
 # Copy built output if Quartz puts it elsewhere
-if [ -d "$QUARTZ_DIR/public" ] && [ "$(realpath "$QUARTZ_DIR/public")" != "$(realpath "$OUTPUT_DIR")" ]; then
+if [ -d "$QUARTZ_REPO/public" ] && [ "$(realpath "$QUARTZ_REPO/public")" != "$(realpath "$OUTPUT_DIR")" ]; then
     rm -rf "$OUTPUT_DIR"
-    cp -r "$QUARTZ_DIR/public" "$OUTPUT_DIR"
+    cp -r "$QUARTZ_REPO/public" "$OUTPUT_DIR"
 fi
 
 echo "[vault] Build complete: $OUTPUT_DIR"

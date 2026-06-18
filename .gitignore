@@ -20,3 +20,4 @@ venv/
 .env
 *.log
 rustup-init.exe
+webui/quartz/_quartz/

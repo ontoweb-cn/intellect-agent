@@ -1794,11 +1794,27 @@ function Install-NodeDeps {
     }
 
     # Pre-install Quartz for Vault builds (LLM Wiki -> static site)
+    # Quartz is not on npm — clone from GitHub and install its deps.
     $quartzDir = "$InstallDir\webui\quartz"
-    if (Test-Path "$quartzDir\package.json") {
-        Write-Info "Installing Quartz (Vault site builder)..."
-        $quartzLog = "$env:TEMP\intellect-npm-quartz-$(Get-Random).log"
-        [void](_Run-NpmInstall "Quartz" $quartzDir $quartzLog $npmExe)
+    if ((Test-Path $quartzDir) -and -not (Test-Path "$quartzDir\_quartz\.git")) {
+        if (Get-Command git -ErrorAction SilentlyContinue) {
+            Write-Info "Setting up Quartz (Vault site builder — one-time, ~50MB clone)..."
+            try {
+                Push-Location $quartzDir
+                git clone --depth 1 https://github.com/jackyzha0/quartz.git _quartz 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Push-Location _quartz
+                    try {
+                        & $npmExe install --silent --prefer-offline 2>&1 | Out-Null
+                        if ($LASTEXITCODE -eq 0) { Write-Success "Quartz ready" }
+                        else { Write-Warn "Quartz npm install failed — Vault build will set up on first use" }
+                    } finally { Pop-Location }
+                } else { Write-Warn "Quartz clone failed — Vault build will set up on first use" }
+            } catch { Write-Warn "Quartz setup failed — Vault build will set up on first use" }
+            finally { Pop-Location }
+        } else {
+            Write-Warn "git not available — Quartz Vault builds will clone on first use"
+        }
     }
 }
 
