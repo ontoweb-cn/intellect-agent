@@ -137,4 +137,21 @@ if [ -d "$QUARTZ_REPO/public" ] && [ "$(realpath "$QUARTZ_REPO/public")" != "$(r
     cp -r "$QUARTZ_REPO/public" "$OUTPUT_DIR"
 fi
 
+# ── Post-process: add .html to internal links and force light theme ──────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Find working Python (avoid Windows Store stubs)
+PYTHON=""
+for candidate in "$PROJECT_ROOT/.venv/Scripts/python.exe" "$PROJECT_ROOT/.venv/bin/python" python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "print('ok')" >/dev/null 2>&1; then
+        PYTHON="$candidate"
+        break
+    fi
+done
+if [ -z "$PYTHON" ]; then
+    echo "[vault] WARNING: Python not found, skipping post-processing"
+else
+    "$PYTHON" "$SCRIPT_DIR/postprocess.py" "$OUTPUT_DIR" 2>&1
+fi
+
 echo "[vault] Build complete: $OUTPUT_DIR"

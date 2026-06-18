@@ -171,4 +171,35 @@ if ((Test-Path $publicDir) -and ((Resolve-Path $publicDir).Path -ne (Resolve-Pat
     Copy-Item -Recurse -Force "$publicDir\*" $OutputDir
 }
 
+# ── Post-process: add .html to internal links and force light theme ────────
+Write-Host "[vault] Post-processing: fixing links and theme..."
+$postScript = Join-Path $ScriptDir "postprocess.py"
+$projectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
+# Find working Python (avoid Windows Store stubs)
+$pythonExe = $null
+$candidates = @(
+    (Join-Path $projectRoot ".venv\Scripts\python.exe"),
+    (Join-Path $projectRoot ".venv\bin\python"),
+    "python3",
+    "python"
+)
+foreach ($candidate in $candidates) {
+    try {
+        $testResult = & $candidate -c "print('ok')" 2>&1
+        if ($LASTEXITCODE -eq 0 -and $testResult -match "ok") {
+            $pythonExe = $candidate
+            break
+        }
+    } catch { }
+}
+if (-not $pythonExe) {
+    Write-Host "[vault] WARNING: Python not found, skipping post-processing"
+} else {
+    & $pythonExe $postScript $OutputDir 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "[vault] Post-processing failed"
+        exit 1
+    }
+}
+
 Write-Host "[vault] Build complete: $OutputDir"
