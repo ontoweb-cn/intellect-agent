@@ -31,19 +31,17 @@ src/
 
 ## Runtime Integration
 
-Since v0.6.4, all imports are centralized in `intellect_rust.py`. When the Rust extension is not installed, safe pure-Python fallbacks are used automatically — no per-module `_HAS_RUST_*` flags needed.
+Since v0.6.4, all imports are centralized in `intellect_rust.py`. The Rust extension is a **required** dependency — all core workflows use native acceleration.
 
-| Domain | Module(s) | Fallback |
-|--------|-----------|----------|
-| Storage | `SQLiteBackend` | Returns `None` (callers use standard sqlite3) |
-| Sandbox | `rust_detect_dangerous`, `rust_detect_hardline` | Raises `NotImplementedError` |
-| Stream | `StreamAccumulator`, `TokenAccumulator` | Returns `None` (serial Python path) |
-| Usage | `rust_normalize_usage` | Pure-Python pass-through |
-| Crypto | `rust_pkce_*`, `rust_fernet_*` | Raises `NotImplementedError` |
-| Gateway | `rust_build_session_key`, etc. | Raises `NotImplementedError` |
-| Model | `rust_normalize_model_name` | Identity function |
-
-> The extension is **optional** since v0.6.4. All core agent workflows run without it.
+| Domain | Module(s) |
+|--------|-----------|
+| Storage | `SQLiteBackend` |
+| Sandbox | `rust_detect_dangerous`, `rust_detect_hardline` |
+| Stream | `StreamAccumulator`, `TokenAccumulator` |
+| Usage | `rust_normalize_usage` |
+| Crypto | `rust_pkce_*`, `rust_fernet_*` |
+| Gateway | `rust_build_session_key`, etc. |
+| Model | `rust_normalize_model_name` |
 
 ## Benchmark (v0.6.0)
 

@@ -18,23 +18,23 @@
 
 ## 快速安装
 
-### Linux, macOS, WSL2, Termux
+### Linux, macOS, WSL2
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ontoweb/intellect-agent/main/scripts/install.sh | bash
 ```
 
-> 安装程序创建虚拟环境并安装所有依赖。Rust 扩展（`intellect_community_core`）推荐安装以获得完整性能，但**可选**——无法安装时代理会使用纯 Python fallback 运行。
+> 安装程序创建虚拟环境、安装 Python 依赖，并编译 Rust 扩展（`intellect_community_core`）。
 
 ### Windows（原生 PowerShell）
 
 ```powershell
-iex (irm https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.ps1)
+iex (irm https://raw.githubusercontent.com/ontoweb/intellect-agent/main/scripts/install.ps1)
 ```
 
 安装程序自动处理：uv、Python 3.12、Node.js、ripgrep、ffmpeg 和便携式 Git Bash。
 
-> **Windows Rust 扩展：** 安装程序优先从 Gitee Releases 下载预编译 wheel，失败则通过 `maturin` 本地编译。若都失败，代理继续以纯 Python fallback 运行。
+> **Windows Rust 扩展：** 安装程序优先从 Gitee Releases 下载预编译 wheel，失败则通过 `maturin` 本地编译。
 
 ### Docker
 
@@ -48,8 +48,6 @@ docker run -v intellect-data:/opt/data ghcr.io/ontoweb/intellect-agent:latest
 ```bash
 brew install intellect-agent
 ```
-
-> **Android / Termux：** 已测试的手动安装路径请参考 [Termux 指南](https://intellect.ontoweb.cn/docs/getting-started/termux)。
 
 安装后：
 
@@ -78,30 +76,6 @@ intellect doctor       # 诊断问题
 
 ---
 
-## Rust 加速（可选）
-
-Intellect Agent 使用 Rust 原生扩展（`intellect_community_core`）进行高性能存储、沙箱检测、流解析和加密操作。Rust 扩展为**可选**组件——代理内置所有功能的纯 Python fallback。
-
-| 功能 | 有 Rust | 无 Rust（fallback） |
-|------|---------|-------------------|
-| 存储后端 | 加速 SQLite | 标准 SQLite |
-| 沙箱检测 | 原生正则引擎 | Python 正则 |
-| 流式解析 | 并行 Rust 解析器 | 串行 Python 解析器 |
-| Token 归一化 | 原生透传 | Python 恒等函数 |
-| 加密 (FTS, Fernet) | Rust crypto | `NotImplementedError` |
-
-如需安装 Rust 扩展：
-
-```bash
-cd rust-core && maturin develop --release
-```
-
-或从 [Gitee Releases](https://gitee.com/ontoweb/intellect-agent/releases) 下载预编译 wheel。
-
-> 启动时若 Rust 扩展缺失会打印警告并继续运行，所有核心功能正常工作。
-
----
-
 ## 更新
 
 | 安装方式 | 命令 | 说明 |
@@ -114,7 +88,6 @@ cd rust-core && maturin develop --release
 `intellect update` 自动保持 Rust 扩展同步：
 - **Git 安装**：每次 pull 后通过 `maturin develop --release` 重建
 - **pip 安装**：升级主包时同步升级 `intellect_community_core` wheel
-- 两条路径均为 best-effort——即使没有扩展代理也能正常运行
 
 ---
 

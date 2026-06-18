@@ -15,13 +15,13 @@
 
 ## Quick Install
 
-### Linux, macOS, WSL2, Termux
+### Linux, macOS, WSL2
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/install.sh | bash
 ```
 
-> The installer creates a virtual environment and installs all dependencies. The Rust extension (`intellect_community_core`) is recommended for full performance but **optional** — the agent will run with pure-Python fallbacks if it cannot be installed.
+> The installer creates a virtual environment, installs Python dependencies, and builds the Rust extension (`intellect_community_core`).
 
 ### Windows (native, PowerShell)
 
@@ -33,7 +33,7 @@ iex (irm https://raw.githubusercontent.com/ONTOWEB/intellect-agent/main/scripts/
 
 The installer handles everything: uv, Python 3.12, Node.js, ripgrep, ffmpeg, **and a portable Git Bash** (MinGit, unpacked to `%LOCALAPPDATA%\intellect\git` — no admin required, completely isolated from any system Git install). Intellect uses this bundled Git Bash to run shell commands.
 
-> **Rust extension on Windows:** The installer tries to download a pre-built wheel from Gitee Releases, falling back to compiling locally via `maturin`. If neither works, the agent continues with pure-Python fallbacks (reduced performance for storage, sandbox, crypto, and stream acceleration).
+> **Rust extension on Windows:** The installer downloads a pre-built wheel from Gitee Releases, falling back to compiling locally via `maturin`.
 
 ### Docker
 
@@ -54,8 +54,6 @@ brew install intellect-agent
 
 > Homebrew-managed installs receive updates via `brew upgrade`. The `intellect update` command is disabled for managed installs.
 
-> **Android / Termux:** The tested manual path is documented in the [Termux guide](https://intellect.ontoweb.cn/docs/getting-started/termux). On Termux, Intellect installs a curated `.[termux]` extra.
->
 > **WSL2:** The Linux one-liner above works inside WSL2. Native Windows install lives under `%LOCALAPPDATA%\intellect`; WSL2 installs under `~/.intellect` as on Linux.
 
 After installation:
@@ -86,28 +84,6 @@ intellect doctor       # Diagnose any issues
 
 ---
 
-## Rust Acceleration (optional)
-
-Intellect Agent uses a Rust native extension (`intellect_community_core`) for high-performance storage, sandbox detection, stream parsing, and cryptographic operations. The Rust extension is **optional** — the agent includes pure-Python fallbacks for all functionality.
-
-| Feature | With Rust | Without Rust (fallback) |
-|---------|-----------|------------------------|
-| Storage backend | Accelerated SQLite | Standard SQLite |
-| Sandbox detection | Native regex engine | Python regex |
-| Stream accumulation | Parallel Rust parser | Serial Python parser |
-| Token normalization | Native pass-through | Python identity |
-| Cryptography (FTS, Fernet) | Rust crypto | `NotImplementedError` |
-
-To install the Rust extension after initial setup:
-
-```bash
-cd rust-core && maturin develop --release
-```
-
-> The agent prints a warning at startup when the Rust extension is missing but continues normally.
-
----
-
 ## Updating
 
 | Install method | Command | Notes |
@@ -120,7 +96,6 @@ cd rust-core && maturin develop --release
 `intellect update` automatically keeps the Rust extension in sync:
 - **Git installs**: Rebuilds via `maturin develop --release` after each pull
 - **pip installs**: Upgrades `intellect_community_core` wheel alongside the main package
-- Both paths are best-effort — the agent works without the extension
 
 ---
 
