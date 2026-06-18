@@ -229,7 +229,26 @@ def interruptible_api_call(agent, api_kwargs: dict):
                         api_kwargs=api_kwargs,
                     )
                 )
-                result["response"] = request_client.chat.completions.create(**api_kwargs)
+                # Diagnostic: catch 'NoneType' not callable with detail
+                _chat = getattr(request_client, "chat", None)
+                _completions = getattr(_chat, "completions", None) if _chat is not None else None
+                _create_fn = getattr(_completions, "create", None) if _completions is not None else None
+                if _chat is None:
+                    logger.error("request_client.chat is None! client type=%s", type(request_client))
+                    raise RuntimeError("request_client.chat is None")
+                if _completions is None:
+                    logger.error("request_client.chat.completions is None! chat type=%s dir=%s",
+                                 type(_chat), [x for x in dir(_chat) if 'complet' in x.lower()])
+                    raise RuntimeError("request_client.chat.completions is None")
+                if _create_fn is None:
+                    logger.error(
+                        "request_client.chat.completions.create is None! "
+                        "completions type=%s dir=%s",
+                        type(_completions),
+                        [x for x in dir(_completions) if 'creat' in x.lower()],
+                    )
+                    raise RuntimeError("request_client.chat.completions.create is None")
+                result["response"] = _create_fn(**api_kwargs)
         except Exception as e:
             result["error"] = e
         finally:
@@ -1429,7 +1448,18 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                 _summary_result = _tsum.normalize_response(summary_response, strip_tool_prefix=agent._is_anthropic_oauth)
                 final_response = (_summary_result.content or "").strip()
             else:
-                summary_response = agent._ensure_primary_openai_client(reason="iteration_limit_summary").chat.completions.create(**summary_kwargs)
+                _summary_client = agent._ensure_primary_openai_client(reason="iteration_limit_summary")
+                _create_fn = getattr(getattr(getattr(_summary_client, "chat", None), "completions", None), "create", None)
+                if _create_fn is None:
+                    logger.error(
+                        "SUMMARY: primary client chat.completions.create is None! "
+                        "client type=%s chat=%s completions=%s",
+                        type(_summary_client),
+                        type(getattr(_summary_client, "chat", None)),
+                        type(getattr(getattr(_summary_client, "chat", None), "completions", None)),
+                    )
+                    raise RuntimeError("SUMMARY: primary client chat.completions.create is None")
+                summary_response = _create_fn(**summary_kwargs)
                 _summary_result = agent._get_transport().normalize_response(summary_response)
                 final_response = (_summary_result.content or "").strip()
 
@@ -1472,7 +1502,18 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                 if summary_extra_body:
                     summary_kwargs["extra_body"] = summary_extra_body
 
-                summary_response = agent._ensure_primary_openai_client(reason="iteration_limit_summary_retry").chat.completions.create(**summary_kwargs)
+                _summary_retry_client = agent._ensure_primary_openai_client(reason="iteration_limit_summary_retry")
+                _retry_create_fn = getattr(getattr(getattr(_summary_retry_client, "chat", None), "completions", None), "create", None)
+                if _retry_create_fn is None:
+                    logger.error(
+                        "SUMMARY RETRY: primary client chat.completions.create is None! "
+                        "client type=%s chat=%s completions=%s",
+                        type(_summary_retry_client),
+                        type(getattr(_summary_retry_client, "chat", None)),
+                        type(getattr(getattr(_summary_retry_client, "chat", None), "completions", None)),
+                    )
+                    raise RuntimeError("SUMMARY RETRY: primary client chat.completions.create is None")
+                summary_response = _retry_create_fn(**summary_kwargs)
                 _retry_result = agent._get_transport().normalize_response(summary_response)
                 final_response = (_retry_result.content or "").strip()
 
@@ -1720,6 +1761,23 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 api_kwargs=stream_kwargs,
             )
         )
+        # Diagnostic: catch 'NoneType' not callable with detail
+        _create_fn = getattr(getattr(request_client, "chat", None), "completions", None)
+        if _create_fn is None:
+            logger.error(
+                "STREAM: request_client.chat.completions is None! "
+                "client type=%s chat=%s",
+                type(request_client), type(getattr(request_client, 'chat', None)),
+            )
+            raise RuntimeError("STREAM: request_client.chat.completions is None")
+        _create_fn = getattr(_create_fn, "create", None)
+        if _create_fn is None:
+            logger.error(
+                "STREAM: request_client.chat.completions.create is None! "
+                "completions type=%s",
+                type(getattr(getattr(request_client, 'chat', None), 'completions', None)),
+            )
+            raise RuntimeError("STREAM: request_client.chat.completions.create is None")
         # Reset stale-stream timer so the detector measures from this
         # attempt's start, not a previous attempt's last chunk.
         last_chunk_time["t"] = time.time()
@@ -1729,7 +1787,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         # ``request_client_holder["diag"]`` for closure access.
         _diag = agent._stream_diag_init()
         request_client_holder["diag"] = _diag
-        stream = request_client.chat.completions.create(**stream_kwargs)
+        stream = _create_fn(**stream_kwargs)
 
         # Capture rate limit headers from the initial HTTP response.
         # The OpenAI SDK Stream object exposes the underlying httpx

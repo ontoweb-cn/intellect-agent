@@ -1333,6 +1333,25 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
         shared,
         agent._client_log_context(),
     )
+    # Diagnostic: verify that chat.completions.create is callable after
+    # client construction. A poisoned http_client transport (e.g. from a
+    # prior abort on Windows) can leave the SDK in a state where
+    # Completions.create resolves to None.
+    _create_method = getattr(getattr(client, "chat", None), "completions", None)
+    if _create_method is not None:
+        _create_method = getattr(_create_method, "create", None)
+    if _create_method is None:
+        _ra().logger.error(
+            "OpenAI client chat.completions.create is None after construction! "
+            "(%s, shared=%s) client_kwargs keys=%s",
+            reason, shared, list(client_kwargs.keys()),
+        )
+    elif not callable(_create_method):
+        _ra().logger.error(
+            "OpenAI client chat.completions.create is not callable after construction! "
+            "type=%s (%s, shared=%s)",
+            type(_create_method), reason, shared,
+        )
     return client
 
 

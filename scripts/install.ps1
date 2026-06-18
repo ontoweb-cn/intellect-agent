@@ -77,7 +77,7 @@ try {
 
 $RepoUrlSsh = "git@gitee.com:ontoweb/intellect-agent.git"
 $RepoUrlHttps = "https://gitee.com/ontoweb/intellect-agent.git"
-$PythonVersion = "3.11"
+$PythonVersion = "3.12"
 $NodeVersion = "22"
 
 # Stage-protocol version.  Bumped only for genuinely breaking changes to the

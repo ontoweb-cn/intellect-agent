@@ -519,6 +519,17 @@ def init_agent(
     from intellect_logging import setup_logging, setup_verbose_logging
     setup_logging(intellect_home=_ra()._intellect_home)
 
+    # Warn early if the Rust extension is missing — the safe fallbacks in
+    # intellect_rust.py will keep the agent running, but performance and
+    # security features (sandbox detection, FTS, crypto) will be degraded.
+    from intellect_rust import ensure_rust_available as _ensure_rust
+    try:
+        _ensure_rust()
+    except RuntimeError as _rust_err:
+        if not agent.quiet_mode:
+            print(f"⚠️  {_rust_err}")
+            print("   Continuing with pure-Python fallbacks (reduced performance).")
+
     if agent.verbose_logging:
         setup_verbose_logging()
         _ra().logger.info("Verbose logging enabled (third-party library logs suppressed)")
