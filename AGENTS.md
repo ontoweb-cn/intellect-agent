@@ -25,12 +25,12 @@ The same mirror is already configured for `pip` via `~/.pip/pip.conf` on most de
 ## Known Issues / TODO
 
 Deferred follow-ups from current development live in **`TODO.md`** at the repo root.
-Notable items as of v0.6.2:
+Notable items as of v0.6.5:
 
-- **31 orphaned Python tests** reference modules removed in the v0.6.2 refactor (Rust-only requirement).
-  Run pytest with `--ignore` flags or delete the files; full list in `TODO.md` (TODO-001).
-- **`tests/acp/`** conflicts with the PyPI `acp` package — exclude or namespace (TODO-002).
-- **Python test suite runs slowly** — investigate the post-collection hang (TODO-003).
+- **Python test suite runs slowly** — investigate the post-collection hang, likely due to
+  tests with live network/IO waits or test-ordering deadlocks (TODO-003).
+- Most v0.6.2-era cleanup items (31 orphaned tests, acp package conflict, sandbox edge
+  cases) have been resolved. See `TODO.md` for full status.
 
 `scripts/run_tests.sh` probes `.venv` first, then `venv`, then
 `$HOME/.intellect/intellect-agent/venv` (for worktrees that share a venv with the
@@ -44,10 +44,10 @@ entry points you'll actually edit.
 
 ```
 intellect-agent/
-├── run_agent.py          # AIAgent class — core conversation loop (~12k LOC)
+├── run_agent.py          # AIAgent class — core conversation loop (~4.8k LOC)
 ├── model_tools.py        # Tool orchestration, discover_builtin_tools(), handle_function_call()
 ├── toolsets.py           # Toolset definitions, _INTELLECT_CORE_TOOLS list
-├── cli.py                # IntellectCLI class — interactive CLI orchestrator (~11k LOC)
+├── cli.py                # IntellectCLI class — interactive CLI orchestrator (~15.3k LOC)
 ├── intellect_state.py       # SessionDB — SQLite session store (FTS5 search)
 ├── intellect_constants.py   # get_intellect_home(), display_intellect_home() — profile-aware paths
 ├── intellect_logging.py     # setup_logging() — agent.log / errors.log / gateway.log (profile-aware)
@@ -975,14 +975,23 @@ getattr() | __dict__[]                      ← dynamic access
 2. Add a test in the corresponding `#[test]` function
 3. Run `cargo test` (target: 88+ passing)
 
-### Layer 2 — AST Analysis (planned, not yet active)
+### Layer 2 — AST Analysis (active since v0.6.3)
 
-**File:** `tools/approval.py` (future), see `TODO.md` TODO-007
+**File:** `tools/approval.py` — `_check_python_ast()` integrated into `check_execute_code_guard`
 
-The regex approach cannot exhaustively enumerate all dangerous Python APIs.
-The planned AST layer will use Python's `ast` module to parse `-c` payloads
-and walk the AST for dangerous `Call`/`Import`/`ImportFrom` nodes. This
-complements the regex layer: regex pre-filters, AST confirms.
+The AST layer uses Python's `ast` module to parse `-c` payloads and walk the AST
+for dangerous `Call`/`Import`/`ImportFrom` nodes. It supports 7 detection categories
+with auto-deny for high-confidence matches. This complements the regex layer:
+regex pre-filters, AST confirms.
+
+**Coverage (30 attack vectors):**
+- **Both layers**: 23 vectors (exec, os.system, subprocess, pickle, ctypes, ...)
+- **Regex only**: 4 vectors (Path.rmdir(), Path.unlink(), Path.write_bytes(), Path.write_text())
+- **AST only**: 1 vector (importlib.import_module().system())
+- **Neither** (benign): 3 vectors (print, json, list comprehension)
+
+**Penetration test (v0.6.3):** 18 adversarial payloads, 0 bypasses. NFKC normalization
+handles Unicode tricks, AST catches importlib chains, regex catches generic method calls.
 
 ### Approval Flow
 

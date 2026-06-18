@@ -89,8 +89,24 @@
 
 ---
 
+### [TODO-008] ~~Rust 迁移技术债务 (T1-T4)~~ ✅ 已完成
+
+**状态**: 已修复 (2026-06-18)
+**提交**: `6f02024 chore: resolve Rust migration technical debt (T1-T4)`
+
+| 项目 | 内容 |
+|------|------|
+| T1 | `rust-core/README.md`: 修正依赖引用 (fancy-regex→regex), 补充 hex/pbkdf2, 行数更新 ~3,170→~4,500 |
+| T2 | CI parity 测试: 新增 32 个覆盖 Crypto/Sandbox/Usage/Gateway/Stream 的 parity 测试 (17→49), CI 最低断言 >=45 |
+| T3 | `pyproject.toml`: Rust 扩展注释从 "optional" 修正为 "required since v0.6.2" |
+| T4 | 死代码移除: `intellect_rust.py` ~65 行 fallback wrappers, `agent/agent_init.py` try/except 吞异常修复, 3 处过期注释修正 |
+
+---
+
 ## 📝 完成归档
 
+- ✅ **T1-T4 Rust 迁移技术债务**: 死代码移除 ~112 行, CI parity 测试 17→49, 文档修正
+- ✅ **AST 双层防御 (TODO-007)**: 7 类检测 + auto-deny, 18 payloads 渗透 0 bypasses
 - ✅ **v0.6.2 本地 bug 修复**: sandbox python -c 正则 + gateway 测试数据
 - ✅ **Rust 扩展构建**: maturin develop --release 在 Python 3.12 venv 中成功
 - ✅ **Rust 测试**: 84/84 pass（新增 2 个回归测试）
@@ -104,33 +120,20 @@
 
 ## 🔵 Phase C — 架构改进（长期）
 
-### [TODO-007] AST 解析方案跟踪
+### [TODO-007] ~~AST 解析方案跟踪~~ ✅ 已完成
 
-**状态**: ✅ 已实现 (2026-06-14) — _check_python_ast() 已集成到 check_execute_code_guard，支持 7 类检测 + auto-deny，12 单元测试
+**状态**: ✅ 已实现 (2026-06-14) — `_check_python_ast()` 已集成到 `check_execute_code_guard`，支持 7 类检测 + auto-deny，12 单元测试。
 
-**技术方案**: 在 approval.py check_execute_code_guard() 中集成 ast.parse()
-对 Python -c 载荷做 AST 级节点检查（Call/Import/ImportFrom），
-与正则互补：正则初筛 + AST 深度确认。
+**技术方案**: 在 approval.py 中集成 `ast.parse()` 对 Python `-c` 载荷做 AST 级节点检查（Call/Import/ImportFrom），与正则互补：正则初筛 + AST 深度确认。
 
-**参考**: tools/skills_ast_audit.py 已有 ast.NodeVisitor 模式可复用。
+**完成项**:
+- [x] 实现 `_check_python_ast()` 函数
+- [x] 集成到 `check_execute_code_guard`
+- [x] 添加单元测试 (12 个)
+- [x] 渗透测试: 18 adversarial payloads, 0 bypasses (NFKC 归一化 + AST + regex 三层覆盖)
+- [x] 评估正则 token 精简 (保留 30 攻击向量双层覆盖)
 
-**行动**:
-- [ ] 实现 _check_python_ast() 函数
-- [ ] 集成到 check_execute_code_guard
-- [ ] 添加单元测试
-- [ ] 评估正则 token 精简
-**来源**: Code review finding G2 — 正则黑名单无法穷举 Python 危险 API（marshal.load、
-os.posix_spawn、compile()、动态 getattr 混淆等均确认可绕过）
-
-**详情**: 当前 Python `-c` 检测基于正则黑名单，每发现一个 bypass 需要手动追加 token。
-长期应迁移到 AST 级分析（使用 Python `ast` 模块解析 `-c` 载荷并检查危险节点类型）。
-
-**行动**:
-1. 在 issue tracker 中创建正式任务
-2. 设计 AST 方案技术规格（需检查的节点类型：`Call` to dangerous functions,
-   `Import`/`ImportFrom` of dangerous modules, `Exec`/`Eval` builtins）
-3. 与 `check_execute_code_guard`（approval.py:1476）集成
-4. 评估性能影响（每次 `-c` 调用额外 AST 解析开销）
+**来源**: Code review finding G2 — 正则黑名单无法穷举 Python 危险 API（marshal.load、os.posix_spawn、compile()、动态 getattr 混淆等均确认可绕过）
 
 ---
 
@@ -144,7 +147,7 @@ os.posix_spawn、compile()、动态 getattr 混淆等均确认可绕过）
 
 ---
 
-最后更新: 2026-06-14 (Phase A/B 完成)
+最后更新: 2026-06-18 (T1-T4 技术债务清理, v0.6.5)
 
 ---
 

@@ -8,6 +8,17 @@ roadmap.
 
 | Date | Highlights |
 |------|------------|
+| **2026-06-18** | **v0.6.5 — WebUI 配置统一 + Vault/Quartz 修复 + 技术债务清理** |
+|                | WebUI: 配置路径统一至 `~/.intellect` (全平台), CSRF 豁免修复 |
+|                | Vault/Quartz: SPA 模式修复, 亮色主题统一, 静态文件路由, Quartz v4 构建 |
+|                | 清理: T1-T4 Rust 迁移技术债务 (死代码移除 ~112 行, 注释/文档修正) |
+|                | 测试: Rust parity 测试 17→49, CI 最低断言保障 |
+|                | 文档: README 安装方式更新, 域名重命名, 移除 "Rust optional" 引用 |
+| **2026-06-17** | **v0.6.4 — Gitee 原生跨平台打包** |
+|                | 打包: Gitee Releases 原生分发, 跨平台 CI 制品 (SemVer tag 触发) |
+|                | Windows: pythonw.exe 守护进程, 全局子进程控制台窗口抑制 |
+|                | Rust: 安全 fallback + NoneType 诊断, pip/git 自动更新时同步扩展 |
+|                | 开发: dev 启动脚本, Homebrew 打包更新 |
 | **2026-06-14** | **v0.6.3 — 沙箱架构升级 + AST 双层防御 + ReDoS 消除** |
 |                | 架构: RegexSet O(n) DFA + Python AST 双层 (7 类检测 + auto-deny) |
 |                | 安全: 31 token 独立描述, 渗透 0 bypasses, dangerous import 检测 |
@@ -26,7 +37,7 @@ roadmap.
 |                | Rust: Stage 5c JWT, StreamAccumulator JSON 修复, 编译警告清理 |
 |                | 文档: WebUI 用户指南 + 架构设计, 2 份记忆方案设计文档 |
 | **2026-06-10** | **v0.6.0 — Rust 核心层迁移** |
-|                | 11 个 Rust 源文件 (~3,170 行), 20+ Python 集成点 |
+|                | 11 个 Rust 源文件 (~3,170 行，现已增长至 ~4,528 行), 20+ Python 集成点 |
 |                | Stage 1: SQLiteBackend + 10 写操作 |
 |                | Stage 2: 命令安全沙箱 (59 正则) |
 |                | Stage 3: TokenAccumulator, StreamAccumulator, normalize_usage |
@@ -38,7 +49,9 @@ roadmap.
 ```
 v0.5.0 —— Single-user refactoring + Perf/Security hardening
 v0.6.0 —— Rust core layer migration
-v0.6.2 —— Rust-only mandatory + sandbox/gateway fixes ← current
+v0.6.2 —— Rust-only mandatory + sandbox/gateway fixes
+v0.6.4 —— Gitee-native cross-platform packaging
+v0.6.5 —— WebUI config unification + vault/quartz fixes + tech-debt cleanup ← current
 ```
 
 ## Architecture
