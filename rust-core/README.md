@@ -12,7 +12,7 @@ maturin develop        # dev install
 maturin build --release  # release wheel
 ```
 
-## Architecture (11 files, ~3,170 lines)
+## Architecture (11 files, ~4,500 lines)
 
 ```
 src/
@@ -54,12 +54,14 @@ Since v0.6.4, all imports are centralized in `intellect_rust.py`. The Rust exten
 ## Dependencies
 
 ```toml
-pyo3 = "0.21"       # Python bindings
-rusqlite = "0.31"   # SQLite (bundled, FTS5 included)
-fancy-regex = "0.14" # Regex with look-ahead support
-serde_json = "1"     # JSON serialization
-sha2 = "0.10"        # SHA-256
-base64 = "0.22"      # Base64 URL-safe
-rand = "0.8"         # CSPRNG
-aes + cbc + hmac     # Fernet (AES-128-CBC + HMAC-SHA256)
+pyo3 = "0.21"          # Python bindings
+rusqlite = "0.31"      # SQLite (bundled, FTS5 included)
+regex = "1"            # Regex engine (replaced fancy-regex v0.14 for ReDoS safety)
+serde_json = "1"        # JSON serialization
+sha2 = "0.10"           # SHA-256
+base64 = "0.22"         # Base64 URL-safe
+hex = "0.4"             # Hex encoding
+rand = "0.8"            # CSPRNG
+aes + cbc + hmac        # Fernet (AES-128-CBC + HMAC-SHA256)
+pbkdf2 = "0.12"         # PBKDF2 key derivation
 ```

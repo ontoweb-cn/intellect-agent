@@ -9987,7 +9987,8 @@ def _cmd_update_pip(args):
     # pip/uv/pipx upgrade the Python package but NOT the Rust native
     # extension (intellect_community_core).  Try to upgrade it too so the
     # Rust accelerator stays in sync with the Python code.  Failure is
-    # non-fatal — intellect_rust.py provides pure-Python fallbacks.
+    # non-fatal — the agent will refuse to start without Rust, so the user
+    # will notice and can rebuild manually.
     _rust_cmd = None
     if is_uv_tool_install():
         pass  # uv tool can't upgrade individual deps; skip
@@ -10008,7 +10009,7 @@ def _cmd_update_pip(args):
             if _rust_result.returncode == 0:
                 print("✓ Rust extension updated.")
             else:
-                print("⚠ Rust extension update skipped (non-fatal — pure-Python fallback available).")
+                print("⚠ Rust extension update skipped (rebuild manually: cd rust-core && maturin develop --release).")
         except Exception:
             print("⚠ Rust extension update failed (non-fatal).")
 
@@ -10425,7 +10426,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         # git pull updates source code but the compiled Rust extension
         # (.pyd/.so) is still from the previous version.  Rebuild so the
         # accelerator matches the new Python code.  Best-effort — failure
-        # is non-fatal (intellect_rust.py has pure-Python fallbacks).
+        # is non-fatal (the agent will fail fast at startup if Rust is missing).
         _rust_dir = PROJECT_ROOT / "rust-core"
         if _rust_dir.is_dir() and (_rust_dir / "Cargo.toml").exists():
             if shutil.which("cargo"):

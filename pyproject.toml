@@ -2,10 +2,10 @@
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
-# ── Rust extension (optional) ──────────────────────────────────────────────
+# ── Rust extension (required since v0.6.2) ──────────────────────────────────
 # The intellect_community_core native extension is built separately via maturin:
 #   pip install maturin && cd rust-core && maturin develop
-# It is optional at runtime — all paths have pure-Python fallbacks.
+# It is a mandatory runtime dependency — the agent will not start without it.
 
 [tool.maturin]
 manifest = "rust-core/Cargo.toml"

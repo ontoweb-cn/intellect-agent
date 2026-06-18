@@ -888,7 +888,7 @@ def _try_rebuild_rust_extension() -> bool:
     WebUI self-updates and force-updates pull new source code but leave
     the compiled Rust extension (.pyd/.so) at the old version.  Rebuild
     so the accelerator matches the new Python code.  Best-effort —
-    failure is non-fatal (intellect_rust.py has pure-Python fallbacks).
+    failure is non-fatal (the agent will fail fast at startup if Rust is missing).
     """
     import os as _os
     import subprocess as _sp

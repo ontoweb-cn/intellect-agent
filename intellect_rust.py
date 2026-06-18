@@ -49,9 +49,8 @@ def _warn_once() -> None:
     _log = logging.getLogger(__name__)
     _log.warning(
         "intellect_community_core Rust extension is not installed. "
-        "Storage, sandbox, crypto, and stream acceleration will use "
-        "pure-Python fallbacks. For full performance, build it with: "
-        "cd rust-core && maturin develop --release"
+        "This is a required dependency since v0.6.2. "
+        "Build it with: cd rust-core && maturin develop --release"
     )
 
 
@@ -176,88 +175,6 @@ rust_normalize_model_name: Callable = (
 SQLiteBackend: Any = _CORE.SQLiteBackend if _has() else None
 
 
-# ── Safe no-op fallbacks when the Rust extension is not installed ────────────
-# When _CORE is None, every exported function/class above resolves to None.
-# Callers that invoke None directly crash with "TypeError: 'NoneType' object
-# is not callable".  Post-process the module globals to replace None-valued
-# callables with safe no-op wrappers so the pure-Python fallback paths work
-# transparently.
-#
-# Two fallback strategies:
-#   identity(v, /)   — returns the first positional argument unchanged.
-#                       Used for normalizers (rust_normalize_usage, etc.).
-#   _NoneType()       — calling type(None)() returns None.
-#                       Used for optional accelerator classes (StreamAccumulator,
-#                       TokenAccumulator) where callers already guard with
-#                       ``if obj is not None:`` on the result.
-#   _missing()        — raises NotImplementedError.
-#                       Used for crypto / FTS / sandbox where a missing Rust
-#                       extension means the feature is genuinely unavailable.
-
-def _identity(v, /, *args, **kwargs):
-    """Return *v* unchanged; ignore all other arguments."""
-    return v
-
-
-class _NoneType:
-    """Callable that returns ``None`` — a safe no-op for optional accelerators."""
-
-    def __call__(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
-def _missing(*args: Any, **kwargs: Any) -> None:
-    """Stub that surfaces a missing Rust extension clearly."""
-    raise NotImplementedError(
-        "This feature requires the intellect_community_core Rust extension. "
-        "Build it with: cd rust-core && maturin develop --release"
-    )
-
-
-def _normalize_usage_fallback(
-    mode: str,
-    provider: str,
-    input_tokens: int,
-    output_tokens: int,
-    prompt_tokens: int,
-    completion_tokens: int,
-    cache_read_input_tokens: int,
-    cache_creation_input_tokens: int,
-    cached_detail: int,
-    cache_write_detail: int,
-    reasoning_tokens: int,
-    *args: Any,
-    **kwargs: Any,
-) -> tuple[int, int, int, int, int]:
-    """Pure-Python fallback for rust_normalize_usage.
-
-    When the Rust extension is unavailable, return token counts as-is
-    without provider-specific normalization.  The canonical format is
-    (input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-    reasoning_tokens).
-    """
-    return (
-        input_tokens,
-        output_tokens,
-        cache_read_input_tokens or cached_detail,
-        cache_write_detail or cache_creation_input_tokens,
-        reasoning_tokens,
-    )
-
-
-# Map of name → fallback.  Only applied when the current value is None.
-_FALLBACKS: dict[str, Any] = {
-    # Normalizers
-    "rust_normalize_usage": _normalize_usage_fallback,
-    "rust_normalize_model_name": _identity,  # name → unchanged
-    # Optional accelerators (callers guard on result is not None)
-    "StreamAccumulator": _NoneType(),
-    "TokenAccumulator": _NoneType(),
-    "SQLiteBackend": _NoneType(),
-    "PlatformRetryScheduler": _NoneType(),
-    # Everything else: raise NotImplementedError (crypto, sandbox, FTS, etc.)
-}
-
-for _name, _fallback in _FALLBACKS.items():
-    if _name in globals() and globals()[_name] is None:
-        globals()[_name] = _fallback
+# Rust extension is mandatory since v0.6.2 — no fallbacks needed.
+# ensure_rust_available() is called at startup and will raise RuntimeError
+# if the native extension is missing, failing fast with a clear message.
