@@ -890,11 +890,11 @@ def _schedule_restart(delay: float = 2.0) -> None:
     new Python modules in sys.modules.
 
     On POSIX, ``os.execv()`` replaces the current process image atomically.
-    On Windows, ``os.execv`` is emulated by spawning a new process and
-    exiting — but it spawns without ``CREATE_NO_WINDOW``, creating an
-    unwanted blank console window.  Use ``subprocess.Popen`` with
-    ``CREATE_NO_WINDOW`` instead so the restarted process stays windowless
-    while keeping the same Python environment (all venv deps available).
+    On Windows, ``os.execv`` is emulated by spawning a new process that
+    may not inherit the ``CREATE_NO_WINDOW`` flag, creating an unwanted
+    blank console window.  Use ``subprocess.Popen`` with the base Python's
+    pythonw.exe (GUI-subsystem, truly windowless) and set PYTHONPATH so
+    venv-installed packages are still importable.
     """
     import os
     import subprocess as _sp
@@ -905,15 +905,25 @@ def _schedule_restart(delay: float = 2.0) -> None:
         _CREATE_NO_WINDOW = 0x08000000
         _DETACHED_PROCESS = 0x00000008
         _CREATE_NEW_PROCESS_GROUP = 0x00000200
+        _pyw = os.path.join(getattr(sys, "base_prefix", sys.prefix), "pythonw.exe")
+        if os.path.isfile(_pyw):
+            _RESTART_EXE = _pyw
+        else:
+            _RESTART_EXE = sys.executable
 
     def _do():
         import time
         time.sleep(delay)
         with _apply_lock:
             if _WIN32:
+                _env = os.environ.copy()
+                _venv_sp = os.path.join(sys.prefix, "Lib", "site-packages")
+                _existing = _env.get("PYTHONPATH", "")
+                _env["PYTHONPATH"] = f"{_venv_sp}{os.pathsep}{_existing}".rstrip(os.pathsep)
                 try:
                     _sp.Popen(
-                        [sys.executable] + sys.argv,
+                        [_RESTART_EXE] + sys.argv,
+                        env=_env,
                         stdin=_sp.DEVNULL,
                         stdout=_sp.DEVNULL,
                         stderr=_sp.DEVNULL,

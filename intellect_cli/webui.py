@@ -281,13 +281,21 @@ def webui_start(args) -> None:
 
     # Cross-platform detach: POSIX uses start_new_session; Windows uses
     # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW.
-    # CREATE_NO_WINDOW suppresses the console window even for console-
-    # subsystem python.exe — unlike pythonw.exe which is a GUI-subsystem
-    # app, but the venv's pythonw.exe is just a copy of python.exe and
-    # doesn't help.  The flags handle window suppression correctly.
+    # On Windows, prefer the base Python's pythonw.exe (GUI-subsystem,
+    # truly windowless).  The venv's pythonw.exe is just a copy of
+    # python.exe (console-subsystem).  Set PYTHONPATH so the base
+    # pythonw.exe can find venv-installed packages.
     from intellect_cli._subprocess_compat import windows_detach_popen_kwargs
 
     _python_exe = sys.executable
+    if sys.platform == "win32":
+        _pyw = os.path.join(getattr(sys, "base_prefix", sys.prefix), "pythonw.exe")
+        if os.path.isfile(_pyw):
+            _python_exe = _pyw
+            # Let the base pythonw.exe find venv site-packages
+            _venv_sp = os.path.join(sys.prefix, "Lib", "site-packages")
+            _existing_pp = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = f"{_venv_sp}{os.pathsep}{_existing_pp}".rstrip(os.pathsep)
 
     with open(_LOG_FILE, "a", encoding="utf-8") as log_fp:
         process = subprocess.Popen(
