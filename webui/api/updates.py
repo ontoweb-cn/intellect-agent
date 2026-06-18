@@ -892,10 +892,10 @@ def _schedule_restart(delay: float = 2.0) -> None:
     On POSIX, ``os.execv()`` replaces the current process image atomically.
     On Windows, ``os.execv`` is emulated by spawning a new process and
     exiting — and it resolves to the *base* Python interpreter (python.exe,
-    a console-subsystem app) rather than the venv launcher (pythonw.exe,
-    a GUI-subsystem app).  Using python.exe creates an unwanted blank
-    console window.  We explicitly resolve pythonw.exe on Windows to keep
-    the restarted process windowless.
+    a console-subsystem app).  The venv's pythonw.exe is a copy of
+    python.exe (also console-subsystem) and still creates a blank window.
+    The real GUI-subsystem pythonw.exe lives at
+    ``sys.base_prefix\\pythonw.exe``.  We explicitly use that on Windows.
     """
     import os
     import subprocess as _sp
@@ -906,9 +906,10 @@ def _schedule_restart(delay: float = 2.0) -> None:
         time.sleep(delay)
         with _apply_lock:
             if sys.platform == "win32":
-                # Resolve pythonw.exe alongside the current interpreter so the
-                # restarted process stays windowless (no blank console).
-                _pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                # Use the real GUI-subsystem pythonw.exe from the base Python
+                # installation, NOT the venv's copy (which is console-subsystem).
+                _base = getattr(sys, "base_prefix", sys.prefix)
+                _pyw = os.path.join(_base, "pythonw.exe")
                 if os.path.isfile(_pyw):
                     try:
                         _sp.Popen(

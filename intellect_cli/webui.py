@@ -281,13 +281,15 @@ def webui_start(args) -> None:
 
     # Cross-platform detach: POSIX uses start_new_session; Windows uses
     # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW.
-    # On Windows, prefer pythonw.exe (windowless) over python.exe to avoid
-    # a blank console window that, if closed, kills the service.
+    # On Windows, prefer a real pythonw.exe (GUI-subsystem, windowless).
+    # The venv pythonw.exe is just a copy of python.exe (console-subsystem)
+    # and still creates a blank window.  The real windowless binary lives
+    # at sys.base_prefix/pythonw.exe (the parent Python installation).
     from intellect_cli._subprocess_compat import windows_detach_popen_kwargs
 
     _python_exe = sys.executable
     if sys.platform == "win32":
-        _pyw = Path(sys.executable).with_name("pythonw.exe")
+        _pyw = Path(getattr(sys, "base_prefix", sys.prefix)) / "pythonw.exe"
         if _pyw.is_file():
             _python_exe = str(_pyw)
 
