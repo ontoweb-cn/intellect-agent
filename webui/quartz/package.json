@@ -1,0 +1,11 @@
+{
+  "name": "intellect-vault-quartz",
+  "private": true,
+  "description": "Quartz build workspace for Intellect Vault",
+  "scripts": {
+    "build": "npx quartz build"
+  },
+  "dependencies": {
+    "quartz": "^4.4.0"
+  }
+}
