@@ -3,16 +3,15 @@ class HermesAgent < Formula
 
   desc "Self-improving AI agent that creates skills from experience"
   homepage "https://intellect-agent.ontoweb.cn"
-  # Stable source should point at the semver-named sdist asset attached by
-  # scripts/release.py, not the CalVer tag tarball.
-  url "https://gitee.com/ontoweb/intellect-agent/releases/download/v2026.3.30/intellect_agent-0.6.0.tar.gz"
+  url "https://gitee.com/ontoweb/intellect-agent/releases/download/v0.6.4/intellect_agent-0.6.4.tar.gz"
   sha256 "<replace-with-release-asset-sha256>"
   license "MIT"
 
   depends_on "certifi" => :no_linkage
   depends_on "cryptography" => :no_linkage
   depends_on "libyaml"
-  depends_on "python@3.14"
+  depends_on "python@3.12"
+  depends_on "rust" => :build  # intellect_community_core Rust extension
 
   pypi_packages ignore_packages: %w[certifi cryptography pydantic]
 
@@ -20,7 +19,7 @@ class HermesAgent < Formula
   #   brew update-python-resources --print-only intellect-agent
 
   def install
-    venv = virtualenv_create(libexec, "python3.14")
+    venv = virtualenv_create(libexec, "python3.12")
     venv.pip_install resources
     venv.pip_install buildpath
 

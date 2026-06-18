@@ -1259,18 +1259,23 @@ function Install-RustExtension {
     if (Test-RustExtensionInstalled $pythonExe) { return }
     if (Install-RustExtensionFromGitee $pythonExe) { return }
     if (Install-RustExtensionLocal $pythonExe) { return }
-    Write-Error "The intellect_community_core Rust extension is required (since v0.6.2)."
-    Write-Info "Options:"
+    Write-Warning "The intellect_community_core Rust extension could not be installed."
+    Write-Info "The agent will run with pure-Python fallbacks (reduced performance)."
+    Write-Info "Storage, sandbox, crypto and stream acceleration will be affected."
+    Write-Info "To install later:"
     Write-Info "  1. `$env:INTELLECT_RELEASE_TAG='vYYYY.M.D' and re-run (Gitee Release wheel)"
     Write-Info "  2. Install Rust: winget install Rustlang.Rustup"
     Write-Info "  3. cd $InstallDir\rust-core; maturin develop --release"
-    throw "Rust extension install failed"
 }
 
 function Install-Dependencies {
     Write-Info "Installing dependencies..."
 
-    Install-RustExtension
+    try {
+        Install-RustExtension
+    } catch {
+        Write-Warning "Continuing without Rust extension — reduced performance."
+    }
     
     Push-Location $InstallDir
     

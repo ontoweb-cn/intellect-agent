@@ -1247,19 +1247,21 @@ install_rust_extension() {
     if try_build_rust_local; then
         return 0
     fi
-    log_error "The intellect_community_core Rust extension is required (since v0.6.2)."
-    log_info "Options:"
+    log_warn "The intellect_community_core Rust extension could not be installed."
+    log_info "The agent will run with pure-Python fallbacks (reduced performance)."
+    log_info "Storage, sandbox, crypto and stream acceleration will be affected."
+    log_info "To install later:"
     log_info "  1. Export INTELLECT_RELEASE_TAG=vYYYY.M.D and re-run (Gitee Release wheel)"
     log_info "  2. Install Rust (https://rustup.rs) and re-run the installer"
     log_info "  3. cd $INSTALL_DIR/rust-core && maturin develop --release"
     log_info "Docs: https://gitee.com/ontoweb/intellect-agent/tree/main/docs/packaging"
-    return 1
+    return 0
 }
 
 install_deps() {
     log_info "Installing dependencies..."
 
-    install_rust_extension || exit 1
+    install_rust_extension || log_warn "Continuing without Rust extension — reduced performance."
 
     if [ "$DISTRO" = "termux" ]; then
         if [ "$USE_VENV" = true ]; then
