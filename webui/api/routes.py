@@ -4394,8 +4394,9 @@ def _handle_vault_serve(handler, parsed) -> bool:
         vault_type = "global"
         file_path = "index.html" if not rest else rest
     else:
-        # Unknown path under /vault/
-        return j(handler, {"error": "Not found"}, status=404)
+        # Any other path under /vault/ — serve from global vault as static file
+        vault_type = "global"
+        file_path = rest
 
     # Resolve vault directory on disk
     if vault_type == "global":
