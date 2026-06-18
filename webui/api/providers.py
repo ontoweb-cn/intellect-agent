@@ -1339,6 +1339,8 @@ def _agent_fetch_account_usage_for_home(provider: str, home: Path, *, api_key: s
         }
         if hasattr(os, "fork"):  # POSIX
             kwargs["preexec_fn"] = _account_usage_preexec_fn
+        else:  # Windows — suppress console window
+            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
 
         proc = subprocess.run(
             [
