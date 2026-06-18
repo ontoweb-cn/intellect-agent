@@ -472,6 +472,36 @@ def _raise_fd_soft_limit(target: int = 4096) -> dict:
     return {"status": "raised", "soft": desired, "hard": hard, "previous_soft": soft}
 
 
+# ── Windows: make ALL subprocess calls windowless ───────────────────────
+# Once subprocess is imported, wrap run/Popen so every child process
+# inherits CREATE_NO_WINDOW automatically.  This prevents popup console
+# windows from account-usage probes, pip installs, git fetches, and any
+# other subprocess the webui spawns — without needing to touch each call site.
+import sys as _sys
+if _sys.platform == "win32":
+    _CREATE_NO_WINDOW = 0x08000000  # noqa: F841
+
+    def _patch_subprocess() -> None:
+        import subprocess as _sp
+        _real_run = _sp.run
+        _real_popen = _sp.Popen
+
+        def _windowless_run(*a, **kw):
+            if "creationflags" not in kw:
+                kw["creationflags"] = _CREATE_NO_WINDOW
+            return _real_run(*a, **kw)
+
+        def _windowless_popen(*a, **kw):
+            if "creationflags" not in kw:
+                kw["creationflags"] = _CREATE_NO_WINDOW
+            return _real_popen(*a, **kw)
+
+        _sp.run = _windowless_run  # type: ignore[assignment]
+        _sp.Popen = _windowless_popen  # type: ignore[assignment]
+
+    _patch_subprocess()
+
+
 def main() -> None:
     from api.config import print_startup_config, verify_intellect_imports, _INTELLECT_FOUND
 
