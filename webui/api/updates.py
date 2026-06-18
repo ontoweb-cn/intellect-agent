@@ -891,39 +891,38 @@ def _schedule_restart(delay: float = 2.0) -> None:
 
     On POSIX, ``os.execv()`` replaces the current process image atomically.
     On Windows, ``os.execv`` is emulated by spawning a new process and
-    exiting — and it resolves to the *base* Python interpreter (python.exe,
-    a console-subsystem app).  The venv's pythonw.exe is a copy of
-    python.exe (also console-subsystem) and still creates a blank window.
-    The real GUI-subsystem pythonw.exe lives at
-    ``sys.base_prefix\\pythonw.exe``.  We explicitly use that on Windows.
+    exiting — but it spawns without ``CREATE_NO_WINDOW``, creating an
+    unwanted blank console window.  Use ``subprocess.Popen`` with
+    ``CREATE_NO_WINDOW`` instead so the restarted process stays windowless
+    while keeping the same Python environment (all venv deps available).
     """
     import os
     import subprocess as _sp
     import sys
 
+    _WIN32 = sys.platform == "win32"
+    if _WIN32:
+        _CREATE_NO_WINDOW = 0x08000000
+        _DETACHED_PROCESS = 0x00000008
+        _CREATE_NEW_PROCESS_GROUP = 0x00000200
+
     def _do():
         import time
         time.sleep(delay)
         with _apply_lock:
-            if sys.platform == "win32":
-                # Use the real GUI-subsystem pythonw.exe from the base Python
-                # installation, NOT the venv's copy (which is console-subsystem).
-                _base = getattr(sys, "base_prefix", sys.prefix)
-                _pyw = os.path.join(_base, "pythonw.exe")
-                if os.path.isfile(_pyw):
-                    try:
-                        _sp.Popen(
-                            [_pyw] + sys.argv,
-                            stdin=_sp.DEVNULL,
-                            stdout=_sp.DEVNULL,
-                            stderr=_sp.DEVNULL,
-                            close_fds=True,
-                            creationflags=0x00000200 | 0x00000008 | 0x08000000,
-                            # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW
-                        )
-                        os._exit(0)
-                    except Exception:
-                        pass
+            if _WIN32:
+                try:
+                    _sp.Popen(
+                        [sys.executable] + sys.argv,
+                        stdin=_sp.DEVNULL,
+                        stdout=_sp.DEVNULL,
+                        stderr=_sp.DEVNULL,
+                        close_fds=True,
+                        creationflags=_CREATE_NEW_PROCESS_GROUP | _DETACHED_PROCESS | _CREATE_NO_WINDOW,
+                    )
+                    os._exit(0)
+                except Exception:
+                    pass
             try:
                 os.execv(sys.executable, [sys.executable] + sys.argv)
             except Exception:
