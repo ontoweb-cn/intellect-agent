@@ -1275,13 +1275,23 @@ def _is_browser_unsafe_request(handler) -> bool:
 
 
 def _csrf_exempt_path(path: str) -> bool:
-    """Paths that cannot or must not carry a session CSRF token."""
+    """Paths that cannot or must not carry a session CSRF token.
+
+    Onboarding endpoints are exempt because during first-run setup, auth
+    transitions from disabled to enabled (user sets a password mid-flow).
+    At page load auth was off so the browser got an empty CSRF token; by
+    the time the user POSTs the final step auth is on and CSRF would
+    reject the empty token as token_mismatch ("Session expired").
+    """
     return path in {
         "/api/auth/login",
         "/api/auth/logout",
         "/api/auth/passkey/options",
         "/api/auth/passkey/login",
         "/api/csp-report",
+        "/api/onboarding/setup",
+        "/api/onboarding/complete",
+        "/api/onboarding/probe",
     }
 
 
