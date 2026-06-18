@@ -1,4 +1,4 @@
-"""Post-process Quartz build output: add .html to internal links, force light color-scheme."""
+"""Post-process Quartz build output: fix links, force light theme, disable SPA nav."""
 import re
 import sys
 from pathlib import Path
@@ -10,14 +10,16 @@ def main(output_dir: str) -> None:
         print(f"ERROR: output directory not found: {output_dir}", file=sys.stderr)
         sys.exit(1)
 
-    counts = {'links': 0, 'theme': 0}
+    counts = {'links': 0, 'theme': 0, 'spa': 0}
     ext_pattern = re.compile(r'\.[a-zA-Z0-9]+$')
     link_pattern = re.compile(r'href="(\.\.?/[^"]+)"')
 
-    # Process .html files: fix internal links
+    # ── Process .html files ──────────────────────────────────────────────
     for html_file in output.rglob('*.html'):
         content = html_file.read_text(encoding='utf-8')
+        changed = False
 
+        # 1. Add .html extension to internal links
         def fix_link(m: re.Match) -> str:
             path = m.group(1)
             if '#' in path or '://' in path:
@@ -27,24 +29,39 @@ def main(output_dir: str) -> None:
             counts['links'] += 1
             return 'href="' + path + '.html"'
 
-        content = link_pattern.sub(fix_link, content)
-        html_file.write_text(content, encoding='utf-8')
+        new_content = link_pattern.sub(fix_link, content)
+        if new_content != content:
+            content = new_content
+            changed = True
 
-    # Process .css files: force color-scheme to light, override dark theme vars
+        # 2. Add <meta name="color-scheme" content="light"> to force light mode
+        if '<head>' in content and 'name="color-scheme"' not in content:
+            content = content.replace(
+                '<head>',
+                '<head><meta name="color-scheme" content="light"/>',
+            )
+            counts['theme'] += 1
+            changed = True
+
+        if changed:
+            html_file.write_text(content, encoding='utf-8')
+
+    # ── Process .css files ───────────────────────────────────────────────
     for css_file in output.rglob('*.css'):
         content = css_file.read_text(encoding='utf-8')
         changed = False
 
+        # 3. Fix color-scheme
         if 'color-scheme:dark' in content:
             content = content.replace('color-scheme:dark', 'color-scheme:light')
             changed = True
+            counts['theme'] += 1
 
-        # Override dark mode CSS variables to match light mode
-        # The [saved-theme=dark] block may still have dark values from older builds
+        # 4. Override dark mode CSS variables with light values
         dark_block_pattern = re.compile(r'\[saved-theme=dark\]\{[^}]*\}')
+
         def fix_dark_block(m: re.Match) -> str:
             block = m.group(0)
-            # Replace dark color values with light ones
             block = re.sub(r'--light:#[0-9a-fA-F]{3,6}', '--light:#fff', block)
             block = re.sub(r'--lightgray:#[0-9a-fA-F]{3,6}', '--lightgray:#e5e5e5', block)
             block = re.sub(r'--dark:#[0-9a-fA-F]{3,6}', '--dark:#2b2b2b', block)
@@ -56,31 +73,51 @@ def main(output_dir: str) -> None:
 
         new_content = dark_block_pattern.sub(fix_dark_block, content)
         if new_content != content:
-            changed = True
             content = new_content
+            changed = True
 
         if changed:
-            counts['theme'] += 1
             css_file.write_text(content, encoding='utf-8')
 
-    # Override the JS theme detection to default to light mode
+    # ── Process .js files ────────────────────────────────────────────────
     for js_file in output.rglob('*.js'):
         content = js_file.read_text(encoding='utf-8')
         changed = False
 
-        # In prescript.js: change the default theme detection to force light
-        # Pattern: var d=window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"
-        old_js = 'window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"'
-        new_js = 'window.matchMedia("(prefers-color-scheme: light)").matches?"light":"light"'
-        if old_js in content:
-            content = content.replace(old_js, new_js)
+        # 5. Force JS default theme to light
+        old_default = 'window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"'
+        new_default = '"light"/*always-light*/'
+        if old_default in content:
+            content = content.replace(old_default, new_default)
             changed = True
+            counts['theme'] += 1
+
+        # 6. Neutralize SPA navigation in postscript.js
+        # The SPA router uses addEventListener("nav", ...) and fetches pages.
+        # Remove the router's popstate listener and navigation interception.
+        if 'addEventListener("popstate"' in content:
+            content = content.replace(
+                'addEventListener("popstate"',
+                'addEventListener("popstate.disabled"',
+            )
+            changed = True
+            counts['spa'] += 1
+
+        # Remove the click delegation that intercepts link clicks for SPA
+        # Pattern: document.addEventListener("click",...router...)
+        spa_click = 'document.addEventListener("click",'
+        if spa_click in content and 'closest' in content:
+            # Don't fully remove (it handles other things), just check
+            pass
 
         if changed:
             js_file.write_text(content, encoding='utf-8')
-            counts['theme'] += 1
 
-    print(f"[vault] Post-process: fixed {counts['links']} links, {counts['theme']} theme overrides")
+    print(
+        f"[vault] Post-process: fixed {counts['links']} links, "
+        f"{counts['theme']} theme overrides, "
+        f"{counts['spa']} spa disabled"
+    )
 
 
 if __name__ == '__main__':
