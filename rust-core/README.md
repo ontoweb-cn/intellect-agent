@@ -31,21 +31,19 @@ src/
 
 ## Runtime Integration
 
-All Rust paths use `_HAS_RUST` opt-in flags with pure-Python fallbacks:
+Since v0.6.4, all imports are centralized in `intellect_rust.py`. When the Rust extension is not installed, safe pure-Python fallbacks are used automatically — no per-module `_HAS_RUST_*` flags needed.
 
-| Module | Flag | Functions |
-|--------|------|-----------|
-| `state/fts.py` | `_HAS_RUST` | FTS5 trigger/index ops |
-| `state/compression.py` | `_HAS_RUST` | Compression chain |
-| `agent/storage/sqlite_backend.py` | `_HAS_RUST_BACKEND` | SQLiteBackend + 10 write ops |
-| `tools/approval.py` | `_HAS_RUST_SANDBOX` | Command detection (59 patterns) |
-| `agent/usage_pricing.py` | `_HAS_RUST_USAGE` | normalize_usage + TokenAccumulator |
-| `agent/chat_completion_helpers.py` | `_HAS_RUST_STREAM` | StreamAccumulator |
-| `agent/oauth/__init__.py` | `_HAS_RUST_CRYPTO` | PKCE + secure random |
-| `agent/oauth/storage.py` | `_HAS_RUST_FERNET` | Fernet encrypt/decrypt |
-| `agent/secret_store.py` | `_HAS_RUST_FERNET` | Fernet encrypt/decrypt |
-| `gateway/session.py` | `_HAS_RUST_GATEWAY` | Session key + reset policy |
-| `run_agent.py` | `_HAS_TOKEN_ACC` | TokenAccumulator as primary counter |
+| Domain | Module(s) | Fallback |
+|--------|-----------|----------|
+| Storage | `SQLiteBackend` | Returns `None` (callers use standard sqlite3) |
+| Sandbox | `rust_detect_dangerous`, `rust_detect_hardline` | Raises `NotImplementedError` |
+| Stream | `StreamAccumulator`, `TokenAccumulator` | Returns `None` (serial Python path) |
+| Usage | `rust_normalize_usage` | Pure-Python pass-through |
+| Crypto | `rust_pkce_*`, `rust_fernet_*` | Raises `NotImplementedError` |
+| Gateway | `rust_build_session_key`, etc. | Raises `NotImplementedError` |
+| Model | `rust_normalize_model_name` | Identity function |
+
+> The extension is **optional** since v0.6.4. All core agent workflows run without it.
 
 ## Benchmark (v0.6.0)
 
