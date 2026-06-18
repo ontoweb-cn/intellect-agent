@@ -1936,6 +1936,16 @@ install_node_deps() {
         log_success "TUI dependencies installed"
     fi
 
+    # Pre-install Quartz for Vault builds (LLM Wiki → static site)
+    if [ -f "$INSTALL_DIR/webui/quartz/package.json" ]; then
+        log_info "Installing Quartz (Vault site builder)..."
+        cd "$INSTALL_DIR/webui/quartz"
+        npm install --silent --prefer-offline 2>/dev/null || {
+            log_warn "Quartz install failed — Vault build will install on first use"
+        }
+        log_success "Quartz installed"
+    fi
+
 
 }
 

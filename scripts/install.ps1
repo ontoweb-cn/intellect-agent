@@ -1792,6 +1792,14 @@ function Install-NodeDeps {
         $tuiLog = "$env:TEMP\intellect-npm-tui-$(Get-Random).log"
         [void](_Run-NpmInstall "TUI" $tuiDir $tuiLog $npmExe)
     }
+
+    # Pre-install Quartz for Vault builds (LLM Wiki -> static site)
+    $quartzDir = "$InstallDir\webui\quartz"
+    if (Test-Path "$quartzDir\package.json") {
+        Write-Info "Installing Quartz (Vault site builder)..."
+        $quartzLog = "$env:TEMP\intellect-npm-quartz-$(Get-Random).log"
+        [void](_Run-NpmInstall "Quartz" $quartzDir $quartzLog $npmExe)
+    }
 }
 
 function Install-PlatformSdks {
