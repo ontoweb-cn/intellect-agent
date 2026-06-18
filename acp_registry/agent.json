@@ -4,7 +4,7 @@
   "version": "0.6.4",
   "description": "Self-improving open-source AI agent by ONTOWEB with ACP editor integration, persistent memory, skills, and rich tool support.",
   "repository": "https://gitee.com/ontoweb/intellect-agent",
-  "website": "https://intellect-agent.ontoweb.cn/docs/user-guide/features/acp",
+  "website": "https://intellect.ontoweb.cn/docs/user-guide/features/acp",
   "authors": [
     "ONTOWEB"
   ],

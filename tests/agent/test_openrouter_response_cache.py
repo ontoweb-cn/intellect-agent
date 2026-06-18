@@ -18,7 +18,7 @@ class TestBuildOrHeaders:
         from agent.auxiliary_client import build_or_headers
 
         headers = build_or_headers(or_config={"response_cache": False})
-        assert headers["HTTP-Referer"] == "https://intellect-agent.ontoweb.cn"
+        assert headers["HTTP-Referer"] == "https://intellect.ontoweb.cn"
         assert headers["X-Title"] == "Intellect Agent"
         assert headers["X-OpenRouter-Categories"] == "productivity,cli-agent"
 

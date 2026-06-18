@@ -7,7 +7,7 @@ const config: Config = {
   tagline: 'The self-improving AI agent',
   favicon: 'img/favicon.ico',
 
-  url: 'https://intellect-agent.ontoweb.cn',
+  url: 'https://intellect.ontoweb.cn',
   baseUrl: '/docs/',
 
   organizationName: 'ONTOWEB',
@@ -118,7 +118,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://intellect-agent.ontoweb.cn',
+          href: 'https://intellect.ontoweb.cn',
           label: 'Home',
           position: 'right',
         },

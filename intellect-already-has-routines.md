@@ -149,9 +149,9 @@ intellect webhook subscribe pr-review \
   --deliver github_comment
 ```
 
-Full automation templates gallery: [intellect-agent.ontoweb.cn/docs/guides/automation-templates](https://intellect-agent.ontoweb.cn/docs/guides/automation-templates)
+Full automation templates gallery: [intellect.ontoweb.cn/docs/guides/automation-templates](https://intellect.ontoweb.cn/docs/guides/automation-templates)
 
-Documentation: [intellect-agent.ontoweb.cn](https://intellect-agent.ontoweb.cn)
+Documentation: [intellect.ontoweb.cn](https://intellect.ontoweb.cn)
 
 GitHub: [gitee.com/ontoweb/intellect-agent](https://gitee.com/ontoweb/intellect-agent)
 

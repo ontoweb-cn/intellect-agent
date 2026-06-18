@@ -127,7 +127,7 @@ Container-relevant callers outside `gateway.py`:
 `intellect gateway start`, `coder gateway start` (profile alias), and
 `intellect -p <profile> gateway start` all spawn a gateway process scoped to a
 given profile. See
-[Profiles: Running Gateways](https://intellect-agent.ontoweb.cn/docs/user-guide/profiles#running-gateways).
+[Profiles: Running Gateways](https://intellect.ontoweb.cn/docs/user-guide/profiles#running-gateways).
 On host, lifecycle is managed via per-profile systemd units
 (`intellect-gateway-<profile>.service`); inside the container, an s6 service at
 `/run/service/gateway-<name>/` is registered when the profile is created and

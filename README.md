@@ -4,7 +4,7 @@
 # Intellect Agent ⚕
 
 <p align="center">
-  <a href="https://intellect-agent.ontoweb.cn/docs/"><img src="https://img.shields.io/badge/Docs-intellect--agent.ontoweb.cn-FFD700?style=for-the-badge" alt="Documentation"></a>
+  <a href="https://intellect.ontoweb.cn/docs/"><img src="https://img.shields.io/badge/Docs-intellect--agent.ontoweb.cn-FFD700?style=for-the-badge" alt="Documentation"></a>
   <a href="https://discord.gg/ONTOWEB"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://gitee.com/ontoweb/intellect-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
   <a href="https://ontoweb.cn"><img src="https://img.shields.io/badge/Built%20by-ONTOWEB-blueviolet?style=for-the-badge" alt="Built by ONTOWEB"></a>
@@ -55,7 +55,7 @@ docker pull ghcr.io/ontoweb/intellect-agent:latest
 docker run -v intellect-data:/opt/data ghcr.io/ontoweb/intellect-agent:latest
 ```
 
-See [Docker deployment guide](https://intellect-agent.ontoweb.cn/docs/deployment/docker) for compose files and configuration.
+See [Docker deployment guide](https://intellect.ontoweb.cn/docs/deployment/docker) for compose files and configuration.
 
 > **Updating Docker:** Use `docker pull` to update the image — `intellect update` inside the container prints the correct pull command.
 
@@ -67,7 +67,7 @@ brew install intellect-agent
 
 > Homebrew-managed installs receive updates via `brew upgrade`. The `intellect update` command is disabled for managed installs.
 
-> **Android / Termux:** The tested manual path is documented in the [Termux guide](https://intellect-agent.ontoweb.cn/docs/getting-started/termux). On Termux, Intellect installs a curated `.[termux]` extra.
+> **Android / Termux:** The tested manual path is documented in the [Termux guide](https://intellect.ontoweb.cn/docs/getting-started/termux). On Termux, Intellect installs a curated `.[termux]` extra.
 >
 > **WSL2:** The Linux one-liner above works inside WSL2. Native Windows install lives under `%LOCALAPPDATA%\intellect`; WSL2 installs under `~/.intellect` as on Linux.
 
@@ -95,7 +95,7 @@ intellect update       # Update to the latest version
 intellect doctor       # Diagnose any issues
 ```
 
-📖 **[Full documentation →](https://intellect-agent.ontoweb.cn/docs/)**
+📖 **[Full documentation →](https://intellect.ontoweb.cn/docs/)**
 
 ---
 
@@ -150,7 +150,7 @@ One command from a fresh install:
 intellect setup --portal
 ```
 
-That logs you in via OAuth, sets ONTOWEB as your provider, and turns on the Tool Gateway. Check what's wired up any time with `intellect portal status`. Full details on the [Tool Gateway docs page](https://intellect-agent.ontoweb.cn/docs/user-guide/features/tool-gateway).
+That logs you in via OAuth, sets ONTOWEB as your provider, and turns on the Tool Gateway. Check what's wired up any time with `intellect portal status`. Full details on the [Tool Gateway docs page](https://intellect.ontoweb.cn/docs/user-guide/features/tool-gateway).
 
 You can still bring your own keys per-tool whenever you want — the gateway is per-backend, not all-or-nothing.
 
@@ -172,32 +172,32 @@ Intellect has two entry points: start the terminal UI with `intellect`, or run t
 | Interrupt current work | `Ctrl+C` or send a new message | `/stop` or send a new message |
 | Platform-specific status | `/platforms` | `/status`, `/sethome` |
 
-For the full command lists, see the [CLI guide](https://intellect-agent.ontoweb.cn/docs/user-guide/cli) and the [Messaging Gateway guide](https://intellect-agent.ontoweb.cn/docs/user-guide/messaging).
+For the full command lists, see the [CLI guide](https://intellect.ontoweb.cn/docs/user-guide/cli) and the [Messaging Gateway guide](https://intellect.ontoweb.cn/docs/user-guide/messaging).
 
 ---
 
 ## Documentation
 
-All documentation lives at **[intellect-agent.ontoweb.cn/docs](https://intellect-agent.ontoweb.cn/docs/)**:
+All documentation lives at **[intellect.ontoweb.cn/docs](https://intellect.ontoweb.cn/docs/)**:
 
 | Section | What's Covered |
 |---------|---------------|
-| [Quickstart](https://intellect-agent.ontoweb.cn/docs/getting-started/quickstart) | Install → setup → first conversation in 2 minutes |
-| [CLI Usage](https://intellect-agent.ontoweb.cn/docs/user-guide/cli) | Commands, keybindings, personalities, sessions |
-| [Configuration](https://intellect-agent.ontoweb.cn/docs/user-guide/configuration) | Config file, providers, models, all options |
-| [Messaging Gateway](https://intellect-agent.ontoweb.cn/docs/user-guide/messaging) | Telegram, Discord, Slack, WhatsApp, Signal, Home Assistant |
-| [Security](https://intellect-agent.ontoweb.cn/docs/user-guide/security) | Command approval, DM pairing, container isolation |
-| [Tools & Toolsets](https://intellect-agent.ontoweb.cn/docs/user-guide/features/tools) | 40+ tools, toolset system, terminal backends |
-| [Skills System](https://intellect-agent.ontoweb.cn/docs/user-guide/features/skills) | Procedural memory, Skills Hub, creating skills |
-| [Memory](https://intellect-agent.ontoweb.cn/docs/user-guide/features/memory) | Persistent memory, user profiles, best practices |
-| [WebUI Dashboard](https://intellect-agent.ontoweb.cn/docs/user-guide/features/webui) | Browser-based session management, real-time streaming, settings |
-| [MCP Integration](https://intellect-agent.ontoweb.cn/docs/user-guide/features/mcp) | Connect any MCP server for extended capabilities |
-| [Cron Scheduling](https://intellect-agent.ontoweb.cn/docs/user-guide/features/cron) | Scheduled tasks with platform delivery |
-| [Context Files](https://intellect-agent.ontoweb.cn/docs/user-guide/features/context-files) | Project context that shapes every conversation |
-| [Architecture](https://intellect-agent.ontoweb.cn/docs/developer-guide/architecture) | Project structure, agent loop, key classes |
-| [Contributing](https://intellect-agent.ontoweb.cn/docs/developer-guide/contributing) | Development setup, PR process, code style |
-| [CLI Reference](https://intellect-agent.ontoweb.cn/docs/reference/cli-commands) | All commands and flags |
-| [Environment Variables](https://intellect-agent.ontoweb.cn/docs/reference/environment-variables) | Complete env var reference |
+| [Quickstart](https://intellect.ontoweb.cn/docs/getting-started/quickstart) | Install → setup → first conversation in 2 minutes |
+| [CLI Usage](https://intellect.ontoweb.cn/docs/user-guide/cli) | Commands, keybindings, personalities, sessions |
+| [Configuration](https://intellect.ontoweb.cn/docs/user-guide/configuration) | Config file, providers, models, all options |
+| [Messaging Gateway](https://intellect.ontoweb.cn/docs/user-guide/messaging) | Telegram, Discord, Slack, WhatsApp, Signal, Home Assistant |
+| [Security](https://intellect.ontoweb.cn/docs/user-guide/security) | Command approval, DM pairing, container isolation |
+| [Tools & Toolsets](https://intellect.ontoweb.cn/docs/user-guide/features/tools) | 40+ tools, toolset system, terminal backends |
+| [Skills System](https://intellect.ontoweb.cn/docs/user-guide/features/skills) | Procedural memory, Skills Hub, creating skills |
+| [Memory](https://intellect.ontoweb.cn/docs/user-guide/features/memory) | Persistent memory, user profiles, best practices |
+| [WebUI Dashboard](https://intellect.ontoweb.cn/docs/user-guide/features/webui) | Browser-based session management, real-time streaming, settings |
+| [MCP Integration](https://intellect.ontoweb.cn/docs/user-guide/features/mcp) | Connect any MCP server for extended capabilities |
+| [Cron Scheduling](https://intellect.ontoweb.cn/docs/user-guide/features/cron) | Scheduled tasks with platform delivery |
+| [Context Files](https://intellect.ontoweb.cn/docs/user-guide/features/context-files) | Project context that shapes every conversation |
+| [Architecture](https://intellect.ontoweb.cn/docs/developer-guide/architecture) | Project structure, agent loop, key classes |
+| [Contributing](https://intellect.ontoweb.cn/docs/developer-guide/contributing) | Development setup, PR process, code style |
+| [CLI Reference](https://intellect.ontoweb.cn/docs/reference/cli-commands) | All commands and flags |
+| [Environment Variables](https://intellect.ontoweb.cn/docs/reference/environment-variables) | Complete env var reference |
 
 ---
 
@@ -232,7 +232,7 @@ See `intellect claw migrate --help` for all options, or use the `openclaw-migrat
 
 ## Contributing
 
-We welcome contributions! See the [Contributing Guide](https://intellect-agent.ontoweb.cn/docs/developer-guide/contributing) for development setup, code style, and PR process.
+We welcome contributions! See the [Contributing Guide](https://intellect.ontoweb.cn/docs/developer-guide/contributing) for development setup, code style, and PR process.
 
 Quick start for contributors — clone and go with `setup-intellect.sh`:
 

@@ -3398,7 +3398,7 @@ def check_for_skill_updates(
 # Intellect centralized index source
 # ---------------------------------------------------------------------------
 
-intellect_INDEX_URL = "https://intellect-agent.ontoweb.cn/docs/api/skills-index.json"
+intellect_INDEX_URL = "https://intellect.ontoweb.cn/docs/api/skills-index.json"
 intellect_INDEX_CACHE_FILE = INDEX_CACHE_DIR / "intellect-index.json"
 intellect_INDEX_TTL = 6 * 3600  # 6 hours
 

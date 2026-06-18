@@ -490,7 +490,7 @@ def main():
             "Manage the fallback provider chain.  Fallback providers are tried "
             "in order when the primary model fails with rate-limit, overload, or "
             "connection errors.  See: "
-            "https://intellect-agent.ontoweb.cn/docs/user-guide/features/fallback-providers"
+            "https://intellect.ontoweb.cn/docs/user-guide/features/fallback-providers"
         ),
     )
     fallback_subparsers = fallback_parser.add_subparsers(dest="fallback_command")
@@ -524,7 +524,7 @@ def main():
             "Pull API keys from an external secret manager at process startup "
             "instead of storing them in ~/.intellect/.env.  Currently supports "
             "Bitwarden Secrets Manager.  See: "
-            "https://intellect-agent.ontoweb.cn/docs/user-guide/secrets/bitwarden"
+            "https://intellect.ontoweb.cn/docs/user-guide/secrets/bitwarden"
         ),
     )
     secrets_subparsers = secrets_parser.add_subparsers(dest="secrets_command")

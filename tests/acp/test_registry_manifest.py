@@ -33,7 +33,7 @@ def test_agent_json_matches_official_registry_required_fields():
     assert data["name"] == "Intellect Agent"
     assert data["description"]
     assert data["repository"] == "https://gitee.com/ontoweb/intellect-agent"
-    assert data["website"].startswith("https://intellect-agent.ontoweb.cn/")
+    assert data["website"].startswith("https://intellect.ontoweb.cn/")
     assert data["authors"] == ["ONTOWEB"]
     assert data["license"] == "MIT"
     assert set(data["distribution"]) <= ALLOWED_DISTRIBUTIONS

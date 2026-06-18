@@ -15,7 +15,7 @@ metadata:
 
 # Spotify
 
-Control the user's Spotify account via the Intellect Spotify toolset (7 tools). Setup guide: https://intellect-agent.ontoweb.cn/docs/user-guide/features/spotify
+Control the user's Spotify account via the Intellect Spotify toolset (7 tools). Setup guide: https://intellect.ontoweb.cn/docs/user-guide/features/spotify
 
 ## When to use this skill
 

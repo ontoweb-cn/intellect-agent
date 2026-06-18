@@ -2,7 +2,7 @@ class HermesAgent < Formula
   include Language::Python::Virtualenv
 
   desc "Self-improving AI agent that creates skills from experience"
-  homepage "https://intellect-agent.ontoweb.cn"
+  homepage "https://intellect.ontoweb.cn"
   url "https://gitee.com/ontoweb/intellect-agent/releases/download/v0.6.4/intellect_agent-0.6.4.tar.gz"
   sha256 "<replace-with-release-asset-sha256>"
   license "MIT"

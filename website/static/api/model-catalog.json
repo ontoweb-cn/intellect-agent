@@ -3,7 +3,7 @@
   "updated_at": "2026-06-05T22:15:25Z",
   "metadata": {
     "source": "intellect-agent repo",
-    "docs": "https://intellect-agent.ontoweb.cn/docs/reference/model-catalog"
+    "docs": "https://intellect.ontoweb.cn/docs/reference/model-catalog"
   },
   "providers": {
     "openrouter": {

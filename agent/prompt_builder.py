@@ -130,7 +130,7 @@ DEFAULT_AGENT_IDENTITY = (
 intellect_AGENT_HELP_GUIDANCE = (
     "If the user asks about configuring, setting up, or using Intellect Agent "
     "itself, load the `intellect-agent` skill with skill_view(name='intellect-agent') "
-    "before answering. Docs: https://intellect-agent.ontoweb.cn/docs"
+    "before answering. Docs: https://intellect.ontoweb.cn/docs"
 )
 
 MEMORY_GUIDANCE = (

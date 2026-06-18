@@ -107,7 +107,7 @@ scripts/run_tests.sh tests/intellect_state/test_rust_parity.py -q
 
 - **CentOS 7 / RHEL 7**（glibc 2.17）：不在 P0 支持范围；需源码编译或升级 OS
 - **WSL2**：与原生 Linux 相同，推荐使用 glibc manylinux wheel
-- **Termux (Android)**：独立路径，见 [Termux 指南](https://intellect-agent.ontoweb.cn/docs/getting-started/termux)；Termux 安装脚本会 `pkg install rust`
+- **Termux (Android)**：独立路径，见 [Termux 指南](https://intellect.ontoweb.cn/docs/getting-started/termux)；Termux 安装脚本会 `pkg install rust`
 
 ---
 

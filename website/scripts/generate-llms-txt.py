@@ -9,8 +9,8 @@ Outputs:
                                     comments separating files.
 
 Both publish at:
-  https://intellect-agent.ontoweb.cn/docs/llms.txt
-  https://intellect-agent.ontoweb.cn/docs/llms-full.txt
+  https://intellect.ontoweb.cn/docs/llms.txt
+  https://intellect.ontoweb.cn/docs/llms-full.txt
 
 The `/docs/` prefix is not a mistake — Docusaurus serves `website/static/`
 at the `docs/` base path. Clients and IDE plugins that probe the classic
@@ -31,7 +31,7 @@ WEBSITE = SCRIPT_DIR.parent
 DOCS = WEBSITE / "docs"
 STATIC = WEBSITE / "static"
 
-SITE_BASE = "https://intellect-agent.ontoweb.cn/docs"
+SITE_BASE = "https://intellect.ontoweb.cn/docs"
 
 # Curated sections for llms.txt — mirrors the product story, not the filesystem.
 # Each entry: (docs-relative path without .md, display title, optional short desc).
@@ -248,8 +248,8 @@ def emit_llms_full() -> str:
             "Started, Using Intellect, Features, Messaging, Integrations, Guides, "
             "Developer Guide, Reference, then everything else.\n"
         ),
-        "Canonical site: https://intellect-agent.ontoweb.cn/docs\n",
-        "Short index: https://intellect-agent.ontoweb.cn/docs/llms.txt\n",
+        "Canonical site: https://intellect.ontoweb.cn/docs\n",
+        "Short index: https://intellect.ontoweb.cn/docs/llms.txt\n",
         "\n---\n\n",
     ]
 

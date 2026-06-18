@@ -17,7 +17,7 @@ Usage::
 Output: ``website/static/api/model-catalog.json``
 
 Live URL (after ``deploy-site.yml`` runs on merge to main):
-``https://intellect-agent.ontoweb.cn/docs/api/model-catalog.json``
+``https://intellect.ontoweb.cn/docs/api/model-catalog.json``
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def build_catalog() -> dict:
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "metadata": {
             "source": "intellect-agent repo",
-            "docs": "https://intellect-agent.ontoweb.cn/docs/reference/model-catalog",
+            "docs": "https://intellect.ontoweb.cn/docs/reference/model-catalog",
         },
         "providers": {
             "openrouter": {
