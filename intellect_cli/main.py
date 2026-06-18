@@ -9983,6 +9983,35 @@ def _cmd_update_pip(args):
         print("✗ Update failed")
         sys.exit(1)
 
+    # ── Rust extension upgrade (best-effort) ───────────────────────────────
+    # pip/uv/pipx upgrade the Python package but NOT the Rust native
+    # extension (intellect_community_core).  Try to upgrade it too so the
+    # Rust accelerator stays in sync with the Python code.  Failure is
+    # non-fatal — intellect_rust.py provides pure-Python fallbacks.
+    _rust_cmd = None
+    if is_uv_tool_install():
+        pass  # uv tool can't upgrade individual deps; skip
+    elif pipx_managed and pipx:
+        pass  # pipx handles deps via the package metadata
+    elif uv:
+        _rust_cmd = [uv, "pip", "install", "--upgrade", "intellect_community_core"]
+        if in_venv:
+            _rust_cmd.pop()  # no --system needed for venv
+        else:
+            _rust_cmd.insert(3, "--system")
+    else:
+        _rust_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "intellect_community_core"]
+
+    if _rust_cmd:
+        try:
+            _rust_result = subprocess.run(_rust_cmd, **run_kwargs)
+            if _rust_result.returncode == 0:
+                print("✓ Rust extension updated.")
+            else:
+                print("⚠ Rust extension update skipped (non-fatal — pure-Python fallback available).")
+        except Exception:
+            print("⚠ Rust extension update failed (non-fatal).")
+
     print("✓ Update complete! Restart intellect to use the new version.")
 
 
@@ -10391,6 +10420,36 @@ def _cmd_update_impl(args, gateway_mode: bool):
 
         print()
         print("✓ Code updated!")
+
+        # ── Rebuild Rust extension after git pull ───────────────────
+        # git pull updates source code but the compiled Rust extension
+        # (.pyd/.so) is still from the previous version.  Rebuild so the
+        # accelerator matches the new Python code.  Best-effort — failure
+        # is non-fatal (intellect_rust.py has pure-Python fallbacks).
+        _rust_dir = PROJECT_ROOT / "rust-core"
+        if _rust_dir.is_dir() and (_rust_dir / "Cargo.toml").exists():
+            if shutil.which("cargo"):
+                print("→ Rebuilding Rust extension...")
+                try:
+                    _maturin = shutil.which("maturin")
+                    if not _maturin:
+                        subprocess.run(
+                            [sys.executable, "-m", "pip", "install", "-q", "maturin"],
+                            cwd=PROJECT_ROOT, check=True, capture_output=True,
+                        )
+                        _maturin = shutil.which("maturin") or "maturin"
+                    _rust_result = subprocess.run(
+                        [_maturin, "develop", "--release"],
+                        cwd=str(_rust_dir), capture_output=True, text=True,
+                    )
+                    if _rust_result.returncode == 0:
+                        print("  ✓ Rust extension rebuilt.")
+                    else:
+                        print("  ⚠ Rust extension rebuild skipped (non-fatal).")
+                except Exception:
+                    print("  ⚠ Rust extension rebuild failed (non-fatal).")
+            else:
+                print("  ⚠ Rust toolchain not found — skipping Rust extension rebuild.")
 
         # After git pull, source files on disk are newer than cached Python
         # modules in this process.  Reload intellect_constants so that any lazy

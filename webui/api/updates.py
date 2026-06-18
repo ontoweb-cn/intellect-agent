@@ -882,6 +882,41 @@ def summarize_update_payload(updates: dict, llm_callback=None, *, target: str | 
 # ── Self-update application ───────────────────────────────────────────────────
 
 
+def _try_rebuild_rust_extension() -> bool:
+    """Rebuild the Rust extension after a git pull update.
+
+    WebUI self-updates and force-updates pull new source code but leave
+    the compiled Rust extension (.pyd/.so) at the old version.  Rebuild
+    so the accelerator matches the new Python code.  Best-effort —
+    failure is non-fatal (intellect_rust.py has pure-Python fallbacks).
+    """
+    import os as _os
+    import subprocess as _sp
+    import sys as _sys
+    import shutil as _shutil
+
+    _rust_dir = REPO_ROOT.parent / "rust-core"
+    if not _rust_dir.is_dir() or not (_rust_dir / "Cargo.toml").exists():
+        return False
+    if not _shutil.which("cargo"):
+        return False
+    try:
+        _maturin = _shutil.which("maturin")
+        if not _maturin:
+            _sp.run(
+                [_sys.executable, "-m", "pip", "install", "-q", "maturin"],
+                check=True, capture_output=True,
+            )
+            _maturin = _shutil.which("maturin") or "maturin"
+        _result = _sp.run(
+            [_maturin, "develop", "--release"],
+            cwd=str(_rust_dir), capture_output=True, text=True,
+        )
+        return _result.returncode == 0
+    except Exception:
+        return False
+
+
 def _schedule_restart(delay: float = 2.0) -> None:
     """Re-exec this process after *delay* seconds.
 
@@ -992,6 +1027,7 @@ def apply_force_update(target: str) -> dict:
         with _cache_lock:
             _update_cache['checked_at'] = 0
 
+        _try_rebuild_rust_extension()
         _schedule_restart()
 
         return {
@@ -1124,6 +1160,10 @@ def _apply_update_inner(target):
     # Invalidate cache
     with _cache_lock:
         _update_cache['checked_at'] = 0
+
+    # Rebuild the Rust extension so the compiled accelerator matches the
+    # freshly-pulled Python code.  Best-effort — failure is non-fatal.
+    _try_rebuild_rust_extension()
 
     # Schedule a self-restart so the updated code is loaded fresh.  A plain
     # git pull leaves stale Python modules in sys.modules — agent imports that
