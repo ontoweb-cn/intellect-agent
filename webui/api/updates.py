@@ -889,39 +889,43 @@ def _schedule_restart(delay: float = 2.0) -> None:
     loaded on the next request, rather than running with a mix of old and
     new Python modules in sys.modules.
 
-    os.execv() replaces the current process image with a fresh interpreter
-    running the same argv — sessions are preserved on disk, the HTTP port
-    is reclaimed within the delay window, and the client's own
-    ``setTimeout(() => location.reload(), 2500)`` lands after the restart.
-
-    Coordinates with ``_apply_lock``: when the user updates both webui
-    and agent, the client POSTs them sequentially.  Without coordination
-    the restart timer scheduled by the first update's success would fire
-    while the second update's git-pull is still running, killing it mid-
-    stream and leaving the second repo in an unknown partial state.
-    Blocking on ``_apply_lock`` before ``os.execv`` means a pending
-    second update always completes before the restart happens.
+    On POSIX, ``os.execv()`` replaces the current process image atomically.
+    On Windows, ``os.execv`` is emulated by spawning a new process and
+    exiting — and it resolves to the *base* Python interpreter (python.exe,
+    a console-subsystem app) rather than the venv launcher (pythonw.exe,
+    a GUI-subsystem app).  Using python.exe creates an unwanted blank
+    console window.  We explicitly resolve pythonw.exe on Windows to keep
+    the restarted process windowless.
     """
     import os
+    import subprocess as _sp
     import sys
 
     def _do():
         import time
         time.sleep(delay)
-        # Hold _apply_lock through os.execv so no new update can start between
-        # the lock-release and the process replacement.  Any in-flight update
-        # finishes first (since it holds the lock), and then the process is
-        # replaced while still holding the lock — meaning no new update can
-        # sneak in during the brief TOCTOU window that existed with the
-        # original acquire-release-execv sequence.
-        # Threads die when execv replaces the process image, so the lock is
-        # released atomically by the kernel.
         with _apply_lock:
+            if sys.platform == "win32":
+                # Resolve pythonw.exe alongside the current interpreter so the
+                # restarted process stays windowless (no blank console).
+                _pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                if os.path.isfile(_pyw):
+                    try:
+                        _sp.Popen(
+                            [_pyw] + sys.argv,
+                            stdin=_sp.DEVNULL,
+                            stdout=_sp.DEVNULL,
+                            stderr=_sp.DEVNULL,
+                            close_fds=True,
+                            creationflags=0x00000200 | 0x00000008 | 0x08000000,
+                            # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW
+                        )
+                        os._exit(0)
+                    except Exception:
+                        pass
             try:
                 os.execv(sys.executable, [sys.executable] + sys.argv)
             except Exception:
-                # Last-resort: if execv fails (e.g. frozen binary), just exit
-                # so the process supervisor (start.sh / Docker) restarts us.
                 os._exit(0)
 
     threading.Thread(target=_do, daemon=True).start()
