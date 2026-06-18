@@ -19,3 +19,4 @@ venv/
 *.db-shm
 .env
 *.log
+rustup-init.exe
