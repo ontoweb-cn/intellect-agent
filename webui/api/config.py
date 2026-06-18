@@ -31,66 +31,19 @@ HOME = Path.home()
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 
 
-def _intellect_home_has_webui_state(base: Path) -> bool:
-    """Return True when *base* looks like a populated Intellect home with WebUI state.
+# ── Network config (env-overridable) ─────────────────────────────────────────
+    """Return the default Intellect home when INTELLECT_HOME is unset.
 
-    Used only on Windows to detect a pre-migration install at the legacy
-    ``%USERPROFILE%\\.intellect`` location so we don't strand the user's existing
-    sessions/pins/settings if the default moves to ``%LOCALAPPDATA%\\intellect``
-    (#2905).  We treat the home as "real" if any of the durable WebUI artifacts
-    exist under it — specifically webui/ state, NOT agent-owned files like
-    ``config.yaml`` / ``auth.json``.  The agent has defaulted to
-    ``%LOCALAPPDATA%\\intellect`` on Windows, so a long-time agent user who never
-    ran WebUI at the legacy location would have a stray ``auth.json`` there —
-    keying on that would wrongly divert a *fresh* WebUI install to the legacy dir.
-    Only ``webui/`` state is what actually gets stranded by the move, so it is
-    the correct and narrow signal.  Cheap stat-only checks; never raises.
+    Always defaults to ``~/.intellect`` on all platforms — consistent with
+    the CLI's ``intellect_constants.get_intellect_home()``.  Previously
+    Windows defaulted to ``%LOCALAPPDATA%\\intellect``, which created a
+    split-brain: the CLI wrote config.yaml to ``~/.intellect`` while the
+    WebUI read from ``%LOCALAPPDATA%\\intellect``, so onboarding provider
+    setup and ``intellect model`` operated on different files.
+
+    Explicit ``INTELLECT_HOME`` / ``INTELLECT_WEBUI_STATE_DIR`` env vars
+    take precedence upstream and are unaffected.
     """
-    try:
-        if not base.is_dir():
-            return False
-        markers = (
-            base / "webui" / "sessions",        # WebUI session store
-            base / "webui" / "settings.json",   # WebUI UI settings + pins
-            base / "webui",                     # WebUI state dir at all
-        )
-        return any(m.exists() for m in markers)
-    except OSError:
-        return False
-
-
-def _platform_default_intellect_home() -> Path:
-    """Return the platform-aware default Intellect home when INTELLECT_HOME is unset.
-
-    Native Windows Intellect Agent installs default to %LOCALAPPDATA%\\intellect,
-    while POSIX installs use ~/.intellect.
-
-    Windows migration safety (#2905): If the Windows default ever moves from
-    ``%USERPROFILE%\\.intellect`` to ``%LOCALAPPDATA%\\intellect`` to match the agent,
-    upgrading users whose WebUI state still lives at the old location would see an
-    empty app.  To avoid stranding that data, prefer the legacy
-    ``%USERPROFILE%\\.intellect`` ONLY when it is populated AND the new
-    ``%LOCALAPPDATA%\\intellect`` location is not yet established.  This is a
-    non-destructive, self-healing fallback: no files are moved, and once the
-    new location has state the legacy path is never preferred.  Explicit
-    INTELLECT_HOME / INTELLECT_WEBUI_STATE_DIR overrides take precedence upstream
-    and are unaffected.
-    """
-    if os.name == "nt":
-        local_app_data = os.getenv("LOCALAPPDATA", "").strip()
-        if local_app_data:
-            new_home = Path(local_app_data) / "intellect"
-            legacy_home = HOME / ".intellect"
-            # Only fall back to the legacy home if it actually holds state and
-            # the new location has not been established yet — the exact
-            # post-upgrade fingerprint from #2905.
-            if (
-                legacy_home != new_home
-                and not _intellect_home_has_webui_state(new_home)
-                and _intellect_home_has_webui_state(legacy_home)
-            ):
-                return legacy_home
-            return new_home
     return HOME / ".intellect"
 
 
