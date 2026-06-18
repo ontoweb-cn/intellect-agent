@@ -23,7 +23,7 @@ QUARTZ_LAYOUT="$QUARTZ_REPO/quartz.layout.ts"
 # ── Ensure Quartz is installed ──────────────────────────────────────────
 if [ ! -d "$QUARTZ_REPO/.git" ]; then
     echo "[vault] Cloning Quartz (one-time, ~50MB)..."
-    git clone --depth 1 https://github.com/jackyzha0/quartz.git "$QUARTZ_REPO" 2>&1 || {
+    git clone --depth 1 --branch v4 https://github.com/jackyzha0/quartz.git "$QUARTZ_REPO" 2>&1 || {
         echo "[vault] ERROR: Failed to clone Quartz repository"
         exit 1
     }
@@ -129,7 +129,7 @@ fi
 # ── Build ────────────────────────────────────────────────────────────────
 echo "[vault] Building Quartz site from ${WIKI_PATH} → ${OUTPUT_DIR}..."
 cd "$QUARTZ_REPO"
-npx quartz build --directory "$QUARTZ_REPO" --output "$OUTPUT_DIR" --concurrency 4 2>&1
+npx quartz build --output "$OUTPUT_DIR" --concurrency 4 2>&1
 
 # Copy built output if Quartz puts it elsewhere
 if [ -d "$QUARTZ_REPO/public" ] && [ "$(realpath "$QUARTZ_REPO/public")" != "$(realpath "$OUTPUT_DIR")" ]; then

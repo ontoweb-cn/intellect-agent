@@ -30,7 +30,7 @@ if (-not $node) {
 # ── Ensure Quartz is installed ────────────────────────────────────────
 if (-not (Test-Path (Join-Path $QuartzRepo ".git"))) {
     Write-Host "[vault] Cloning Quartz (one-time, ~50MB)..."
-    git clone --depth 1 https://github.com/jackyzha0/quartz.git $QuartzRepo 2>&1
+    git clone --depth 1 --branch v4 https://github.com/jackyzha0/quartz.git $QuartzRepo 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Error "[vault] ERROR: Failed to clone Quartz repository"
         exit 1
@@ -155,7 +155,7 @@ export { defaultLayout }
 Write-Host "[vault] Building Quartz site from ${WikiPath} -> ${OutputDir}..."
 Push-Location $QuartzRepo
 try {
-    npx quartz build --directory $QuartzRepo --output $OutputDir --concurrency 4 2>&1
+    npx quartz build --output $OutputDir --concurrency 4 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Error "[vault] Quartz build failed (exit code $LASTEXITCODE)"
         exit 1
