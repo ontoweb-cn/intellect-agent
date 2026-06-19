@@ -1,0 +1,72 @@
+name: Gitee Release (from GitHub)
+
+# Downloads artifacts from the intermediate GitHub Release (built by
+# .github/workflows/gitee-release.yml) and publishes them to Gitee Release.
+#
+# Coordination: this workflow fires on the same tag push as the GitHub Actions
+# build. Because the GitHub matrix takes 30-45 min, the download script polls
+# the GitHub Release API with a configurable timeout (default 600 s).
+#
+# Requires two secrets configured in Gitee:
+#   GITHUB_PAT  — read-only access to the GitHub repo (rate-limit elevation)
+#   GITEE_TOKEN — repo-scoped token for creating Gitee releases + uploading assets
+
+triggers:
+  push:
+    tags:
+      - 'v20*'
+      - 'v[0-9]*.*'
+
+stages:
+  - stage: release
+    displayName: Sync GitHub Release to Gitee
+    jobs:
+      - job: sync-release
+        displayName: Download from GitHub and publish to Gitee
+        runsOn: ubuntu-latest
+        timeoutMinutes: 30
+        steps:
+          - name: Checkout
+            uses: checkout@v1
+            with:
+              fetchTags: true
+
+          - name: Extract release tag
+            run: |
+              # Gitee Go may expose the tag via GITEE_REF or CI_COMMIT_TAG.
+              # Fall back to git describe if neither is set.
+              if [ -n "${GITEE_REF_NAME:-}" ]; then
+                TAG="${GITEE_REF_NAME}"
+              elif [ -n "${CI_COMMIT_TAG:-}" ]; then
+                TAG="${CI_COMMIT_TAG}"
+              else
+                TAG=$(git describe --tags --exact-match 2>/dev/null || echo "")
+              fi
+              if [ -z "$TAG" ]; then
+                echo "ERROR: cannot determine release tag" >&2
+                exit 1
+              fi
+              echo "RELEASE_TAG=$TAG" >> $GITEE_ENV
+
+          - name: Install Python deps
+            run: |
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq python3 python3-pip
+              python3 -m pip install --upgrade pip
+
+          - name: Download artifacts from GitHub Release
+            env:
+              GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+            run: |
+              python3 packaging/scripts/download-github-release.py \
+                --tag "$RELEASE_TAG" \
+                --dist-dir dist/combined \
+                --max-wait 600
+
+          - name: Publish to Gitee Release
+            env:
+              GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+            run: |
+              python3 packaging/scripts/publish-gitee-from-ci.py \
+                --tag "$RELEASE_TAG" \
+                --dist-dir dist/combined

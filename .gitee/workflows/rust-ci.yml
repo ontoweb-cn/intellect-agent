@@ -1,0 +1,197 @@
+name: Rust CI
+
+# Gitee CI (Gitee Go) workflow for Rust build + test.
+# Mirrors .github/workflows/rust-ci.yml — adapts the same 3-job structure to
+# Gitee's native CI syntax (no marketplace actions, manual toolchain install).
+#
+# NOTE: Gitee Go syntax varies by Gitee Enterprise version. If this workflow
+# fails to parse, check your Gitee instance version and adjust:
+#   https://gitee.com/help/articles/4357
+
+triggers:
+  push:
+    branches:
+      - main
+    paths:
+      - 'rust-core/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'rust-core/**'
+
+stages:
+  # ── Stage 1: Pure Rust unit tests ───────────────────────────────────────
+  - stage: rust-unit
+    displayName: Pure Rust unit tests
+    jobs:
+      - job: rust-unit
+        displayName: Pure Rust unit tests
+        runsOn: ubuntu-latest
+        timeoutMinutes: 10
+        caches:
+          - key: rust-${{ runner.os }}-${{ hashFiles('rust-core/Cargo.lock') }}
+            paths:
+              - ~/.cargo/registry
+              - ~/.cargo/git
+              - rust-core/target
+        steps:
+          - name: Checkout
+            uses: checkout@v1
+
+          - name: Install Rust toolchain
+            run: |
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+              source $HOME/.cargo/env
+              rustc --version
+              cargo --version
+
+          - name: Run Rust unit tests (no Python linking)
+            run: |
+              source $HOME/.cargo/env
+              cd rust-core
+              cargo test --no-default-features -- --test-threads=2
+              echo "Rust unit tests (pure): OK"
+
+          - name: Assert minimum Rust test count
+            run: |
+              source $HOME/.cargo/env
+              cd rust-core
+              COUNT=$(cargo test --no-default-features -- --list 2>&1 | grep -c 'test .*\.rs:' || echo 0)
+              echo "Rust test count: $COUNT"
+              python3 -c "assert $COUNT >= 84, f'Expected >= 84 Rust tests, got {$COUNT}'"
+              echo "Test count assertion: OK"
+
+  # ── Stage 2: PyO3 extension tests + wheel build ─────────────────────────
+  - stage: rust-full
+    displayName: PyO3 tests + wheel build
+    jobs:
+      - job: rust-full
+        displayName: PyO3 tests + wheel build
+        runsOn: ubuntu-latest
+        timeoutMinutes: 15
+        caches:
+          - key: rust-${{ runner.os }}-${{ hashFiles('rust-core/Cargo.lock') }}
+            paths:
+              - ~/.cargo/registry
+              - ~/.cargo/git
+              - rust-core/target
+        steps:
+          - name: Checkout
+            uses: checkout@v1
+
+          - name: Install Rust toolchain
+            run: |
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+              source $HOME/.cargo/env
+              rustc --version
+
+          - name: Install Python build deps
+            run: |
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq python3 python3-pip python3-venv
+              python3 -m pip install --upgrade pip
+              pip3 install maturin
+
+          - name: Run Rust tests (with extension module)
+            run: |
+              source $HOME/.cargo/env
+              cd rust-core
+              PYO3_PYTHON=$(which python3) cargo test
+              echo "Rust tests (extension-module): OK"
+
+          - name: Build release wheel
+            run: |
+              source $HOME/.cargo/env
+              cd rust-core
+              maturin build --release
+              echo "Wheel built: $(ls target/wheels/*.whl)"
+
+          - name: Upload wheel artifact
+            artifacts:
+              - name: intellect-community-core-wheel
+                paths:
+                  - rust-core/target/wheels/*.whl
+
+  # ── Stage 3: Python-level verification ──────────────────────────────────
+  - stage: rust-python-verify
+    displayName: Python parity + sandbox verification
+    needs:
+      - rust-full
+    jobs:
+      - job: rust-python-verify
+        displayName: Python parity + sandbox verification
+        runsOn: ubuntu-latest
+        timeoutMinutes: 10
+        steps:
+          - name: Checkout
+            uses: checkout@v1
+
+          - name: Download wheel artifact
+            artifacts:
+              - download: intellect-community-core-wheel
+                path: rust-core/target/wheels/
+
+          - name: Install Python deps
+            run: |
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq python3 python3-pip python3-venv
+              python3 -m pip install --upgrade pip
+              pip3 install maturin pyyaml python-dotenv pytest
+
+          - name: Build and install Rust extension
+            run: |
+              cd rust-core
+              maturin develop
+
+          - name: Run Rust parity tests
+            run: |
+              PYTHONPATH=. python3 -m pytest tests/intellect_state/test_rust_parity.py -v
+              COUNT=$(PYTHONPATH=. python3 -m pytest tests/intellect_state/test_rust_parity.py --collect-only -q 2>&1 | grep -c 'test_')
+              python3 -c "assert $COUNT >= 45, f'Expected >= 45 parity tests, got {$COUNT}'"
+              echo "Parity test count: $COUNT OK"
+
+          - name: Verify sandbox patterns
+            run: |
+              PYTHONPATH=. python3 -c "
+              from tools.approval import _normalize_command_for_detection, _HAS_RUST_SANDBOX
+              assert _HAS_RUST_SANDBOX, 'Rust sandbox not loaded'
+              import intellect_community_core
+              n = _normalize_command_for_detection('rm -rf /').lower()
+              assert intellect_community_core.detect_hardline_command_rs(n) is not None
+              n = _normalize_command_for_detection('echo hello').lower()
+              assert intellect_community_core.detect_dangerous_command_rs(n) is None
+              print('Sandbox patterns OK')
+              "
+
+          - name: Verify AST code checker
+            run: |
+              PYTHONPATH=. python3 -c "
+              from tools.approval import _check_python_ast
+
+              assert _check_python_ast('import os; os.system(\"id\")') is not None, 'os.system not caught'
+              assert _check_python_ast('exec(\"id()\")') is not None, 'exec not caught'
+              assert _check_python_ast('import pickle; pickle.loads(b\"...\")') is not None, 'pickle not caught'
+              assert _check_python_ast('import ctypes; ctypes.CDLL(\"libc.so.6\")') is not None, 'ctypes not caught'
+              assert _check_python_ast('import builtins; getattr(builtins, \"exec\")(\"id()\")') is not None, 'getattr not caught'
+              assert _check_python_ast('import os; os.__dict__[\"system\"](\"id\")') is not None, '__dict__ not caught'
+              assert _check_python_ast('import importlib; importlib.import_module(\"os\").system(\"id\")') is not None, 'importlib not caught'
+              assert _check_python_ast('print(\"hello\")') is None, 'safe print false positive'
+              assert _check_python_ast('import json; print(json.dumps({\"a\":1}))') is None, 'safe json false positive'
+              assert _check_python_ast('x = [i**2 for i in range(10)]') is None, 'safe comprehension false positive'
+              print('AST checker OK (7 dangerous caught, 3 safe passed)')
+              "
+
+          - name: Verify token descriptions (B1)
+            run: |
+              PYTHONPATH=. python3 -c "
+              import intellect_community_core as icc
+              result = icc.detect_dangerous_command_rs('python -c \"exec(\\\"id()\\\")\"')
+              assert result is not None and 'exec()' in result[0], f'Bad exec desc: {result}'
+              result = icc.detect_dangerous_command_rs('python -c \"import os; os.system(\\\"id\\\")\"')
+              assert result is not None and 'os.system()' in result[0], f'Bad os.system desc: {result}'
+              result = icc.detect_dangerous_command_rs('python -c \"import ctypes; ctypes.CDLL(\\\"libc.so.6\\\")\"')
+              assert result is not None and 'ctypes' in result[0], f'Bad ctypes desc: {result}'
+              assert icc.detect_dangerous_command_rs('python -c \"print(1)\"') is None
+              print('Token descriptions OK')
+              "

@@ -259,10 +259,13 @@ jobs:
           print(f'## Coverage: {pct:.1f}%')
           " >> $GITHUB_STEP_SUMMARY
 
-  # ── Rust extension build + test ──────────────────────────────────────────
+  # ── Rust fast gate ───────────────────────────────────────────────────────
+  # Runs pure Rust unit tests as a fast gate for every PR.
+  # For the full Rust pipeline (PyO3, wheel build, parity, sandbox/AST/token
+  # verification), see .github/workflows/rust-ci.yml.
   rust:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -280,11 +283,9 @@ jobs:
           key: rust-${{ runner.os }}-${{ hashFiles('rust-core/Cargo.lock') }}
           restore-keys: rust-${{ runner.os }}-
 
-      - name: Run Rust unit tests (fast path, no Python linking)
+      - name: Run Rust unit tests (fast gate)
         run: |
           cd rust-core
-          # Run without extension-module feature first — pure Rust tests
-          # don't need Python linking and finish in < 1s.
           cargo test --no-default-features -- --test-threads=2
           echo "Rust unit tests (pure): OK"
 
@@ -295,114 +296,3 @@ jobs:
           echo "Rust test count: $COUNT"
           python3 -c "assert $COUNT >= 84, f'Expected >= 84 Rust tests, got {$COUNT}'"
           echo "Test count assertion: OK"
-
-      - name: Run Rust unit tests (with extension module)
-        run: |
-          cd rust-core
-          PYO3_PYTHON=$(which python3) cargo test
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
-
-      - name: Set up Python 3.11
-        run: uv python install 3.11
-
-      - name: Install Python dependencies
-        run: |
-          uv venv .venv --python 3.11
-          source .venv/bin/activate
-          uv pip install maturin pyyaml python-dotenv
-
-      - name: Build and install Rust extension
-        run: |
-          source .venv/bin/activate
-          cd rust-core
-          maturin develop
-
-      - name: Build wheel (verify release packaging)
-        run: |
-          source .venv/bin/activate
-          cd rust-core
-          maturin build --release
-          echo "Wheel built: $(ls target/wheels/*.whl)"
-
-      - name: Upload Rust wheel artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: intellect-community-core-wheel
-          path: rust-core/target/wheels/*.whl
-          retention-days: 7
-
-      - name: Run Rust parity tests
-        run: |
-          source .venv/bin/activate
-          cd rust-core/..
-          PYTHONPATH=. python -m pytest tests/intellect_state/test_rust_parity.py -v
-          # Assert minimum parity test count (prevents silent regression)
-          COUNT=$(PYTHONPATH=. python -m pytest tests/intellect_state/test_rust_parity.py --collect-only -q 2>&1 | grep -c 'test_')
-          python3 -c "assert $COUNT >= 45, f'Expected >= 45 parity tests, got {$COUNT}'"
-          echo "Parity test count: $COUNT OK"
-
-      - name: Verify sandbox patterns
-        run: |
-          source .venv/bin/activate
-          cd rust-core/..
-          PYTHONPATH=. python -c "
-          from tools.approval import _normalize_command_for_detection, _HAS_RUST_SANDBOX
-          assert _HAS_RUST_SANDBOX, 'Rust sandbox not loaded'
-          import intellect_community_core
-          n = _normalize_command_for_detection('rm -rf /').lower()
-          assert intellect_community_core.detect_hardline_command_rs(n) is not None
-          n = _normalize_command_for_detection('echo hello').lower()
-          assert intellect_community_core.detect_dangerous_command_rs(n) is None
-          print('Sandbox patterns OK')
-          "
-
-      - name: Verify AST code checker
-        run: |
-          source .venv/bin/activate
-          cd rust-core/..
-          PYTHONPATH=. python -c "
-          from tools.approval import _check_python_ast
-
-          # Dangerous code must be caught
-          assert _check_python_ast('import os; os.system(\"id\")') is not None, 'os.system not caught'
-          assert _check_python_ast('exec(\"id()\")') is not None, 'exec not caught'
-          assert _check_python_ast('import pickle; pickle.loads(b\"...\")') is not None, 'pickle not caught'
-          assert _check_python_ast('import ctypes; ctypes.CDLL(\"libc.so.6\")') is not None, 'ctypes not caught'
-
-          # Obfuscation must be caught
-          assert _check_python_ast('import builtins; getattr(builtins, \"exec\")(\"id()\")') is not None, 'getattr not caught'
-          assert _check_python_ast('import os; os.__dict__[\"system\"](\"id\")') is not None, '__dict__ not caught'
-          assert _check_python_ast('import importlib; importlib.import_module(\"os\").system(\"id\")') is not None, 'importlib not caught'
-
-          # Safe code must pass
-          assert _check_python_ast('print(\"hello\")') is None, 'safe print false positive'
-          assert _check_python_ast('import json; print(json.dumps({\"a\":1}))') is None, 'safe json false positive'
-          assert _check_python_ast('x = [i**2 for i in range(10)]') is None, 'safe comprehension false positive'
-
-          print('AST checker OK (7 dangerous caught, 3 safe passed)')
-          "
-
-      - name: Verify token descriptions (B1)
-        run: |
-          source .venv/bin/activate
-          cd rust-core/..
-          PYTHONPATH=. python -c "
-          import intellect_community_core as icc
-
-          # Each token should return a distinct, specific description
-          result = icc.detect_dangerous_command_rs('python -c \"exec(\\\\\"id()\\\\\")\"')
-          assert result is not None and 'exec()' in result[0], f'Bad exec desc: {result}'
-
-          result = icc.detect_dangerous_command_rs('python -c \"import os; os.system(\\\\\"id\\\\\")\"')
-          assert result is not None and 'os.system()' in result[0], f'Bad os.system desc: {result}'
-
-          result = icc.detect_dangerous_command_rs('python -c \"import ctypes; ctypes.CDLL(\\\\\"libc.so.6\\\\\")\"')
-          assert result is not None and 'ctypes' in result[0], f'Bad ctypes desc: {result}'
-
-          # Benign must pass
-          assert icc.detect_dangerous_command_rs('python -c \"print(1)\"') is None
-
-          print('Token descriptions OK')
-          "

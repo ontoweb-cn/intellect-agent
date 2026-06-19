@@ -1,6 +1,8 @@
 name: Gitee Release Artifacts
 
-# Builds full cross-platform wheels + native bundles, uploads to Gitee Release.
+# Builds full cross-platform wheels + native bundles, publishes to GitHub Release
+# as intermediate storage. Gitee CI (.gitee/workflows/release.yml) then downloads
+# the artifacts and publishes them to the Gitee Release.
 # Triggered by CalVer tags (v2026.6.16) or SemVer tags (v0.6.4).
 
 on:
@@ -122,11 +124,13 @@ jobs:
           path: dist/out/*
           retention-days: 7
 
-  publish-gitee:
-    name: Publish to Gitee Release
+  publish-github-release:
+    name: Publish to GitHub Release (intermediate)
     needs: [build-python, build-platform]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    permissions:
+      contents: write  # needed for gh release create + upload assets
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -145,10 +149,22 @@ jobs:
           find artifacts -type f ! -name 'SHA256SUMS' -exec cp -f {} dist/combined/ \;
           ls -la dist/combined/
 
-      - name: Upload to Gitee Release
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      - name: Generate SHA256SUMS
         run: |
-          python3 packaging/scripts/publish-gitee-from-ci.py \
-            --tag "${{ env.RELEASE_TAG }}" \
-            --dist-dir dist/combined
+          cd dist/combined
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ env.RELEASE_TAG }}"
+          # Idempotent: delete then re-create if re-running
+          gh release delete "$TAG" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$TAG" dist/combined/* \
+            --title "Intellect Agent $TAG" \
+            --generate-notes \
+            --repo "$GITHUB_REPOSITORY"
+          echo "GitHub Release created: $TAG"
