@@ -14,8 +14,8 @@ Provides subcommands for:
 import os
 import sys
 
-__version__ = "0.5.0"
-__release_date__ = "2026.6.10"
+__version__ = "0.6.5"
+__release_date__ = "2026.6.19"
 
 
 def _ensure_utf8():
