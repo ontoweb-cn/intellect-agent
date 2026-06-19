@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0,<85"]
 build-backend = "setuptools.build_meta"
 
 # ── Rust extension (required since v0.6.2) ──────────────────────────────────
