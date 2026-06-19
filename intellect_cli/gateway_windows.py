@@ -530,7 +530,7 @@ def _build_gateway_argv() -> tuple[list[str], str, dict[str, str]]:
     intellect_home = str(Path(get_intellect_home()).resolve())
     profile_arg = _profile_arg(intellect_home)
 
-    argv = [python_exe, "-m", "intellect_cli.main"]
+    argv = [python_exe, "-P", "-m", "intellect_cli.main"]
     if profile_arg:
         argv.extend(profile_arg.split())
     argv.extend(["gateway", "run"])
@@ -541,7 +541,11 @@ def _build_gateway_argv() -> tuple[list[str], str, dict[str, str]]:
         "intellect_GATEWAY_DETACHED": "1",
         "VIRTUAL_ENV": str(venv_dir),
     }
-    _prepend_pythonpath(env_overlay, [working_dir, *extra_pythonpath] if extra_pythonpath else [])
+    # site-packages before project root: the repo ships a maturin stub at
+    # ``intellect_community_core/__init__.py`` without the compiled .pyd.
+    # If project root wins, ``import intellect_community_core`` shadows the
+    # venv-installed extension and agent startup fails.
+    _prepend_pythonpath(env_overlay, [*extra_pythonpath, working_dir] if extra_pythonpath else [])
     return argv, working_dir, env_overlay
 
 

@@ -165,46 +165,52 @@ def _discover_python(agent_dir: Path) -> str:
 
     Priority:
       1. INTELLECT_WEBUI_PYTHON env var
-      2. Agent venv at <agent_dir>/venv/bin/python
+      2. Agent venv at <agent_dir>/venv/bin/python (or Scripts/python.exe)
       3. Local .venv inside this repo
       4. System python3
 
-    On Windows, prefer pythonw.exe (GUI-subsystem, windowless) from the
-    base Python installation over venv python.exe (console-subsystem)
-    to avoid popup console windows from subprocess probes.
+    On Windows, resolve through gateway_windows._resolve_detached_python so
+    uv venv launchers do not respawn a visible console python.exe.  Callers
+    that spawn subprocesses must also put agent_dir and venv site-packages on
+    PYTHONPATH when the resolved executable lives outside the venv.
     """
     if os.getenv("INTELLECT_WEBUI_PYTHON"):
         return os.getenv("INTELLECT_WEBUI_PYTHON")
 
+    venv_candidates: list[Path] = []
     if agent_dir:
-        # Windows: prefer pythonw.exe from base prefix (truly windowless)
+        venv_candidates.extend(
+            [
+                agent_dir / "venv" / "Scripts" / "python.exe",
+                agent_dir / ".venv" / "Scripts" / "python.exe",
+                agent_dir / "venv" / "bin" / "python",
+                agent_dir / ".venv" / "bin" / "python",
+            ]
+        )
+
+    agent_root = REPO_ROOT.parent
+    venv_candidates.extend(
+        [
+            agent_root / "venv" / "Scripts" / "python.exe",
+            agent_root / ".venv" / "Scripts" / "python.exe",
+            REPO_ROOT / ".venv" / "bin" / "python",
+            agent_root / "venv" / "bin" / "python",
+            agent_root / ".venv" / "bin" / "python",
+        ]
+    )
+
+    for venv_py in venv_candidates:
+        if not venv_py.exists():
+            continue
         if os.name == "nt":
-            _base = getattr(sys, "base_prefix", sys.prefix)
-            _pyw = os.path.join(_base, "pythonw.exe")
-            if os.path.isfile(_pyw):
-                return _pyw
+            try:
+                from intellect_cli import gateway_windows
 
-        venv_py = agent_dir / "venv" / "bin" / "python"
-        if venv_py.exists():
-            return str(venv_py)
-
-        venv_py = agent_dir / ".venv" / "bin" / "python"
-        if venv_py.exists():
-            return str(venv_py)
-
-        # Windows layout
-        venv_py_win = agent_dir / "venv" / "Scripts" / "python.exe"
-        if venv_py_win.exists():
-            return str(venv_py_win)
-
-        venv_py_win = agent_dir / ".venv" / "Scripts" / "python.exe"
-        if venv_py_win.exists():
-            return str(venv_py_win)
-
-    # Local .venv inside this repo
-    local_venv = REPO_ROOT / ".venv" / "bin" / "python"
-    if local_venv.exists():
-        return str(local_venv)
+                windowed, _, _ = gateway_windows._resolve_detached_python(str(venv_py))
+                return windowed
+            except Exception:
+                return str(venv_py)
+        return str(venv_py)
 
     # Fall back to system python3
     import shutil
@@ -219,7 +225,6 @@ def _discover_python(agent_dir: Path) -> str:
 
 # Run discovery
 _AGENT_DIR = _discover_agent_dir()
-PYTHON_EXE = _discover_python(_AGENT_DIR)
 
 # ── Inject agent dir into sys.path so Intellect modules are importable ──────────
 
@@ -242,6 +247,8 @@ if _AGENT_DIR is not None:
     _INTELLECT_FOUND = True
 else:
     _INTELLECT_FOUND = False
+
+PYTHON_EXE = _discover_python(_AGENT_DIR)
 
 # ── Config file (reloadable -- supports profile switching) ──────────────────
 _cfg_cache = {}

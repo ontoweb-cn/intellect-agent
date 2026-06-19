@@ -60,11 +60,13 @@ def test_build_gateway_argv_uses_base_pythonw_for_uv_venv_launcher(monkeypatch, 
 
     argv, cwd, env_overlay = gateway_windows._build_gateway_argv()
 
-    assert argv[:3] == [str(base_pythonw), "-m", "intellect_cli.main"]
+    assert argv[:4] == [str(base_pythonw), "-P", "-m", "intellect_cli.main"]
     assert cwd == str(project)
     assert env_overlay["VIRTUAL_ENV"] == str(project / "venv")
     assert str(project) in env_overlay["PYTHONPATH"].split(gateway_windows.os.pathsep)
     assert str(site_packages) in env_overlay["PYTHONPATH"].split(gateway_windows.os.pathsep)
+    pp = env_overlay["PYTHONPATH"].split(gateway_windows.os.pathsep)
+    assert pp.index(str(site_packages)) < pp.index(str(project))
 
 
 def _arrange_startup_fallback(monkeypatch, tmp_path, running_pids):

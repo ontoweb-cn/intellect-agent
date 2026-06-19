@@ -27,7 +27,7 @@ import sys
 import time
 from pathlib import Path
 
-from intellect_cli.config import get_intellect_home
+from intellect_cli.config import get_intellect_home, get_project_root
 from intellect_cli.colors import Colors, color
 
 logger = logging.getLogger(__name__)
@@ -281,29 +281,32 @@ def webui_start(args) -> None:
 
     # Cross-platform detach: POSIX uses start_new_session; Windows uses
     # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW.
-    # On Windows, prefer the base Python's pythonw.exe (GUI-subsystem,
-    # truly windowless).  The venv's pythonw.exe is just a copy of
-    # python.exe (console-subsystem).  Set PYTHONPATH so the base
-    # pythonw.exe can find venv-installed packages.
+    # On Windows, mirror gateway_windows: uv venv launchers respawn a visible
+    # console python.exe, so use the base pythonw.exe with venv site-packages
+    # plus agent project root on PYTHONPATH (site-packages first — see
+    # gateway_windows._build_gateway_argv).  ``-m webui.server`` requires the
+    # project root (parent of the webui/ package) on sys.path.
     from intellect_cli._subprocess_compat import windows_detach_popen_kwargs
+    from intellect_cli import gateway_windows
 
-    _python_exe = sys.executable
-    if sys.platform == "win32":
-        _pyw = os.path.join(getattr(sys, "base_prefix", sys.prefix), "pythonw.exe")
-        if os.path.isfile(_pyw):
-            _python_exe = _pyw
-            # Let the base pythonw.exe find venv site-packages
-            _venv_sp = os.path.join(sys.prefix, "Lib", "site-packages")
-            _existing_pp = env.get("PYTHONPATH", "")
-            env["PYTHONPATH"] = f"{_venv_sp}{os.pathsep}{_existing_pp}".rstrip(os.pathsep)
+    project_root = str(get_project_root())
+    python_exe, venv_dir, extra_pythonpath = gateway_windows._resolve_detached_python(
+        sys.executable
+    )
+    env["VIRTUAL_ENV"] = str(venv_dir)
+    env["PYTHONIOENCODING"] = "utf-8"
+    gateway_windows._prepend_pythonpath(
+        env, [*extra_pythonpath, project_root]
+    )
 
     with open(_LOG_FILE, "a", encoding="utf-8") as log_fp:
         process = subprocess.Popen(
-            [_python_exe, "-m", "webui.server"],
+            [python_exe, "-P", "-m", "webui.server"],
             stdout=log_fp,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             env=env,
+            cwd=project_root,
             close_fds=True,
             **windows_detach_popen_kwargs(),
         )

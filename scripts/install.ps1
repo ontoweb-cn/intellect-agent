@@ -1164,9 +1164,26 @@ function Install-Venv {
         Write-Info "Virtual environment already exists, recreating..."
         Remove-Item -Recurse -Force "venv"
     }
+    # A stale sibling .venv\ (from an aborted uv sync) breaks maturin develop,
+    # which prefers .venv over venv\ when both exist.
+    if (Test-Path ".venv") {
+        Write-Info "Removing stale .venv directory..."
+        Remove-Item -Recurse -Force ".venv"
+    }
     
-    # uv creates the venv and pins the Python version in one step
-    & $UvCmd venv venv --python $PythonVersion
+    # uv creates the venv and pins the Python version in one step.
+    # uv writes "Using CPython ..." to stderr; under the script's global
+    # EAP=Stop that terminates the install on Windows PowerShell even
+    # when the venv was created successfully.  Match the git/uv pattern
+    # used elsewhere in this file: EAP=Continue + $LASTEXITCODE check.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $UvCmd venv venv --python $PythonVersion
+        if ($LASTEXITCODE -ne 0) { throw "uv venv failed (exit $LASTEXITCODE)" }
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
     
     Pop-Location
     
@@ -1183,8 +1200,14 @@ function Get-RustExtensionPython {
 function Test-RustExtensionInstalled {
     param([string]$PythonExe)
     if (-not (Test-Path $PythonExe)) { return $false }
-    & $PythonExe -c "import intellect_community_core" 2>$null
-    return $LASTEXITCODE -eq 0
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $PythonExe -c "import intellect_community_core" 2>$null
+        return $LASTEXITCODE -eq 0
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
 }
 
 function Install-RustExtensionFromGitee {
@@ -1220,14 +1243,30 @@ for asset in release.get("assets") or []:
 else:
     sys.exit(1)
 '@
-    $url = & $PythonExe -c $script 2>$null
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $url = & $PythonExe -c $script 2>$null
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
     if ($LASTEXITCODE -ne 0 -or -not $url) { return $false }
     $tmp = Join-Path $env:TEMP ("intellect-rust-{0}.whl" -f [guid]::NewGuid().ToString("n").Substring(0, 8))
     try {
         Write-Info "Downloading Rust extension from Gitee Release..."
         Invoke-WebRequest -Uri $url.Trim() -OutFile $tmp -UseBasicParsing
-        & $PythonExe -m pip install -q $tmp
-        if ($LASTEXITCODE -ne 0) { return $false }
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            if (-not $NoVenv) {
+                $env:UV_PROJECT_ENVIRONMENT = "$InstallDir\venv"
+                $env:VIRTUAL_ENV = "$InstallDir\venv"
+            }
+            & $UvCmd pip install --python $PythonExe $tmp
+            if ($LASTEXITCODE -ne 0) { return $false }
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
         Write-Success "Installed intellect_community_core from Gitee Release"
         return $true
     } finally {
@@ -1239,15 +1278,63 @@ function Install-RustExtensionLocal {
     param([string]$PythonExe)
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { return $false }
     Write-Info "Building Rust extension locally (maturin)..."
-    if (-not (Get-Command maturin -ErrorAction SilentlyContinue)) {
-        & $PythonExe -m pip install -q maturin
-        if ($LASTEXITCODE -ne 0) { return $false }
+    $maturinCmd = $null
+    if (-not $NoVenv) {
+        $venvMaturin = Join-Path (Split-Path $PythonExe -Parent) "maturin.exe"
+        if (Test-Path $venvMaturin) { $maturinCmd = $venvMaturin }
+    }
+    if (-not $maturinCmd) {
+        $maturinCmd = (Get-Command maturin -ErrorAction SilentlyContinue).Source
+    }
+    if (-not $maturinCmd) {
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            if (-not $NoVenv) {
+                $env:UV_PROJECT_ENVIRONMENT = "$InstallDir\venv"
+                $env:VIRTUAL_ENV = "$InstallDir\venv"
+            }
+            & $UvCmd pip install --python $PythonExe maturin
+            if ($LASTEXITCODE -ne 0) { return $false }
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+        if (-not $NoVenv) {
+            $venvMaturin = Join-Path (Split-Path $PythonExe -Parent) "maturin.exe"
+            if (Test-Path $venvMaturin) { $maturinCmd = $venvMaturin }
+        }
+        if (-not $maturinCmd) {
+            $maturinCmd = (Get-Command maturin -ErrorAction SilentlyContinue).Source
+        }
+        if (-not $maturinCmd) { return $false }
+    }
+    $env:PYO3_PYTHON = $PythonExe
+    if (-not $NoVenv) {
+        $env:VIRTUAL_ENV = "$InstallDir\venv"
+        $env:UV_PROJECT_ENVIRONMENT = "$InstallDir\venv"
     }
     Push-Location "$InstallDir\rust-core"
     try {
-        maturin develop --release
-        if ($LASTEXITCODE -ne 0) { return $false }
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & $maturinCmd develop --release
+            if ($LASTEXITCODE -ne 0) { return $false }
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
         Write-Success "Built intellect_community_core via maturin"
+        # maturin puts the .pyd in site-packages; also copy into the repo
+        # stub dir so ``cwd == checkout`` (sys.path[0] == '') still resolves
+        # the native module without requiring ``python -P``.
+        if (-not $NoVenv) {
+            $sitePkg = Join-Path $InstallDir "venv\Lib\site-packages\intellect_community_core"
+            $srcPkg = Join-Path $InstallDir "intellect_community_core"
+            if ((Test-Path $sitePkg) -and (Test-Path $srcPkg)) {
+                Get-ChildItem $sitePkg -Filter "*.pyd" -ErrorAction SilentlyContinue |
+                    ForEach-Object { Copy-Item $_.FullName (Join-Path $srcPkg $_.Name) -Force }
+            }
+        }
         return $true
     } finally {
         Pop-Location
@@ -1306,8 +1393,15 @@ function Install-Dependencies {
         # in the wrong directory and imports fail with ModuleNotFoundError.
         # (Mirrors the same flag in scripts/install.sh::install_deps.)
         $env:UV_PROJECT_ENVIRONMENT = "$InstallDir\venv"
-        & $UvCmd sync --extra all --locked
-        if ($LASTEXITCODE -eq 0) {
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & $UvCmd sync --extra all --locked
+            $syncExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+        if ($syncExit -eq 0) {
             Write-Success "Main package installed (hash-verified via uv.lock)"
             $script:InstalledTier = "hash-verified (uv.lock)"
             # Skip the rest of the tiered cascade -- we already have a
@@ -1381,8 +1475,15 @@ except Exception:
     if (-not $skipPipFallback) {
         foreach ($tier in $installTiers) {
         Write-Info "Trying tier: $($tier.Name) ..."
-        & $UvCmd pip install -e $tier.Spec
-        if ($LASTEXITCODE -eq 0) {
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & $UvCmd pip install -e $tier.Spec
+            $tierExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+        if ($tierExit -eq 0) {
             Write-Success "Main package installed ($($tier.Name))"
             $script:InstalledTier = $tier.Name
             $installed = $true
