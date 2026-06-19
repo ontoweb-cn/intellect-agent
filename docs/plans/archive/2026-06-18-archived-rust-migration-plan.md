@@ -215,3 +215,16 @@ New package structure ready for Rust Stage 1 migration.
 - [PyO3](https://pyo3.rs/) — Rust bindings for Python
 - [maturin](https://www.maturin.rs/) — Build and publish Rust-based Python packages
 - [cpython](https://github.com/dgrunwald/rust-cpython) — Embed Python in Rust
+
+## 2026-06-19 审计更新
+
+本计划归档后进行了一次全面审计，明确 Phase B/C/D 中哪些功能尚未迁移。关键发现：
+
+- **Rust 已迁移**：11 个源文件，4,528 行（存储、沙箱、流解析、Token 累计、加密、Gateway 工具）
+- **Python 未迁移**：Agent Loop 核心 `conversation_loop.py` (4,789 行) + 23 个辅助模块，共约 30,200 行
+- **迁移率**：~13%（按 agent loop 相关代码行数计）
+- **Phase B "Agent 核心循环下沉" 完全未启动**：`conversation_loop.py` 全部在 Python
+- **Phase C "Gateway 事件循环" 完全未启动**：Rust 仅提供 session key/retry 工具函数，无 tokio 事件循环
+- **Phase D "安全路径加固" 已完成**：sandbox.rs 已完成 path/url/IP 检查
+
+详细审计报告见：`docs/architecture/rust-python-interaction.md §6`

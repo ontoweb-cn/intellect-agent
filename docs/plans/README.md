@@ -1,6 +1,6 @@
 # Plans Index & Status
 
-> Updated 2026-06-18 | 57 documents (46 archived to `archive/`)
+> Updated 2026-06-19 | 58 documents (46 archived to `archive/`)
 
 See also: [WebUI Documentation](../webui/) — user guide and architecture overview.
 
@@ -30,7 +30,7 @@ See also: [WebUI Documentation](../webui/) — user guide and architecture overv
 | Plan | Outcome |
 |------|---------|
 | `perf-security-optimization-plan` | 36/36 完成 — 性能/安全/架构优化 |
-| `rust-migration-plan` + `rust-phase-a-plan` | Rust 核心层迁移 Phase A 完成（11 文件, ~4,528 行） |
+| `rust-migration-plan` + `rust-phase-a-plan` | Rust 核心层迁移 Phase A 完成（11 文件, ~4,528 行）。2026-06-19 审计：Agent Loop 仍有 ~30,200 行 Python 未迁移，详见 `docs/architecture/rust-python-interaction.md §6` |
 | `lightrag-r1-p0-implementation-plan` + `lightrag-memory-plugin-design` | LightRAG R1+P0–P3+ 已落地 |
 | `graphiti-memory-plugin-dev-plan` | Phase 0–5c 完成，105 单元测试全绿 |
 | `members-webui-hardening-design` | 8/8 完成 + 会话隔离 Phase 1–3 |
