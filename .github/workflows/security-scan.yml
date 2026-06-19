@@ -18,8 +18,56 @@ jobs:
           python-version: '3.12'
       - name: Install bandit
         run: pip install bandit[toml]
-      - name: Run bandit
-        run: bandit -c pyproject.toml -r agent tools intellect_cli gateway plugins -f sarif -o bandit-results.sarif
+      - name: Run bandit (JSON output)
+        run: bandit -c pyproject.toml -r agent tools intellect_cli gateway plugins -f json -o bandit-results.json
+      - name: Convert JSON to SARIF
+        run: |
+          python3 -c "
+          import json, sys
+          with open('bandit-results.json') as f:
+              data = json.load(f)
+          sarif = {
+              '\$schema': 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json',
+              'version': '2.1.0',
+              'runs': [{
+                  'tool': {
+                      'driver': {
+                          'name': 'Bandit',
+                          'informationUri': 'https://bandit.readthedocs.io/',
+                          'rules': []
+                      }
+                  },
+                  'results': []
+              }]
+          }
+          rules = {}
+          for r in data.get('results', []):
+              rid = f\"bandit/{r['test_id']}\"
+              if rid not in rules:
+                  rules[rid] = {
+                      'id': rid,
+                      'name': r['test_name'],
+                      'shortDescription': {'text': r['test_name']},
+                      'fullDescription': {'text': r.get('issue_text', '')},
+                      'helpUri': r.get('more_info', ''),
+                      'properties': {'security-severity': str(float(r['issue_severity'] == 'HIGH' and 8.0 or r['issue_severity'] == 'MEDIUM' and 5.0 or 3.0))}
+                  }
+                  sarif['runs'][0]['tool']['driver']['rules'].append(rules[rid])
+              sarif['runs'][0]['results'].append({
+                  'ruleId': rid,
+                  'level': r['issue_severity'].lower(),
+                  'message': {'text': r['issue_text']},
+                  'locations': [{
+                      'physicalLocation': {
+                          'artifactLocation': {'uri': r['filename']},
+                          'region': {'startLine': r['line_number'], 'endLine': r['line_number']}
+                      }
+                  }]
+              })
+          with open('bandit-results.sarif', 'w') as f:
+              json.dump(sarif, f, indent=2)
+          print(f'Converted {len(data.get(\"results\", []))} findings to SARIF')
+          "
       - name: Upload SARIF
         if: success() || failure()
         uses: github/codeql-action/upload-sarif@v3
