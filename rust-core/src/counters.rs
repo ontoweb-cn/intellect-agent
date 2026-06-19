@@ -104,7 +104,7 @@ static JITTER_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// Note: This differs from ``gateway::backoff_delay_rs`` which uses a
 /// hardcoded ±25% jitter factor and a deterministic sin-based spread.
 /// This function uses a configurable jitter_ratio and a decoupled seed
-/// (time_ns XOR golden-ratio-hashed counter) matching the Python version.
+/// (time_ns XOR golden-ratio-hashed counter), matching the Python version.
 #[pyfunction]
 pub fn jittered_backoff_rs(
     attempt: u32,
@@ -112,9 +112,14 @@ pub fn jittered_backoff_rs(
     max_delay: f64,
     jitter_ratio: f64,
 ) -> f64 {
-    // Monotonic counter for seed uniqueness — matches Python's _jitter_counter
+    // Seed from time + monotonic counter for cross-process decorrelation.
+    // Matches Python's `(time.time_ns() ^ (tick * 0x9E3779B9)) & 0xFFFFFFFF`.
     let tick = JITTER_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let seed = (tick.wrapping_mul(0x9E3779B9)) & 0xFFFFFFFF;
+    let now_ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let seed = (now_ns ^ (tick.wrapping_mul(0x9E3779B9))) & 0xFFFFFFFF;
 
     let exponent = if attempt == 0 { 0 } else { attempt - 1 };
     let delay = if exponent >= 63 || base_delay <= 0.0 {

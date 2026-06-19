@@ -56,21 +56,41 @@ pub fn repair_tool_call_arguments_rs(raw_args: &str, _tool_name: &str) -> String
     let t = raw_args.trim();
     if t.is_empty() || t.eq_ignore_ascii_case("none") { return "{}".into(); }
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(t) { return v.to_string(); }
-    // Strip trailing comma before closing brace/bracket
+
+    // Strip trailing commas before any closing brace or bracket.
+    // Matches Python's `re.sub(r',\s*([}\\]])', r'\1', fixed)`.
+    // Handle nested patterns like {...,]} or [...,]} by iteratively
+    // scanning for `,` followed by optional whitespace then `]` or `}`.
     let mut s = t.to_string();
-    if s.ends_with(",}") || s.ends_with(",]") {
-        s.pop(); // remove ]
-        s.pop(); // remove ,
-        s.push_str(if s.ends_with('[') { "]" } else { "}" });
-    } else {
-        s = s.trim_end_matches(',').to_string();
+    loop {
+        let mut cleaned = false;
+        // Strip `,\s*}` pattern: find ",}" or ", }" etc.
+        let mut i = 0;
+        let bytes = s.as_bytes();
+        while i < bytes.len() {
+            if bytes[i] == b',' {
+                let mut j = i + 1;
+                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n' || bytes[j] == b'\r') {
+                    j += 1;
+                }
+                if j < bytes.len() && (bytes[j] == b'}' || bytes[j] == b']') {
+                    // Remove comma + whitespace, KEEP the closing bracket
+                    s.replace_range(i..j, "");
+                    cleaned = true;
+                    break;
+                }
+            }
+            i += 1;
+        }
+        if !cleaned { break; }
     }
-    // Close unclosed braces
+    // Close unclosed braces/brackets
     let ob = s.matches('{').count().saturating_sub(s.matches('}').count());
     let obr = s.matches('[').count().saturating_sub(s.matches(']').count());
     for _ in 0..obr { s.push(']'); }
     for _ in 0..ob { s.push('}'); }
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) { return v.to_string(); }
+    // Remove excess closing braces (bounded to 50 iterations)
     let mut c = t.to_string();
     for _ in 0..50 {
         if c.matches('}').count() <= c.matches('{').count() { break; }
@@ -108,5 +128,16 @@ mod tests {
         let r = repair_tool_call_arguments_rs(r#"{"a":1,}"#, "?");
         let v: serde_json::Value = serde_json::from_str(&r).unwrap();
         assert_eq!(v["a"], 1);
+    }
+    #[test] fn test_repair_trailing_comma_array() {
+        let r = repair_tool_call_arguments_rs("[1,2,]", "?");
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        assert_eq!(v[0], 1);
+        assert_eq!(v[1], 2);
+    }
+    #[test] fn test_repair_array_nested() {
+        let r = repair_tool_call_arguments_rs(r#"{"a":[1,2,]}"#, "?");
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        assert_eq!(v["a"][0], 1);
     }
 }

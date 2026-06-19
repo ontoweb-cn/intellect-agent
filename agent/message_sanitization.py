@@ -19,6 +19,13 @@ import logging
 import re
 from typing import Any
 
+from intellect_rust import (
+    rust_sanitize_surrogates as _rs_sanitize_surrogates,
+    rust_strip_non_ascii as _rs_strip_non_ascii,
+    rust_repair_tool_args as _rs_repair_tool_args,
+    rust_escape_json_chars as _rs_escape_json_chars,
+)
+
 logger = logging.getLogger(__name__)
 
 # Lone surrogate code points are invalid in UTF-8 and crash json.dumps
@@ -34,6 +41,11 @@ def _sanitize_surrogates(text: str) -> str:
     Surrogates are invalid in UTF-8 and will crash ``json.dumps()`` inside the
     OpenAI SDK.  This is a fast no-op when the text contains no surrogates.
     """
+    if _rs_sanitize_surrogates is not None:
+        try:
+            return _rs_sanitize_surrogates(text)
+        except Exception:
+            pass
     if _SURROGATE_RE.search(text):
         return _SURROGATE_RE.sub('\ufffd', text)
     return text
@@ -154,6 +166,11 @@ def _escape_invalid_chars_in_json_strings(raw: str) -> str:
     not enough (e.g. llama.cpp backends that emit literal apostrophes or
     tabs alongside other malformations).
     """
+    if _rs_escape_json_chars is not None:
+        try:
+            return _rs_escape_json_chars(raw)
+        except Exception:
+            pass
     out: list[str] = []
     in_string = False
     i = 0
@@ -191,6 +208,11 @@ def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
     if all fail it returns ``"{}"`` so the request succeeds (better than
     crashing the session).  All repairs are logged at WARNING level.
     """
+    if _rs_repair_tool_args is not None:
+        try:
+            return _rs_repair_tool_args(raw_args, tool_name)
+        except Exception:
+            pass
     raw_stripped = raw_args.strip() if isinstance(raw_args, str) else ""
 
     # Fast-path: empty / whitespace-only -> empty object
@@ -285,6 +307,11 @@ def _strip_non_ascii(text: str) -> str:
     Used as a last resort when the system encoding is ASCII and can't handle
     any non-ASCII characters (e.g. LANG=C on Chromebooks).
     """
+    if _rs_strip_non_ascii is not None:
+        try:
+            return _rs_strip_non_ascii(text)
+        except Exception:
+            pass
     return text.encode('ascii', errors='ignore').decode('ascii')
 
 

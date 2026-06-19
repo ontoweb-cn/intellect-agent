@@ -4,7 +4,16 @@
 //! ``agent/model_metadata.py``.
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+
+/// Extract the first positive integer found in `s` after skipping any
+/// leading non-digit characters (spaces, colons, equals, etc.).
+fn extract_first_number(s: &str) -> Option<i64> {
+    let digits: String = s.chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse::<i64>().ok().filter(|&n| n > 0)
+}
 
 // ── Token estimation ──────────────────────────────────────────────────────
 
@@ -21,15 +30,12 @@ pub fn grok_supports_reasoning_effort_rs(model: &str) -> bool {
 
 #[pyfunction]
 pub fn parse_context_limit_from_error_rs(error_msg: &str) -> Option<i64> {
-    // Look for "maximum context length is NNN" or similar patterns
     let lower = error_msg.to_lowercase();
-    // Try to find "NNN tokens" or "NNN context" patterns
     for pattern in &["maximum context length is", "maximum is", "max_tokens:", "context_length:"] {
         if let Some(pos) = lower.find(pattern) {
             let rest = &lower[pos + pattern.len()..];
-            let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-            if let Ok(n) = num_str.parse::<i64>() {
-                if n > 0 { return Some(n); }
+            if let Some(n) = extract_first_number(rest) {
+                return Some(n);
             }
         }
     }
@@ -42,9 +48,8 @@ pub fn parse_available_output_tokens_from_error_rs(error_msg: &str) -> Option<i6
     for pattern in &["maximum output tokens is", "available output tokens:", "max_completion_tokens:"] {
         if let Some(pos) = lower.find(pattern) {
             let rest = &lower[pos + pattern.len()..];
-            let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-            if let Ok(n) = num_str.parse::<i64>() {
-                if n > 0 { return Some(n); }
+            if let Some(n) = extract_first_number(rest) {
+                return Some(n);
             }
         }
     }
