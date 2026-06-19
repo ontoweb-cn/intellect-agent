@@ -6,6 +6,7 @@ build/
 .venv/
 rust-core/target/
 intellect_community_core/*.so
+intellect_community_core/*.pyd
 venv/
 .pytest-cache/
 *.egg

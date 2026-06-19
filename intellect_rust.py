@@ -12,15 +12,52 @@ alias is ``None``.
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Callable, Optional
 
 # ── Try the single import that gates everything ─────────────────────────────
 
-try:
-    import intellect_community_core as _core  # type: ignore[import-not-found]
-    _CORE = _core
-except ImportError:
-    _CORE = None
+def _load_core():
+    """Import the native extension, or None if unavailable."""
+    try:
+        import intellect_community_core as core  # type: ignore[import-not-found]
+        getattr(core, "detect_hardline_command_rs")
+        return core
+    except (ImportError, AttributeError, ModuleNotFoundError):
+        return None
+
+
+def _purge_core_modules() -> None:
+    for key in list(sys.modules):
+        if key == "intellect_community_core" or key.startswith(
+            "intellect_community_core."
+        ):
+            sys.modules.pop(key, None)
+
+
+def _import_core():
+    core = _load_core()
+    if core is not None:
+        return core
+
+    # maturin installs the compiled module into site-packages, but the repo
+    # also ships a stub at ./intellect_community_core/ (see pyproject.toml
+    # [tool.maturin] python-source).  When cwd is the checkout root,
+    # sys.path[0] == "" resolves that stub before site-packages.  Retry
+    # without the implicit cwd entry — same effect as ``python -P``.
+    if not sys.path or sys.path[0] != "":
+        return None
+
+    _purge_core_modules()
+    saved_path = sys.path
+    try:
+        sys.path = sys.path[1:]
+        return _load_core()
+    finally:
+        sys.path = saved_path
+
+
+_CORE = _import_core()
 
 
 def _has() -> bool:

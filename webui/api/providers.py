@@ -1224,14 +1224,19 @@ def _account_usage_subprocess_env(home: Path, provider: str, api_key: str | None
     except Exception:
         _AGENT_DIR = None
     pythonpath_parts: list[str] = []
-    if _AGENT_DIR:
-        pythonpath_parts.append(str(_AGENT_DIR))
-    # Include venv site-packages so the base pythonw.exe can find
-    # installed deps (yaml, openai, etc.) even when PYTHON_EXE
-    # resolves to a windowless pythonw outside the venv.
-    _venv_sp = os.path.join(sys.prefix, "Lib", "site-packages")
+    # site-packages before agent dir — see gateway_windows._build_gateway_argv.
+    _venv_sp = ""
+    virtual_env = os.environ.get("VIRTUAL_ENV", "").strip()
+    if virtual_env:
+        candidate = os.path.join(virtual_env, "Lib", "site-packages")
+        if os.path.isdir(candidate):
+            _venv_sp = candidate
+    if not _venv_sp:
+        _venv_sp = os.path.join(sys.prefix, "Lib", "site-packages")
     if os.path.isdir(_venv_sp):
         pythonpath_parts.append(_venv_sp)
+    if _AGENT_DIR:
+        pythonpath_parts.append(str(_AGENT_DIR))
     existing_pythonpath = env.get("PYTHONPATH", "")
     if existing_pythonpath:
         pythonpath_parts.append(existing_pythonpath)
