@@ -201,6 +201,49 @@ rust_is_ip_blocked: Callable = (
     _CORE.is_ip_blocked_rs if _has() else None
 )
 
+# ── Display formatting (Phase 2) ─────────────────────────────────────────────
+
+HAS_FORMAT: bool = _has()
+rust_format_duration_compact: Callable = (
+    _CORE.format_duration_compact_rs if _has() else None
+)
+rust_format_token_count_compact: Callable = (
+    _CORE.format_token_count_compact_rs if _has() else None
+)
+
+# ── Token estimation (Phase 5) ──────────────────────────────────────────────
+
+HAS_TOKENS: bool = _has()
+rust_estimate_tokens_rough: Callable = _CORE.estimate_tokens_rough_rs if _has() else None
+rust_grok_supports_re: Callable = _CORE.grok_supports_reasoning_effort_rs if _has() else None
+rust_parse_context_limit: Callable = _CORE.parse_context_limit_from_error_rs if _has() else None
+rust_parse_output_limit: Callable = _CORE.parse_available_output_tokens_from_error_rs if _has() else None
+
+# ── Sanitization (Phase 4) ──────────────────────────────────────────────────
+
+HAS_SANITIZE: bool = _has()
+rust_sanitize_surrogates: Callable = _CORE.sanitize_surrogates_rs if _has() else None
+rust_strip_non_ascii: Callable = _CORE.strip_non_ascii_rs if _has() else None
+rust_escape_json_chars: Callable = _CORE.escape_invalid_chars_in_json_strings_rs if _has() else None
+rust_repair_tool_args: Callable = _CORE.repair_tool_call_arguments_rs if _has() else None
+
+# ── Error classifier (Phase 3) — API error taxonomy ────────────────────────
+
+HAS_ERROR_CLASSIFIER: bool = _has()
+rust_classify_api_error: Callable = (
+    _CORE.classify_api_error_rs if _has() else None
+)
+RustFailoverReason: Any = _CORE.FailoverReason if _has() else None
+RustClassifiedError: Any = _CORE.ClassifiedError if _has() else None
+
+# ── Counters (Phase 1) — iteration budget + jittered backoff ───────────────
+
+HAS_COUNTERS: bool = _has()
+IterationBudget: Any = _CORE.IterationBudget if _has() else None
+rust_jittered_backoff: Callable = (
+    _CORE.jittered_backoff_rs if _has() else None
+)
+
 # ── Model normalization ───────────────────────────────────────────────────
 
 rust_normalize_model_name: Callable = (

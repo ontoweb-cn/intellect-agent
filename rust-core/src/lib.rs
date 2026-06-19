@@ -6,12 +6,16 @@
 pub mod backend;
 pub mod compression;
 pub mod connection;
+pub mod counters;
 pub mod crypto;
+pub mod error_classifier;
 pub mod fts;
 pub mod gateway;
 pub mod sandbox;
+pub mod sanitize;
 pub mod schema;
 pub mod stream;
+pub mod tokens;
 pub mod usage;
 
 use pyo3::prelude::*;
@@ -43,6 +47,10 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(usage::normalize_model_name_rs, m)?)?;
     m.add_class::<usage::TokenAccumulator>()?;
 
+    // ── Phase 2: Display formatting ────────────────────────────────────
+    m.add_function(wrap_pyfunction!(usage::format_duration_compact_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(usage::format_token_count_compact_rs, m)?)?;
+
     // ── Stage 3d: Stream delta accumulator ──────────────────────────────
     m.add_class::<stream::StreamAccumulator>()?;
 
@@ -60,6 +68,27 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // ── Stage 5c: JWT claims decode ────────────────────────────────────
     m.add_function(wrap_pyfunction!(crypto::decode_jwt_claims_rs, m)?)?;
+
+    // ── Phase 1: Counters — iteration budget + jittered backoff ────────
+    m.add_class::<counters::IterationBudget>()?;
+    m.add_function(wrap_pyfunction!(counters::jittered_backoff_rs, m)?)?;
+
+    // ── Phase 3: Error classifier — API error taxonomy ─────────────────
+    m.add_class::<error_classifier::FailoverReason>()?;
+    m.add_class::<error_classifier::ClassifiedError>()?;
+    m.add_function(wrap_pyfunction!(error_classifier::classify_api_error_rs, m)?)?;
+
+    // ── Phase 4: Message sanitization (pure-string functions) ──────────
+    m.add_function(wrap_pyfunction!(sanitize::sanitize_surrogates_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(sanitize::strip_non_ascii_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(sanitize::escape_invalid_chars_in_json_strings_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(sanitize::repair_tool_call_arguments_rs, m)?)?;
+
+    // ── Phase 5: Token estimation ─────────────────────────────────────
+    m.add_function(wrap_pyfunction!(tokens::estimate_tokens_rough_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tokens::grok_supports_reasoning_effort_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tokens::parse_context_limit_from_error_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tokens::parse_available_output_tokens_from_error_rs, m)?)?;
 
     // ── Stage 4a-4e: Gateway utilities ─────────────────────────────────
     m.add_function(wrap_pyfunction!(gateway::build_session_key_rs, m)?)?;

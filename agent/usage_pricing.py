@@ -7,7 +7,9 @@ from decimal import Decimal
 from typing import Any, Dict, Literal, Optional
 
 from agent.model_metadata import fetch_endpoint_model_metadata, fetch_model_metadata
-from intellect_rust import rust_normalize_usage as _rust_normalize
+from intellect_rust import rust_normalize_usage as _rust_normalize, \
+    rust_format_duration_compact as _rust_fmt_dur, \
+    rust_format_token_count_compact as _rust_fmt_tok
 from utils import base_url_host_matches
 
 DEFAULT_PRICING = {"input": 0.0, "output": 0.0}
@@ -858,6 +860,12 @@ def has_known_pricing(
 
 
 def format_duration_compact(seconds: float) -> str:
+    if _rust_fmt_dur is not None:
+        try:
+            return _rust_fmt_dur(seconds)
+        except Exception:
+            pass  # Fall through to Python implementation
+
     if seconds < 60:
         return f"{seconds:.0f}s"
     minutes = seconds / 60
@@ -872,6 +880,12 @@ def format_duration_compact(seconds: float) -> str:
 
 
 def format_token_count_compact(value: int) -> str:
+    if _rust_fmt_tok is not None:
+        try:
+            return _rust_fmt_tok(value)
+        except Exception:
+            pass  # Fall through to Python implementation
+
     abs_value = abs(int(value))
     if abs_value < 1_000:
         return str(int(value))

@@ -18,6 +18,10 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+# Phase 3: Reverse mapping for Rust FailoverReason → Python FailoverReason
+# Built lazily below after FailoverReason enum is defined.
+_REASON_BY_VALUE: dict = {}
+
 
 # ── Error taxonomy ──────────────────────────────────────────────────────
 
@@ -62,6 +66,9 @@ class FailoverReason(enum.Enum):
 
     # Catch-all
     unknown = "unknown"                  # Unclassifiable — retry with backoff
+
+# Build reverse mapping for Rust FailoverReason.value → Python FailoverReason
+_REASON_BY_VALUE = {m.value: m for m in FailoverReason}
 
 
 # ── Classification result ───────────────────────────────────────────────
@@ -466,6 +473,38 @@ def classify_api_error(
     Returns:
         ClassifiedError with reason and recovery action hints.
     """
+    # Phase 3: Try Rust implementation first, fall back to Python.
+    # The Rust version returns its own FailoverReason/ClassifiedError types,
+    # so we convert them to the Python versions for backward compatibility.
+    from intellect_rust import rust_classify_api_error as _rs_classify
+    if _rs_classify is not None:
+        try:
+            rs_result = _rs_classify(
+                error, provider, model,
+                approx_tokens, context_length, num_messages,
+            )
+            # If Rust gives format_error for a 400, let Python check for
+            # the "generic 400 + large session → context_overflow" heuristic
+            # that depends on body inspection not available in Rust.
+            rs_value = rs_result.reason.value if hasattr(rs_result.reason, 'value') else str(rs_result.reason)
+            if rs_value == "format_error" and rs_result.status_code == 400:
+                pass  # Fall through to Python for more nuanced classification
+            else:
+                python_reason = _REASON_BY_VALUE.get(rs_value, FailoverReason.unknown)
+                return ClassifiedError(
+                    reason=python_reason,
+                    status_code=rs_result.status_code,
+                    provider=rs_result.provider,
+                    model=rs_result.model,
+                    message=rs_result.message,
+                    retryable=rs_result.retryable,
+                    should_compress=rs_result.should_compress,
+                    should_rotate_credential=rs_result.should_rotate_credential,
+                    should_fallback=rs_result.should_fallback,
+                )
+        except Exception:
+            pass  # Fall through to Python implementation
+
     status_code = _extract_status_code(error)
     error_type = type(error).__name__
     # Copilot/GitHub Models RateLimitError may not set .status_code; force 429

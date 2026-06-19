@@ -70,6 +70,70 @@ pub fn normalize_model_name_rs(model: &str, preserve_dots: bool) -> String {
     normalize_model_name_impl(model, preserve_dots)
 }
 
+// ── Phase 2: Display formatting ────────────────────────────────────────────
+
+/// Format seconds as a compact human-readable duration.
+///
+/// Mirrors ``agent/usage_pricing.py:format_duration_compact()``.
+#[pyfunction]
+pub fn format_duration_compact_rs(seconds: f64) -> String {
+    if seconds < 60.0 {
+        return format!("{seconds:.0}s");
+    }
+    let minutes = seconds / 60.0;
+    if minutes < 60.0 {
+        return format!("{minutes:.0}m");
+    }
+    let hours = minutes / 60.0;
+    if hours < 24.0 {
+        let remaining_min = (minutes % 60.0) as i64;
+        if remaining_min > 0 {
+            format!("{}h {}m", hours as i64, remaining_min)
+        } else {
+            format!("{}h", hours as i64)
+        }
+    } else {
+        let days = hours / 24.0;
+        format!("{days:.1}d")
+    }
+}
+
+/// Format token count as compact human-readable (K/M/B suffixes).
+///
+/// Mirrors ``agent/usage_pricing.py:format_token_count_compact()``.
+#[pyfunction]
+pub fn format_token_count_compact_rs(value: i64) -> String {
+    let abs_value = value.abs();
+    if abs_value < 1_000 {
+        return value.to_string();
+    }
+
+    let sign = if value < 0 { "-" } else { "" };
+    let thresholds: [(i64, &str); 3] = [(1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")];
+    for (threshold, suffix) in &thresholds {
+        if abs_value >= *threshold {
+            let scaled = abs_value as f64 / *threshold as f64;
+            let text = if scaled < 10.0 {
+                format!("{scaled:.2}")
+            } else if scaled < 100.0 {
+                format!("{scaled:.1}")
+            } else {
+                format!("{scaled:.0}")
+            };
+            // Strip trailing zeros and dot
+            let text = if let Some(pos) = text.find('.') {
+                let trimmed = text.trim_end_matches('0');
+                trimmed.trim_end_matches('.')
+            } else {
+                &text
+            };
+            return format!("{sign}{text}{suffix}");
+        }
+    }
+
+    value.to_string()
+}
+
 fn normalize_model_name_impl(model: &str, preserve_dots: bool) -> String {
     let lower = model.to_lowercase();
 
@@ -410,5 +474,24 @@ mod acc_tests {
         // Non-Anthropic models should keep dots
         assert_eq!(normalize_model_name_impl("gpt-5.4", false), "gpt-5.4");
         assert_eq!(normalize_model_name_impl("gemini-2.5", false), "gemini-2.5");
+    }
+
+    #[test]
+    fn test_format_duration_basic() {
+        assert_eq!(format_duration_compact_rs(30.0), "30s");
+        assert_eq!(format_duration_compact_rs(90.0), "2m");
+        assert_eq!(format_duration_compact_rs(3600.0), "1h");
+        assert_eq!(format_duration_compact_rs(3661.0), "1h 1m");
+        assert_eq!(format_duration_compact_rs(90000.0), "1.0d");
+    }
+
+    #[test]
+    fn test_format_token_count_basic() {
+        assert_eq!(format_token_count_compact_rs(0), "0");
+        assert_eq!(format_token_count_compact_rs(999), "999");
+        assert_eq!(format_token_count_compact_rs(1500), "1.5K");
+        assert_eq!(format_token_count_compact_rs(2000000), "2M");
+        assert_eq!(format_token_count_compact_rs(1000000000), "1B");
+        assert_eq!(format_token_count_compact_rs(-1500), "-1.5K");
     }
 }

@@ -9,6 +9,8 @@ import random
 import threading
 import time
 
+from intellect_rust import rust_jittered_backoff as _rust_jittered_backoff
+
 # Monotonic counter for jitter seed uniqueness within the same process.
 # Protected by a lock to avoid race conditions in concurrent retry paths
 # (e.g. multiple gateway sessions retrying simultaneously).
@@ -38,6 +40,12 @@ def jittered_backoff(
     The jitter decorrelates concurrent retries so multiple sessions
     hitting the same provider don't all retry at the same instant.
     """
+    if _rust_jittered_backoff is not None:
+        try:
+            return _rust_jittered_backoff(attempt, base_delay, max_delay, jitter_ratio)
+        except Exception:
+            pass  # Fall through to Python fallback
+
     global _jitter_counter
     with _jitter_lock:
         _jitter_counter += 1
