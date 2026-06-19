@@ -49,7 +49,7 @@ dependencies = [
   "tenacity==9.1.4",
   "pyyaml==6.0.3",
   "ruamel.yaml==0.18.17",
-  "requests==2.33.0",  # CVE-2026-25645
+  "requests==2.34.2",  # CVE-2026-25645, CVE-2026-44431/44432 (urllib3)
   "jinja2==3.1.6",
   # Bumped from 2.12.5 to 2.13.4 to pull in pydantic-core 2.46.4.
   # pydantic-core 2.41.5 (pulled by 2.12.5) segfaults when the OpenAI SDK's
@@ -93,10 +93,10 @@ edge-tts = ["edge-tts==7.2.7"]
 modal = ["modal==1.3.4"]
 daytona = ["daytona==0.155.0"]
 hindsight = ["hindsight-client==0.6.1"]
-dev = ["debugpy==1.8.20", "pytest==9.0.2", "pytest-asyncio==1.3.0", "pytest-timeout==2.4.0", "filelock==3.19.1", "mcp==1.26.0", "starlette==1.0.1", "ty==0.0.21", "ruff==0.15.10", "setuptools==82.0.1"]  # starlette: CVE-2026-48710
-messaging = ["python-telegram-bot[webhooks]==22.6", "discord.py[voice]==2.7.1", "aiohttp==3.13.3", "brotlicffi==1.2.0.1", "slack-bolt==1.27.0", "slack-sdk==3.40.1", "qrcode==7.4.2"]
+dev = ["debugpy==1.8.20", "pytest==9.0.2", "pytest-asyncio==1.3.0", "pytest-timeout==2.4.0", "filelock==3.19.1", "mcp==1.26.0", "starlette==1.3.1", "ty==0.0.21", "ruff==0.15.10", "setuptools==82.0.1"]  # starlette: CVE-2026-48710
+messaging = ["python-telegram-bot[webhooks]==22.6", "discord.py[voice]==2.7.1", "aiohttp==3.14.1", "brotlicffi==1.2.0.1", "slack-bolt==1.27.0", "slack-sdk==3.40.1", "qrcode==7.4.2"]
 cron = []  # croniter is now a core dependency; this extra kept for back-compat
-slack = ["slack-bolt==1.27.0", "slack-sdk==3.40.1", "aiohttp==3.13.3"]
+slack = ["slack-bolt==1.27.0", "slack-sdk==3.40.1", "aiohttp==3.14.1"]
 matrix = ["mautrix[encryption]==0.21.0", "Markdown==3.10.2", "aiosqlite==0.22.1", "asyncpg==0.31.0", "aiohttp-socks==0.11.0"]
 high-performance = [
   "redis>=5.0.0,<6",
@@ -128,14 +128,14 @@ honcho = ["honcho-ai==2.0.1"]
 # `request.url` can be bypassed. We pin a patched Starlette directly in every
 # extra that exposes a Starlette-backed server surface so pip/uv can't resolve
 # a vulnerable pre-1.0.1 transitive. Bump in lockstep with uv.lock.
-mcp = ["mcp==1.26.0", "starlette==1.0.1"]  # starlette: CVE-2026-48710
-homeassistant = ["aiohttp==3.13.3"]
-sms = ["aiohttp==3.13.3"]
+mcp = ["mcp==1.26.0", "starlette==1.3.1"]  # starlette: CVE-2026-48710
+homeassistant = ["aiohttp==3.14.1"]
+sms = ["aiohttp==3.14.1"]
 # Computer use — macOS background desktop control via cua-driver (MCP stdio).
 # The cua-driver binary itself is installed via `intellect tools` post-setup
 # (curl install script); this extra just pins the MCP client used to talk
 # to it, which is already provided by the `mcp` extra.
-computer-use = ["mcp==1.26.0", "starlette==1.0.1"]  # starlette: CVE-2026-48710
+computer-use = ["mcp==1.26.0", "starlette==1.3.1"]  # starlette: CVE-2026-48710
 acp = ["agent-client-protocol==0.9.0"]
 msal = ["msal>=1.31,<2"]  # P3-2: Azure AD native auth (WAM broker, conditional access)
 # mistral: Voxtral STT + TTS. Pinned to an exact verified-clean version.
@@ -191,7 +191,10 @@ webui = [
   # WebUI — browser-based dashboard for agent sessions and settings.
   # cryptography is required for optional WebAuthn/passkey authentication
   # support. PyYAML is already a core dependency.
-  "cryptography>=42.0",
+  # NOTE: cryptography 48.0.1+ fixes GHSA-537c-gmf6-5ccf (vulnerable OpenSSL
+  # in wheels), but alibabacloud-tea-openapi==0.4.4 requires cryptography<47.
+  # The lock resolves 46.0.7 until alibabacloud broadens its upper bound.
+  "cryptography>=42.0,<50",
 ]
 all = [
   # Policy (2026-05-12): `[all]` includes only extras that genuinely

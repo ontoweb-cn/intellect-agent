@@ -19,9 +19,9 @@ jobs:
       - name: Install bandit
         run: pip install bandit[toml]
       - name: Run bandit
-        run: bandit -c pyproject.toml -r agent tools intellect_cli gateway plugins -f sarif -o bandit-results.sarif || true
+        run: bandit -c pyproject.toml -r agent tools intellect_cli gateway plugins -f sarif -o bandit-results.sarif
       - name: Upload SARIF
-        if: always()
+        if: success() || failure()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: bandit-results.sarif
