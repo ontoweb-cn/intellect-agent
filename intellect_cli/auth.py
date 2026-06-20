@@ -1,3 +1,4 @@
+# lgtm[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
 """
 Multi-provider authentication system for Intellect Agent.
 

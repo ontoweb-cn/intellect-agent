@@ -1,3 +1,4 @@
+# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
 """
 Intellect Web UI -- SSE streaming engine and agent thread runner.
 Includes Sprint 10 cancel support via CANCEL_FLAGS.

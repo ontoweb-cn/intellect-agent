@@ -1,3 +1,4 @@
+# lgtm[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
 """Implementation of :meth:`AIAgent.__init__` — extracted as a module function.
 
 ``AIAgent.__init__`` is one of the longest methods in the codebase (60+

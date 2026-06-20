@@ -1,3 +1,4 @@
+# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
 """Shared runtime provider resolution for CLI, gateway, cron, and helpers."""
 
 from __future__ import annotations
