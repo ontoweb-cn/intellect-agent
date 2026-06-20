@@ -4,8 +4,8 @@ name: Gitee Release Sync (macOS + Windows)
 # These platforms cannot be cross-compiled from Gitee Go's Linux runners.
 # Linux wheels are built natively by release-linux.yml.
 #
-# This workflow runs alongside release-linux.yml on tag push. If GitHub
-# Actions hasn't finished yet, it polls for up to 600 s.
+# This workflow runs alongside release-linux.yml on tag push. It polls
+# GitHub for up to 900 s per attempt, with 3 retries (60 s apart).
 #
 # Requires two secrets configured in Gitee:
 #   GITHUB_PAT  — read-only access to the GitHub repo
@@ -24,7 +24,7 @@ stages:
       - job: sync-platform-wheels
         displayName: Download and publish
         runsOn: ubuntu-latest
-        timeoutMinutes: 20
+        timeoutMinutes: 60
         steps:
           - name: Checkout
             uses: checkout@v1
@@ -52,19 +52,35 @@ stages:
               sudo apt-get install -y -qq python3 python3-pip
               python3 -m pip install --upgrade pip -q
 
-          - name: Download from GitHub Release
+          - name: Sync macOS + Windows wheels (with retry)
             env:
               GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
-            run: |
-              python3 packaging/scripts/download-github-release.py \
-                --tag "$RELEASE_TAG" \
-                --dist-dir dist/combined \
-                --max-wait 600
-
-          - name: Publish to Gitee Release
-            env:
               GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
             run: |
-              python3 packaging/scripts/publish-gitee-from-ci.py \
-                --tag "$RELEASE_TAG" \
-                --dist-dir dist/combined
+              set -euo pipefail
+              MAX_RETRIES=3
+              RETRY_DELAY=60
+              for attempt in $(seq 1 $MAX_RETRIES); do
+                echo "=== Attempt $attempt/$MAX_RETRIES ==="
+                # Clean dist dir on retry
+                rm -rf dist/combined 2>/dev/null || true
+                mkdir -p dist/combined
+                # Download from GitHub (900s poll timeout)
+                if python3 packaging/scripts/download-github-release.py \
+                    --tag "$RELEASE_TAG" \
+                    --dist-dir dist/combined \
+                    --max-wait 900; then
+                  # Publish to Gitee
+                  python3 packaging/scripts/publish-gitee-from-ci.py \
+                    --tag "$RELEASE_TAG" \
+                    --dist-dir dist/combined
+                  echo "Sync succeeded on attempt $attempt"
+                  exit 0
+                fi
+                if [ "$attempt" -lt "$MAX_RETRIES" ]; then
+                  echo "Attempt $attempt failed, retrying in ${RETRY_DELAY}s..."
+                  sleep "$RETRY_DELAY"
+                fi
+              done
+              echo "All $MAX_RETRIES attempts failed — macOS/Windows wheels not synced (non-fatal)"
+              exit 0  # non-fatal: Linux wheels still published by release-linux.yml
