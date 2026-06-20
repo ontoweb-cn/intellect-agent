@@ -58,6 +58,9 @@ def _skin_color(key: str, fallback: str) -> str:
 # ASCII Art & Branding
 # =========================================================================
 
+# Set to 1 to hide the "Available Tools" section in the welcome banner.
+INTELLECT_HIDE_TOOLS_BANNER = 0
+
 from intellect_cli import __version__ as VERSION, __release_date__ as RELEASE_DATE
 
 intellect_AGENT_LOGO = """[bold #FFD700] ___ _   _ _____ _____ _     _     _____ ____ _____ [/]
@@ -551,64 +554,67 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
         left_lines.append(f"[dim {session_color}]Session: {session_id}[/]")
     left_content = "\n".join(left_lines)
 
-    right_lines = [f"[bold {accent}]Available Tools[/]"]
-    toolsets_dict: Dict[str, list] = {}
+    if not INTELLECT_HIDE_TOOLS_BANNER:
+        right_lines = [f"[bold {accent}]Available Tools[/]"]
+        toolsets_dict: Dict[str, list] = {}
 
-    for tool in tools:
-        tool_name = tool["function"]["name"]
-        toolset = _display_toolset_name(get_toolset_for_tool(tool_name) or "other")
-        toolsets_dict.setdefault(toolset, []).append(tool_name)
+        for tool in tools:
+            tool_name = tool["function"]["name"]
+            toolset = _display_toolset_name(get_toolset_for_tool(tool_name) or "other")
+            toolsets_dict.setdefault(toolset, []).append(tool_name)
 
-    for item in unavailable_toolsets:
-        toolset_id = item.get("id", item.get("name", "unknown"))
-        display_name = _display_toolset_name(toolset_id)
-        if display_name not in toolsets_dict:
-            toolsets_dict[display_name] = []
-        for tool_name in item.get("tools", []):
-            if tool_name not in toolsets_dict[display_name]:
-                toolsets_dict[display_name].append(tool_name)
+        for item in unavailable_toolsets:
+            toolset_id = item.get("id", item.get("name", "unknown"))
+            display_name = _display_toolset_name(toolset_id)
+            if display_name not in toolsets_dict:
+                toolsets_dict[display_name] = []
+            for tool_name in item.get("tools", []):
+                if tool_name not in toolsets_dict[display_name]:
+                    toolsets_dict[display_name].append(tool_name)
 
-    sorted_toolsets = sorted(toolsets_dict.keys())
-    display_toolsets = sorted_toolsets[:8]
-    remaining_toolsets = len(sorted_toolsets) - 8
+        sorted_toolsets = sorted(toolsets_dict.keys())
+        display_toolsets = sorted_toolsets[:8]
+        remaining_toolsets = len(sorted_toolsets) - 8
 
-    for toolset in display_toolsets:
-        tool_names = toolsets_dict[toolset]
-        colored_names = []
-        for name in sorted(tool_names):
-            if name in disabled_tools:
-                colored_names.append(f"[red]{name}[/]")
-            elif name in lazy_tools:
-                colored_names.append(f"[yellow]{name}[/]")
-            else:
-                colored_names.append(f"[{text}]{name}[/]")
-
-        tools_str = ", ".join(colored_names)
-        if len(", ".join(sorted(tool_names))) > 45:
-            short_names = []
-            length = 0
-            for name in sorted(tool_names):
-                if length + len(name) + 2 > 42:
-                    short_names.append("...")
-                    break
-                short_names.append(name)
-                length += len(name) + 2
+        for toolset in display_toolsets:
+            tool_names = toolsets_dict[toolset]
             colored_names = []
-            for name in short_names:
-                if name == "...":
-                    colored_names.append("[dim]...[/]")
-                elif name in disabled_tools:
+            for name in sorted(tool_names):
+                if name in disabled_tools:
                     colored_names.append(f"[red]{name}[/]")
                 elif name in lazy_tools:
                     colored_names.append(f"[yellow]{name}[/]")
                 else:
                     colored_names.append(f"[{text}]{name}[/]")
+
             tools_str = ", ".join(colored_names)
+            if len(", ".join(sorted(tool_names))) > 45:
+                short_names = []
+                length = 0
+                for name in sorted(tool_names):
+                    if length + len(name) + 2 > 42:
+                        short_names.append("...")
+                        break
+                    short_names.append(name)
+                    length += len(name) + 2
+                colored_names = []
+                for name in short_names:
+                    if name == "...":
+                        colored_names.append("[dim]...[/]")
+                    elif name in disabled_tools:
+                        colored_names.append(f"[red]{name}[/]")
+                    elif name in lazy_tools:
+                        colored_names.append(f"[yellow]{name}[/]")
+                    else:
+                        colored_names.append(f"[{text}]{name}[/]")
+                tools_str = ", ".join(colored_names)
 
-        right_lines.append(f"[dim {dim}]{toolset}:[/] {tools_str}")
+            right_lines.append(f"[dim {dim}]{toolset}:[/] {tools_str}")
 
-    if remaining_toolsets > 0:
-        right_lines.append(f"[dim {dim}](and {remaining_toolsets} more toolsets...)[/]")
+        if remaining_toolsets > 0:
+            right_lines.append(f"[dim {dim}](and {remaining_toolsets} more toolsets...)[/]")
+    else:
+        right_lines = []
 
     # MCP Servers section (only if configured)
     try:
@@ -763,8 +769,8 @@ def build_compact_banner() -> str:
     dim_color = _skin.get_color("banner_dim", "#B8860B") if _skin else "#B8860B"
 
     if skin_name == "default":
-        line1 = "⚕ ONTOWEB INTELLECT - AI Agent Framework"
-        tiny_line = "⚕ ONTOWEB INTELLECT"
+        line1 = "⚛ ONTOWEB INTELLECT - AI Agent Framework"
+        tiny_line = "⚛ ONTOWEB INTELLECT"
     else:
         agent_name = _skin.get_branding("agent_name", "Intellect Agent") if _skin else "Intellect Agent"
         line1 = f"{agent_name} - AI Agent Framework"
