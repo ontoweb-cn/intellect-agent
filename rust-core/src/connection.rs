@@ -184,6 +184,17 @@ impl RustConnection {
     fn rollback(&self) -> PyResult<()> {
         Ok(())
     }
+
+    /// Return a new empty cursor (sqlite3.Connection.cursor() equivalent).
+    fn cursor(&self) -> PyResult<RustCursor> {
+        Ok(RustCursor {
+            columns: Vec::new(),
+            data: Vec::new(),
+            pos: RefCell::new(0),
+            rowcount: 0,
+            lastrowid_val: None,
+        })
+    }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

@@ -217,7 +217,15 @@ class RustSQLiteBackend:
 
     @property
     def connection(self):
-        """Return the Python sqlite3.Connection for read operations."""
+        """Return a connection for read operations.
+
+        When ``SESSIONDB_USE_RUST_READS=1`` in ``intellect_state``, returns
+        a ``RustConnection`` sharing the same underlying rusqlite connection
+        as the write path.  Otherwise falls back to Python sqlite3.
+        """
+        from intellect_state import SESSIONDB_USE_RUST_READS
+        if SESSIONDB_USE_RUST_READS:
+            return self._backend.connection()
         return self._python_conn
 
     @property

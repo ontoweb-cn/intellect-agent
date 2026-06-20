@@ -267,6 +267,12 @@ def _seed_oauth_providers(cursor) -> None:
 # existing references (FTS_TRIGRAM_SQL) don't break at import time.
 
 
+# Feature flag: set to 1 to route all SessionDB reads through the Rust
+# backend instead of Python sqlite3.  Python fallback is preserved until
+# full test coverage confirms parity.
+SESSIONDB_USE_RUST_READS = 0
+
+
 class SessionDB:
     """
     SQLite-backed session storage with FTS5 search.
@@ -551,10 +557,14 @@ class SessionDB:
 
         The schema_version table is retained for future data migrations
         (transforming existing rows) which cannot be handled declaratively.
-        """
-        cursor = self._conn.cursor()
 
-        cursor.executescript(SCHEMA_SQL)
+        Schema init always uses the Python sqlite3 connection (one-time
+        operation, not affected by SESSIONDB_USE_RUST_READS).
+        """
+        conn = self._storage_backend._python_conn
+        conn.executescript(SCHEMA_SQL)
+
+        cursor = conn.cursor()
 
         # Seed built-in OAuth providers on fresh databases (idempotent INSERT OR IGNORE)
         _seed_oauth_providers(cursor)
@@ -634,7 +644,7 @@ class SessionDB:
                 (SCHEMA_VERSION,),
             )
         else:
-            current_version = row["version"] if isinstance(row, sqlite3.Row) else row[0]
+            current_version = row["version"] if isinstance(row, (sqlite3.Row, dict)) else row[0]
             # Data migrations that can't be expressed declaratively (row
             # backfills, index changes tied to a specific version step) stay
             # in a version-gated chain. Column additions are handled by
@@ -877,7 +887,7 @@ class SessionDB:
                 if trigram_enabled and triggers_need_repair:
                     self._rebuild_fts_indexes(cursor)
 
-        self._conn.commit()
+        conn.commit()
 
     # =========================================================================
     # Session lifecycle
@@ -1022,7 +1032,7 @@ class SessionDB:
                 (session_id,),
             ).fetchone()
             return row is not None and (
-                row["holder"] if isinstance(row, sqlite3.Row) else row[0]
+                row["holder"] if isinstance(row, (sqlite3.Row, dict)) else row[0]
             ) == holder
 
         try:
@@ -1087,7 +1097,7 @@ class SessionDB:
         ).fetchone()
         if row is None:
             return None
-        return row["holder"] if isinstance(row, sqlite3.Row) else row[0]
+        return row["holder"] if isinstance(row, (sqlite3.Row, dict)) else row[0]
 
 
     def update_system_prompt(self, session_id: str, system_prompt: str) -> None:
@@ -2967,22 +2977,24 @@ class SessionDB:
         with self._lock:
             if source:
                 cursor = self._conn.execute(
-                    "SELECT COUNT(*) FROM sessions WHERE source = ?", (source,)
+                    "SELECT COUNT(*) AS cnt FROM sessions WHERE source = ?", (source,)
                 )
             else:
-                cursor = self._conn.execute("SELECT COUNT(*) FROM sessions")
-            return cursor.fetchone()[0]
+                cursor = self._conn.execute("SELECT COUNT(*) AS cnt FROM sessions")
+            row = cursor.fetchone()
+            return row["cnt"] if row else 0
 
     def message_count(self, session_id: str = None) -> int:
         """Count messages, optionally for a specific session."""
         with self._lock:
             if session_id:
                 cursor = self._conn.execute(
-                    "SELECT COUNT(*) FROM messages WHERE session_id = ?", (session_id,)
+                    "SELECT COUNT(*) AS cnt FROM messages WHERE session_id = ?", (session_id,)
                 )
             else:
-                cursor = self._conn.execute("SELECT COUNT(*) FROM messages")
-            return cursor.fetchone()[0]
+                cursor = self._conn.execute("SELECT COUNT(*) AS cnt FROM messages")
+            row = cursor.fetchone()
+            return row["cnt"] if row else 0
 
     # =========================================================================
     # Export and cleanup
@@ -3062,9 +3074,10 @@ class SessionDB:
         """
         def _do(conn):
             cursor = conn.execute(
-                "SELECT COUNT(*) FROM sessions WHERE id = ?", (session_id,)
+                "SELECT COUNT(*) AS cnt FROM sessions WHERE id = ?", (session_id,)
             )
-            if cursor.fetchone()[0] == 0:
+            row = cursor.fetchone()
+            if not row or row["cnt"] == 0:
                 return False
             # Orphan child sessions so FK constraint is satisfied
             conn.execute(
@@ -3146,7 +3159,7 @@ class SessionDB:
             ).fetchone()
         if row is None:
             return None
-        return row["value"] if isinstance(row, sqlite3.Row) else row[0]
+        return row["value"] if isinstance(row, (sqlite3.Row, dict)) else row[0]
 
     def set_meta(self, key: str, value: str) -> None:
         """Write a value to the state_meta key/value store."""
@@ -3356,7 +3369,7 @@ class SessionDB:
                 return False
         if row is None:
             return False
-        enabled = row["enabled"] if isinstance(row, sqlite3.Row) else row[0]
+        enabled = row["enabled"] if isinstance(row, (sqlite3.Row, dict)) else row[0]
         return bool(enabled)
 
     def get_telegram_topic_binding(
