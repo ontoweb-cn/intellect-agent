@@ -2643,6 +2643,18 @@ class SessionDB:
         if not query:
             return []
 
+        # ── Rust fast path: non-CJK FTS5 query → delegate to Rust backend ──
+        if not self._contains_cjk(query):
+            rust = self._rust_backend()
+            if rust is not None:
+                try:
+                    return rust.search_messages(
+                        query, source_filter, exclude_sources,
+                        role_filter, limit, offset, sort,
+                    )
+                except Exception:
+                    pass  # Fall through to Python
+
         # Normalise sort. Anything not in the allowed set falls back to None
         # (FTS5 rank-only) so callers can pass through user input without
         # validation.

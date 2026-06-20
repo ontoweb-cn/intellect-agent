@@ -246,6 +246,38 @@ pub fn parse_available_output_tokens_from_error_rs(error_msg: &str) -> Option<i6
     None
 }
 
+// ── CJK detection (from intellect_state.py) ────────────────────────────────
+
+/// Public CJK codepoint check, used by backend.rs search_messages.
+pub fn is_cjk_codepoint_static(cp: u32) -> bool {
+    matches!(cp,
+        0x4E00..=0x9FFF |     // CJK Unified Ideographs
+        0x3400..=0x4DBF |     // CJK Extension A
+        0x20000..=0x2A6DF |   // CJK Extension B
+        0x3000..=0x303F |     // CJK Symbols
+        0x3040..=0x309F |     // Hiragana
+        0x30A0..=0x30FF |     // Katakana
+        0xAC00..=0xD7AF       // Hangul Syllables
+    )
+}
+
+#[pyfunction]
+pub fn contains_cjk_rs(text: &str) -> bool {
+    for c in text.chars() {
+        if is_cjk_codepoint_static(c as u32) { return true; }
+    }
+    false
+}
+
+#[pyfunction]
+pub fn count_cjk_rs(text: &str) -> usize {
+    let mut count = 0;
+    for c in text.chars() {
+        if is_cjk_codepoint_static(c as u32) { count += 1; }
+    }
+    count
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

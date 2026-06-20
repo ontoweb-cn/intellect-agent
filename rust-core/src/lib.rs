@@ -108,6 +108,8 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tokens::model_id_matches_rs, m)?)?;
     m.add_function(wrap_pyfunction!(tokens::normalize_model_version_rs, m)?)?;
     m.add_function(wrap_pyfunction!(tokens::get_next_probe_tier_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tokens::contains_cjk_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tokens::count_cjk_rs, m)?)?;
 
     // ── Stage 4a-4e: Gateway utilities ─────────────────────────────────
     m.add_function(wrap_pyfunction!(gateway::build_session_key_rs, m)?)?;
