@@ -80,6 +80,10 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // ── Tool utilities ────────────────────────────────────────────────
     m.add_function(wrap_pyfunction!(tool_utils::file_mutation_result_landed_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tool_utils::strip_yaml_frontmatter_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tool_utils::truncate_content_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tool_utils::paths_overlap_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tool_utils::canonical_tool_args_rs, m)?)?;
 
     // ── Phase 3: Error classifier — API error taxonomy ─────────────────
     m.add_class::<error_classifier::FailoverReason>()?;

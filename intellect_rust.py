@@ -260,6 +260,18 @@ rust_apply_cache_control: Callable = (
 rust_file_mutation_landed: Callable = (
     _CORE.file_mutation_result_landed_rs if _has() else None
 )
+rust_strip_yaml_frontmatter: Callable = (
+    _CORE.strip_yaml_frontmatter_rs if _has() else None
+)
+rust_truncate_content: Callable = (
+    _CORE.truncate_content_rs if _has() else None
+)
+rust_paths_overlap: Callable = (
+    _CORE.paths_overlap_rs if _has() else None
+)
+rust_canonical_tool_args: Callable = (
+    _CORE.canonical_tool_args_rs if _has() else None
+)
 
 # ── Model normalization ───────────────────────────────────────────────────
 
