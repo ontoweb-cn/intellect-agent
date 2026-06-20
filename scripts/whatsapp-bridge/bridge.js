@@ -586,13 +586,21 @@ app.post('/send-media', async (req, res) => {
     return res.status(400).json({ error: 'chatId and filePath are required' });
   }
 
+  // Resolve against the bridge's media cache directory to prevent path
+  // traversal (CodeQL js/path-injection). filePath MUST stay within
+  // the configured CACHE_DIR.
+  const safePath = path.resolve(CACHE_DIR, path.basename(filePath));
+  if (!safePath.startsWith(CACHE_DIR + path.sep) && safePath !== CACHE_DIR) {
+    return res.status(400).json({ error: 'Invalid file path' });
+  }
+
   try {
-    if (!existsSync(filePath)) {
-      return res.status(404).json({ error: `File not found: ${filePath}` });
+    if (!existsSync(safePath)) {
+      return res.status(404).json({ error: `File not found: ${path.basename(filePath)}` });
     }
 
-    const buffer = readFileSync(filePath);
-    const ext = filePath.toLowerCase().split('.').pop();
+    const buffer = readFileSync(safePath);
+    const ext = safePath.toLowerCase().split('.').pop();
     const type = mediaType || inferMediaType(ext);
     let msgPayload;
 
@@ -615,10 +623,8 @@ app.post('/send-media', async (req, res) => {
           tmpPath = path.join(tmpdir(), `intellect_voice_${randomBytes(6).toString('hex')}.ogg`);
           try {
             // Use execFileSync with array args to avoid shell injection.
-            // filePath is a locally-generated random path, not user input,
-            // but array-passing is the safer pattern regardless.
             execFileSync('ffmpeg', [
-              '-y', '-i', filePath,
+              '-y', '-i', safePath,
               '-ar', '48000', '-ac', '1', '-c:a', 'libopus',
               tmpPath,
             ], { timeout: 30000, stdio: 'pipe' });
@@ -639,7 +645,7 @@ app.post('/send-media', async (req, res) => {
       default:
         msgPayload = {
           document: buffer,
-          fileName: fileName || path.basename(filePath),
+          fileName: fileName || path.basename(safePath),
           caption: caption || undefined,
           mimetype: MIME_MAP[ext] || 'application/octet-stream',
         };
