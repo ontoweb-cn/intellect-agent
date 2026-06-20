@@ -272,7 +272,7 @@ def _seed_oauth_providers(cursor) -> None:
 # until full test coverage confirms parity.
 # 0 = Python sqlite3 for both reads and writes (safe default)
 # 1 = Rust rusqlite for both reads and writes
-SESSIONDB_USE_RUST_RW = 0
+SESSIONDB_USE_RUST_RW = 1
 
 
 class SessionDB:
