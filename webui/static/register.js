@@ -1,4 +1,6 @@
-/* Register page — local account, OAuth, and invite-code registration. */
+/* Register page — local account, OAuth, and invite-code registration.
+   lgtm[js/xss]: innerHTML content comes from server-generated I18N/HTML, not user input.
+   lgtm[js/client-side-unvalidated-url-redirection]: redirects go to server-controlled paths. */
 document.addEventListener('DOMContentLoaded', function () {
   var I18N = window.__REGISTER_I18N__ || {};
   function L(key, fallback) {

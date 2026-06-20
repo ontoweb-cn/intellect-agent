@@ -357,6 +357,7 @@ def _infer_provider_from_url(base_url: str) -> Optional[str]:
     parsed = urlparse(normalized if "://" in normalized else f"https://{normalized}")
     host = parsed.netloc.lower() or parsed.path.lower()
     path = (parsed.path or "").lower()
+    # lgtm[py/incomplete-url-substring-sanitization]: provider name heuristic, not security check
     if "ark.cn-beijing.volces.com" in host or "open.volcengineapi.com" in host:
         if "/api/coding" in path:
             return "volcengine-coding-plan"

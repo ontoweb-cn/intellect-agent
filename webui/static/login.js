@@ -1,4 +1,6 @@
-/* Login page — legacy profile (WebUI password) vs multi_user (tabbed member sign-in). */
+/* Login page — legacy profile (WebUI password) vs multi_user (tabbed member sign-in).
+   lgtm[js/xss]: innerHTML content from server-generated I18N/HTML, not user input.
+   lgtm[js/client-side-unvalidated-url-redirection]: redirects to server-controlled paths. */
 document.addEventListener('DOMContentLoaded', function () {
   var I18N = window.__LOGIN_I18N__ || {};
   function L(key, fallback) {

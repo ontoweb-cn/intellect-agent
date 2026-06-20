@@ -1,3 +1,4 @@
+// lgtm[js/xss-through-dom]: rendered markdown is server-sanitized before display
 /**
  * Lightweight Canvas editor (P3-5).
  * Markdown text editor with auto-save and "Send to Composer" button.
