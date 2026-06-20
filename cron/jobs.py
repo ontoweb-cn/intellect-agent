@@ -496,6 +496,11 @@ def _normalize_workdir(workdir: Optional[str]) -> Optional[str]:
             f"Cron workdir must be an absolute path (got {raw!r}). "
             f"Cron jobs run detached from any shell cwd, so relative paths are ambiguous."
         )
+    # Reject paths with `..` traversal to prevent directory escape
+    if '..' in expanded.parts:
+        raise ValueError(
+            f"Cron workdir must not contain '..' traversal: {raw!r}"
+        )
     resolved = expanded.resolve()
     if not resolved.exists():
         raise ValueError(f"Cron workdir does not exist: {resolved}")

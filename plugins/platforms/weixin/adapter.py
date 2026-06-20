@@ -176,6 +176,8 @@ def _pkcs7_pad(data: bytes, block_size: int = 16) -> bytes:
     return data + bytes([pad_len] * pad_len)
 
 
+# WeChat/Weixin platform API requires AES-128-ECB for message encryption.
+# lgtm[py/weak-cryptographic-algorithm]
 def _aes128_ecb_encrypt(plaintext: bytes, key: bytes) -> bytes:
     cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
     encryptor = cipher.encryptor()

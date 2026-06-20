@@ -30,6 +30,7 @@ from agent.display import (
 )
 from agent.tool_guardrails import ToolGuardrailDecision
 from agent.tool_dispatch_helpers import (
+from agent.safe_print import safe_print
     _is_destructive_command,
     _is_multimodal_tool_result,
     _multimodal_text_summary,
@@ -118,7 +119,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
 
     # ── Pre-flight: interrupt check ──────────────────────────────────
     if agent._interrupt_requested:
-        print(f"{agent.log_prefix}⚡ Interrupt: skipping {num_tools} tool call(s)")
+        safe_print(f"{agent.log_prefix}⚡ Interrupt: skipping {num_tools} tool call(s)")
         for tc in tool_calls:
             messages.append(make_tool_result_message(
                 tc.function.name,
@@ -234,15 +235,15 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
     # ── Logging / callbacks ──────────────────────────────────────────
     tool_names_str = ", ".join(name for _, name, _, _, _ in parsed_calls)
     if not agent.quiet_mode:
-        print(f"  ⚡ Concurrent: {num_tools} tool calls — {tool_names_str}")
+        safe_print(f"  ⚡ Concurrent: {num_tools} tool calls — {tool_names_str}")
         for i, (tc, name, args, block_result, blocked_by_guardrail) in enumerate(parsed_calls, 1):
             args_str = json.dumps(args, ensure_ascii=False)
             if agent.verbose_logging:
-                print(f"  📞 Tool {i}: {name}({list(args.keys())})")
-                print(agent._wrap_verbose("Args: ", json.dumps(args, indent=2, ensure_ascii=False)))
+                safe_print(f"  📞 Tool {i}: {name}({list(args.keys())})")
+                safe_print(agent._wrap_verbose("Args: ", json.dumps(args, indent=2, ensure_ascii=False)))
             else:
                 args_preview = args_str[:agent.log_prefix_chars] + "..." if len(args_str) > agent.log_prefix_chars else args_str
-                print(f"  📞 Tool {i}: {name}({list(args.keys())}) - {args_preview}")
+                safe_print(f"  📞 Tool {i}: {name}({list(args.keys())}) - {args_preview}")
 
     for tc, name, args, block_result, blocked_by_guardrail in parsed_calls:
         if block_result is not None:
@@ -477,11 +478,11 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
         elif not agent.quiet_mode:
             _preview_str = _multimodal_text_summary(function_result)
             if agent.verbose_logging:
-                print(f"  ✅ Tool {i+1} completed in {tool_duration:.2f}s")
-                print(agent._wrap_verbose("Result: ", _preview_str))
+                safe_print(f"  ✅ Tool {i+1} completed in {tool_duration:.2f}s")
+                safe_print(agent._wrap_verbose("Result: ", _preview_str))
             else:
                 response_preview = _preview_str[:agent.log_prefix_chars] + "..." if len(_preview_str) > agent.log_prefix_chars else _preview_str
-                print(f"  ✅ Tool {i+1} completed in {tool_duration:.2f}s - {response_preview}")
+                safe_print(f"  ✅ Tool {i+1} completed in {tool_duration:.2f}s - {response_preview}")
 
         agent._current_tool = None
         agent._touch_activity(f"tool completed: {name} ({tool_duration:.1f}s)")
@@ -624,11 +625,11 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
         if not agent.quiet_mode:
             args_str = json.dumps(function_args, ensure_ascii=False)
             if agent.verbose_logging:
-                print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())})")
-                print(agent._wrap_verbose("Args: ", json.dumps(function_args, indent=2, ensure_ascii=False)))
+                safe_print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())})")
+                safe_print(agent._wrap_verbose("Args: ", json.dumps(function_args, indent=2, ensure_ascii=False)))
             else:
                 args_preview = args_str[:agent.log_prefix_chars] + "..." if len(args_str) > agent.log_prefix_chars else args_str
-                print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())}) - {args_preview}")
+                safe_print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())}) - {args_preview}")
 
         if not _execution_blocked:
             agent._current_tool = function_name
@@ -998,12 +999,12 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
 
         if not agent.quiet_mode:
             if agent.verbose_logging:
-                print(f"  ✅ Tool {i} completed in {tool_duration:.2f}s")
-                print(agent._wrap_verbose("Result: ", function_result))
+                safe_print(f"  ✅ Tool {i} completed in {tool_duration:.2f}s")
+                safe_print(agent._wrap_verbose("Result: ", function_result))
             else:
                 _fr_str = function_result if isinstance(function_result, str) else str(function_result)
                 response_preview = _fr_str[:agent.log_prefix_chars] + "..." if len(_fr_str) > agent.log_prefix_chars else _fr_str
-                print(f"  ✅ Tool {i} completed in {tool_duration:.2f}s - {response_preview}")
+                safe_print(f"  ✅ Tool {i} completed in {tool_duration:.2f}s - {response_preview}")
 
         if agent._interrupt_requested and i < len(assistant_message.tool_calls):
             remaining = len(assistant_message.tool_calls) - i
