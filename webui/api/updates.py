@@ -883,12 +883,12 @@ def summarize_update_payload(updates: dict, llm_callback=None, *, target: str | 
 
 
 def _try_rebuild_rust_extension() -> bool:
-    """Rebuild the Rust extension after a git pull update.
+    """Rebuild or download the Rust extension after a git pull update.
 
-    WebUI self-updates and force-updates pull new source code but leave
-    the compiled Rust extension (.pyd/.so) at the old version.  Rebuild
-    so the accelerator matches the new Python code.  Best-effort —
-    failure is non-fatal (the agent will fail fast at startup if Rust is missing).
+    Strategy (best-effort):
+    1. Download pre-built wheel from Gitee Release (no Rust toolchain needed)
+    2. Fall back to local maturin build (requires cargo + maturin)
+    3. Failure is non-fatal — the agent will fail fast at next startup
     """
     import os as _os
     import subprocess as _sp
@@ -898,6 +898,12 @@ def _try_rebuild_rust_extension() -> bool:
     _rust_dir = REPO_ROOT.parent / "rust-core"
     if not _rust_dir.is_dir() or not (_rust_dir / "Cargo.toml").exists():
         return False
+
+    # 1. Try Gitee Release pre-built wheel (no Rust toolchain needed)
+    if _try_download_gitee_rust_wheel():
+        return True
+
+    # 2. Fall back to local maturin build
     if not _shutil.which("cargo"):
         return False
     try:
@@ -913,6 +919,71 @@ def _try_rebuild_rust_extension() -> bool:
             cwd=str(_rust_dir), capture_output=True, text=True,
         )
         return _result.returncode == 0
+    except Exception:
+        return False
+
+
+def _try_download_gitee_rust_wheel() -> bool:
+    """Download a pre-built intellect_community_core wheel from Gitee Release.
+
+    Queries the Gitee API for the latest release, finds the wheel asset
+    matching the current platform, downloads and installs it via pip.
+    """
+    import json as _json
+    import platform as _platform
+    import subprocess as _sp
+    import sys as _sys
+    import tempfile as _tempfile
+    import urllib.request as _ur
+
+    # Determine platform hint for wheel name matching
+    _sys_plat = _sys.platform
+    _arch = _platform.machine().lower()
+    if _sys_plat == "darwin":
+        _hint = "macosx"  # matches macosx_11_0_universal2 or macosx_11_0_arm64
+    elif _sys_plat == "win32":
+        _hint = "win_amd64"
+    elif "linux" in _sys_plat:
+        if _arch in ("aarch64", "arm64"):
+            _hint = "manylinux"  # matches manylinux_*_aarch64
+        else:
+            _hint = "manylinux"  # matches manylinux_*_x86_64
+    else:
+        return False
+
+    try:
+        _api_url = (
+            "https://gitee.com/api/v5/repos/ontoweb/intellect-agent/"
+            "releases?page=1&per_page=1&direction=desc"
+        )
+        with _ur.urlopen(_api_url, timeout=30) as _resp:
+            _releases = _json.load(_resp)
+        _release = _releases[0] if _releases else None
+        if not _release:
+            return False
+
+        _wheel_url = None
+        for _asset in _release.get("assets") or []:
+            _name = (_asset.get("name") or "").lower()
+            if "intellect_community_core" not in _name:
+                continue
+            if not _name.endswith(".whl"):
+                continue
+            if _hint in _name or ("universal2" in _name and "macosx" in _hint):
+                _wheel_url = _asset.get("browser_download_url") or _asset.get("url") or ""
+                break
+
+        if not _wheel_url:
+            return False
+
+        # Download wheel to temp file and install
+        _tmp = _tempfile.mktemp(suffix=".whl", prefix="intellect-rust-")
+        _ur.urlretrieve(_wheel_url, _tmp)
+        _sp.run(
+            [_sys.executable, "-m", "pip", "install", "-q", _tmp],
+            check=True, capture_output=True,
+        )
+        return True
     except Exception:
         return False
 

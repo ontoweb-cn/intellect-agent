@@ -1683,7 +1683,7 @@ def _launch_tui(
         from intellect_cli.relaunch import relaunch
 
         print()
-        print("⚕ Launching update...")
+        print("⚛ Launching update...")
         print()
         relaunch(["update"], preserve_inherited=False)
 
@@ -1920,7 +1920,7 @@ def cmd_whatsapp(args):
     from intellect_cli.config import get_env_value, save_env_value
 
     print()
-    print("⚕ WhatsApp Setup")
+    print("⚛ WhatsApp Setup")
     print("=" * 50)
 
     # ── Step 1: Choose mode ──────────────────────────────────────────────
@@ -2121,14 +2121,14 @@ def cmd_whatsapp(args):
             print("    2. Send a message to the bot's WhatsApp number")
             print("    3. The agent will reply automatically")
             print()
-            print("  Tip: Agent responses are prefixed with '⚕ Intellect Agent'")
+            print("  Tip: Agent responses are prefixed with '⚛ Intellect Agent'")
         else:
             print("  Next steps:")
             print("    1. Start the gateway:  intellect gateway")
             print("    2. Open WhatsApp → Message Yourself")
             print("    3. Type a message — the agent will reply")
             print()
-            print("  Tip: Agent responses are prefixed with '⚕ Intellect Agent'")
+            print("  Tip: Agent responses are prefixed with '⚛ Intellect Agent'")
             print("  so you can tell them apart from your own messages.")
         print()
         print("  Or install as a service: intellect gateway install")
@@ -2150,7 +2150,7 @@ def cmd_postinstall(args):
 
     stamp_install_method("pip")
 
-    print("⚕ Intellect post-install bootstrap")
+    print("⚛ Intellect post-install bootstrap")
     print()
 
     for dep in ("node", "browser", "ripgrep", "ffmpeg"):
@@ -9341,6 +9341,64 @@ def _ensure_uv_for_termux(pip_cmd: list[str]) -> str | None:
     return shutil.which("uv")
 
 
+def _try_download_gitee_rust_wheel() -> bool:
+    """Download pre-built intellect_community_core wheel from Gitee Release API.
+
+    Returns True on success, False on any failure (best-effort).
+    """
+    import json as _json
+    import platform as _platform
+    import sys as _sys
+    import tempfile as _tempfile
+    import urllib.request as _ur
+
+    _sys_plat = _sys.platform
+    _arch = _platform.machine().lower()
+    if _sys_plat == "darwin":
+        _hint = "macosx"
+    elif _sys_plat == "win32":
+        _hint = "win_amd64"
+    elif "linux" in _sys_plat:
+        _hint = "manylinux"
+    else:
+        return False
+
+    try:
+        _api_url = (
+            "https://gitee.com/api/v5/repos/ontoweb/intellect-agent/"
+            "releases?page=1&per_page=1&direction=desc"
+        )
+        with _ur.urlopen(_api_url, timeout=30) as _resp:
+            _releases = _json.load(_resp)
+        _release = _releases[0] if _releases else None
+        if not _release:
+            return False
+
+        _wheel_url = None
+        for _asset in _release.get("assets") or []:
+            _name = (_asset.get("name") or "").lower()
+            if "intellect_community_core" not in _name:
+                continue
+            if not _name.endswith(".whl"):
+                continue
+            if _hint in _name or ("universal2" in _name and "macosx" in _hint):
+                _wheel_url = _asset.get("browser_download_url") or _asset.get("url") or ""
+                break
+
+        if not _wheel_url:
+            return False
+
+        _tmp = _tempfile.mktemp(suffix=".whl", prefix="intellect-rust-")
+        _ur.urlretrieve(_wheel_url, _tmp)
+        subprocess.run(
+            [_sys.executable, "-m", "pip", "install", "-q", _tmp],
+            check=True, capture_output=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
 def _update_node_dependencies() -> None:
     npm = shutil.which("npm")
     if not npm:
@@ -9600,7 +9658,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
         elif result == 0:
             print("✓ Already up to date.")
         else:
-            print("⚕ Update available on PyPI.")
+            print("⚛ Update available on PyPI.")
             print(f"  Run '{recommended_update_command()}' to install.")
         return
 
@@ -9690,7 +9748,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
         print("✓ Already up to date.")
     else:
         commits_word = "commit" if behind == 1 else "commits"
-        print(f"⚕ Update available: {behind} {commits_word} behind {compare_branch}.")
+        print(f"⚛ Update available: {behind} {commits_word} behind {compare_branch}.")
         from intellect_cli.config import recommended_update_command
 
         print(f"  Run '{recommended_update_command()}' to install.")
@@ -10027,7 +10085,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
     )
     assume_yes = bool(getattr(args, "yes", False))
 
-    print("⚕ Updating Intellect Agent...")
+    print("⚛ Updating Intellect Agent...")
     print()
 
     # On Windows, abort early if another intellect.exe is holding the venv shim
@@ -10424,13 +10482,20 @@ def _cmd_update_impl(args, gateway_mode: bool):
 
         # ── Rebuild Rust extension after git pull ───────────────────
         # git pull updates source code but the compiled Rust extension
-        # (.pyd/.so) is still from the previous version.  Rebuild so the
-        # accelerator matches the new Python code.  Best-effort — failure
-        # is non-fatal (the agent will fail fast at startup if Rust is missing).
+        # (.pyd/.so) is still from the previous version.  Try to download
+        # a pre-built wheel from Gitee Release first (no Rust toolchain
+        # needed), then fall back to local maturin build.
         _rust_dir = PROJECT_ROOT / "rust-core"
         if _rust_dir.is_dir() and (_rust_dir / "Cargo.toml").exists():
-            if shutil.which("cargo"):
-                print("→ Rebuilding Rust extension...")
+            _rebuilt = False
+            # 1. Try Gitee Release pre-built wheel
+            print("→ Checking Rust extension...")
+            if _try_download_gitee_rust_wheel():
+                print("  ✓ Rust extension installed from Gitee Release.")
+                _rebuilt = True
+            # 2. Fall back to local maturin build
+            elif shutil.which("cargo"):
+                print("→ Rebuilding Rust extension locally...")
                 try:
                     _maturin = shutil.which("maturin")
                     if not _maturin:
@@ -10445,12 +10510,15 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     )
                     if _rust_result.returncode == 0:
                         print("  ✓ Rust extension rebuilt.")
+                        _rebuilt = True
                     else:
                         print("  ⚠ Rust extension rebuild skipped (non-fatal).")
                 except Exception:
                     print("  ⚠ Rust extension rebuild failed (non-fatal).")
             else:
                 print("  ⚠ Rust toolchain not found — skipping Rust extension rebuild.")
+            if not _rebuilt:
+                print("  ℹ Install Rust toolchain or download from Gitee Release.")
 
         # After git pull, source files on disk are newer than cached Python
         # modules in this process.  Reload intellect_constants so that any lazy
