@@ -229,33 +229,12 @@ _TYPING_CONSUMED_SENTINEL = "<consumed>"
 
 
 def check_google_chat_requirements() -> bool:
-    """Check if Google Chat optional dependencies are installed.
-
-    Triggers the lazy import of the google-cloud + googleapiclient stack
-    on first call. Subsequent calls hit the cached result. This is the
-    canonical "are the deps available" probe used by the plugin registry
-    and the adapter's own startup gate.
-    """
-    return _load_google_modules()
-
-
-# Hostnames we trust to host Google Chat attachment download URIs. Anything
-# else gets rejected by _is_google_owned_host to block SSRF scenarios where
-# a crafted event points downloadUri at a non-Google endpoint (e.g. the
-# GCE/GKE metadata service at 169.254.169.254) and the bot's Service Account
-# bearer token would be attached to the outbound request.
-_TRUSTED_ATTACHMENT_HOSTS = (
-    "googleapis.com",
-    "chat.google.com",
-    "drive.google.com",
-    "docs.google.com",
-    "lh3.googleusercontent.com",
-    "lh4.googleusercontent.com",
-    "lh5.googleusercontent.com",
-    "lh6.googleusercontent.com",
-)
-
-
+    """Check if Google_chat dependencies are available. Delegates to shared helper."""
+    global GOOGLE_CHAT_AVAILABLE
+    if GOOGLE_CHAT_AVAILABLE:
+        return True
+    from gateway.platforms.helpers import check_platform_requirements
+    return check_platform_requirements("platform.google_chat", _reimport_google_chat)
 def _is_google_owned_host(url: str) -> bool:
     """Return True iff *url* is https and targets a Google-owned domain."""
     try:

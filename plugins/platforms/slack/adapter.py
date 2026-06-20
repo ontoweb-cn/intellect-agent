@@ -73,31 +73,12 @@ class _ThreadContextCache:
 
 
 def check_slack_requirements() -> bool:
-    """Check if Slack dependencies are available.
-
-    Lazy-installs slack-bolt/slack-sdk via ``tools.lazy_deps.ensure("platform.slack")``
-    on first call if not present. Rebinds all module-level globals on success.
-    """
+    """Check if Slack dependencies are available. Delegates to shared helper."""
+    global SLACK_AVAILABLE
     if SLACK_AVAILABLE:
         return True
-
-    def _import():
-        from slack_bolt.async_app import AsyncApp
-        from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
-        from slack_sdk.web.async_client import AsyncWebClient
-        import aiohttp
-        return {
-            "AsyncApp": AsyncApp,
-            "AsyncSocketModeHandler": AsyncSocketModeHandler,
-            "AsyncWebClient": AsyncWebClient,
-            "aiohttp": aiohttp,
-            "SLACK_AVAILABLE": True,
-        }
-
-    from tools.lazy_deps import ensure_and_bind
-    return ensure_and_bind("platform.slack", _import, globals(), prompt=False)
-
-
+    from gateway.platforms.helpers import check_platform_requirements
+    return check_platform_requirements("platform.slack")
 def _extract_text_from_slack_blocks(blocks: list) -> str:
     """Extract readable text from Slack Block Kit blocks, including quoted/forwarded content.
 

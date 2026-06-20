@@ -76,14 +76,12 @@ def _redact(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def check_bluebubbles_requirements() -> bool:
-    try:
-        import aiohttp  # noqa: F401
-        import httpx  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
+    """Check if Bluebubbles dependencies are available. Delegates to shared helper."""
+    global BLUEBUBBLES_AVAILABLE
+    if BLUEBUBBLES_AVAILABLE:
+        return True
+    from gateway.platforms.helpers import check_platform_requirements
+    return check_platform_requirements("platform.bluebubbles", _reimport_bluebubbles)
 def _normalize_server_url(raw: str) -> str:
     value = (raw or "").strip()
     if not value:

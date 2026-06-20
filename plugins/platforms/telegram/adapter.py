@@ -109,65 +109,12 @@ MAX_COMMANDS_PER_SCOPE = 30
 
 
 def check_telegram_requirements() -> bool:
-    """Check if Telegram dependencies are available.
-
-    If python-telegram-bot is missing, attempts to lazy-install it via
-    ``tools.lazy_deps.ensure("platform.telegram")``. After a successful
-    install, re-imports the SDK and flips ``TELEGRAM_AVAILABLE`` to True
-    so the adapter's class-level type aliases get rebound.
-    """
-    global TELEGRAM_AVAILABLE, Update, Bot, Message, InlineKeyboardButton
-    global InlineKeyboardMarkup, LinkPreviewOptions, Application
-    global CommandHandler, CallbackQueryHandler, TelegramMessageHandler
-    global ContextTypes, filters, ParseMode, ChatType, HTTPXRequest
+    """Check if Telegram dependencies are available. Delegates to shared helper."""
+    global TELEGRAM_AVAILABLE
     if TELEGRAM_AVAILABLE:
         return True
-    try:
-        from tools.lazy_deps import ensure as _lazy_ensure
-        _lazy_ensure("platform.telegram", prompt=False)
-    except Exception:
-        return False
-    try:
-        from telegram import Update as _Update, Bot as _Bot, Message as _Message
-        from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
-        try:
-            from telegram import LinkPreviewOptions as _LPO
-        except ImportError:
-            _LPO = None
-        from telegram.ext import (
-            Application as _App, CommandHandler as _CH,
-            CallbackQueryHandler as _CQH,
-            MessageHandler as _MH,
-            ContextTypes as _CT, filters as _filters,
-        )
-        from telegram.constants import ParseMode as _PM, ChatType as _CtT
-        from telegram.request import HTTPXRequest as _HR
-    except ImportError:
-        return False
-    Update = _Update
-    Bot = _Bot
-    Message = _Message
-    InlineKeyboardButton = _IKB
-    InlineKeyboardMarkup = _IKM
-    LinkPreviewOptions = _LPO
-    Application = _App
-    CommandHandler = _CH
-    CallbackQueryHandler = _CQH
-    TelegramMessageHandler = _MH
-    ContextTypes = _CT
-    filters = _filters
-    ParseMode = _PM
-    ChatType = _CtT
-    HTTPXRequest = _HR
-    TELEGRAM_AVAILABLE = True
-    return True
-
-
-# Matches every character that MarkdownV2 requires to be backslash-escaped
-# when it appears outside a code span or fenced code block.
-_MDV2_ESCAPE_RE = re.compile(r'([_*\[\]()~`>#\+\-=|{}.!\\])')
-
-
+    from gateway.platforms.helpers import check_platform_requirements
+    return check_platform_requirements("platform.telegram", _reimport_telegram)
 def _escape_mdv2(text: str) -> str:
     """Escape Telegram MarkdownV2 special characters with a preceding backslash."""
     return _MDV2_ESCAPE_RE.sub(r'\\\1', text)

@@ -106,35 +106,12 @@ def _clean_discord_id(entry: str) -> str:
 
 
 def check_discord_requirements() -> bool:
-    """Check if Discord dependencies are available.
-
-    Lazy-installs discord.py via ``tools.lazy_deps.ensure("platform.discord")``
-    on first call if not present. After successful install, re-binds module
-    globals so ``DISCORD_AVAILABLE`` becomes True.
-    """
-    global DISCORD_AVAILABLE, discord, DiscordMessage, Intents, commands
+    """Check if Discord dependencies are available. Delegates to shared helper."""
+    global DISCORD_AVAILABLE
     if DISCORD_AVAILABLE:
         return True
-    try:
-        from tools.lazy_deps import ensure as _lazy_ensure
-        _lazy_ensure("platform.discord", prompt=False)
-    except Exception:
-        return False
-    try:
-        import discord as _discord
-        from discord import Message as _DM, Intents as _Intents
-        from discord.ext import commands as _commands
-    except ImportError:
-        return False
-    discord = _discord
-    DiscordMessage = _DM
-    Intents = _Intents
-    commands = _commands
-    DISCORD_AVAILABLE = True
-    _define_discord_view_classes()
-    return True
-
-
+    from gateway.platforms.helpers import check_platform_requirements
+    return check_platform_requirements("platform.discord", _reimport_discord)
 def _build_allowed_mentions():
     """Build Discord ``AllowedMentions`` with safe defaults, overridable via env.
 

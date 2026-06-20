@@ -93,10 +93,12 @@ def _is_loopback_host(host: str) -> bool:
 
 
 def check_webhook_requirements() -> bool:
-    """Check if webhook adapter dependencies are available."""
-    return AIOHTTP_AVAILABLE
-
-
+    """Check if Webhook dependencies are available. Delegates to shared helper."""
+    global WEBHOOK_AVAILABLE
+    if WEBHOOK_AVAILABLE:
+        return True
+    from gateway.platforms.helpers import check_platform_requirements
+    return check_platform_requirements("platform.webhook")
 class WebhookAdapter(BasePlatformAdapter):
     """Generic webhook receiver that triggers agent runs from HTTP POSTs."""
 

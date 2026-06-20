@@ -100,16 +100,12 @@ def _is_automated_sender(address: str, headers: dict) -> bool:
     return False
     
 def check_email_requirements() -> bool:
-    """Check if email platform dependencies are available."""
-    addr = os.getenv("EMAIL_ADDRESS")
-    pwd = os.getenv("EMAIL_PASSWORD")
-    imap = os.getenv("EMAIL_IMAP_HOST")
-    smtp = os.getenv("EMAIL_SMTP_HOST")
-    if not all([addr, pwd, imap, smtp]):
-        return False
-    return True
-
-
+    """Check if Email dependencies are available. Delegates to shared helper."""
+    global EMAIL_AVAILABLE
+    if EMAIL_AVAILABLE:
+        return True
+    from gateway.platforms.helpers import check_platform_requirements
+    return check_platform_requirements("platform.email")
 def _decode_header_value(raw: str) -> str:
     """Decode an RFC 2047 encoded email header into a plain string."""
     parts = decode_header(raw)

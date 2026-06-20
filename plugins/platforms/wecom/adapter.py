@@ -106,10 +106,12 @@ VOICE_SUPPORTED_MIMES = {"audio/amr"}
 
 
 def check_wecom_requirements() -> bool:
-    """Check if WeCom runtime dependencies are available."""
-    return AIOHTTP_AVAILABLE and HTTPX_AVAILABLE
-
-
+    """Check if Wecom dependencies are available. Delegates to shared helper."""
+    global WECOM_AVAILABLE
+    if WECOM_AVAILABLE:
+        return True
+    from gateway.platforms.helpers import check_platform_requirements
+    return check_platform_requirements("platform.wecom", _reimport_wecom)
 def _coerce_list(value: Any) -> List[str]:
     """Coerce config values into a trimmed string list."""
     if value is None:
