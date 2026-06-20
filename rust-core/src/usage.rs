@@ -121,7 +121,7 @@ pub fn format_token_count_compact_rs(value: i64) -> String {
                 format!("{scaled:.0}")
             };
             // Strip trailing zeros and dot
-            let text = if let Some(pos) = text.find('.') {
+            let text = if let Some(_pos) = text.find('.') {
                 let trimmed = text.trim_end_matches('0');
                 trimmed.trim_end_matches('.')
             } else {

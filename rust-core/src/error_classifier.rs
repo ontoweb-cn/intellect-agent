@@ -386,7 +386,7 @@ fn make_reason(py: Python<'_>, value: &str) -> Py<FailoverReason> {
 }
 
 fn build_result(
-    py: Python<'_>,
+    _py: Python<'_>,
     reason: Py<FailoverReason>,
     status_code: Option<i32>,
     provider: Option<String>,
@@ -649,7 +649,7 @@ pub fn classify_api_error_rs(
         };
 
         if let Some((reason, retryable, compress, rotate, fallback)) = result {
-            let mut r = build_result(py, reason, status_code, prov, mdl, message_str, retryable, compress, rotate, fallback);
+            let r = build_result(py, reason, status_code, prov, mdl, message_str, retryable, compress, rotate, fallback);
             return Ok(r);
         }
     }
@@ -683,7 +683,7 @@ pub fn classify_api_error_rs(
     if any_match(&error_msg, USAGE_LIMIT) {
         let reason = if any_match(&error_msg, USAGE_TRANSIENT) { make_reason(py, "rate_limit") } else { make_reason(py, "billing") };
         let retryable = any_match(&error_msg, USAGE_TRANSIENT);
-        let mut r = build_result(py, reason, status_code, prov.clone(), mdl.clone(), message_str.clone(), retryable, false, true, true);
+        let r = build_result(py, reason, status_code, prov.clone(), mdl.clone(), message_str.clone(), retryable, false, true, true);
         return Ok(r);
     }
     if any_match(&error_msg, BILLING) {

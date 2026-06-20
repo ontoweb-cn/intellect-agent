@@ -8,26 +8,6 @@ use regex::Regex;
 
 use std::sync::LazyLock;
 
-/// Extract the first positive integer found in `s` after skipping any
-/// leading non-digit characters (spaces, colons, equals, etc.).
-/// Only returns values in the reasonable context-length range [1024, 10_000_000].
-fn extract_context_number(s: &str) -> Option<i64> {
-    let digits: String = s.chars()
-        .skip_while(|c| !c.is_ascii_digit())
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    digits.parse::<i64>().ok().filter(|&n| (1024..=10_000_000).contains(&n))
-}
-
-/// Extract the first positive integer found in `s` (no range check).
-fn extract_first_number(s: &str) -> Option<i64> {
-    let digits: String = s.chars()
-        .skip_while(|c| !c.is_ascii_digit())
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    digits.parse::<i64>().ok().filter(|&n| n > 0)
-}
-
 // ── Provider prefix stripping ──────────────────────────────────────────────
 
 /// Provider names that can appear as a "provider:" prefix before a model ID.
