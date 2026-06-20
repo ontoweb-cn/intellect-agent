@@ -1313,12 +1313,19 @@ class SessionDB:
     ) -> Optional[Dict[str, Any]]:
         """Get a session by ID.
 
-        When *actor_member_id* is provided, visibility follows
-        ``agent.session_visibility`` (strict NULL by default).
+        Excludes ``system_prompt`` from the result by default (the column
+        can be 100K+ characters and most callers don't need it).
         """
         with self._lock:
             cursor = self._conn.execute(
-                "SELECT * FROM sessions WHERE id = ?", (session_id,)
+                """SELECT id, source, title, model, base_url, started_at, ended_at,
+                   end_reason, message_count, tool_call_count, total_input_tokens,
+                   total_output_tokens, total_cache_read_tokens, total_cache_write_tokens,
+                   total_reasoning_tokens, estimated_cost_usd, cost_status,
+                   system_prompt_version, parent_session_id, compression_count,
+                   last_active_at, platform, handoff_state, handoff_data,
+                   extra_metadata, tags, session_meta
+                   FROM sessions WHERE id = ?""", (session_id,)
             )
             row = cursor.fetchone()
         if row is None:

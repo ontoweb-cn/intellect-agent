@@ -1860,15 +1860,18 @@ class AIAgent:
                 cleaned.append(msg)
 
             # Guard: never overwrite a larger session log with fewer messages.
-            # Protects against data loss when a resumed agent starts with
-            # partial history and would otherwise clobber the full JSON log.
-            if log_file.exists():
+            # Uses in-memory counter to avoid reading the entire log file from
+            # disk on every persist (O(session_size) disk I/O saved per call).
+            _existing_count = getattr(self, '_last_snapshot_message_count', None)
+            if _existing_count is None and log_file.exists():
                 try:
                     existing = json.loads(log_file.read_text(encoding="utf-8"))
-                    existing_count = existing.get("message_count", len(existing.get("messages", [])))
-                    if existing_count > len(cleaned):
-                        logging.debug(
-                            "Skipping session log overwrite: existing has %d messages, current has %d",
+                    _existing_count = existing.get("message_count", len(existing.get("messages", [])))
+                except Exception:
+                    _existing_count = 0
+            if _existing_count and _existing_count > len(cleaned):
+                logging.debug(
+                    "Skipping session log overwrite: last snapshot has %d messages, current has %d",
                             existing_count, len(cleaned),
                         )
                         return
@@ -1895,6 +1898,7 @@ class AIAgent:
                 indent=2,
                 default=str,
             )
+            self._last_snapshot_message_count = len(cleaned)
 
         except Exception as e:
             if self.verbose_logging:

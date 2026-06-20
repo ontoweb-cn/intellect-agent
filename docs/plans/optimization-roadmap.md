@@ -9,10 +9,21 @@
 
 | # | 问题 | 位置 | 方案 | 状态 |
 |---|------|------|------|:--:|
-| P1 | 启动时模块级导入整个 agent 栈，`--version` 也会加载 | `intellect_cli/main.py:345-413` | 将 config/logging/IPv4 设置移到子命令 handler 内部 | ⬜ |
-| P2 | 每轮对话重算 token 2 次（完整消息遍历 + tool schema 序列化） | `conversation_loop.py:1096-1099` | 缓存估算值，仅在消息变化时重算 | ⬜ |
-| P3 | 每轮 API 调用对 tool_call arguments 做 `json.loads` + `json.dumps(sort_keys=True)` | `conversation_loop.py:1061-1086` | 归一化在存储时做一次，不在每次发送时重复 | ⬜ |
-| P4 | `estimate_messages_tokens_rough` 为每条消息构建 shadow dict 拷贝 | `model_metadata.py:1683-1713` | 改为字符计数循环，不构建中间对象 | ⬜ |
+| P1 | 启动时模块级导入整个 agent 栈 | `intellect_cli/main.py:345-413` | `--version`/`--help` 快速路径绕过 init | ✅ |
+| P2 | 每轮对话重算 token 2 次 | `conversation_loop.py:1096-1099` | 缓存估算值，消息数不变时跳过 | ✅ |
+| P3 | 每轮 API 调用对 tool_call arguments 重复序列化 | `conversation_loop.py:1061-1086` | `_tc_normalized` 标记跳过已处理消息 | ✅ |
+| P4 | `estimate_messages_tokens_rough` 构建 shadow dict | `model_metadata.py:1683-1713` | 内联字符计数，不创建中间对象 | ✅ |
+
+## 🔴 性能优化 — 后续（P5-P10）
+
+| # | 问题 | 位置 | 方案 |
+|---|------|------|------|
+| **P5** | `get_session()` 用 `SELECT *` 加载 35 列含 system_prompt（可 100K+） | `intellect_state.py:1321` | 按调用方需求只 SELECT 需要的列 |
+| **P6** | `list_sessions_rich()` 压缩链每个 session 一次查询 | `intellect_state.py:1700-1707` | CTE 批量化或缓存压缩 tip |
+| **P7** | `_save_session_log` 每次读整个日志文件再解析仅为了跳过写入 | `run_agent.py:1863-1865` | 内存侧追踪 `_last_message_count` 避免磁盘读 |
+| **P8** | System prompt 压缩事件后全量重建（含 skills/media 扫描） | `conversation_loop.py:582-594` | 区分 stable/volatile 层，仅重建变化的部分 |
+| **P9** | `_flush_messages_to_session_db` 每条消息单独序列化 6 次 `json.dumps` | `run_agent.py:1492-1530` | 批量 `replace_messages` 或预序列化 |
+| **P10** | `model_metadata.py` endpoint 缓存无 LRU 上限 | `model_metadata.py:78` | 加 `OrderedDict` + 上限 32 条目 |
 
 ## 🟡 架构优化（中影响）
 
@@ -27,7 +38,7 @@
 
 | # | 问题 | 位置 | 数量 | 状态 |
 |---|------|------|------|:--:|
-| Q1 | `"non-critical error"` 模板日志 119 处无上下文 | `gateway/run.py` | 119 | ⬜ |
+| Q1 | `"non-critical error"` 模板日志 159 处无上下文 | `gateway/run.py` + `webui/api/routes.py` | 159 | ✅ `_log_non_critical()` 自动注入函数名 |
 | Q2 | `except Exception:` 宽泛捕获 | `run_agent.py`(67), `gateway/run.py`(230+) | 297+ | ⬜ |
 | Q3 | 8 个独立 config 读取路径绕过缓存 | 多个文件 | 8 | ⬜ |
 | Q4 | 60+ agent 模块无对应测试文件 | `agent/` 目录 | 60+ | ⬜ |
