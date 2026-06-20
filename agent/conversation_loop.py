@@ -300,6 +300,9 @@ def run_conversation(
         _print_preview = _summarize_user_message_for_log(user_message)
         agent._safe_print(f"💬 Starting conversation: '{_print_preview[:60]}{'...' if len(_print_preview) > 60 else ''}'")
     
+    # ==================================================================
+    # Phase 1: System prompt + Preflight
+    # ==================================================================
     # ── System prompt (cached per session for prefix caching) ──
     # Built once on first call, reused for all subsequent calls.
     # Only rebuilt after context compression events (which invalidate
@@ -594,6 +597,9 @@ def run_conversation(
                 and "skill_manage" in agent.valid_tool_names):
             agent._iters_since_skill += 1
         
+    # ==================================================================
+    # Phase 2: Build API messages
+    # ==================================================================
         # ── Pre-API-call /steer drain ──────────────────────────────────
         # If a /steer arrived during the previous API call (while the model
         # was thinking), drain it now — before we build api_messages — so
@@ -2031,6 +2037,9 @@ def run_conversation(
                 status_code = getattr(api_error, "status_code", None)
                 error_context = agent._extract_api_error_context(api_error)
 
+    # ==================================================================
+    # Phase 4: Error classification + recovery (9 error paths)
+    # ==================================================================
                 # ── Classify the error for structured recovery decisions ──
                 _compressor = getattr(agent, "context_compressor", None)
                 _ctx_len = getattr(_compressor, "context_length", 200000) if _compressor else 200000
@@ -4233,6 +4242,9 @@ def run_conversation(
     agent._drop_trailing_empty_response_scaffolding(messages)
     agent._persist_session(messages, conversation_history)
 
+    # ==================================================================
+    # Phase 5: Post-turn hooks (diagnostics, persistence, background review)
+    # ==================================================================
     # ── Turn-exit diagnostic log ─────────────────────────────────────
     # Always logged at INFO so agent.log captures WHY every turn ended.
     # When the last message is a tool result (agent was mid-work), log
