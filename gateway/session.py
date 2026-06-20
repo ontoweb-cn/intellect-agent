@@ -818,34 +818,34 @@ class SessionStore:
         """Write all entries to SQLite session_index table. Lock held by caller."""
         if self._db is None:
             return
-        conn = self._db._conn
-        now = datetime.now(timezone.utc).timestamp()
-        for entry in self._entries.values():
-            conn.execute(
-                "INSERT OR REPLACE INTO session_index "
-                "(session_key, session_id, created_at, updated_at, display_name, "
-                "platform, chat_type, input_tokens, output_tokens, "
-                "cache_read_tokens, cache_write_tokens, total_tokens, "
-                "estimated_cost_usd, cost_status, last_prompt_tokens, "
-                "was_auto_reset, auto_reset_reason, reset_had_activity, "
-                "is_fresh_reset, expiry_finalized, suspended, "
-                "resume_pending, resume_reason, last_resume_marked_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    entry.session_key, entry.session_id,
-                    entry.created_at.timestamp(), entry.updated_at.timestamp(),
-                    entry.display_name,
-                    entry.platform.value if entry.platform else None,
-                    entry.chat_type, entry.input_tokens, entry.output_tokens,
-                    entry.cache_read_tokens, entry.cache_write_tokens, entry.total_tokens,
-                    entry.estimated_cost_usd, entry.cost_status, entry.last_prompt_tokens,
-                    int(entry.was_auto_reset), entry.auto_reset_reason,
-                    int(entry.reset_had_activity), int(entry.is_fresh_reset),
-                    int(entry.expiry_finalized), int(entry.suspended),
-                    int(entry.resume_pending), entry.resume_reason,
-                    entry.last_resume_marked_at.timestamp() if entry.last_resume_marked_at else None,
-                ),
-            )
+        def _do(conn):
+            for entry in self._entries.values():
+                conn.execute(
+                    "INSERT OR REPLACE INTO session_index "
+                    "(session_key, session_id, created_at, updated_at, display_name, "
+                    "platform, chat_type, input_tokens, output_tokens, "
+                    "cache_read_tokens, cache_write_tokens, total_tokens, "
+                    "estimated_cost_usd, cost_status, last_prompt_tokens, "
+                    "was_auto_reset, auto_reset_reason, reset_had_activity, "
+                    "is_fresh_reset, expiry_finalized, suspended, "
+                    "resume_pending, resume_reason, last_resume_marked_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        entry.session_key, entry.session_id,
+                        entry.created_at.timestamp(), entry.updated_at.timestamp(),
+                        entry.display_name,
+                        entry.platform.value if entry.platform else None,
+                        entry.chat_type, entry.input_tokens, entry.output_tokens,
+                        entry.cache_read_tokens, entry.cache_write_tokens, entry.total_tokens,
+                        entry.estimated_cost_usd, entry.cost_status, entry.last_prompt_tokens,
+                        int(entry.was_auto_reset), entry.auto_reset_reason,
+                        int(entry.reset_had_activity), int(entry.is_fresh_reset),
+                        int(entry.expiry_finalized), int(entry.suspended),
+                        int(entry.resume_pending), entry.resume_reason,
+                        entry.last_resume_marked_at.timestamp() if entry.last_resume_marked_at else None,
+                    ),
+                )
+        self._db._execute_write(_do)
     
     def _generate_session_key(self, source: SessionSource) -> str:
         """Generate a session key from a source."""

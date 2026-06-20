@@ -40,6 +40,7 @@ fn _is_locked_or_busy(e: &PyErr) -> bool {
 #[pyclass]
 pub struct SQLiteBackend {
     conn: Arc<Mutex<Connection>>,
+    read_conn: Arc<Mutex<Connection>>,
     db_path: String,
     write_count: AtomicU64,
     checkpoint_every: u64,
@@ -59,18 +60,26 @@ impl SQLiteBackend {
         conn.execute_batch("PRAGMA foreign_keys=ON")
             .map_err(_map_rusqlite_err)?;
 
+        // Open a second connection for reads (WAL mode allows concurrent
+        // readers without blocking the writer's Mutex)
+        let read_conn = Connection::open(db_path).map_err(_map_rusqlite_err)?;
+        read_conn.execute_batch("PRAGMA foreign_keys=ON")
+            .map_err(_map_rusqlite_err)?;
+
         Ok(SQLiteBackend {
             conn: Arc::new(Mutex::new(conn)),
+            read_conn: Arc::new(Mutex::new(read_conn)),
             db_path: db_path.to_string(),
             write_count: AtomicU64::new(0),
             checkpoint_every: CHECKPOINT_EVERY_N_WRITES,
         })
     }
 
-    /// Return a RustConnection proxy sharing the same underlying connection.
-    /// Used for read operations outside of execute_write.
+    /// Return a RustConnection backed by a separate read connection.
+    /// Uses a dedicated read connection in WAL mode — reads never block
+    /// on the write Mutex, avoiding GIL+Mutex deadlock.
     fn connection(&self) -> RustConnection {
-        RustConnection::from_arc(Arc::clone(&self.conn))
+        RustConnection::from_arc(Arc::clone(&self.read_conn))
     }
 
     /// Return the database path.
@@ -80,11 +89,14 @@ impl SQLiteBackend {
 
     /// Close the connection with a passive WAL checkpoint.
     fn close(&self) -> PyResult<()> {
-        // Do a passive checkpoint before closing
+        // Do a passive checkpoint on both connections before closing
         if let Ok(conn) = self.conn.lock() {
             let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
         }
-        // Connection will be closed when the Arc is dropped.
+        if let Ok(read_conn) = self.read_conn.lock() {
+            let _ = read_conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
+        }
+        // Connections will be closed when their Arcs are dropped.
         Ok(())
     }
 
