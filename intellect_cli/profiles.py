@@ -1601,6 +1601,7 @@ def resolve_profile_env(profile_name: str) -> str:
     validate_profile_name(canon)
     profile_dir = get_profile_dir(canon)
 
+    # lgtm[py/path-injection]: canon validated by normalize+validate_profile_name
     if canon != "default" and not profile_dir.is_dir():
         raise FileNotFoundError(
             f"Profile '{canon}' does not exist. "
