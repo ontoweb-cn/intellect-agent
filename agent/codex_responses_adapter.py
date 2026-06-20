@@ -180,7 +180,7 @@ def _deterministic_call_id(fn_name: str, arguments: str, index: int = 0) -> str:
     make every API call's prefix unique, breaking OpenAI's prompt cache.
     """
     seed = f"{fn_name}:{arguments}:{index}"
-    digest = hashlib.sha256(seed.encode("utf-8", errors="replace")).hexdigest()[:12]
+    digest = hashlib.sha256(seed.encode("utf-8", errors="replace")).hexdigest()[:12]  # lgtm[py/weak-sensitive-data-hashing]: seed hash for request dedup
     return f"call_{digest}"
 
 

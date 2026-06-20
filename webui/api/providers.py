@@ -1275,7 +1275,7 @@ def _account_usage_payload_to_snapshot(payload: Any) -> Any:
 def _account_usage_cache_key(provider: str, home: Path, api_key: str | None) -> tuple[str, str, str]:
     key_fingerprint = ""
     if api_key:
-        key_fingerprint = hashlib.sha256(api_key.encode("utf-8", "ignore")).hexdigest()
+        key_fingerprint = hashlib.sha256(api_key.encode("utf-8", "ignore")).hexdigest()  # lgtm[py/weak-sensitive-data-hashing]: account-usage polling cache key
     return ((provider or "").strip().lower(), str(Path(home)), key_fingerprint)
 
 

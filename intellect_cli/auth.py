@@ -726,7 +726,7 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
     if not api_key:
         return default_url
 
-    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]  # lgtm[py/weak-sensitive-data-hashing]: token fingerprint for telemetry
 
     # Step 1: DB extra_metadata cache (primary)
     try:
@@ -915,7 +915,7 @@ def _token_fingerprint(token: Any) -> Optional[str]:
     cleaned = token.strip()
     if not cleaned:
         return None
-    return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:12]
+    return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:12]  # lgtm[py/weak-sensitive-data-hashing]: token fingerprint for cache
 
 
 def _oauth_trace_enabled() -> bool:
@@ -2593,7 +2593,7 @@ def _spotify_code_verifier(length: int = 64) -> str:
 
 
 def _spotify_code_challenge(code_verifier: str) -> str:
-    digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+    digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()  # lgtm[py/weak-sensitive-data-hashing]: PKCE S256 per RFC 7636
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 

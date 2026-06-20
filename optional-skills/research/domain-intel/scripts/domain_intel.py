@@ -90,7 +90,7 @@ def check_ssl(host, port=443, timeout=10):
     except ssl.SSLCertVerificationError as e:
         warning = str(e)
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
+        ctx.check_hostname = False  # lgtm[py/insecure-protocol]: intentional fallback to inspect cert details on failure
         ctx.verify_mode = ssl.CERT_NONE
         with socket.create_connection((host, port), timeout=timeout) as sock:
             with ctx.wrap_socket(sock, server_hostname=host) as s:
@@ -273,7 +273,7 @@ def check_available(domain):
     ssl_up = False
     try:
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
+        ctx.check_hostname = False  # lgtm[py/insecure-protocol]: reconnect without verification for SSL reachability check
         ctx.verify_mode = ssl.CERT_NONE
         with socket.create_connection((domain, 443), timeout=3) as s:
             with ctx.wrap_socket(s, server_hostname=domain):
