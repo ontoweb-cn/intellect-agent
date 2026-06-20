@@ -30,13 +30,13 @@ from agent.display import (
 )
 from agent.tool_guardrails import ToolGuardrailDecision
 from agent.tool_dispatch_helpers import (
-from agent.safe_print import safe_print
     _is_destructive_command,
     _is_multimodal_tool_result,
     _multimodal_text_summary,
     _append_subdir_hint_to_multimodal,
     make_tool_result_message,
 )
+from agent.safe_print import safe_print
 from tools.terminal_tool import (
     get_active_env,
 )
