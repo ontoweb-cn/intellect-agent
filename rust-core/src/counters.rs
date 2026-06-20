@@ -67,6 +67,11 @@ impl IterationBudget {
     }
 
     #[getter]
+    fn max_total(&self) -> i64 {
+        self.max_total
+    }
+
+    #[getter]
     fn used(&self) -> i64 {
         self.used.load(Ordering::SeqCst)
     }
