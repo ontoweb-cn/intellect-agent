@@ -136,40 +136,66 @@ impl RustConnection {
         let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
         let mut stmt = stmt;
 
-        let data: Vec<Vec<SqlValue>> = match params {
-            None => {
-                let rows_iter = stmt
-                    .query_map([], |row| {
-                        (0..columns.len())
-                            .map(|i| SqlValue::from_row(row, i))
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .map_err(_map_err)?;
-                collect_mapped_rows(rows_iter)
-            }
-            Some(p) => {
-                let param_vals = python_to_params(p)?;
-                let rows_iter = stmt
-                    .query_map(rusqlite::params_from_iter(param_vals.iter()), |row| {
-                        (0..columns.len())
-                            .map(|i| SqlValue::from_row(row, i))
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .map_err(_map_err)?;
-                collect_mapped_rows(rows_iter)
-            }
-        };
+        // If the statement returns columns, it's a query (SELECT/PRAGMA).
+        // Otherwise it's a mutation (INSERT/UPDATE/DELETE) — use execute()
+        // and get rowcount from conn.changes().
+        if columns.is_empty() {
+            let affected = match params {
+                None => {
+                    stmt.execute([]).map_err(_map_err)?;
+                    conn.changes() as i64
+                }
+                Some(p) => {
+                    let param_vals = python_to_params(p)?;
+                    stmt.execute(rusqlite::params_from_iter(param_vals.iter()))
+                        .map_err(_map_err)?;
+                    conn.changes() as i64
+                }
+            };
+            let lastrowid_val = Some(conn.last_insert_rowid());
+            Ok(RustCursor {
+                columns,
+                data: Vec::new(),
+                pos: RefCell::new(0),
+                rowcount: affected,
+                lastrowid_val,
+            })
+        } else {
+            let data: Vec<Vec<SqlValue>> = match params {
+                None => {
+                    let rows_iter = stmt
+                        .query_map([], |row| {
+                            (0..columns.len())
+                                .map(|i| SqlValue::from_row(row, i))
+                                .collect::<Result<Vec<_>, _>>()
+                        })
+                        .map_err(_map_err)?;
+                    collect_mapped_rows(rows_iter)
+                }
+                Some(p) => {
+                    let param_vals = python_to_params(p)?;
+                    let rows_iter = stmt
+                        .query_map(rusqlite::params_from_iter(param_vals.iter()), |row| {
+                            (0..columns.len())
+                                .map(|i| SqlValue::from_row(row, i))
+                                .collect::<Result<Vec<_>, _>>()
+                        })
+                        .map_err(_map_err)?;
+                    collect_mapped_rows(rows_iter)
+                }
+            };
 
-        let rowcount = data.len() as i64;
-        let lastrowid_val = Some(conn.last_insert_rowid());
+            let rowcount = data.len() as i64;
+            let lastrowid_val = Some(conn.last_insert_rowid());
 
-        Ok(RustCursor {
-            columns,
-            data,
-            pos: RefCell::new(0),
-            rowcount,
-            lastrowid_val,
-        })
+            Ok(RustCursor {
+                columns,
+                data,
+                pos: RefCell::new(0),
+                rowcount,
+                lastrowid_val,
+            })
+        }
     }
 
     fn executescript(&self, ddl: &str) -> PyResult<()> {

@@ -267,10 +267,12 @@ def _seed_oauth_providers(cursor) -> None:
 # existing references (FTS_TRIGRAM_SQL) don't break at import time.
 
 
-# Feature flag: set to 1 to route all SessionDB reads through the Rust
-# backend instead of Python sqlite3.  Python fallback is preserved until
-# full test coverage confirms parity.
-SESSIONDB_USE_RUST_READS = 0
+# Feature flag: set to 1 to route all SessionDB reads AND writes through
+# the Rust backend instead of Python sqlite3.  Python fallback is preserved
+# until full test coverage confirms parity.
+# 0 = Python sqlite3 for both reads and writes (safe default)
+# 1 = Rust rusqlite for both reads and writes
+SESSIONDB_USE_RUST_RW = 0
 
 
 class SessionDB:
@@ -559,7 +561,7 @@ class SessionDB:
         (transforming existing rows) which cannot be handled declaratively.
 
         Schema init always uses the Python sqlite3 connection (one-time
-        operation, not affected by SESSIONDB_USE_RUST_READS).
+        operation, not affected by SESSIONDB_USE_RUST_RW).
         """
         conn = self._storage_backend._python_conn
         conn.executescript(SCHEMA_SQL)

@@ -219,12 +219,12 @@ class RustSQLiteBackend:
     def connection(self):
         """Return a connection for read operations.
 
-        When ``SESSIONDB_USE_RUST_READS=1`` in ``intellect_state``, returns
+        When ``SESSIONDB_USE_RUST_RW=1`` in ``intellect_state``, returns
         a ``RustConnection`` sharing the same underlying rusqlite connection
         as the write path.  Otherwise falls back to Python sqlite3.
         """
-        from intellect_state import SESSIONDB_USE_RUST_READS
-        if SESSIONDB_USE_RUST_READS:
+        from intellect_state import SESSIONDB_USE_RUST_RW
+        if SESSIONDB_USE_RUST_RW:
             return self._backend.connection()
         return self._python_conn
 
@@ -255,13 +255,16 @@ class RustSQLiteBackend:
             return CursorProxy(cursor)
 
     def execute_write(self, fn):
-        """Execute a write with BEGIN IMMEDIATE + retry.
+        """Execute a write with BEGIN IMMEDIATE / COMMIT / ROLLBACK + retry.
 
-        Uses Python's retry loop with the Python sqlite3 connection.
-        The Rust backend's execute_write is available for callbacks that
-        can use RustConnection, but existing SessionDB callbacks need
-        the Python sqlite3 interface.
+        When ``SESSIONDB_USE_RUST_RW=1``, delegates to the Rust backend's
+        ``execute_write`` — the callback receives a ``RustConnection``.
+        Otherwise uses Python sqlite3.
         """
+        from intellect_state import SESSIONDB_USE_RUST_RW
+        if SESSIONDB_USE_RUST_RW:
+            return self._backend.execute_write(fn)
+
         last_err = None
         for attempt in range(WRITE_MAX_RETRIES):
             try:
