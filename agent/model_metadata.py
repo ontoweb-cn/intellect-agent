@@ -70,14 +70,27 @@ def _strip_provider_prefix(model: str) -> str:
     """
     return rust_strip_provider_prefix(model)
 
+from collections import OrderedDict
+
 _model_metadata_cache: Dict[str, Dict[str, Any]] = {}
 _model_metadata_cache_time: float = 0
 _novita_metadata_cache: Dict[str, Dict[str, Any]] = {}
 _novita_metadata_cache_time: float = 0
 _MODEL_CACHE_TTL = 3600
-_endpoint_model_metadata_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
+_endpoint_model_metadata_cache: OrderedDict[str, Dict[str, Dict[str, Any]]] = OrderedDict()
 _endpoint_model_metadata_cache_time: Dict[str, float] = {}
 _ENDPOINT_MODEL_CACHE_TTL = 300
+_ENDPOINT_CACHE_MAX_ENTRIES = 32  # LRU eviction when exceeded
+
+
+def _endpoint_cache_set(key: str, value: dict) -> None:
+    """Set a cache entry with LRU eviction if max entries exceeded."""
+    _endpoint_model_metadata_cache[key] = value
+    _endpoint_model_metadata_cache.move_to_end(key)
+    while len(_endpoint_model_metadata_cache) > _ENDPOINT_CACHE_MAX_ENTRIES:
+        _oldest = next(iter(_endpoint_model_metadata_cache))
+        _endpoint_model_metadata_cache.pop(_oldest)
+        _endpoint_model_metadata_cache_time.pop(_oldest, None)
 
 # Descending tiers for context length probing when the model is unknown.
 # We start at 256K (covers GPT-5.x, many current large-context models) and
@@ -684,7 +697,7 @@ def fetch_endpoint_model_metadata(
                     if isinstance(alt_id, str) and alt_id and alt_id != model_id:
                         _add_model_aliases(cache, alt_id, entry)
 
-                _endpoint_model_metadata_cache[normalized] = cache
+                _endpoint_cache_set(normalized, cache)
                 _endpoint_model_metadata_cache_time[normalized] = time.time()
                 return cache
         except Exception as exc:
@@ -738,7 +751,7 @@ def fetch_endpoint_model_metadata(
                 except Exception:
                     logger.debug('non-critical operation failed', exc_info=True)
 
-            _endpoint_model_metadata_cache[normalized] = cache
+            _endpoint_cache_set(normalized, cache)
             _endpoint_model_metadata_cache_time[normalized] = time.time()
             return cache
         except Exception as exc:
@@ -746,7 +759,7 @@ def fetch_endpoint_model_metadata(
 
     if last_error:
         logger.debug("Failed to fetch model metadata from %s/models: %s", normalized, last_error)
-    _endpoint_model_metadata_cache[normalized] = {}
+    _endpoint_cache_set(normalized, {})
     _endpoint_model_metadata_cache_time[normalized] = time.time()
     return {}
 
