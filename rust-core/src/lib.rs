@@ -11,6 +11,7 @@ pub mod crypto;
 pub mod error_classifier;
 pub mod fts;
 pub mod gateway;
+pub mod prompt_caching;
 pub mod sandbox;
 pub mod sanitize;
 pub mod schema;
@@ -72,6 +73,9 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── Phase 1: Counters — iteration budget + jittered backoff ────────
     m.add_class::<counters::IterationBudget>()?;
     m.add_function(wrap_pyfunction!(counters::jittered_backoff_rs, m)?)?;
+
+    // ── Prompt caching ────────────────────────────────────────────────
+    m.add_function(wrap_pyfunction!(prompt_caching::apply_anthropic_cache_control_rs, m)?)?;
 
     // ── Phase 3: Error classifier — API error taxonomy ─────────────────
     m.add_class::<error_classifier::FailoverReason>()?;

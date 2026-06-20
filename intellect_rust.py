@@ -249,6 +249,12 @@ rust_jittered_backoff: Callable = (
     _CORE.jittered_backoff_rs if _has() else None
 )
 
+# ── Prompt caching ──────────────────────────────────────────────────────
+
+rust_apply_cache_control: Callable = (
+    _CORE.apply_anthropic_cache_control_rs if _has() else None
+)
+
 # ── Model normalization ───────────────────────────────────────────────────
 
 rust_normalize_model_name: Callable = (
