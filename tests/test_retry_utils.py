@@ -78,6 +78,8 @@ def test_backoff_uses_locked_tick_for_seed(monkeypatch):
     """Seed derivation should use per-call tick captured under lock."""
     import time
 
+    # Disable Rust path so we test the Python implementation directly
+    monkeypatch.setattr(retry_utils, "_rust_jittered_backoff", None)
     monkeypatch.setattr(retry_utils, "_jitter_counter", 0)
 
     recorded_seeds = []

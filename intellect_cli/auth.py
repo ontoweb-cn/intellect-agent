@@ -5057,7 +5057,7 @@ def _write_shared_ontoweb_state(state: Dict[str, Any]) -> None:
             )
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                    fh.write(json.dumps(shared, indent=2, sort_keys=True))
+                    fh.write(json.dumps(shared, indent=2, sort_keys=True))  # lgtm[py/clear-text-storage-sensitive-data]: O_EXCL+0o600 atomic write
                     fh.flush()
                     os.fsync(fh.fileno())
                 os.replace(tmp, path)

@@ -847,7 +847,7 @@ class ContextCompressor(ContextEngine):
                 continue
             if len(content) < 200:
                 continue
-            h = hashlib.md5(content.encode("utf-8", errors="replace")).hexdigest()[:12]  # lgtm[py/weak-sensitive-data-hashing]: content dedup, not security
+            h = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[:12]  # lgtm[py/weak-sensitive-data-hashing]: content dedup, not security
             if h in content_hashes:
                 # This is an older duplicate — replace with back-reference
                 result[i] = {**msg, "content": "[Duplicate tool output — same content as a more recent call]"}
