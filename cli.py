@@ -1055,41 +1055,13 @@ def _normalize_git_bash_path(p: Optional[str]) -> Optional[str]:
     return p
 
 
-def _git_repo_root() -> Optional[str]:
-    """Return the git repo root for CWD, or None if not in a repo.
-
-    Runs through :func:`_normalize_git_bash_path` so callers can pass
-    the result directly to ``Path``/``subprocess.Popen(cwd=...)`` on
-    Windows without hitting ``C:\\c\\Users\\...`` style resolution
-    mistakes.
-    """
-    import subprocess
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode == 0:
-            return _normalize_git_bash_path(result.stdout.strip())
-    except Exception:
-        pass
-    return None
-
-
-def _path_is_within_root(path: Path, root: Path) -> bool:
-    """Return True when a resolved path stays within the expected root."""
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
 from intellect_cli.worktree_helpers import (
     _setup_worktree,
     _worktree_has_unpushed_commits,
     _cleanup_worktree,
     _prune_stale_worktrees,
+    _git_repo_root,
+    _path_is_within_root,
 )
 
 def _prune_orphaned_branches(repo_root: str) -> None:

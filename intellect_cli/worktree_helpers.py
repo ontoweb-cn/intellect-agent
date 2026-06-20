@@ -8,10 +8,36 @@ import os
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _git_repo_root() -> Optional[str]:
+    """Return the git repo root for CWD, or None if not in a repo."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            # Import here — _normalize_git_bash_path stays in cli.py
+            from cli import _normalize_git_bash_path
+            return _normalize_git_bash_path(result.stdout.strip())
+    except Exception:
+        pass
+    return None
+
+
+def _path_is_within_root(path: Path, root: Path) -> bool:
+    """Return True when a resolved path stays within the expected root."""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 def _setup_worktree(repo_root: str = None) -> Optional[Dict[str, str]]:
     """Create an isolated git worktree for this CLI session.
