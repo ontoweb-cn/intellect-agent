@@ -1872,12 +1872,9 @@ class AIAgent:
             if _existing_count and _existing_count > len(cleaned):
                 logging.debug(
                     "Skipping session log overwrite: last snapshot has %d messages, current has %d",
-                            existing_count, len(cleaned),
-                        )
-                        return
-                except Exception:
-                    # corrupted existing file — allow the overwrite
-                    logger.debug('non-critical operation failed', exc_info=True)
+                    _existing_count, len(cleaned),
+                )
+                return
 
             entry = {
                 "session_id": self.session_id,
