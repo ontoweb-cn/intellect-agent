@@ -108,25 +108,72 @@ jobs:
       - name: Install maturin
         run: uv pip install --system maturin
 
-      - name: Build platform artifacts
+      - name: Build standalone bundle (wheels + native)
         shell: bash
         env:
           PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
-          PYTHON_WHEEL_DIR: ${{ github.workspace }}/dist/python
         run: |
-          chmod +x packaging/scripts/ci-build-platform.sh
-          packaging/scripts/ci-build-platform.sh
+          chmod +x packaging/scripts/build-standalone-bundle.sh packaging/scripts/ci-build-platform.sh
+          # Build the standalone bundle (includes Rust wheel + Python wheel + assets)
+          cp dist/python/intellect_agent-*.whl dist/ 2>/dev/null || true
+          packaging/scripts/build-standalone-bundle.sh \
+            --platform "$PLATFORM" --arch "$ARCH"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: platform-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/out/*
+          path: |
+            dist/standalone/*
+            rust-core/target/wheels/*
+          retention-days: 7
+
+  build-installers:
+    name: Installer ${{ matrix.platform }}-${{ matrix.arch }}
+    needs: build-platform
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            platform: linux
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: aarch64
+          - runner: macos-14
+            platform: darwin
+            arch: universal2
+          - runner: windows-latest
+            platform: windows
+            arch: amd64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Download platform artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: platform-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/standalone
+      - name: Install NSIS (Windows only)
+        if: matrix.platform == 'windows'
+        run: choco install nsis -y
+      - name: Build platform installer
+        shell: bash
+        run: |
+          chmod +x packaging/scripts/build-installer.sh
+          packaging/scripts/build-installer.sh \
+            --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: installer-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/installers/*
           retention-days: 7
 
   publish-github-release:
     name: Publish to GitHub Release (intermediate)
-    needs: [build-python, build-platform]
+    needs: [build-python, build-platform, build-installers]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -140,7 +187,7 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           path: artifacts
-          pattern: python-dist|platform-*
+          pattern: python-dist|platform-*|installer-*
           merge-multiple: true
 
       - name: Combine artifacts
