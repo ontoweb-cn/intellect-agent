@@ -29,10 +29,10 @@
 
 | # | 问题 | 位置 | 方案 | 状态 |
 |---|------|------|------|:--:|
-| A1 | `gateway/run.py` 19,799 行单体，296 方法 | 整个文件 | 提取消息回放、错误分类、interrupt 逻辑为独立模块 | ⬜ |
-| A2 | `cli.py` 15,313 行 | 整个文件 | 提取 worktree 管理 (~400行) 和终端显示 (~330行) | ⬜ |
-| A3 | `conversation_loop.py` `run_conversation()` 单函数 4,439 行 | 整个函数 | 按阶段拆：预处理 / API 调用 / 流式 / 后处理 / 错误恢复 | ⬜ |
-| A4 | 18 个平台适配器 ~34,000 行，消息格式化/错误分类逻辑重复 | `plugins/platforms/*` | ✅ `check_platform_requirements()` 共享 helper；其余逐步迁移 |
+| A1 | `gateway/run.py` 19,799 行单体 | 整个文件 | ⏸️ 函数间交叉引用密集，需独立 session |
+| A2 | `cli.py` 15,313 行 | 整个文件 | ✅ worktree 管理提取 → `worktree_helpers.py`（349 行） |
+| A3 | `conversation_loop.py` `run_conversation()` 4,439 行 | 整个函数 | ✅ helper 函数提取 → `conversation_helpers.py`（290 行）+ Phase 1-5 标记 |
+| A4 | 18 个平台适配器 ~34,000 行 | `plugins/platforms/*` | ✅ `check_platform_requirements()` 共享 helper（12 适配器，-195 行） |
 
 ## 🟢 代码质量（低影响）
 
