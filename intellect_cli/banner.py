@@ -59,7 +59,7 @@ def _skin_color(key: str, fallback: str) -> str:
 # =========================================================================
 
 # Set to 1 to hide the "Available Tools" section in the welcome banner.
-INTELLECT_HIDE_TOOLS_BANNER = 0
+INTELLECT_HIDE_TOOLS_BANNER = 1
 
 from intellect_cli import __version__ as VERSION, __release_date__ as RELEASE_DATE
 
