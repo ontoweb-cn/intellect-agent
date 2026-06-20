@@ -575,8 +575,26 @@ function inferMediaType(ext) {
   return 'document';
 }
 
+// Simple per-endpoint rate limiter: max 30 req/min per IP
+const rateLimit = (maxRequests, windowMs) => {
+  const store = new Map();
+  return (req, res, next) => {
+    const key = req.ip || req.connection?.remoteAddress || 'unknown';
+    const now = Date.now();
+    const entry = store.get(key) || { count: 0, reset: now + windowMs };
+    if (now > entry.reset) { entry.count = 0; entry.reset = now + windowMs; }
+    entry.count++;
+    store.set(key, entry);
+    if (entry.count > maxRequests) {
+      return res.status(429).json({ error: 'Too many requests' });
+    }
+    next();
+  };
+};
+const mediaLimiter = rateLimit(30, 60000);
+
 // Send media (image, video, document) natively
-app.post('/send-media', async (req, res) => {
+app.post('/send-media', mediaLimiter, async (req, res) => {
   if (!sock || connectionState !== 'connected') {
     return res.status(503).json({ error: 'Not connected to WhatsApp' });
   }
