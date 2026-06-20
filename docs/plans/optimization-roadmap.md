@@ -40,7 +40,7 @@
 |---|------|------|------|:--:|
 | Q1 | `"non-critical error"` 模板日志 159 处无上下文 | `gateway/run.py` + `webui/api/routes.py` | 159 | ✅ `_log_non_critical()` 自动注入函数名 |
 | Q2 | `except Exception:` 宽泛捕获 | `run_agent.py`(67), `gateway/run.py`(230+) | 297+ | ⬜ |
-| Q3 | 8 个独立 config 读取路径绕过缓存 | 多个文件 | 8 | ⬜ |
+| Q3 | 8 个独立 config 读取路径绕过缓存 | 多个文件 | 8 | 📝 已文档化（见下方） |
 | Q4 | 60+ agent 模块无对应测试文件 | `agent/` 目录 | 60+ | ⬜ |
 | Q5 | 所有 lint 规则仅启用 PLW1514 | `pyproject.toml:310` | 1/所有规则 | ⬜ |
 | Q6 | `model_metadata.py` endpoint 缓存无上限 | `model_metadata.py:78` | — | ⬜ |
