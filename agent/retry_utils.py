@@ -3,19 +3,13 @@
 Replaces fixed exponential backoff with jittered delays to prevent
 thundering-herd retry spikes when multiple sessions hit the same
 rate-limited provider concurrently.
+
+Since v0.6.2 delegates to the Rust extension.
 """
 
-import random
-import threading
-import time
+from __future__ import annotations
 
 from intellect_rust import rust_jittered_backoff as _rust_jittered_backoff
-
-# Monotonic counter for jitter seed uniqueness within the same process.
-# Protected by a lock to avoid race conditions in concurrent retry paths
-# (e.g. multiple gateway sessions retrying simultaneously).
-_jitter_counter = 0
-_jitter_lock = threading.Lock()
 
 
 def jittered_backoff(
@@ -39,27 +33,7 @@ def jittered_backoff(
 
     The jitter decorrelates concurrent retries so multiple sessions
     hitting the same provider don't all retry at the same instant.
+
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    if _rust_jittered_backoff is not None:
-        try:
-            return _rust_jittered_backoff(attempt, base_delay, max_delay, jitter_ratio)
-        except Exception:
-            pass  # Fall through to Python fallback
-
-    global _jitter_counter
-    with _jitter_lock:
-        _jitter_counter += 1
-        tick = _jitter_counter
-
-    exponent = max(0, attempt - 1)
-    if exponent >= 63 or base_delay <= 0:
-        delay = max_delay
-    else:
-        delay = min(base_delay * (2 ** exponent), max_delay)
-
-    # Seed from time + counter for decorrelation even with coarse clocks.
-    seed = (time.time_ns() ^ (tick * 0x9E3779B9)) & 0xFFFFFFFF
-    rng = random.Random(seed)
-    jitter = rng.uniform(0, jitter_ratio * delay)
-
-    return delay + jitter
+    return _rust_jittered_backoff(attempt, base_delay, max_delay, jitter_ratio)
