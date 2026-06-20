@@ -123,6 +123,7 @@ Python 模块名：`import intellect_community_core`
 | Stage 3 | `usage.rs`, `stream.rs` | `TokenAccumulator`, `StreamAccumulator`, `normalize_usage_rs` |
 | Stage 4 | `gateway.rs` | Session key、重置策略、批量过期、`PlatformRetryScheduler` |
 | Stage 5 | `crypto.rs` | PKCE、Fernet、安全随机、JWT decode |
+| M5-M9 | `prompt_caching.rs`, `tool_utils.rs`, `tokens.rs` (CJK) | Anthropic cache_control, file_mutation_landed, canonical_tool_args, strip_yaml_frontmatter, CJK detection |
 
 ---
 
@@ -267,14 +268,28 @@ run_agent.py → chat_completion_helpers.py
 | `agent/oauth/storage.py` | `rust_fernet_encrypt`, `rust_fernet_decrypt` |
 | `agent/secret_store.py` | `rust_fernet_encrypt`, `rust_fernet_decrypt` |
 | `gateway/session.py` | `PlatformRetryScheduler`, `rust_build_session_key`, `rust_check_expiry_batch` |
+| `agent/prompt_caching.py` | `rust_apply_cache_control` |
+| `agent/tool_result_classification.py` | `rust_file_mutation_landed` |
+| `agent/tool_guardrails.py` | `rust_canonical_tool_args` |
+| `agent/prompt_builder.py` | `rust_strip_yaml_frontmatter`, `rust_truncate_content` |
+| `agent/tool_dispatch_helpers.py` | `rust_paths_overlap` |
+| `intellect_state.py` | `search_messages` (Rust FTS5 fast path: 非 CJK) |
 
 ---
 
 ## 6. 仍在 Python 的部分（Rust 未迁移）
 
-截至 2026-06-20，Rust crate 共 **~5,900 行**（15 个源文件），Agent Loop 及其直接依赖约 **28,600 行**仍为 Python，迁移率约 **17%**。
+截至 2026-06-20，Rust crate 共 **~6,100 行**（16 个源文件），迁移率约 **20%**。
 
-M16（SessionDB 读写统一）已完成：`SESSIONDB_USE_RUST_RW` 标志控制读写路径，设为 1 后全部 SessionDB 读写经 Rust rusqlite（独立读连接避免 Mutex 争抢），设为 0 回退 Python sqlite3。
+M16（SessionDB 读写统一）已完成：`SESSIONDB_USE_RUST_RW = 1` 默认启用，全部读写经 Rust rusqlite。
+
+M5-M9 部分完成：
+- M9 `prompt_caching.rs` — Anthropic cache breakpoint 策略
+- M8 `tool_utils.rs` — `strip_yaml_frontmatter_rs`, `truncate_content_rs`
+- M6 `tool_utils.rs` — `canonical_tool_args_rs`, `file_mutation_result_landed_rs`
+- M5 未启动（context_compressor 核心算法需独立 session）
+- M7 跳过（tool_executor 深度耦合 Python agent 状态）
+- `search_messages` 非 CJK FTS5 路径委托 Rust `backend.rs` 执行
 
 ### 6.1 Agent Loop 核心（4,789 行）— 最大未迁移块
 
@@ -375,12 +390,15 @@ timeline
         Stage 3 部分 : TokenAccumulator / StreamAccumulator / normalize_usage
         Stage 4 部分 : session key / retry scheduler / batch expiry / backoff
         Stage 5 部分 : PKCE / Fernet / JWT decode / secure random
+    section 部分完成 (M5-M9)
+        Prompt Caching : cache_control breakpoint 策略 → Rust
+        Prompt Builder : strip_yaml_frontmatter, truncate_content → Rust
+        Tool Guardrails : canonical_tool_args, file_mutation_landed → Rust
+        Tool Dispatch : paths_overlap → Rust
+        Context Compressor : 核心算法 (延迟)
+        Tool Executor : 不可迁 (深度耦合 Python agent)
     section 未开始
         Agent Loop 核心 : conversation_loop.py — 4,789 行，全部在 Python
-        Context Compressor : 摘要压缩算法 (~2,078 行)
-        Error Classifier : API 错误分类 (~1,316 行)
-        Tool Executor : 并发执行引擎 (~1,040 行)
-        Model Metadata : token 估算 / context 探测 (~1,865 行)
         Gateway Event Loop : tokio 事件循环 (Rust 仅提供工具函数)
     section 可选 (长期)
         Stage 6 : Rust 主进程 intellectd + 内嵌 Python
@@ -390,13 +408,14 @@ timeline
 
 | 分类 | 文件数 | 总行数 | 迁移率 |
 |------|--------|--------|--------|
-| Rust (已迁移) | 15 | ~5,900 | — |
-| SessionDB 读写 | — | — | **100%**（M16 完成，`SESSIONDB_USE_RUST_RW` 控制） |
+| Rust (已迁移) | 16 | ~6,100 | — |
+| SessionDB 读写 | — | — | **100%**（`SESSIONDB_USE_RUST_RW=1`） |
+| SessionDB 搜索 | — | — | **非 CJK 100%**（Rust FTS5 fast-path） |
 | Agent Loop 核心 | 1 | 4,789 | 0% |
-| 大型辅助 (≥1,000 行) | 9 | ~20,000 | 部分 (`StreamAccumulator`, `TokenAccumulator`, Error Classifier, Sanitizer) |
-| 中型辅助 (400-899 行) | 7 | ~3,500 | 部分 (`usage_pricing`, `model_metadata` 的 Token 估算等) |
-| 小型辅助 (<400 行) | 5 | ~700 | 部分 (`iteration_budget`, `retry_utils`) |
-| **Python 总计** | **22** | **≈28,600** | **~17%** |
+| 大型辅助 (≥1,000 行) | 9 | ~20,000 | 部分 (`StreamAccumulator`, `TokenAccumulator`, Error Classifier, Sanitizer, Prompt Caching) |
+| 中型辅助 (400-899 行) | 7 | ~3,500 | 部分 (`usage_pricing`, `model_metadata`, `tool_guardrails` pure helpers, `tool_dispatch_helpers`) |
+| 小型辅助 (<400 行) | 5 | ~700 | 部分 (`iteration_budget`, `retry_utils`, `tool_result_classification`, `prompt_caching`) |
+| **Python 总计** | **22** | **≈28,000** | **~20%** |
 
 ---
 
