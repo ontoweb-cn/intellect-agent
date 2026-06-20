@@ -697,6 +697,7 @@ def write_sidebar(entries):
     sidebar_path = REPO / "website" / "sidebars.ts"
     text = sidebar_path.read_text(encoding="utf-8")
     # Replace the existing Skills block.
+    # lgtm[py/redos]: build-time script, input is local config files
     pattern = re.compile(
         r"        \{\n"
         r"          type: 'category',\n"
