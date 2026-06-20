@@ -48,6 +48,7 @@ import subprocess
 import tempfile
 import threading
 import uuid
+from agent.safe_print import safe_print
 from pathlib import Path
 from typing import Callable, Dict, Any, Optional
 from urllib.parse import urljoin
@@ -2485,8 +2486,8 @@ def stream_tts_to_speaker(
 # Main -- quick diagnostics
 # ===========================================================================
 if __name__ == "__main__":
-    print("🔊 Text-to-Speech Tool Module")
-    print("=" * 50)
+    safe_print("🔊 Text-to-Speech Tool Module")
+    safe_print("=" * 50)
 
     def _check(importer, label):
         try:
@@ -2495,23 +2496,23 @@ if __name__ == "__main__":
         except ImportError:
             return False
 
-    print("\nProvider availability:")
-    print(f"  Edge TTS:   {'installed' if _check(_import_edge_tts, 'edge') else 'not installed (pip install edge-tts)'}")
-    print(f"  ElevenLabs: {'installed' if _check(_import_elevenlabs, 'el') else 'not installed (pip install elevenlabs)'}")
-    print(f"    API Key:  {'set' if get_env_value('ELEVENLABS_API_KEY') else 'not set'}")
-    print(f"  OpenAI:     {'installed' if _check(_import_openai_client, 'oai') else 'not installed'}")
-    print(
+    safe_print("\nProvider availability:")
+    safe_print(f"  Edge TTS:   {'installed' if _check(_import_edge_tts, 'edge') else 'not installed (pip install edge-tts)'}")
+    safe_print(f"  ElevenLabs: {'installed' if _check(_import_elevenlabs, 'el') else 'not installed (pip install elevenlabs)'}")
+    safe_print(f"    API Key:  {'set' if get_env_value('ELEVENLABS_API_KEY') else 'not set'}")
+    safe_print(f"  OpenAI:     {'installed' if _check(_import_openai_client, 'oai') else 'not installed'}")
+    safe_print(
         "    API Key:  "
         f"{'set' if resolve_openai_audio_api_key() else 'not set (VOICE_TOOLS_OPENAI_KEY or OPENAI_API_KEY)'}"
     )
-    print(f"  MiniMax:    {'API key set' if get_env_value('MINIMAX_API_KEY') else 'not set (MINIMAX_API_KEY)'}")
-    print(f"  Piper:      {'installed' if _check_piper_available() else 'not installed (pip install piper-tts)'}")
-    print(f"  ffmpeg:     {'✅ found' if _has_ffmpeg() else '❌ not found (needed for Telegram Opus)'}")
-    print(f"\n  Output dir: {DEFAULT_OUTPUT_DIR}")
+    safe_print(f"  MiniMax:    {'API key set' if get_env_value('MINIMAX_API_KEY') else 'not set (MINIMAX_API_KEY)'}")
+    safe_print(f"  Piper:      {'installed' if _check_piper_available() else 'not installed (pip install piper-tts)'}")
+    safe_print(f"  ffmpeg:     {'✅ found' if _has_ffmpeg() else '❌ not found (needed for Telegram Opus)'}")
+    safe_print(f"\n  Output dir: {DEFAULT_OUTPUT_DIR}")
 
     config = _load_tts_config()
     provider = _get_provider(config)
-    print(f"  Configured provider: {provider}")
+    safe_print(f"  Configured provider: {provider}")
 
 
 # ---------------------------------------------------------------------------

@@ -42,6 +42,7 @@ from intellect_constants import get_intellect_dir
 from tools.debug_helpers import DebugSession
 from tools.website_policy import check_website_access
 import sys
+from agent.safe_print import safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -1028,52 +1029,52 @@ if __name__ == "__main__":
     """
     Simple test/demo when run directly
     """
-    print("👁️ Vision Tools Module")
-    print("=" * 40)
+    safe_print("👁️ Vision Tools Module")
+    safe_print("=" * 40)
     
     # Check if vision model is available
     api_available = check_vision_requirements()
     
     if not api_available:
-        print("❌ No auxiliary vision model available")
-        print("Configure a supported multimodal backend (OpenRouter, OntoWeb, Codex, Anthropic, or a custom OpenAI-compatible endpoint).")
+        safe_print("❌ No auxiliary vision model available")
+        safe_print("Configure a supported multimodal backend (OpenRouter, OntoWeb, Codex, Anthropic, or a custom OpenAI-compatible endpoint).")
         sys.exit(1)
     else:
-        print("✅ Vision model available")
+        safe_print("✅ Vision model available")
     
-    print("🛠️ Vision tools ready for use!")
+    safe_print("🛠️ Vision tools ready for use!")
     
     # Show debug mode status
     if _debug.active:
-        print(f"🐛 Debug mode ENABLED - Session ID: {_debug.session_id}")
-        print(f"   Debug logs will be saved to: ./logs/vision_tools_debug_{_debug.session_id}.json")
+        safe_print(f"🐛 Debug mode ENABLED - Session ID: {_debug.session_id}")
+        safe_print(f"   Debug logs will be saved to: ./logs/vision_tools_debug_{_debug.session_id}.json")
     else:
-        print("🐛 Debug mode disabled (set VISION_TOOLS_DEBUG=true to enable)")
+        safe_print("🐛 Debug mode disabled (set VISION_TOOLS_DEBUG=true to enable)")
     
-    print("\nBasic usage:")
-    print("  from vision_tools import vision_analyze_tool")
-    print("  import asyncio")
-    print("")
-    print("  async def main():")
-    print("      result = await vision_analyze_tool(")
-    print("          image_url='https://example.com/image.jpg',")
-    print("          user_prompt='What do you see in this image?'")
-    print("      )")
-    print("      print(result)")
-    print("  asyncio.run(main())")
+    safe_print("\nBasic usage:")
+    safe_print("  from vision_tools import vision_analyze_tool")
+    safe_print("  import asyncio")
+    safe_print("")
+    safe_print("  async def main():")
+    safe_print("      result = await vision_analyze_tool(")
+    safe_print("          image_url='https://example.com/image.jpg',")
+    safe_print("          user_prompt='What do you see in this image?'")
+    safe_print("      )")
+    safe_print("      print(result)")
+    safe_print("  asyncio.run(main())")
     
-    print("\nExample prompts:")
-    print("  - 'What architectural style is this building?'")
-    print("  - 'Describe the emotions and mood in this image'")
-    print("  - 'What text can you read in this image?'")
-    print("  - 'Identify any safety hazards visible'")
-    print("  - 'What products or brands are shown?'")
+    safe_print("\nExample prompts:")
+    safe_print("  - 'What architectural style is this building?'")
+    safe_print("  - 'Describe the emotions and mood in this image'")
+    safe_print("  - 'What text can you read in this image?'")
+    safe_print("  - 'Identify any safety hazards visible'")
+    safe_print("  - 'What products or brands are shown?'")
     
-    print("\nDebug mode:")
-    print("  # Enable debug logging")
-    print("  export VISION_TOOLS_DEBUG=true")
-    print("  # Debug logs capture all vision analysis calls and results")
-    print("  # Logs saved to: ./logs/vision_tools_debug_UUID.json")
+    safe_print("\nDebug mode:")
+    safe_print("  # Enable debug logging")
+    safe_print("  export VISION_TOOLS_DEBUG=true")
+    safe_print("  # Debug logs capture all vision analysis calls and results")
+    safe_print("  # Logs saved to: ./logs/vision_tools_debug_UUID.json")
 
 
 # ---------------------------------------------------------------------------

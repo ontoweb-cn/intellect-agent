@@ -16,6 +16,7 @@ import re
 import secrets
 import tempfile
 import time
+from agent.safe_print import safe_print
 from pathlib import Path
 from typing import Dict
 
@@ -132,7 +133,7 @@ def _require_webhook_enabled() -> bool:
     """Check webhook is enabled. Print setup guide and return False if not."""
     if _is_webhook_enabled():
         return True
-    print(_setup_hint())
+    safe_print(_setup_hint())
     return False
 
 
@@ -141,8 +142,8 @@ def webhook_command(args):
     sub = getattr(args, "webhook_action", None)
 
     if not sub:
-        print("Usage: intellect webhook {subscribe|list|remove|test}")
-        print("Run 'intellect webhook --help' for details.")
+        safe_print("Usage: intellect webhook {subscribe|list|remove|test}")
+        safe_print("Run 'intellect webhook --help' for details.")
         return
 
     if not _require_webhook_enabled():
@@ -161,7 +162,7 @@ def webhook_command(args):
 def _cmd_subscribe(args):
     name = args.name.strip().lower().replace(" ", "-")
     if not re.match(r'^[a-z0-9][a-z0-9_-]*$', name):
-        print(f"Error: Invalid name '{name}'. Use lowercase alphanumeric with hyphens/underscores.")
+        safe_print(f"Error: Invalid name '{name}'. Use lowercase alphanumeric with hyphens/underscores.")
         return
 
     subs = _load_subscriptions()
@@ -182,7 +183,7 @@ def _cmd_subscribe(args):
 
     if getattr(args, "deliver_only", False):
         if route["deliver"] == "log":
-            print(
+            safe_print(
                 "Error: --deliver-only requires --deliver to be a real target "
                 "(telegram, discord, slack, github_comment, etc.) — not 'log'."
             )
@@ -198,47 +199,47 @@ def _cmd_subscribe(args):
     base_url = _get_webhook_base_url()
     status = "Updated" if is_update else "Created"
 
-    print(f"\n  {status} webhook subscription: {name}")
-    print(f"  URL:    {base_url}/webhooks/{name}")
-    print(f"  Secret: {secret}")
+    safe_print(f"\n  {status} webhook subscription: {name}")
+    safe_print(f"  URL:    {base_url}/webhooks/{name}")
+    safe_print(f"  Secret: {secret}")
     if events:
-        print(f"  Events: {', '.join(events)}")
+        safe_print(f"  Events: {', '.join(events)}")
     else:
-        print("  Events: (all)")
-    print(f"  Deliver: {route['deliver']}")
+        safe_print("  Events: (all)")
+    safe_print(f"  Deliver: {route['deliver']}")
     if route.get("deliver_only"):
-        print("  Mode: direct delivery (no agent, zero LLM cost)")
+        safe_print("  Mode: direct delivery (no agent, zero LLM cost)")
     if route.get("prompt"):
         prompt_preview = route["prompt"][:80] + ("..." if len(route["prompt"]) > 80 else "")
         label = "Message" if route.get("deliver_only") else "Prompt"
-        print(f"  {label}: {prompt_preview}")
-    print(f"\n  Configure your service to POST to the URL above.")
-    print(f"  Use the secret for HMAC-SHA256 signature validation.")
-    print(f"  The gateway must be running to receive events (intellect gateway run).\n")
+        safe_print(f"  {label}: {prompt_preview}")
+    safe_print(f"\n  Configure your service to POST to the URL above.")
+    safe_print(f"  Use the secret for HMAC-SHA256 signature validation.")
+    safe_print(f"  The gateway must be running to receive events (intellect gateway run).\n")
 
 
 def _cmd_list(args):
     subs = _load_subscriptions()
     if not subs:
-        print("  No dynamic webhook subscriptions.")
-        print("  Create one with: intellect webhook subscribe <name>")
+        safe_print("  No dynamic webhook subscriptions.")
+        safe_print("  Create one with: intellect webhook subscribe <name>")
         return
 
     base_url = _get_webhook_base_url()
-    print(f"\n  {len(subs)} webhook subscription(s):\n")
+    safe_print(f"\n  {len(subs)} webhook subscription(s):\n")
     for name, route in subs.items():
         events = ", ".join(route.get("events", [])) or "(all)"
         deliver = route.get("deliver", "log")
         if route.get("deliver_only"):
             deliver = f"{deliver} (direct — no agent)"
         desc = route.get("description", "")
-        print(f"  ◆ {name}")
+        safe_print(f"  ◆ {name}")
         if desc:
-            print(f"    {desc}")
-        print(f"    URL:     {base_url}/webhooks/{name}")
-        print(f"    Events:  {events}")
-        print(f"    Deliver: {deliver}")
-        print()
+            safe_print(f"    {desc}")
+        safe_print(f"    URL:     {base_url}/webhooks/{name}")
+        safe_print(f"    Events:  {events}")
+        safe_print(f"    Deliver: {deliver}")
+        safe_print()
 
 
 def _cmd_remove(args):
@@ -246,13 +247,13 @@ def _cmd_remove(args):
     subs = _load_subscriptions()
 
     if name not in subs:
-        print(f"  No subscription named '{name}'.")
-        print("  Note: Static routes from config.yaml cannot be removed here.")
+        safe_print(f"  No subscription named '{name}'.")
+        safe_print("  Note: Static routes from config.yaml cannot be removed here.")
         return
 
     del subs[name]
     _save_subscriptions(subs)
-    print(f"  Removed webhook subscription: {name}")
+    safe_print(f"  Removed webhook subscription: {name}")
 
 
 def _cmd_test(args):
@@ -261,7 +262,7 @@ def _cmd_test(args):
     subs = _load_subscriptions()
 
     if name not in subs:
-        print(f"  No subscription named '{name}'.")
+        safe_print(f"  No subscription named '{name}'.")
         return
 
     route = subs[name]
@@ -277,7 +278,7 @@ def _cmd_test(args):
         secret.encode(), payload.encode(), hashlib.sha256
     ).hexdigest()
 
-    print(f"  Sending test POST to {url}")
+    safe_print(f"  Sending test POST to {url}")
     try:
         import urllib.request
         req = urllib.request.Request(
@@ -292,7 +293,7 @@ def _cmd_test(args):
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             body = resp.read().decode()
-            print(f"  Response ({resp.status}): {body}")
+            safe_print(f"  Response ({resp.status}): {body}")
     except Exception as e:
-        print(f"  Error: {e}")
-        print("  Is the gateway running? (intellect gateway run)")
+        safe_print(f"  Error: {e}")
+        safe_print("  Is the gateway running? (intellect gateway run)")

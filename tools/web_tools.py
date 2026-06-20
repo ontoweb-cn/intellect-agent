@@ -104,6 +104,7 @@ from tools.tool_backend_helpers import (  # noqa: F401
 )
 from tools.url_safety import is_safe_url
 import sys
+from agent.safe_print import safe_print
 
 logger = logging.getLogger(__name__)
 
@@ -1175,8 +1176,8 @@ if __name__ == "__main__":
     """
     Simple test/demo when run directly
     """
-    print("🌐 Standalone Web Tools Module")
-    print("=" * 40)
+    safe_print("🌐 Standalone Web Tools Module")
+    safe_print("=" * 40)
     
     # Check if API keys are available
     web_available = check_web_api_key()
@@ -1188,95 +1189,95 @@ if __name__ == "__main__":
 
     if web_available:
         backend = _get_backend()
-        print(f"✅ Web backend: {backend}")
+        safe_print(f"✅ Web backend: {backend}")
         if backend == "exa":
-            print("   Using Exa API (https://exa.ai)")
+            safe_print("   Using Exa API (https://exa.ai)")
         elif backend == "parallel":
-            print("   Using Parallel API (https://parallel.ai)")
+            safe_print("   Using Parallel API (https://parallel.ai)")
         elif backend == "tavily":
-            print("   Using Tavily API (https://tavily.com)")
+            safe_print("   Using Tavily API (https://tavily.com)")
         elif backend == "searxng":
-            print(f"   Using SearXNG (search only): {os.getenv('SEARXNG_URL', '').strip()}")
+            safe_print(f"   Using SearXNG (search only): {os.getenv('SEARXNG_URL', '').strip()}")
         elif backend == "brave-free":
-            print("   Using Brave Search free tier (search only)")
+            safe_print("   Using Brave Search free tier (search only)")
         elif backend == "ddgs":
-            print("   Using DuckDuckGo via ddgs package (search only)")
+            safe_print("   Using DuckDuckGo via ddgs package (search only)")
         elif firecrawl_url_available:
-            print(f"   Using self-hosted Firecrawl: {os.getenv('FIRECRAWL_API_URL').strip().rstrip('/')}")
+            safe_print(f"   Using self-hosted Firecrawl: {os.getenv('FIRECRAWL_API_URL').strip().rstrip('/')}")
         elif firecrawl_key_available:
-            print("   Using direct Firecrawl cloud API")
+            safe_print("   Using direct Firecrawl cloud API")
         elif tool_gateway_available:
-            print(f"   Using Firecrawl tool-gateway: {_get_firecrawl_gateway_url()}")
+            safe_print(f"   Using Firecrawl tool-gateway: {_get_firecrawl_gateway_url()}")
         else:
-            print("   Firecrawl backend selected but not configured")
+            safe_print("   Firecrawl backend selected but not configured")
     else:
-        print("❌ No web search backend configured")
-        print(
+        safe_print("❌ No web search backend configured")
+        safe_print(
             "Set EXA_API_KEY, PARALLEL_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY, FIRECRAWL_API_URL"
             f"{_firecrawl_backend_help_suffix()}"
         )
 
     if not nous_available:
-        print("❌ No auxiliary model available for LLM content processing")
-        print("Set OPENROUTER_API_KEY, configure ONTOWEB Portal, or set OPENAI_BASE_URL + OPENAI_API_KEY")
-        print("⚠️  Without an auxiliary model, LLM content processing will be disabled")
+        safe_print("❌ No auxiliary model available for LLM content processing")
+        safe_print("Set OPENROUTER_API_KEY, configure ONTOWEB Portal, or set OPENAI_BASE_URL + OPENAI_API_KEY")
+        safe_print("⚠️  Without an auxiliary model, LLM content processing will be disabled")
     else:
-        print(f"✅ Auxiliary model available: {default_summarizer_model}")
+        safe_print(f"✅ Auxiliary model available: {default_summarizer_model}")
 
     if not web_available:
         sys.exit(1)
 
-    print("🛠️  Web tools ready for use!")
+    safe_print("🛠️  Web tools ready for use!")
     
     if nous_available:
-        print(f"🧠 LLM content processing available with {default_summarizer_model}")
-        print(f"   Default min length for processing: {DEFAULT_MIN_LENGTH_FOR_SUMMARIZATION} chars")
+        safe_print(f"🧠 LLM content processing available with {default_summarizer_model}")
+        safe_print(f"   Default min length for processing: {DEFAULT_MIN_LENGTH_FOR_SUMMARIZATION} chars")
     
     # Show debug mode status
     if _debug.active:
-        print(f"🐛 Debug mode ENABLED - Session ID: {_debug.session_id}")
-        print(f"   Debug logs will be saved to: {_debug.log_dir}/web_tools_debug_{_debug.session_id}.json")
+        safe_print(f"🐛 Debug mode ENABLED - Session ID: {_debug.session_id}")
+        safe_print(f"   Debug logs will be saved to: {_debug.log_dir}/web_tools_debug_{_debug.session_id}.json")
     else:
-        print("🐛 Debug mode disabled (set WEB_TOOLS_DEBUG=true to enable)")
+        safe_print("🐛 Debug mode disabled (set WEB_TOOLS_DEBUG=true to enable)")
     
-    print("\nBasic usage:")
-    print("  from web_tools import web_search_tool, web_extract_tool")
-    print("  import asyncio")
-    print("")
-    print("  # Search (synchronous)")
-    print("  results = web_search_tool('Python tutorials')")
-    print("")
-    print("  # Extract (asynchronous)")
-    print("  async def main():")
-    print("      content = await web_extract_tool(['https://example.com'])")
-    print("  asyncio.run(main())")
+    safe_print("\nBasic usage:")
+    safe_print("  from web_tools import web_search_tool, web_extract_tool")
+    safe_print("  import asyncio")
+    safe_print("")
+    safe_print("  # Search (synchronous)")
+    safe_print("  results = web_search_tool('Python tutorials')")
+    safe_print("")
+    safe_print("  # Extract (asynchronous)")
+    safe_print("  async def main():")
+    safe_print("      content = await web_extract_tool(['https://example.com'])")
+    safe_print("  asyncio.run(main())")
     
     if nous_available:
-        print("\nLLM-enhanced usage:")
-        print("  # Content automatically processed for pages >5000 chars (default)")
-        print("  content = await web_extract_tool(['https://python.org/about/'])")
-        print("")
-        print("  # Customize processing parameters")
-        print("  content = await web_extract_tool(")
-        print("      ['https://docs.python.org'],")
-        print("      model='google/gemini-3-flash-preview',")
-        print("      min_length=3000")
-        print("  )")
-        print("")
-        print("  # Disable LLM processing")
-        print("  raw_content = await web_extract_tool(['https://example.com'], use_llm_processing=False)")
+        safe_print("\nLLM-enhanced usage:")
+        safe_print("  # Content automatically processed for pages >5000 chars (default)")
+        safe_print("  content = await web_extract_tool(['https://python.org/about/'])")
+        safe_print("")
+        safe_print("  # Customize processing parameters")
+        safe_print("  content = await web_extract_tool(")
+        safe_print("      ['https://docs.python.org'],")
+        safe_print("      model='google/gemini-3-flash-preview',")
+        safe_print("      min_length=3000")
+        safe_print("  )")
+        safe_print("")
+        safe_print("  # Disable LLM processing")
+        safe_print("  raw_content = await web_extract_tool(['https://example.com'], use_llm_processing=False)")
     
-    print("\nDebug mode:")
-    print("  # Enable debug logging")
-    print("  export WEB_TOOLS_DEBUG=true")
-    print("  # Debug logs capture:")
-    print("  # - All tool calls with parameters")
-    print("  # - Original API responses")
-    print("  # - LLM compression metrics")
-    print("  # - Final processed results")
-    print("  # Logs saved to: ./logs/web_tools_debug_UUID.json")
+    safe_print("\nDebug mode:")
+    safe_print("  # Enable debug logging")
+    safe_print("  export WEB_TOOLS_DEBUG=true")
+    safe_print("  # Debug logs capture:")
+    safe_print("  # - All tool calls with parameters")
+    safe_print("  # - Original API responses")
+    safe_print("  # - LLM compression metrics")
+    safe_print("  # - Final processed results")
+    safe_print("  # Logs saved to: ./logs/web_tools_debug_UUID.json")
     
-    print("\n📝 Run 'python test_web_tools_llm.py' to test LLM processing capabilities")
+    safe_print("\n📝 Run 'python test_web_tools_llm.py' to test LLM processing capabilities")
 
 
 # ---------------------------------------------------------------------------

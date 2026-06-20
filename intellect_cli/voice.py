@@ -214,6 +214,7 @@ def format_voice_record_key_for_status(raw: Any) -> str:
 
 
 from tools.voice_mode import (
+from agent.safe_print import safe_print
     create_audio_recorder,
     is_whisper_hallucination,
     play_audio_file,
@@ -239,7 +240,7 @@ def _debug(msg: str) -> None:
     if os.environ.get("intellect_VOICE_DEBUG", "").strip() != "1":
         return
     try:
-        print(f"[voice] {msg}", file=sys.stderr, flush=True)
+        safe_print(f"[voice] {msg}", file=sys.stderr, flush=True)
     except (BrokenPipeError, OSError):
         pass
 

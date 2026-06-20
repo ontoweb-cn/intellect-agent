@@ -23,7 +23,7 @@ Usage::
 
     result = transcribe_audio("/path/to/audio.ogg")
     if result["success"]:
-        print(result["transcript"])
+        safe_print(result["transcript"])
 """
 
 import logging
@@ -39,6 +39,7 @@ from urllib.parse import urljoin
 from utils import is_truthy_value
 from tools.managed_tool_gateway import resolve_managed_tool_gateway
 from tools.tool_backend_helpers import (
+from agent.safe_print import safe_print
     managed_ontoweb_tools_enabled,
     ontoweb_tool_gateway_unavailable_message,
     resolve_openai_audio_api_key,

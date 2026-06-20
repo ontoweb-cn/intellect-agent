@@ -17,6 +17,7 @@ import threading
 import time
 import traceback
 import copy
+from agent.safe_print import safe_print
 from pathlib import Path
 from typing import Optional
 
@@ -4268,7 +4269,7 @@ def _run_agent_streaming(
                 _profile_name = getattr(s, "profile", None) or None
                 _session_db = get_session_db(profile=_profile_name)
             except Exception as _db_err:
-                print(f"[webui] WARNING: SessionDB init failed — session_search will be unavailable: {_db_err}", flush=True)
+                safe_print(f"[webui] WARNING: SessionDB init failed — session_search will be unavailable: {_db_err}", flush=True)
             resolved_model, resolved_provider, resolved_base_url = resolve_model_provider(
                 model_with_provider_context(model, provider_context)
             )
@@ -4289,7 +4290,7 @@ def _run_agent_streaming(
                 if not resolved_base_url:
                     resolved_base_url = _rt.get("base_url")
             except Exception as _e:
-                print(f"[webui] WARNING: resolve_runtime_provider failed: {_e}", flush=True)
+                safe_print(f"[webui] WARNING: resolve_runtime_provider failed: {_e}", flush=True)
 
             # Named custom providers (custom:slug) may not be resolvable by
             # intellect_cli.runtime_provider directly. Fall back to config.yaml
@@ -4330,7 +4331,7 @@ def _run_agent_streaming(
                     if _override:
                         _toolsets = _override
             except Exception as _ts_err:
-                print(f"[webui] WARNING: failed to read per-session toolsets for {session_id}: {_ts_err}", flush=True)
+                safe_print(f"[webui] WARNING: failed to read per-session toolsets for {session_id}: {_ts_err}", flush=True)
 
             # Fallback model chain from profile config (e.g. for rate-limit or
             # provider recovery). Match Intellect CLI/gateway semantics:
@@ -5850,7 +5851,7 @@ def _run_agent_streaming(
                     logger.debug('non-critical operation failed', exc_info=True)
 
     except Exception as e:
-        print('[webui] stream error:\n' + traceback.format_exc(), flush=True)
+        safe_print('[webui] stream error:\n' + traceback.format_exc(), flush=True)
         err_str = str(e)
         # Sanitize HTML from provider error responses — some providers return
         # full HTML pages (e.g. nginx "404 page not found") instead of JSON errors.

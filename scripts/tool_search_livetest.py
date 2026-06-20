@@ -29,6 +29,7 @@ import sys
 import tempfile
 import time
 import traceback
+from agent.safe_print import safe_print
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -508,21 +509,21 @@ def _extract_bridge_calls(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]
 def main():
     out_dir = _THIS_DIR / "out"
     out_dir.mkdir(exist_ok=True)
-    print(f"Writing transcripts to: {out_dir}")
+    safe_print(f"Writing transcripts to: {out_dir}")
 
     summary = []
     for scenario in SCENARIOS:
         for enabled in (True, False):
             label = "enabled" if enabled else "disabled"
-            print(f"\n{'='*72}\nScenario {scenario['id']} (tool_search={label})\n{'='*72}")
+            safe_print(f"\n{'='*72}\nScenario {scenario['id']} (tool_search={label})\n{'='*72}")
             record = run_one_scenario(scenario, enabled, out_dir)
             n_bridge = len(record["bridge_calls"])
             n_under = len(record["underlying_tool_calls"])
             err = record["error"]
-            print(f"  bridge calls: {n_bridge}, underlying tool calls: {n_under}, "
+            safe_print(f"  bridge calls: {n_bridge}, underlying tool calls: {n_under}, "
                   f"elapsed: {record['elapsed_seconds']}s, error: {bool(err)}")
             if err:
-                print(f"  ERROR: {err[:300]}")
+                safe_print(f"  ERROR: {err[:300]}")
             summary.append({
                 "scenario": scenario["id"],
                 "enabled": enabled,
@@ -536,7 +537,7 @@ def main():
 
     summary_path = out_dir / "_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(f"\nSummary saved to: {summary_path}")
+    safe_print(f"\nSummary saved to: {summary_path}")
 
     # Restore original INTELLECT_HOME
     if ORIGINAL_HOME is not None:
