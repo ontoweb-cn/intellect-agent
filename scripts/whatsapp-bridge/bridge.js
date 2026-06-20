@@ -25,7 +25,7 @@ import pino from 'pino';
 import path from 'path';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync } from 'fs';
 import { randomBytes } from 'crypto';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import { tmpdir } from 'os';
 import qrcode from 'qrcode-terminal';
 import { matchesAllowedUser, parseAllowedUsers } from './allowlist.js';
@@ -51,7 +51,7 @@ const AUDIO_CACHE_DIR = path.join(process.env.HOME || '~', '.intellect', 'audio_
 const PAIR_ONLY = args.includes('--pair-only');
 const WHATSAPP_MODE = getArg('mode', process.env.WHATSAPP_MODE || 'self-chat'); // "bot" or "self-chat"
 const ALLOWED_USERS = parseAllowedUsers(process.env.WHATSAPP_ALLOWED_USERS || '');
-const DEFAULT_REPLY_PREFIX = '⚕ *Intellect Agent*\n────────────\n';
+const DEFAULT_REPLY_PREFIX = '⚛ *Intellect Agent*\n────────────\n';
 const REPLY_PREFIX = process.env.WHATSAPP_REPLY_PREFIX === undefined
   ? DEFAULT_REPLY_PREFIX
   : process.env.WHATSAPP_REPLY_PREFIX.replace(/\\n/g, '\n');
@@ -614,10 +614,14 @@ app.post('/send-media', async (req, res) => {
         if (needsConversion) {
           tmpPath = path.join(tmpdir(), `intellect_voice_${randomBytes(6).toString('hex')}.ogg`);
           try {
-            execSync(
-              `ffmpeg -y -i ${JSON.stringify(filePath)} -ar 48000 -ac 1 -c:a libopus ${JSON.stringify(tmpPath)}`,
-              { timeout: 30000, stdio: 'pipe' }
-            );
+            // Use execFileSync with array args to avoid shell injection.
+            // filePath is a locally-generated random path, not user input,
+            // but array-passing is the safer pattern regardless.
+            execFileSync('ffmpeg', [
+              '-y', '-i', filePath,
+              '-ar', '48000', '-ac', '1', '-c:a', 'libopus',
+              tmpPath,
+            ], { timeout: 30000, stdio: 'pipe' });
             audioBuffer = readFileSync(tmpPath);
             audioExt = 'ogg';
           } catch (convErr) {
