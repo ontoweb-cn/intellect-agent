@@ -276,3 +276,32 @@ def redact_phone(phone: str) -> str:
     if len(phone) <= 8:
         return phone[:2] + "****" + phone[-2:] if len(phone) > 4 else "****"
     return phone[:4] + "****" + phone[-4:]
+
+
+def check_platform_requirements(dep_key: str, on_install: callable = None) -> bool:
+    """Check if platform dependencies are available, with lazy-install fallback.
+
+    If the dependencies are missing, attempts to lazy-install them via
+    ``tools.lazy_deps.ensure(dep_key)``.  After a successful install,
+    calls *on_install* (if provided) to re-import SDK modules and update
+    module-level availability flags.
+
+    Args:
+        dep_key: Lazy-deps key (e.g. ``"platform.telegram"``, ``"platform.discord"``).
+        on_install: Callable invoked after successful lazy install.
+
+    Returns:
+        True if dependencies are already available or were successfully installed.
+
+    This replaces the ~19 identical ``check_*_requirements()`` functions
+    that were duplicated across platform adapters.
+    """
+    try:
+        from tools.lazy_deps import ensure as _lazy_ensure
+        if _lazy_ensure(dep_key):
+            if on_install:
+                on_install()
+            return True
+    except Exception:
+        pass
+    return False
