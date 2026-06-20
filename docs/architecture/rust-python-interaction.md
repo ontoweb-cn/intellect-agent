@@ -180,8 +180,7 @@ flowchart TB
     RA --> SS
     SS --> SB
 
-    SB -->|"写路径"| BE
-    SB -->|"读路径 (Python sqlite3)"| DB
+    SB -->|"读写路径 (Rust)"| BE
     BE --> DB
 
     MT --> SBX
@@ -212,7 +211,7 @@ flowchart TB
 
 | 域 | Rust 模块 | Python 消费方 | 交互方式 |
 |----|-----------|---------------|----------|
-| **存储** | `backend.rs`, `connection.rs` | `agent/storage/sqlite_backend.py` → `intellect_state.py` | **混合模式**：Rust 负责写+WAL checkpoint；Python `sqlite3` 负责读 |
+| **存储** | `backend.rs`, `connection.rs` | `agent/storage/sqlite_backend.py` → `intellect_state.py` | **统一模式**：Rust `SQLiteBackend` 负责全部读写；`SESSIONDB_USE_RUST_RW=1` 启用 Rust 全读写，`=0` 回退 Python sqlite3 |
 | **FTS/压缩** | `fts.rs`, `compression.rs` | `state/fts.py`, `state/compression.py` | 函数调用 |
 | **沙箱** | `sandbox.rs` (64+ 正则) | `tools/approval.py` | 命令归一化后调用 `detect_*_rs` |
 | **路径/URL 安全** | `sandbox.rs` | `tools/path_security.py`, `tools/url_safety.py` | 直接调用 |
@@ -232,12 +231,14 @@ terminal 工具 → approval.py
   → 批准/拒绝
 ```
 
-**Session 存储（混合读写）：**
+**Session 存储（统一 Rust 读写，Python 可回退）：**
 
 ```
 SessionDB → create_backend() → RustSQLiteBackend
-  ├── _backend (Rust SQLiteBackend)  → execute_write, FTS, compression
-  └── _python_conn (Python sqlite3)  → SELECT / cursor 读操作
+  ├── SESSIONDB_USE_RUST_RW=1: _backend (Rust) → execute_write + connection()
+  │     ├── 写：Rust execute_write (BEGIN IMMEDIATE/COMMIT/retry)
+  │     └── 读：独立 Rust read_conn (WAL 模式，不阻塞写 Mutex)
+  └── SESSIONDB_USE_RUST_RW=0: _python_conn (Python sqlite3) → 全读写
 ```
 
 **Agent 对话循环：**
@@ -271,7 +272,9 @@ run_agent.py → chat_completion_helpers.py
 
 ## 6. 仍在 Python 的部分（Rust 未迁移）
 
-截至 2026-06-19 审计，Rust crate 共 **4,528 行**（11 个源文件），Agent Loop 及其直接依赖约 **30,200 行**仍为 Python，迁移率约 **13%**（按代码行数计）。
+截至 2026-06-20，Rust crate 共 **~5,900 行**（15 个源文件），Agent Loop 及其直接依赖约 **28,600 行**仍为 Python，迁移率约 **17%**。
+
+M16（SessionDB 读写统一）已完成：`SESSIONDB_USE_RUST_RW` 标志控制读写路径，设为 1 后全部 SessionDB 读写经 Rust rusqlite（独立读连接避免 Mutex 争抢），设为 0 回退 Python sqlite3。
 
 ### 6.1 Agent Loop 核心（4,789 行）— 最大未迁移块
 
@@ -387,12 +390,13 @@ timeline
 
 | 分类 | 文件数 | 总行数 | 迁移率 |
 |------|--------|--------|--------|
-| Rust (已迁移) | 11 | 4,528 | — |
+| Rust (已迁移) | 15 | ~5,900 | — |
+| SessionDB 读写 | — | — | **100%**（M16 完成，`SESSIONDB_USE_RUST_RW` 控制） |
 | Agent Loop 核心 | 1 | 4,789 | 0% |
-| 大型辅助 (≥1,000 行) | 9 | 20,392 | 部分 (`StreamAccumulator`, `TokenAccumulator`) |
-| 中型辅助 (400-899 行) | 7 | 3,944 | 部分 (`usage_pricing` 的归一化) |
-| 小型辅助 (<400 行) | 7 | 1,043 | 0% |
-| **Python 总计** | **24** | **≈30,200** | **~13%** |
+| 大型辅助 (≥1,000 行) | 9 | ~20,000 | 部分 (`StreamAccumulator`, `TokenAccumulator`, Error Classifier, Sanitizer) |
+| 中型辅助 (400-899 行) | 7 | ~3,500 | 部分 (`usage_pricing`, `model_metadata` 的 Token 估算等) |
+| 小型辅助 (<400 行) | 5 | ~700 | 部分 (`iteration_budget`, `retry_utils`) |
+| **Python 总计** | **22** | **≈28,600** | **~17%** |
 
 ---
 
@@ -404,10 +408,9 @@ timeline
    - Rust 单元测试：`cd rust-core && cargo test`
    - Rust/Python parity：`scripts/run_tests.sh tests/intellect_state/test_rust_parity.py`
 3. **纯 Python 安装已废弃**：`make install-pure` 仍存在，但 v0.6.2+ 运行时会因缺少 Rust 扩展而失败
-4. **文档滞后**：
-   - `rust-core/README.md` 仍描述 `_HAS_RUST` 回退标志
-   - `pyproject.toml` 注释写 "optional"
-   - 以 `RELEASE_v0.6.2.md` 和 `intellect_rust.py` 为准
+4. **读写模式**：
+   - `intellect_state.py` 中 `SESSIONDB_USE_RUST_RW=0`（默认）走 Python sqlite3
+   - 设为 `1` 后全部读写走 Rust rusqlite（独立读连接，WAL 模式）
 
 ### Rust 依赖（Cargo.toml）
 
