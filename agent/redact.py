@@ -33,6 +33,9 @@ _SENSITIVE_QUERY_PARAMS = frozenset({
     "code",           # OAuth authorization codes
     "signature",      # pre-signed URL signatures
     "x-amz-signature",
+    "corp_id",        # WeChat Work tenant ID
+    "app_secret",     # Application secret
+    "bot_token",      # Bot authentication
 })
 
 # Sensitive form-urlencoded / JSON body key names (case-insensitive exact match).
@@ -53,6 +56,14 @@ _SENSITIVE_BODY_KEYS = frozenset({
     "private_key",
     "authorization",
     "key",
+    # Business identifiers — moderate sensitivity, should not appear in logs
+    "corp_id",          # WeChat Work / WeCom tenant identifier
+    "app_secret",       # WeChat Work application secret
+    "encoding_aes_key", # WeChat Work message encryption key
+    "dev_key",          # Generic developer key
+    "bot_token",        # Bot authentication token
+    "webhook_url",      # Webhook URLs may contain tokens
+    "signing_secret",   # Webhook signing secret
 })
 
 # Snapshot at import time so runtime env mutations (e.g. LLM-generated

@@ -3307,7 +3307,7 @@ def _agent_cache_api_key_sig(resolved_api_key, credential_pool) -> str:
     if credential_pool is not None:
         return 'credential-pool'
     import hashlib as _hashlib
-    return _hashlib.sha256((resolved_api_key or '').encode()).hexdigest()[:16]
+    return _hashlib.sha256((resolved_api_key or '').encode()).hexdigest()[:16]  # lgtm[py/weak-sensitive-data-hashing]: cache fingerprint, not credential storage
 
 
 def _refresh_cached_agent_runtime(agent, agent_kwargs: dict) -> bool:
