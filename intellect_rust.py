@@ -255,6 +255,12 @@ rust_apply_cache_control: Callable = (
     _CORE.apply_anthropic_cache_control_rs if _has() else None
 )
 
+# ── Tool utilities ──────────────────────────────────────────────────────
+
+rust_file_mutation_landed: Callable = (
+    _CORE.file_mutation_result_landed_rs if _has() else None
+)
+
 # ── Model normalization ───────────────────────────────────────────────────
 
 rust_normalize_model_name: Callable = (
