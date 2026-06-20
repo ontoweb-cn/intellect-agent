@@ -303,5 +303,8 @@ def check_platform_requirements(dep_key: str, on_install: callable = None) -> bo
                 on_install()
             return True
     except Exception:
-        pass
+        import logging as _logging
+        _logging.getLogger(__name__).debug(
+            "check_platform_requirements(%s) failed", dep_key, exc_info=True
+        )
     return False

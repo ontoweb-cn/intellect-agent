@@ -5,6 +5,7 @@ Extracted from server.py (Sprint 11) so server.py is a thin shell.
 
 import html as _html
 import copy
+import inspect
 import io
 import gzip
 import json
@@ -42,8 +43,7 @@ logger = logging.getLogger(__name__)
 
 def _log_non_critical(extra: str = "") -> None:
     """Log a caught exception at DEBUG level with caller context."""
-    import inspect as _inspect
-    _caller = _inspect.currentframe().f_back.f_code.co_name if _inspect.currentframe() and _inspect.currentframe().f_back else "?"
+    _caller = inspect.currentframe().f_back.f_code.co_name if inspect.currentframe() and inspect.currentframe().f_back else "?"
     _msg = f"non-critical error in {_caller}"
     if extra:
         _msg += f": {extra}"
