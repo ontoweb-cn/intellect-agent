@@ -924,10 +924,9 @@ def _try_rebuild_rust_extension() -> bool:
 
 
 def _try_download_gitee_rust_wheel() -> bool:
-    """Download a pre-built intellect_community_core wheel from Gitee Release.
+    """Download a pre-built intellect_community_core wheel from Gitee or GitHub Release.
 
-    Queries the Gitee API for the latest release, finds the wheel asset
-    matching the current platform, downloads and installs it via pip.
+    Tries Gitee first (fast for mainland China), then GitHub (fast for overseas).
     """
     import json as _json
     import platform as _platform
@@ -940,52 +939,52 @@ def _try_download_gitee_rust_wheel() -> bool:
     _sys_plat = _sys.platform
     _arch = _platform.machine().lower()
     if _sys_plat == "darwin":
-        _hint = "macosx"  # matches macosx_11_0_universal2 or macosx_11_0_arm64
+        _hint = "macosx"
     elif _sys_plat == "win32":
         _hint = "win_amd64"
     elif "linux" in _sys_plat:
-        if _arch in ("aarch64", "arm64"):
-            _hint = "manylinux"  # matches manylinux_*_aarch64
-        else:
-            _hint = "manylinux"  # matches manylinux_*_x86_64
+        _hint = "manylinux"
     else:
         return False
 
-    try:
-        _api_url = (
-            "https://gitee.com/api/v5/repos/ontoweb/intellect-agent/"
-            "releases?page=1&per_page=1&direction=desc"
-        )
-        with _ur.urlopen(_api_url, timeout=30) as _resp:
-            _releases = _json.load(_resp)
-        _release = _releases[0] if _releases else None
-        if not _release:
-            return False
+    _sources = [
+        ("Gitee", "https://gitee.com/api/v5/repos/ontoweb/intellect-agent/"
+                  "releases?page=1&per_page=1&direction=desc"),
+        ("GitHub", "https://api.github.com/repos/ontoweb/intellect-agent/"
+                   "releases?per_page=1"),
+    ]
 
-        _wheel_url = None
-        for _asset in _release.get("assets") or []:
-            _name = (_asset.get("name") or "").lower()
-            if "intellect_community_core" not in _name:
+    for _source_name, _api_url in _sources:
+        try:
+            with _ur.urlopen(_api_url, timeout=15) as _resp:
+                _releases = _json.load(_resp)
+            _release = _releases[0] if _releases else None
+            if not _release:
                 continue
-            if not _name.endswith(".whl"):
+
+            _wheel_url = None
+            for _asset in _release.get("assets") or []:
+                _name = (_asset.get("name") or "").lower()
+                if "intellect_community_core" not in _name or not _name.endswith(".whl"):
+                    continue
+                if _hint in _name or ("universal2" in _name and "macosx" in _hint):
+                    _wheel_url = _asset.get("browser_download_url") or _asset.get("url") or ""
+                    break
+
+            if not _wheel_url:
                 continue
-            if _hint in _name or ("universal2" in _name and "macosx" in _hint):
-                _wheel_url = _asset.get("browser_download_url") or _asset.get("url") or ""
-                break
 
-        if not _wheel_url:
-            return False
+            _tmp = _tempfile.mktemp(suffix=".whl", prefix="intellect-rust-")
+            _ur.urlretrieve(_wheel_url, _tmp)
+            _sp.run(
+                [_sys.executable, "-m", "pip", "install", "-q", _tmp],
+                check=True, capture_output=True,
+            )
+            return True
+        except Exception:
+            continue
 
-        # Download wheel to temp file and install
-        _tmp = _tempfile.mktemp(suffix=".whl", prefix="intellect-rust-")
-        _ur.urlretrieve(_wheel_url, _tmp)
-        _sp.run(
-            [_sys.executable, "-m", "pip", "install", "-q", _tmp],
-            check=True, capture_output=True,
-        )
-        return True
-    except Exception:
-        return False
+    return False
 
 
 def _schedule_restart(delay: float = 2.0) -> None:

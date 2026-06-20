@@ -9342,8 +9342,9 @@ def _ensure_uv_for_termux(pip_cmd: list[str]) -> str | None:
 
 
 def _try_download_gitee_rust_wheel() -> bool:
-    """Download pre-built intellect_community_core wheel from Gitee Release API.
+    """Download pre-built intellect_community_core wheel from Gitee or GitHub Release.
 
+    Tries Gitee first (fast for mainland China), then GitHub (fast for overseas).
     Returns True on success, False on any failure (best-effort).
     """
     import json as _json
@@ -9363,40 +9364,44 @@ def _try_download_gitee_rust_wheel() -> bool:
     else:
         return False
 
-    try:
-        _api_url = (
-            "https://gitee.com/api/v5/repos/ontoweb/intellect-agent/"
-            "releases?page=1&per_page=1&direction=desc"
-        )
-        with _ur.urlopen(_api_url, timeout=30) as _resp:
-            _releases = _json.load(_resp)
-        _release = _releases[0] if _releases else None
-        if not _release:
-            return False
+    _sources = [
+        ("Gitee", "https://gitee.com/api/v5/repos/ontoweb/intellect-agent/"
+                  "releases?page=1&per_page=1&direction=desc"),
+        ("GitHub", "https://api.github.com/repos/ontoweb/intellect-agent/"
+                   "releases?per_page=1"),
+    ]
 
-        _wheel_url = None
-        for _asset in _release.get("assets") or []:
-            _name = (_asset.get("name") or "").lower()
-            if "intellect_community_core" not in _name:
+    for _source_name, _api_url in _sources:
+        try:
+            with _ur.urlopen(_api_url, timeout=15) as _resp:
+                _releases = _json.load(_resp)
+            _release = _releases[0] if _releases else None
+            if not _release:
                 continue
-            if not _name.endswith(".whl"):
+
+            _wheel_url = None
+            for _asset in _release.get("assets") or []:
+                _name = (_asset.get("name") or "").lower()
+                if "intellect_community_core" not in _name or not _name.endswith(".whl"):
+                    continue
+                if _hint in _name or ("universal2" in _name and "macosx" in _hint):
+                    _wheel_url = _asset.get("browser_download_url") or _asset.get("url") or ""
+                    break
+
+            if not _wheel_url:
                 continue
-            if _hint in _name or ("universal2" in _name and "macosx" in _hint):
-                _wheel_url = _asset.get("browser_download_url") or _asset.get("url") or ""
-                break
 
-        if not _wheel_url:
-            return False
+            _tmp = _tempfile.mktemp(suffix=".whl", prefix="intellect-rust-")
+            _ur.urlretrieve(_wheel_url, _tmp)
+            subprocess.run(
+                [_sys.executable, "-m", "pip", "install", "-q", _tmp],
+                check=True, capture_output=True,
+            )
+            return True
+        except Exception:
+            continue
 
-        _tmp = _tempfile.mktemp(suffix=".whl", prefix="intellect-rust-")
-        _ur.urlretrieve(_wheel_url, _tmp)
-        subprocess.run(
-            [_sys.executable, "-m", "pip", "install", "-q", _tmp],
-            check=True, capture_output=True,
-        )
-        return True
-    except Exception:
-        return False
+    return False
 
 
 def _update_node_dependencies() -> None:
