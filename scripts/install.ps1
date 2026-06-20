@@ -1341,10 +1341,78 @@ function Install-RustExtensionLocal {
     }
 }
 
+function Install-RustExtensionFromGitHub {
+    param([string]$PythonExe)
+    $tag = $env:INTELLECT_RELEASE_TAG
+    if (-not $tag) { $tag = "" }
+    $script = @'
+import json, os, sys, urllib.parse, urllib.request
+owner, repo = "ontoweb", "intellect-agent"
+tag = os.environ.get("INTELLECT_RELEASE_TAG", "").strip()
+hint = "win_amd64"
+base = f"https://api.github.com/repos/{owner}/{repo}/releases"
+try:
+    if tag:
+        enc = urllib.parse.quote(tag, safe="")
+        with urllib.request.urlopen(f"{base}/tags/{enc}", timeout=30) as resp:
+            release = json.load(resp)
+    else:
+        with urllib.request.urlopen(f"{base}?per_page=1", timeout=30) as resp:
+            releases = json.load(resp)
+        release = releases[0] if releases else None
+except Exception:
+    sys.exit(1)
+if not release:
+    sys.exit(1)
+for asset in release.get("assets") or []:
+    name = (asset.get("name") or "").lower()
+    if "intellect_community_core" in name and hint in name and name.endswith(".whl"):
+        url = asset.get("browser_download_url") or ""
+        if url:
+            print(url)
+            break
+else:
+    sys.exit(1)
+'@
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $url = & $PythonExe -c $script 2>$null
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+    if ($LASTEXITCODE -ne 0 -or -not $url) { return $false }
+    $tmp = Join-Path $env:TEMP ("intellect-rust-gh-{0}.whl" -f [guid]::NewGuid().ToString("n").Substring(0, 8))
+    try {
+        Write-Info "Downloading Rust extension from GitHub Release..."
+        Invoke-WebRequest -Uri $url.Trim() -OutFile $tmp -UseBasicParsing
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            if (-not $NoVenv) {
+                $env:UV_PROJECT_ENVIRONMENT = "$InstallDir\venv"
+                $env:VIRTUAL_ENV = "$InstallDir\venv"
+            }
+            & $UvCmd pip install --python $PythonExe $tmp
+            if ($LASTEXITCODE -ne 0) { return $false }
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+        Write-Success "Installed intellect_community_core from GitHub Release"
+        return $true
+    } finally {
+        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+    }
+}
+
 function Install-RustExtension {
     $pythonExe = Get-RustExtensionPython
     if (Test-RustExtensionInstalled $pythonExe) { return }
+    # 1. Gitee Release (fast for mainland China)
     if (Install-RustExtensionFromGitee $pythonExe) { return }
+    # 2. GitHub Release (fast for overseas)
+    if (Install-RustExtensionFromGitHub $pythonExe) { return }
+    # 3. Local build (requires Rust toolchain)
     if (Install-RustExtensionLocal $pythonExe) { return }
     Write-Error "The intellect_community_core Rust extension could not be installed."
     Write-Info "The Rust extension is required. The agent will not function without it."

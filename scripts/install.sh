@@ -166,7 +166,7 @@ print_banner() {
     echo ""
     echo -e "${MAGENTA}${BOLD}"
     echo "┌─────────────────────────────────────────────────────────┐"
-    echo "│             ⚕ Intellect Agent Installer                    │"
+    echo "│             ⚛ Intellect Agent Installer                    │"
     echo "├─────────────────────────────────────────────────────────┤"
     echo "│  An open source AI agent by ONTOWEB.              │"
     echo "└─────────────────────────────────────────────────────────┘"
@@ -1219,6 +1219,66 @@ PY
     return 0
 }
 
+try_download_github_rust_wheel() {
+    local hint pip_py url tmp
+    hint="$(_rust_wheel_platform_hint)" || return 1
+    pip_py="$(_rust_pip_python)"
+
+    url="$(
+        INTELLECT_RELEASE_TAG="${INTELLECT_RELEASE_TAG:-}" \
+        _RUST_HINT="$hint" \
+        "$pip_py" - <<'PY'
+import json, os, urllib.parse, urllib.request
+
+owner, repo = "ontoweb", "intellect-agent"
+tag = os.environ.get("INTELLECT_RELEASE_TAG", "").strip()
+hint = os.environ.get("_RUST_HINT", "").lower()
+base = f"https://api.github.com/repos/{owner}/{repo}/releases"
+try:
+    if tag:
+        enc = urllib.parse.quote(tag, safe="")
+        with urllib.request.urlopen(f"{base}/tags/{enc}", timeout=30) as resp:
+            release = json.load(resp)
+    else:
+        with urllib.request.urlopen(
+            f"{base}?per_page=1", timeout=30
+        ) as resp:
+            releases = json.load(resp)
+        release = releases[0] if releases else None
+except Exception:
+    raise SystemExit(1)
+if not release:
+    raise SystemExit(1)
+for asset in release.get("assets") or []:
+    name = (asset.get("name") or "").lower()
+    if "intellect_community_core" not in name or not name.endswith(".whl"):
+        continue
+    if hint in name or "universal2" in name and "macosx" in hint:
+        url = asset.get("browser_download_url") or ""
+        if url:
+            print(url)
+            break
+else:
+    raise SystemExit(1)
+PY
+    )" || return 1
+
+    [ -n "$url" ] || return 1
+    tmp="$(mktemp "${TMPDIR:-/tmp}/intellect-rust-XXXXXX.whl")"
+    log_info "Downloading Rust extension from GitHub Release..."
+    if ! curl -fsSL -o "$tmp" "$url"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    if ! "$pip_py" -m pip install -q "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    rm -f "$tmp"
+    log_success "Installed intellect_community_core from GitHub Release"
+    return 0
+}
+
 try_build_rust_local() {
     local pip_py="$(_rust_pip_python)"
     if ! command -v cargo >/dev/null 2>&1; then
@@ -1240,17 +1300,23 @@ install_rust_extension() {
         return 0
     fi
     if [ "$DISTRO" != "termux" ]; then
+        # 1. Gitee Release (fast for mainland China)
         if try_download_gitee_rust_wheel; then
             return 0
         fi
+        # 2. GitHub Release (fast for overseas)
+        if try_download_github_rust_wheel; then
+            return 0
+        fi
     fi
+    # 3. Local build (requires Rust toolchain)
     if try_build_rust_local; then
         return 0
     fi
     log_error "The intellect_community_core Rust extension could not be installed."
     log_info "The Rust extension is required. The agent will not function without it."
     log_info "To install:"
-    log_info "  1. Export INTELLECT_RELEASE_TAG=vYYYY.M.D and re-run (Gitee Release wheel)"
+    log_info "  1. Export INTELLECT_RELEASE_TAG=vYYYY.M.D and re-run (Release wheel)"
     log_info "  2. Install Rust (https://rustup.rs) and re-run the installer"
     log_info "  3. cd $INSTALL_DIR/rust-core && maturin develop --release"
     log_info "Docs: https://gitee.com/ontoweb/intellect-agent/tree/main/docs/packaging"
