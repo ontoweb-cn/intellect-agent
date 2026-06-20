@@ -1,0 +1,31 @@
+# cargo-deny configuration for supply chain security.
+# Run locally: cargo deny check
+# CI: .github/workflows/rust-ci.yml + .gitee/workflows/rust-ci.yml
+
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "deny"
+notice = "warn"
+ignore = []
+
+[licenses]
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+copyleft = "deny"
+default = "deny"
+
+[bans]
+multiple-versions = "warn"
+deny = []
+skip = []

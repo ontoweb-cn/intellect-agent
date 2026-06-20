@@ -221,3 +221,27 @@ jobs:
 
           print('Token descriptions OK')
           "
+
+  # ── Job 4: Security audit (cargo-audit) ──────────────────────────────
+  cargo-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run cargo-audit
+        run: cd rust-core && cargo audit
+
+  # ── Job 5: Supply chain (cargo-deny) ─────────────────────────────────
+  cargo-deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Run cargo-deny
+        run: cd rust-core && cargo deny check

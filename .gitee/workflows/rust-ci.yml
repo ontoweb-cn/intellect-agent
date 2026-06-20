@@ -195,3 +195,22 @@ stages:
               assert icc.detect_dangerous_command_rs('python -c \"print(1)\"') is None
               print('Token descriptions OK')
               "
+
+      - job: cargo-audit
+        displayName: Security audit (cargo-audit)
+        runsOn: ubuntu-latest
+        timeoutMinutes: 10
+        steps:
+          - uses: checkout@v1
+          - name: Install Rust
+            run: |
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+              source $HOME/.cargo/env
+          - name: Install cargo-audit
+            run: |
+              source $HOME/.cargo/env
+              cargo install cargo-audit --locked
+          - name: Run cargo-audit
+            run: |
+              source $HOME/.cargo/env
+              cd rust-core && cargo audit
