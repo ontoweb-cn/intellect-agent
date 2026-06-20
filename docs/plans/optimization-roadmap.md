@@ -32,7 +32,7 @@
 | A1 | `gateway/run.py` 19,799 行单体，296 方法 | 整个文件 | 提取消息回放、错误分类、interrupt 逻辑为独立模块 | ⬜ |
 | A2 | `cli.py` 15,313 行 | 整个文件 | 提取 worktree 管理 (~400行) 和终端显示 (~330行) | ⬜ |
 | A3 | `conversation_loop.py` `run_conversation()` 单函数 4,439 行 | 整个函数 | 按阶段拆：预处理 / API 调用 / 流式 / 后处理 / 错误恢复 | ⬜ |
-| A4 | 18 个平台适配器 ~34,000 行，消息格式化/错误分类逻辑重复 | `plugins/platforms/*` | 提取共享基类 | ⬜ |
+| A4 | 18 个平台适配器 ~34,000 行，消息格式化/错误分类逻辑重复 | `plugins/platforms/*` | ✅ `check_platform_requirements()` 共享 helper；其余逐步迁移 |
 
 ## 🟢 代码质量（低影响）
 
@@ -42,10 +42,10 @@
 | Q2 | `except Exception:` 宽泛捕获 | `run_agent.py`(67), `gateway/run.py`(230+) | 297+ | ⬜ |
 | Q3 | 8 个独立 config 读取路径绕过缓存 | 多个文件 | 8 | 📝 已文档化（见下方） |
 | Q4 | 60+ agent 模块无对应测试文件 | `agent/` 目录 | 60+ | ⬜ |
-| Q5 | 所有 lint 规则仅启用 PLW1514 | `pyproject.toml:310` | 1/所有规则 | ⬜ |
-| Q6 | `model_metadata.py` endpoint 缓存无上限 | `model_metadata.py:78` | — | ⬜ |
-| Q7 | `conversation_loop.py` (4,789行) 无专项测试 | `tests/agent/` | 缺失 | ⬜ |
-| Q8 | 5 个平台适配器完全无测试 | `plugins/platforms/{weixin,...}` | 5 | ⬜ |
+| Q5 | 所有 lint 规则仅启用 PLW1514 | `pyproject.toml:310` | 1/所有规则 | ✅ 已启用 `F` (PyFlakes) |
+| Q6 | `model_metadata.py` endpoint 缓存无上限 | `model_metadata.py:78` | — | ✅ P10 LRU eviction |
+| Q7 | `conversation_loop.py` (4,789行) 无专项测试 | `tests/agent/` | 缺失 | ⏸️ 独立测试工程 |
+| Q8 | 5 个平台适配器完全无测试 | `plugins/platforms/{weixin,...}` | 5 | ⏸️ 独立测试工程 |
 
 ## ⚫ 已完成/进行中
 
