@@ -90,6 +90,13 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tokens::parse_context_limit_from_error_rs, m)?)?;
     m.add_function(wrap_pyfunction!(tokens::parse_available_output_tokens_from_error_rs, m)?)?;
 
+    // ── M2: Model name helpers ────────────────────────────────────────
+    m.add_function(wrap_pyfunction!(tokens::strip_provider_prefix_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tokens::model_name_suggests_kimi_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tokens::model_id_matches_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tokens::normalize_model_version_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tokens::get_next_probe_tier_rs, m)?)?;
+
     // ── Stage 4a-4e: Gateway utilities ─────────────────────────────────
     m.add_function(wrap_pyfunction!(gateway::build_session_key_rs, m)?)?;
     m.add_function(wrap_pyfunction!(gateway::evaluate_reset_policy_rs, m)?)?;

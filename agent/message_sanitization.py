@@ -6,6 +6,10 @@ lists and structured payloads, repairing or stripping problematic
 characters that would otherwise crash ``json.dumps`` inside the OpenAI
 SDK or be rejected by upstream APIs.
 
+String-level functions delegate to the Rust ``intellect_community_core``
+extension (mandatory since v0.6.2).  In-place list/dict mutation
+functions remain in Python due to PyO3 complexity.
+
 All helpers are stateless and side-effect-free except for in-place
 mutation of their input (where documented).  Backward-compatible
 re-exports from ``run_agent`` remain in place so existing imports
@@ -14,8 +18,6 @@ re-exports from ``run_agent`` remain in place so existing imports
 
 from __future__ import annotations
 
-import json
-import logging
 import re
 from typing import Any
 
@@ -25,8 +27,6 @@ from intellect_rust import (
     rust_repair_tool_args as _rs_repair_tool_args,
     rust_escape_json_chars as _rs_escape_json_chars,
 )
-
-logger = logging.getLogger(__name__)
 
 # Lone surrogate code points are invalid in UTF-8 and crash json.dumps
 # inside the OpenAI SDK.  Used by every surrogate-sanitization helper
@@ -39,16 +39,10 @@ def _sanitize_surrogates(text: str) -> str:
     """Replace lone surrogate code points with U+FFFD (replacement character).
 
     Surrogates are invalid in UTF-8 and will crash ``json.dumps()`` inside the
-    OpenAI SDK.  This is a fast no-op when the text contains no surrogates.
+    OpenAI SDK.  Delegates to the Rust extension (mandatory since v0.6.2).
+    This is a fast no-op when the text contains no surrogates.
     """
-    if _rs_sanitize_surrogates is not None:
-        try:
-            return _rs_sanitize_surrogates(text)
-        except Exception:
-            pass
-    if _SURROGATE_RE.search(text):
-        return _SURROGATE_RE.sub('\ufffd', text)
-    return text
+    return _rs_sanitize_surrogates(text)
 
 
 def _sanitize_structure_surrogates(payload: Any) -> bool:
@@ -155,164 +149,30 @@ def _sanitize_messages_surrogates(messages: list) -> bool:
 def _escape_invalid_chars_in_json_strings(raw: str) -> str:
     """Escape unescaped control chars inside JSON string values.
 
-    Walks the raw JSON character-by-character, tracking whether we are
-    inside a double-quoted string. Inside strings, replaces literal
-    control characters (0x00-0x1F) that aren't already part of an escape
-    sequence with their ``\\uXXXX`` equivalents. Pass-through for everything
-    else.
-
-    Ported from #12093 — complements the other repair passes in
-    ``_repair_tool_call_arguments`` when ``json.loads(strict=False)`` is
-    not enough (e.g. llama.cpp backends that emit literal apostrophes or
-    tabs alongside other malformations).
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    if _rs_escape_json_chars is not None:
-        try:
-            return _rs_escape_json_chars(raw)
-        except Exception:
-            pass
-    out: list[str] = []
-    in_string = False
-    i = 0
-    n = len(raw)
-    while i < n:
-        ch = raw[i]
-        if in_string:
-            if ch == "\\" and i + 1 < n:
-                # Already-escaped char — pass through as-is
-                out.append(ch)
-                out.append(raw[i + 1])
-                i += 2
-                continue
-            if ch == '"':
-                in_string = False
-                out.append(ch)
-            elif ord(ch) < 0x20:
-                out.append(f"\\u{ord(ch):04x}")
-            else:
-                out.append(ch)
-        else:
-            if ch == '"':
-                in_string = True
-            out.append(ch)
-        i += 1
-    return "".join(out)
+    return _rs_escape_json_chars(raw)
 
 
 def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
     """Attempt to repair malformed tool_call argument JSON.
 
-    Models like GLM-5.1 via Ollama can produce truncated JSON, trailing
-    commas, Python ``None``, etc.  The API proxy rejects these with HTTP 400
-    "invalid tool call arguments".  This function applies common repairs;
-    if all fail it returns ``"{}"`` so the request succeeds (better than
-    crashing the session).  All repairs are logged at WARNING level.
+    Delegates to the Rust extension (mandatory since v0.6.2). The Rust
+    implementation handles: empty/None, strict=False pass, trailing comma
+    stripping, unclosed brace/bracket repair, excess closer removal,
+    control char escaping, and a final ``"{}"`` fallback.
     """
-    if _rs_repair_tool_args is not None:
-        try:
-            return _rs_repair_tool_args(raw_args, tool_name)
-        except Exception:
-            pass
-    raw_stripped = raw_args.strip() if isinstance(raw_args, str) else ""
-
-    # Fast-path: empty / whitespace-only -> empty object
-    if not raw_stripped:
-        logger.warning("Sanitized empty tool_call arguments for %s", tool_name)
-        return "{}"
-
-    # Python-literal None -> normalise to {}
-    if raw_stripped == "None":
-        logger.warning("Sanitized Python-None tool_call arguments for %s", tool_name)
-        return "{}"
-
-    # Repair pass 0: llama.cpp backends sometimes emit literal control
-    # characters (tabs, newlines) inside JSON string values. json.loads
-    # with strict=False accepts these and lets us re-serialise the
-    # result into wire-valid JSON without any string surgery. This is
-    # the most common local-model repair case (#12068).
-    try:
-        parsed = json.loads(raw_stripped, strict=False)
-        reserialised = json.dumps(parsed, separators=(",", ":"))
-        if reserialised != raw_stripped:
-            logger.warning(
-                "Repaired unescaped control chars in tool_call arguments for %s",
-                tool_name,
-            )
-        return reserialised
-    except (json.JSONDecodeError, TypeError, ValueError):
-        pass
-
-    # Attempt common JSON repairs
-    fixed = raw_stripped
-    # 1. Strip trailing commas before } or ]
-    fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
-    # 2. Close unclosed structures
-    open_curly = fixed.count('{') - fixed.count('}')
-    open_bracket = fixed.count('[') - fixed.count(']')
-    if open_curly > 0:
-        fixed += '}' * open_curly
-    if open_bracket > 0:
-        fixed += ']' * open_bracket
-    # 3. Remove excess closing braces/brackets (bounded to 50 iterations)
-    for _ in range(50):
-        try:
-            json.loads(fixed)
-            break
-        except json.JSONDecodeError:
-            if fixed.endswith('}') and fixed.count('}') > fixed.count('{'):
-                fixed = fixed[:-1]
-            elif fixed.endswith(']') and fixed.count(']') > fixed.count('['):
-                fixed = fixed[:-1]
-            else:
-                break
-
-    try:
-        json.loads(fixed)
-        logger.warning(
-            "Repaired malformed tool_call arguments for %s: %s → %s",
-            tool_name, raw_stripped[:80], fixed[:80],
-        )
-        return fixed
-    except json.JSONDecodeError:
-        pass
-
-    # Repair pass 4: escape unescaped control chars inside JSON strings,
-    # then retry. Catches cases where strict=False alone fails because
-    # other malformations are present too.
-    try:
-        escaped = _escape_invalid_chars_in_json_strings(fixed)
-        if escaped != fixed:
-            json.loads(escaped)
-            logger.warning(
-                "Repaired control-char-laced tool_call arguments for %s: %s → %s",
-                tool_name, raw_stripped[:80], escaped[:80],
-            )
-            return escaped
-    except (json.JSONDecodeError, TypeError, ValueError):
-        pass
-
-    # Last resort: replace with empty object so the API request doesn't
-    # crash the entire session.
-    logger.warning(
-        "Unrepairable tool_call arguments for %s — "
-        "replaced with empty object (was: %s)",
-        tool_name, raw_stripped[:80],
-    )
-    return "{}"
+    return _rs_repair_tool_args(raw_args, tool_name)
 
 
 def _strip_non_ascii(text: str) -> str:
-    """Remove non-ASCII characters, replacing with closest ASCII equivalent or removing.
+    """Remove non-ASCII characters.
 
     Used as a last resort when the system encoding is ASCII and can't handle
     any non-ASCII characters (e.g. LANG=C on Chromebooks).
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    if _rs_strip_non_ascii is not None:
-        try:
-            return _rs_strip_non_ascii(text)
-        except Exception:
-            pass
-    return text.encode('ascii', errors='ignore').decode('ascii')
+    return _rs_strip_non_ascii(text)
 
 
 def _sanitize_messages_non_ascii(messages: list) -> bool:

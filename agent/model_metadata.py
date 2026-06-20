@@ -7,7 +7,6 @@ and run_agent.py for pre-flight context checks.
 import ipaddress
 import logging
 import os
-import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,6 +18,17 @@ import yaml
 from utils import base_url_host_matches, base_url_hostname
 
 from intellect_constants import OPENROUTER_MODELS_URL
+from intellect_rust import (
+    rust_estimate_tokens_rough,
+    rust_grok_supports_re,
+    rust_parse_context_limit,
+    rust_parse_output_limit,
+    rust_strip_provider_prefix,
+    rust_model_name_suggests_kimi,
+    rust_model_id_matches,
+    rust_normalize_model_version,
+    rust_get_next_probe_tier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,45 +51,6 @@ def _resolve_requests_verify() -> bool | str:
             return val
     return True
 
-# Provider names that can appear as a "provider:" prefix before a model ID.
-# Only these are stripped — Ollama-style "model:tag" colons (e.g. "qwen3.5:27b")
-# are preserved so the full model name reaches cache lookups and server queries.
-_PROVIDER_PREFIXES: frozenset[str] = frozenset({
-    "openrouter", "ontoweb", "openai-codex", "copilot", "copilot-acp",
-    "gemini", "ollama-cloud", "zai", "kimi-coding", "kimi-coding-cn", "stepfun", "minimax", "minimax-oauth", "minimax-cn", "anthropic", "deepseek",
-    "opencode-zen", "opencode-go", "kilocode", "alibaba", "novita",
-    "qwen-oauth",
-    "xiaomi",
-    "arcee",
-    "gmi",
-    "tencent-tokenhub",
-    "volcengine", "volcengine-coding-plan", "volcengine-agent-plan",
-    "custom", "local",
-    # Common aliases
-    "google", "google-gemini", "google-ai-studio",
-    "glm", "z-ai", "z.ai", "zhipu", "github", "github-copilot",
-    "github-models", "kimi", "moonshot", "kimi-cn", "moonshot-cn", "claude", "deep-seek",
-    "ollama",
-    "stepfun", "opencode", "zen", "go", "kilo", "dashscope", "aliyun", "qwen",
-    "mimo", "xiaomi-mimo",
-    "doubao", "volc", "bytedance",
-    "volc-coding", "doubao-coding", "volcengine-coding",
-    "volc-agent", "doubao-agent", "volcengine-agent",
-    "tencent", "tokenhub", "tencent-cloud", "tencentmaas",
-    "arcee-ai", "arceeai",
-    "gmi-cloud", "gmicloud",
-    "xai", "x-ai", "x.ai", "grok",
-    "nvidia", "nim", "nvidia-nim", "nemotron",
-    "qwen-portal", "novita-ai", "novitaai",
-})
-
-
-_OLLAMA_TAG_PATTERN = re.compile(
-    r"^(\d+\.?\d*b|latest|stable|q\d|fp?\d|instruct|chat|coder|vision|text)",
-    re.IGNORECASE,
-)
-
-
 # Tailscale's CGNAT range (RFC 6598). `ipaddress.is_private` excludes this
 # block, so without an explicit check Ollama reached over Tailscale (e.g.
 # `http://100.77.243.5:11434`) wouldn't be treated as local and its stream
@@ -94,17 +65,10 @@ def _strip_provider_prefix(model: str) -> str:
     ``"qwen3.5:27b"``   → ``"qwen3.5:27b"``  (unchanged — not a provider prefix)
     ``"qwen:0.5b"``     → ``"qwen:0.5b"``    (unchanged — Ollama model:tag)
     ``"deepseek:latest"``→ ``"deepseek:latest"``(unchanged — Ollama model:tag)
+
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    if ":" not in model or model.startswith("http"):
-        return model
-    prefix, suffix = model.split(":", 1)
-    prefix_lower = prefix.strip().lower()
-    if prefix_lower in _PROVIDER_PREFIXES:
-        # Don't strip if suffix looks like an Ollama tag (e.g. "7b", "latest", "q4_0")
-        if _OLLAMA_TAG_PATTERN.match(suffix.strip()):
-            return model
-        return suffix
-    return model
+    return rust_strip_provider_prefix(model)
 
 _model_metadata_cache: Dict[str, Dict[str, Any]] = {}
 _model_metadata_cache_time: float = 0
@@ -267,29 +231,12 @@ DEFAULT_CONTEXT_LENGTHS = {
 # effort dial — so callers should send no `reasoning` key at all rather
 # than a default `medium` (which 400s with "Model X does not support
 # parameter reasoningEffort").
-_GROK_EFFORT_CAPABLE_PREFIXES = (
-    "grok-3-mini",
-    "grok-4.20-multi-agent",
-    "grok-4.3",
-)
-
-
 def grok_supports_reasoning_effort(model: str) -> bool:
     """Return True when an xAI Grok model accepts ``reasoning.effort``.
 
-    Allowlist by substring (matches both bare ``grok-3-mini`` and
-    aggregator-prefixed ``x-ai/grok-3-mini``). Conservative by design:
-    if a future Grok model isn't listed, we send no effort dial rather
-    than 400.
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    name = (model or "").strip().lower()
-    if not name:
-        return False
-    # Strip common aggregator prefixes (x-ai/, openrouter/x-ai/, xai/, ...)
-    for sep in ("/",):
-        if sep in name:
-            name = name.rsplit(sep, 1)[-1]
-    return any(name.startswith(prefix) for prefix in _GROK_EFFORT_CAPABLE_PREFIXES)
+    return rust_grok_supports_re(model)
 
 
 _CONTEXT_LENGTH_KEYS = (
@@ -891,39 +838,19 @@ def _invalidate_cached_context_length(model: str, base_url: str) -> None:
 
 
 def get_next_probe_tier(current_length: int) -> Optional[int]:
-    """Return the next lower probe tier, or None if already at minimum."""
-    for tier in CONTEXT_PROBE_TIERS:
-        if tier < current_length:
-            return tier
-    return None
+    """Return the next lower probe tier, or None if already at minimum.
+
+    Delegates to the Rust extension (mandatory since v0.6.2).
+    """
+    return rust_get_next_probe_tier(current_length)
 
 
 def parse_context_limit_from_error(error_msg: str) -> Optional[int]:
     """Try to extract the actual context limit from an API error message.
 
-    Many providers include the limit in their error text, e.g.:
-      - "maximum context length is 32768 tokens"
-      - "context_length_exceeded: 131072"
-      - "Maximum context size 32768 exceeded"
-      - "model's max context length is 65536"
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    error_lower = error_msg.lower()
-    # Pattern: look for numbers near context-related keywords
-    patterns = [
-        r'(?:max(?:imum)?|limit)\s*(?:context\s*)?(?:length|size|window)?\s*(?:is|of|:)?\s*(\d{4,})',
-        r'context\s*(?:length|size|window)\s*(?:is|of|:)?\s*(\d{4,})',
-        r'(\d{4,})\s*(?:token)?\s*(?:context|limit)',
-        r'>\s*(\d{4,})\s*(?:max|limit|token)',  # "250000 tokens > 200000 maximum"
-        r'(\d{4,})\s*(?:max(?:imum)?)\b',  # "200000 maximum"
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, error_lower)
-        if match:
-            limit = int(match.group(1))
-            # Sanity check: must be a reasonable context length
-            if 1024 <= limit <= 10_000_000:
-                return limit
-    return None
+    return rust_parse_context_limit(error_msg)
 
 
 def get_context_length_from_provider_error(
@@ -949,64 +876,17 @@ def get_context_length_from_provider_error(
 def parse_available_output_tokens_from_error(error_msg: str) -> Optional[int]:
     """Detect an "output cap too large" error and return how many output tokens are available.
 
-    Background — two distinct context errors exist:
-      1. "Prompt too long"  — the INPUT itself exceeds the context window.
-           Fix: compress history, and only reduce context_length if the
-           provider explicitly reports the actual lower limit.
-      2. "max_tokens too large" — input is fine, but input + requested_output > window.
-           Fix: reduce max_tokens (the output cap) for this call.
-           Do NOT touch context_length — the window hasn't shrunk.
-
-    Anthropic's API returns errors like:
-      "max_tokens: 32768 > context_window: 200000 - input_tokens: 190000 = available_tokens: 10000"
-
-    Returns the number of output tokens that would fit (e.g. 10000 above), or None if
-    the error does not look like a max_tokens-too-large error.
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    error_lower = error_msg.lower()
-
-    # Must look like an output-cap error, not a prompt-length error.
-    is_output_cap_error = (
-        "max_tokens" in error_lower
-        and ("available_tokens" in error_lower or "available tokens" in error_lower)
-    )
-    if not is_output_cap_error:
-        return None
-
-    # Extract the available_tokens figure.
-    # Anthropic format: "… = available_tokens: 10000"
-    patterns = [
-        r'available_tokens[:\s]+(\d+)',
-        r'available\s+tokens[:\s]+(\d+)',
-        # fallback: last number after "=" in expressions like "200000 - 190000 = 10000"
-        r'=\s*(\d+)\s*$',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, error_lower)
-        if match:
-            tokens = int(match.group(1))
-            if tokens >= 1:
-                return tokens
-    return None
+    return rust_parse_output_limit(error_msg)
 
 
 def _model_id_matches(candidate_id: str, lookup_model: str) -> bool:
     """Return True if *candidate_id* (from server) matches *lookup_model* (configured).
 
-    Supports two forms:
-    - Exact match:  "nvidia-nemotron-super-49b-v1" == "nvidia-nemotron-super-49b-v1"
-    - Slug match:   "nvidia/nvidia-nemotron-super-49b-v1" matches "nvidia-nemotron-super-49b-v1"
-                    (the part after the last "/" equals lookup_model)
-
-    This covers LM Studio's native API which stores models as "publisher/slug"
-    while users typically configure only the slug after the "local:" prefix.
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    if candidate_id == lookup_model:
-        return True
-    # Slug match: basename of candidate equals the lookup name
-    if "/" in candidate_id and candidate_id.rsplit("/", 1)[1] == lookup_model:
-        return True
-    return False
+    return rust_model_id_matches(candidate_id, lookup_model)
 
 
 def query_ollama_num_ctx(model: str, base_url: str, api_key: str = "") -> Optional[int]:
@@ -1128,13 +1008,9 @@ def _query_ollama_api_show(model: str, base_url: str, api_key: str = "") -> Opti
 def _model_name_suggests_kimi(model: str) -> bool:
     """Return True if the model name looks like a Kimi-family model.
 
-    Catches ``kimi-k2.6``, ``kimi-k2.5``, ``kimi-k2-thinking``,
-    ``moonshotai/Kimi-K2.6``, and similar variants.  Used as a guard
-    against stale OpenRouter metadata that underreports these models
-    as 32K context when they actually support 262K+.
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    lower = model.lower()
-    return lower.startswith("kimi") or "moonshot" in lower
+    return rust_model_name_suggests_kimi(model)
 
 
 def _query_local_context_length(model: str, base_url: str, api_key: str = "") -> Optional[int]:
@@ -1234,11 +1110,9 @@ def _query_local_context_length(model: str, base_url: str, api_key: str = "") ->
 def _normalize_model_version(model: str) -> str:
     """Normalize version separators for matching.
 
-    OntoWeb uses dashes: claude-opus-4-6, claude-sonnet-4-5
-    OpenRouter uses dots: claude-opus-4.6, claude-sonnet-4.5
-    Normalize both to dashes for comparison.
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    return model.replace(".", "-")
+    return rust_normalize_model_version(model)
 
 
 def _query_anthropic_context_length(model: str, base_url: str, api_key: str) -> Optional[int]:
@@ -1756,13 +1630,11 @@ def get_model_context_length(
 def estimate_tokens_rough(text: str) -> int:
     """Rough token estimate (~4 chars/token) for pre-flight checks.
 
-    Uses ceiling division so short texts (1-3 chars) never estimate as
-    0 tokens, which would cause the compressor and pre-flight checks to
-    systematically undercount when many short tool results are present.
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
     if not text:
         return 0
-    return (len(text) + 3) // 4
+    return rust_estimate_tokens_rough(text)
 
 
 def estimate_messages_tokens_rough(messages: List[Dict[str, Any]]) -> int:

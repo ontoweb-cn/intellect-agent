@@ -1,14 +1,15 @@
-"""Tests for agent.error_classifier — structured API error classification."""
+"""Tests for agent.error_classifier — structured API error classification.
+
+Since v0.6.2 the classification engine runs in Rust; internal helper
+functions are no longer exposed.  Integration tests exercise the full
+pipeline via ``classify_api_error()``.
+"""
 
 import pytest
 from agent.error_classifier import (
     ClassifiedError,
     FailoverReason,
     classify_api_error,
-    _extract_status_code,
-    _extract_error_body,
-    _extract_error_code,
-    _classify_402,
 )
 
 
@@ -90,125 +91,6 @@ class TestClassifiedError:
         assert e.should_fallback is False
         assert e.status_code is None
         assert e.message == ""
-
-
-# ── Test: Status code extraction ───────────────────────────────────────
-
-class TestExtractStatusCode:
-    def test_from_status_code_attr(self):
-        e = MockAPIError("fail", status_code=429)
-        assert _extract_status_code(e) == 429
-
-    def test_from_status_attr(self):
-        class ErrWithStatus(Exception):
-            status = 503
-        assert _extract_status_code(ErrWithStatus()) == 503
-
-    def test_from_cause_chain(self):
-        inner = MockAPIError("inner", status_code=401)
-        outer = Exception("outer")
-        outer.__cause__ = inner
-        assert _extract_status_code(outer) == 401
-
-    def test_none_when_missing(self):
-        assert _extract_status_code(Exception("generic")) is None
-
-    def test_rejects_non_http_status(self):
-        """Integers outside 100-599 on .status should be ignored."""
-        class ErrWeirdStatus(Exception):
-            status = 42
-        assert _extract_status_code(ErrWeirdStatus()) is None
-
-
-# ── Test: Error body extraction ────────────────────────────────────────
-
-class TestExtractErrorBody:
-    def test_from_body_attr(self):
-        e = MockAPIError("fail", body={"error": {"message": "bad"}})
-        assert _extract_error_body(e) == {"error": {"message": "bad"}}
-
-    def test_empty_when_no_body(self):
-        assert _extract_error_body(Exception("generic")) == {}
-
-
-# ── Test: Error code extraction ────────────────────────────────────────
-
-class TestExtractErrorCode:
-    def test_from_nested_error_code(self):
-        body = {"error": {"code": "rate_limit_exceeded"}}
-        assert _extract_error_code(body) == "rate_limit_exceeded"
-
-    def test_from_nested_error_type(self):
-        body = {"error": {"type": "invalid_request_error"}}
-        assert _extract_error_code(body) == "invalid_request_error"
-
-    def test_from_top_level_code(self):
-        body = {"code": "model_not_found"}
-        assert _extract_error_code(body) == "model_not_found"
-
-    def test_from_wrapped_json_message(self):
-        body = {
-            "error": {
-                "message": (
-                    '{"error":{"message":"The encrypted content for item rs_001 could not be verified. '
-                    'Reason: Encrypted content could not be decrypted or parsed.",'
-                    '"type":"invalid_request_error","param":"","code":"invalid_encrypted_content"}}'
-                ),
-                "type": "400",
-            }
-        }
-        assert _extract_error_code(body) == "invalid_encrypted_content"
-
-    def test_empty_when_no_code(self):
-        assert _extract_error_code({}) == ""
-        assert _extract_error_code({"error": {"message": "oops"}}) == ""
-
-
-# ── Test: 402 disambiguation ───────────────────────────────────────────
-
-class TestClassify402:
-    """The critical 402 billing vs rate_limit disambiguation."""
-
-    def test_billing_exhaustion(self):
-        """Plain 402 = billing."""
-        result = _classify_402(
-            "payment required",
-            lambda reason, **kw: ClassifiedError(reason=reason, **kw),
-        )
-        assert result.reason == FailoverReason.billing
-        assert result.should_rotate_credential is True
-
-    def test_transient_usage_limit(self):
-        """402 with 'usage limit' + 'try again' = rate limit, not billing."""
-        result = _classify_402(
-            "usage limit exceeded. try again in 5 minutes",
-            lambda reason, **kw: ClassifiedError(reason=reason, **kw),
-        )
-        assert result.reason == FailoverReason.rate_limit
-        assert result.should_rotate_credential is True
-
-    def test_quota_with_retry(self):
-        """402 with 'quota' + 'retry' = rate limit."""
-        result = _classify_402(
-            "quota exceeded, please retry after the window resets",
-            lambda reason, **kw: ClassifiedError(reason=reason, **kw),
-        )
-        assert result.reason == FailoverReason.rate_limit
-
-    def test_quota_without_retry(self):
-        """402 with just 'quota' but no transient signal = billing."""
-        result = _classify_402(
-            "quota exceeded",
-            lambda reason, **kw: ClassifiedError(reason=reason, **kw),
-        )
-        assert result.reason == FailoverReason.billing
-
-    def test_insufficient_credits(self):
-        result = _classify_402(
-            "insufficient credits to complete request",
-            lambda reason, **kw: ClassifiedError(reason=reason, **kw),
-        )
-        assert result.reason == FailoverReason.billing
 
 
 # ── Test: Full classification pipeline ─────────────────────────────────

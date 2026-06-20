@@ -12,21 +12,25 @@ maturin develop        # dev install
 maturin build --release  # release wheel
 ```
 
-## Architecture (11 files, ~4,500 lines)
+## Architecture (15 files, ~6,600 lines)
 
 ```
 src/
-  backend.rs      — SQLiteBackend (WAL, write retry, 10 operations)
-  connection.rs   — RustConnection / RustCursor (DB-API compat)
-  fts.rs          — FTS5 trigger/index utilities
-  compression.rs  — Compression chain CTE traversal
-  schema.rs       — FTS identifier whitelist
-  sandbox.rs      — Command safety (59 regex patterns)
-  usage.rs        — Token normalization + TokenAccumulator
-  stream.rs       — SSE delta accumulator (StreamAccumulator)
-  crypto.rs       — PKCE, Fernet (AES-128-CBC + HMAC), secure random
-  gateway.rs      — Session key builder, reset policy, backoff, rate limiter
-  lib.rs          — Module entry point
+  backend.rs           — SQLiteBackend (WAL, write retry, 10 operations)
+  connection.rs        — RustConnection / RustCursor (DB-API compat)
+  fts.rs               — FTS5 trigger/index utilities
+  compression.rs       — Compression chain CTE traversal
+  schema.rs            — FTS identifier whitelist
+  sandbox.rs           — Command safety (59 regex patterns, AST double-layer)
+  usage.rs             — Token normalization, model name normalization, TokenAccumulator
+  stream.rs            — SSE delta accumulator (StreamAccumulator)
+  crypto.rs            — PKCE, Fernet (AES-128-CBC + HMAC), secure random
+  gateway.rs           — Session key builder, reset policy, backoff, rate limiter
+  tokens.rs            — Token estimation, Grok allowlist, model name helpers, context probe tiers
+  error_classifier.rs  — API error taxonomy (22 reasons, 8-stage pipeline, 400 heuristic)
+  counters.rs          — Iteration budget + jittered backoff
+  sanitize.rs          — Surrogate stripping, non-ASCII stripping, JSON control char escaping, tool arg repair
+  lib.rs               — Module entry point
 ```
 
 ## Runtime Integration
@@ -38,10 +42,12 @@ Since v0.6.4, all imports are centralized in `intellect_rust.py`. The Rust exten
 | Storage | `SQLiteBackend` |
 | Sandbox | `rust_detect_dangerous`, `rust_detect_hardline` |
 | Stream | `StreamAccumulator`, `TokenAccumulator` |
-| Usage | `rust_normalize_usage` |
+| Usage | `rust_normalize_usage`, `rust_normalize_model_name` |
 | Crypto | `rust_pkce_*`, `rust_fernet_*` |
 | Gateway | `rust_build_session_key`, etc. |
-| Model | `rust_normalize_model_name` |
+| Model | `rust_estimate_tokens_rough`, `rust_grok_supports_re`, `rust_strip_provider_prefix`, etc. |
+| Sanitize | `rust_sanitize_surrogates`, `rust_strip_non_ascii`, `rust_repair_tool_args`, `rust_escape_json_chars` |
+| Error | `rust_classify_api_error` |
 
 ## Benchmark (v0.6.0)
 

@@ -405,19 +405,9 @@ fn build_result(
 
 // ── Sub-classifiers ───────────────────────────────────────────────────────
 
-fn classify_402(error_msg: &str, py: Python<'_>) -> ClassifiedError {
-    let has_limit = any_match(error_msg, USAGE_LIMIT);
-    let has_transient = any_match(error_msg, USAGE_TRANSIENT);
-    if has_limit && has_transient {
-        build_result(py, make_reason(py, "rate_limit"), None, None, None, String::new(), true, false, true, true)
-    } else {
-        build_result(py, make_reason(py, "billing"), None, None, None, String::new(), false, false, true, true)
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn classify_400(
-    error_msg: &str, error_code: &str, py: Python<'_>,
+    error_msg: &str, error_code: &str, body_msg: &str, py: Python<'_>,
     approx_tokens: i64, context_length: i64, num_messages: i64,
 ) -> ClassifiedError {
     if any_match(error_msg, MULTIMODAL_TOOL) {
@@ -448,10 +438,16 @@ fn classify_400(
     if any_match(error_msg, BILLING) {
         return build_result(py, make_reason(py, "billing"), None, None, None, String::new(), false, false, true, true);
     }
-    // Note: The Python version has an additional heuristic for "generic 400 +
-    // large session → context overflow" that requires inspecting the response
-    // body length. We omit this in Rust since it depends on body details not
-    // available here; the Python fallback handles it.
+    // Generic 400 + large session → probable context overflow.
+    // Analogous to the Python classifier's heuristic: when the body message is
+    // short/generic ("Error" or empty) and the session is large, it's likely a
+    // context overflow that the provider didn't signal explicitly.
+    let is_generic = body_msg.len() < 30 || body_msg == "error" || body_msg.is_empty();
+    let is_large = approx_tokens > context_length * 4 / 10  // 0.4 × context_length (integer math)
+        || (context_length <= 256_000 && (approx_tokens > 80_000 || num_messages > 80));
+    if is_generic && is_large {
+        return build_result(py, make_reason(py, "context_overflow"), None, None, None, String::new(), true, true, false, false);
+    }
     build_result(py, make_reason(py, "format_error"), None, None, None, String::new(), false, false, false, true)
 }
 
@@ -505,7 +501,7 @@ pub fn classify_api_error_rs(
     let body_py = extract_error_body(error);
 
     // Pre-compute in GIL context
-    let (error_code, error_msg, message_str) = Python::with_gil(|py| {
+    let (error_code, error_msg, message_str, body_msg) = Python::with_gil(|py| {
         let body_bound = body_py.as_ref().map(|b| b.bind(py).clone());
         let body_ref = body_bound.as_ref();
 
@@ -518,6 +514,7 @@ pub fn classify_api_error_rs(
             .unwrap_or_default();
 
         let mut combined = raw_msg.clone();
+        let mut body_err_msg = String::new();
 
         if let Some(b) = body_ref {
             if let Some(err_obj) = try_get_dict(b, "error") {
@@ -527,6 +524,7 @@ pub fn classify_api_error_rs(
                         combined.push(' ');
                         combined.push_str(&lower);
                     }
+                    body_err_msg = lower;
                 }
                 let meta_msg = extract_metadata_msg(py, &err_obj);
                 if !meta_msg.is_empty() && !combined.contains(&meta_msg) {
@@ -534,16 +532,19 @@ pub fn classify_api_error_rs(
                     combined.push_str(&meta_msg);
                 }
             }
-            if let Some(body_msg) = try_get_str(b, "message") {
-                let lower = body_msg.to_lowercase();
-                if !lower.is_empty() && !combined.contains(&lower) {
-                    combined.push(' ');
-                    combined.push_str(&lower);
+            if body_err_msg.is_empty() {
+                if let Some(body_msg) = try_get_str(b, "message") {
+                    let lower = body_msg.to_lowercase();
+                    if !lower.is_empty() && !combined.contains(&lower) {
+                        combined.push(' ');
+                        combined.push_str(&lower);
+                    }
+                    body_err_msg = lower;
                 }
             }
         }
 
-        (error_code, combined, message_str)
+        (error_code, combined, message_str, body_err_msg)
     });
 
     let prov = Some(provider.to_string());
@@ -621,7 +622,7 @@ pub fn classify_api_error_rs(
             413 => Some((make_reason(py, "payload_too_large"), true, true, false, false)),
             429 => Some((make_reason(py, "rate_limit"), true, false, true, true)),
             400 => {
-                let c = classify_400(&error_msg, &error_code, py, approx_tokens, context_length, num_messages);
+                let c = classify_400(&error_msg, &error_code, &body_msg, py, approx_tokens, context_length, num_messages);
                 let mut c = c;
                 c.status_code = status_code;
                 c.provider = prov;
@@ -781,23 +782,5 @@ mod tests {
     fn test_any_match() {
         assert!(any_match("rate limit exceeded", RATE_LIMIT));
         assert!(!any_match("normal response", RATE_LIMIT));
-    }
-
-    #[test]
-    fn test_classify_402_transient() {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            let r = classify_402("usage limit, try again in 5 minutes", py);
-            assert!(r.retryable);
-        });
-    }
-
-    #[test]
-    fn test_classify_402_billing() {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            let r = classify_402("insufficient credits", py);
-            assert!(!r.retryable);
-        });
     }
 }

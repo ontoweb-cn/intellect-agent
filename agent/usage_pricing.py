@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -9,7 +8,8 @@ from typing import Any, Dict, Literal, Optional
 from agent.model_metadata import fetch_endpoint_model_metadata, fetch_model_metadata
 from intellect_rust import rust_normalize_usage as _rust_normalize, \
     rust_format_duration_compact as _rust_fmt_dur, \
-    rust_format_token_count_compact as _rust_fmt_tok
+    rust_format_token_count_compact as _rust_fmt_tok, \
+    rust_normalize_model_name as _rust_normalize_model
 from utils import base_url_host_matches
 
 DEFAULT_PRICING = {"input": 0.0, "output": 0.0}
@@ -587,18 +587,9 @@ def resolve_billing_route(
 def _normalize_anthropic_model_name(model: str) -> str:
     """Normalize Anthropic model name variants to canonical form.
 
-    Handles:
-      - Dot notation: claude-opus-4.7 → claude-opus-4-7
-      - Short aliases: claude-opus-4.7 → claude-opus-4-7
-      - Strips anthropic/ prefix if present
+    Delegates to the Rust extension (mandatory since v0.6.2).
     """
-    name = model.lower().strip()
-    if name.startswith("anthropic/"):
-        name = name[len("anthropic/"):]
-    # Normalize dots to dashes in version numbers (e.g. 4.7 → 4-7, 4.6 → 4-6)
-    # But preserve the rest of the name structure
-    name = re.sub(r"(\d+)\.(\d+)", r"\1-\2", name)
-    return name
+    return _rust_normalize_model(model, False)
 
 
 def _lookup_official_docs_pricing(route: BillingRoute) -> Optional[PricingEntry]:
@@ -860,49 +851,16 @@ def has_known_pricing(
 
 
 def format_duration_compact(seconds: float) -> str:
-    if _rust_fmt_dur is not None:
-        try:
-            return _rust_fmt_dur(seconds)
-        except Exception:
-            pass  # Fall through to Python implementation
+    """Format seconds as compact human-readable duration.
 
-    if seconds < 60:
-        return f"{seconds:.0f}s"
-    minutes = seconds / 60
-    if minutes < 60:
-        return f"{minutes:.0f}m"
-    hours = minutes / 60
-    if hours < 24:
-        remaining_min = int(minutes % 60)
-        return f"{int(hours)}h {remaining_min}m" if remaining_min else f"{int(hours)}h"
-    days = hours / 24
-    return f"{days:.1f}d"
+    Delegates to the Rust extension (mandatory since v0.6.2).
+    """
+    return _rust_fmt_dur(seconds)
 
 
 def format_token_count_compact(value: int) -> str:
-    if _rust_fmt_tok is not None:
-        try:
-            return _rust_fmt_tok(value)
-        except Exception:
-            pass  # Fall through to Python implementation
+    """Format token count as compact human-readable (K/M/B suffixes).
 
-    abs_value = abs(int(value))
-    if abs_value < 1_000:
-        return str(int(value))
-
-    sign = "-" if value < 0 else ""
-    units = ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K"))
-    for threshold, suffix in units:
-        if abs_value >= threshold:
-            scaled = abs_value / threshold
-            if scaled < 10:
-                text = f"{scaled:.2f}"
-            elif scaled < 100:
-                text = f"{scaled:.1f}"
-            else:
-                text = f"{scaled:.0f}"
-            if "." in text:
-                text = text.rstrip("0").rstrip(".")
-            return f"{sign}{text}{suffix}"
-
-    return f"{value:,}"
+    Delegates to the Rust extension (mandatory since v0.6.2).
+    """
+    return _rust_fmt_tok(value)

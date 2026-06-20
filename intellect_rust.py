@@ -218,6 +218,11 @@ rust_estimate_tokens_rough: Callable = _CORE.estimate_tokens_rough_rs if _has() 
 rust_grok_supports_re: Callable = _CORE.grok_supports_reasoning_effort_rs if _has() else None
 rust_parse_context_limit: Callable = _CORE.parse_context_limit_from_error_rs if _has() else None
 rust_parse_output_limit: Callable = _CORE.parse_available_output_tokens_from_error_rs if _has() else None
+rust_strip_provider_prefix: Callable = _CORE.strip_provider_prefix_rs if _has() else None
+rust_model_name_suggests_kimi: Callable = _CORE.model_name_suggests_kimi_rs if _has() else None
+rust_model_id_matches: Callable = _CORE.model_id_matches_rs if _has() else None
+rust_normalize_model_version: Callable = _CORE.normalize_model_version_rs if _has() else None
+rust_get_next_probe_tier: Callable = _CORE.get_next_probe_tier_rs if _has() else None
 
 # ── Sanitization (Phase 4) ──────────────────────────────────────────────────
 

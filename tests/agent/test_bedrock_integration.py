@@ -235,15 +235,27 @@ class TestProvidersModule:
 # ---------------------------------------------------------------------------
 
 class TestErrorClassifierBedrock:
-    """Verify Bedrock error patterns are in the global error classifier."""
+    """Verify Bedrock error classification (engine in Rust since v0.6.2)."""
 
-    def test_throttling_in_rate_limit_patterns(self):
-        from agent.error_classifier import _RATE_LIMIT_PATTERNS
-        assert "throttlingexception" in _RATE_LIMIT_PATTERNS
+    def test_bedrock_throttling_is_rate_limit(self):
+        from agent.error_classifier import classify_api_error, FailoverReason
+        import types
+        e = type("BedrockThrottleError", (Exception,), {
+            "status_code": 429,
+            "body": {"message": "ThrottlingException: Too many concurrent requests"}
+        })()
+        result = classify_api_error(e, provider="aws", model="us.anthropic.claude-opus-4-8")
+        assert result.reason == FailoverReason.rate_limit
 
-    def test_context_overflow_patterns(self):
-        from agent.error_classifier import _CONTEXT_OVERFLOW_PATTERNS
-        assert "input is too long" in _CONTEXT_OVERFLOW_PATTERNS
+    def test_bedrock_input_too_long_is_context_overflow(self):
+        from agent.error_classifier import classify_api_error, FailoverReason
+        import types
+        e = type("BedrockError", (Exception,), {
+            "status_code": 400,
+            "body": {"message": "input is too long for model"}
+        })()
+        result = classify_api_error(e, provider="aws", model="us.anthropic.claude-opus-4-8")
+        assert result.reason == FailoverReason.context_overflow
 
 
 # ---------------------------------------------------------------------------
