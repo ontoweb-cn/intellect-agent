@@ -39,6 +39,17 @@ from api.session_events import (
 
 logger = logging.getLogger(__name__)
 
+
+def _log_non_critical(extra: str = "") -> None:
+    """Log a caught exception at DEBUG level with caller context."""
+    import inspect as _inspect
+    _caller = _inspect.currentframe().f_back.f_code.co_name if _inspect.currentframe() and _inspect.currentframe().f_back else "?"
+    _msg = f"non-critical error in {_caller}"
+    if extra:
+        _msg += f": {extra}"
+    logger.debug(_msg, exc_info=True)
+
+
 # Treat stalled/closed HTTP clients as normal disconnects.  Long-lived SSE
 # connections often end this way when a browser tab sleeps, a phone switches
 # networks, or Tailscale leaves the socket half-closed.  If these bubble to the
@@ -174,7 +185,7 @@ def _active_skill_search_dirs(skills_dir: Path) -> list[Path]:
 
         dirs.extend(Path(p) for p in get_external_skills_dirs())
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     return [p for p in dirs if p.exists()]
 
 
@@ -446,7 +457,7 @@ def _skill_view_from_active_dir(name: str) -> dict:
                         raw = _skill_view(name)
                         return json.loads(raw) if isinstance(raw, str) else raw
             except Exception:
-                logger.debug('non-critical operation failed', exc_info=True)
+                _log_non_critical()
         return _skill_not_found_payload(name, skills_dir)
     return _skill_view_from_file(skill_dir, skill_md)
 
@@ -1058,7 +1069,7 @@ def _clear_stale_stream_state(session) -> bool:
                 if hasattr(original_stub, "pending_started_at"):
                     original_stub.pending_started_at = None
             except Exception:
-                logger.debug('non-critical operation failed', exc_info=True)
+                _log_non_critical()
             return False
 
     # ── #1533 race fix: acquire the per-session lock and re-read
@@ -1097,7 +1108,7 @@ def _clear_stale_stream_state(session) -> bool:
                         if hasattr(original_stub, "pending_started_at"):
                             original_stub.pending_started_at = None
                     except Exception:
-                        logger.debug('non-critical operation failed', exc_info=True)
+                        _log_non_critical()
                 return True
             if getattr(session, "active_stream_id", None) != stream_id:
                 return False
@@ -1309,7 +1320,7 @@ def _set_csrf_failure_reason(handler, reason: str) -> bool:
     try:
         setattr(handler, _CSRF_FAILURE_ATTR, reason)
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     return False
 
 
@@ -1318,7 +1329,7 @@ def _clear_csrf_failure_reason(handler) -> None:
         if hasattr(handler, _CSRF_FAILURE_ATTR):
             delattr(handler, _CSRF_FAILURE_ATTR)
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
 
 
 def _csrf_rejection_error(handler) -> str:
@@ -1407,7 +1418,7 @@ def _client_ip_for_rate_limit(handler) -> str:
         if address:
             return str(address[0])
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     return "unknown"
 
 
@@ -1469,7 +1480,7 @@ def _read_csp_report_payload(handler):
         try:
             handler.rfile.read(_CSP_REPORT_MAX_BODY_BYTES)
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
         handler.close_connection = True
         return {"discarded": "body_too_large", "bytes": length}
     raw = handler.rfile.read(length) if length else b"{}"
@@ -1562,7 +1573,7 @@ def _read_client_event_payload(handler) -> dict:
         try:
             handler.rfile.read(_CLIENT_EVENT_MAX_BODY_BYTES)
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
         # Do not leave unread request-body bytes on an HTTP/1.1 keep-alive
         # socket. Draining an arbitrary oversized body can tie up a worker;
         # closing the connection after the bounded read preserves framing for
@@ -1570,7 +1581,7 @@ def _read_client_event_payload(handler) -> dict:
         try:
             handler.close_connection = True
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
         return {"event": "discarded", "reason": "body_too_large"}
     raw = handler.rfile.read(length) if length else b"{}"
     try:
@@ -1990,7 +2001,7 @@ def _resolve_context_length_for_session_model(
             if isinstance(_raw_cp_load, list):
                 _cfg_custom_providers_load = _raw_cp_load
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
         try:
             return _get_cl(
                 model_for_lookup,
@@ -2399,7 +2410,7 @@ def _is_messaging_session_id(sid: str) -> bool:
         if _is_messaging_session_record(session):
             return True
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     return _is_messaging_session_record(_lookup_cli_session_metadata(sid))
 
 
@@ -2472,7 +2483,7 @@ def _session_attention_summary(session_id: str) -> dict | None:
                 "count": max(1, int(pending_approvals)),
             }
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     # ── Pending clarify ────────────────────────────────────────────────────
     try:
         from api.clarify import pending_count
@@ -2484,7 +2495,7 @@ def _session_attention_summary(session_id: str) -> dict | None:
                 "count": max(1, int(clarify_pending)),
             }
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     return None
 
 
@@ -3441,7 +3452,7 @@ def _llm_wiki_tenant_context(handler, parsed) -> tuple[str | None, str | None, s
             team_id = resolve_team_id(handler, parsed, member_id=member_id)
             project_id = resolve_project_id(handler, parsed, member_id=member_id)
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     qs = parse_qs(getattr(parsed, "query", "") or "")
     if qs.get("member_id"):
         member_id = qs["member_id"][0].strip() or None
@@ -3481,7 +3492,7 @@ def _llm_wiki_safe_path_hint(wiki_path: Path, path_source: str) -> str:
         if resolved.is_relative_to(Path.home().resolve()):
             return redact_path_hint(wiki_path)
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     if path_source == "WIKI_PATH":
         return "WIKI_PATH (configured)"
     return redact_path_hint(wiki_path)
@@ -3979,7 +3990,7 @@ def _handle_wiki_catalog(handler, parsed) -> bool:
         teams_on = is_teams_enabled(config) if members_on else False
         projects_on = is_projects_enabled(config) if members_on else False
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
 
     if actor and members_on:
         personal = _build_wiki_catalog_entry(
@@ -4059,7 +4070,7 @@ def _vault_config() -> dict:
         if isinstance(agent_cfg, dict):
             cfg = agent_cfg.get("vault", {}) or {}
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     merged = dict(_VAULT_DEFAULTS)
     for k, v in cfg.items():
         if k in merged and v is not None:
@@ -4177,7 +4188,7 @@ def _queue_vault_build(handler, body, *, wiki_path: Path | None = None) -> dict:
     try:
         build_host = (handler.headers.get("Host") or build_host).strip()
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
 
     job_id = f"build_{uuid.uuid4().hex[:12]}"
     job = {
@@ -4389,7 +4400,7 @@ def _handle_vault_serve(handler, parsed) -> bool:
                         redirect(handler, f"/vault/t/{team_id}/")
                         return True
             except Exception:
-                logger.debug('non-critical operation failed', exc_info=True)
+                _log_non_critical()
         # Fall through to global vault
         vault_type = "global"
         file_path = "index.html" if not rest else rest
@@ -4422,7 +4433,7 @@ def _handle_vault_serve(handler, parsed) -> bool:
             if actor and not _vault_access_check(actor, vault_type, vault_id):
                 return j(handler, {"error": "Forbidden"}, status=403)
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
 
     # Resolve Quartz pretty URLs (concepts/foo → concepts/foo.html)
     target = _vault_resolve_static_file(vault_dir, file_path)
@@ -4481,7 +4492,7 @@ def _vault_access_check(member_id: str, vault_type: str, vault_id: str) -> bool:
         if vault_type == "project":
             return store.is_project_member(vault_id, member_id)
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     return False
 
 
@@ -4633,7 +4644,7 @@ def _handle_vault_config_get(handler, parsed) -> bool:
             if isinstance(vault_cfg, dict):
                 raw_keys = set(vault_cfg.keys())
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     defaults_applied = [k for k in _VAULT_DEFAULTS if k not in raw_keys]
     scheduler = get_scheduler_status(merged, _llm_wiki_active_intellect_home())
     members_on = _llm_wiki_members_enabled()
@@ -4998,7 +5009,7 @@ def _handle_insights(handler, parsed) -> bool:
                 dow_activity[dt.tm_wday] += 1
                 hod_activity[dt.tm_hour] += 1
             except Exception:
-                logger.debug('non-critical operation failed', exc_info=True)
+                _log_non_critical()
 
     # Build model breakdown
     total_tokens = total_input_tokens + total_output_tokens
@@ -5587,7 +5598,7 @@ def handle_get(handler, parsed) -> bool:
                     )
                     html = html.replace("</head>", css + "</head>")
             except Exception:
-                logger.debug('non-critical operation failed', exc_info=True)
+                _log_non_critical()
             return t(
                 handler,
                 inject_extension_tags(html),
@@ -5905,7 +5916,7 @@ def handle_get(handler, parsed) -> bool:
             settings["webui_version"] = WEBUI_VERSION
             settings["agent_version"] = AGENT_VERSION
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
         return j(handler, settings)
 
     if parsed.path == "/api/reasoning":
@@ -6403,7 +6414,7 @@ def handle_get(handler, parsed) -> bool:
                     if attention:
                         item["attention"] = attention
                 except Exception:
-                    logger.debug('non-critical operation failed', exc_info=True)
+                    _log_non_critical()
                 safe_merged.append(item)
             diag.stage("response_write")
             return j(handler, {
@@ -6876,7 +6887,7 @@ def handle_get(handler, parsed) -> bool:
                 mtime = sessions_path.stat().st_mtime
                 last_active = datetime.datetime.fromtimestamp(mtime).isoformat()
             except Exception:
-                logger.debug('non-critical operation failed', exc_info=True)
+                _log_non_critical()
         return j(handler, {
             "running": running,
             "configured": configured,
@@ -7665,7 +7676,7 @@ def handle_post(handler, parsed) -> bool:
         try:
             source.save()
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
         cli_meta = _lookup_cli_session_metadata(source.session_id) if _session_requires_cli_metadata_lookup(source) else {}
         is_messaging_session = _is_messaging_session_record(source) or _is_messaging_session_record(cli_meta)
         cli_messages = get_cli_session_messages(source.session_id) if is_messaging_session else []
@@ -7792,7 +7803,7 @@ def handle_post(handler, parsed) -> bool:
                 with _l:
                     _p.pop(sid, None)
             except Exception:
-                logger.debug('non-critical operation failed', exc_info=True)
+                _log_non_critical()
             resolve_gateway_approval(sid, "once", resolve_all=True)
         else:
             disable_session_yolo(sid)
@@ -9135,7 +9146,7 @@ def _handle_sessions_search_fts(handler, parsed, q: str):
                         item["title"] = _redact_text(item["title"])
                     results.append(item)
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
 
     # Hybrid: WebUI-native JSON sessions may lack FTS bodies in state.db.
     if len(results) < limit:
@@ -9870,7 +9881,7 @@ def _handle_media(handler, parsed):
         if ws.is_dir():
             allowed_roots.append(ws)
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
 
     # Also allow additional roots from MEDIA_ALLOWED_ROOTS env var
     # (os.pathsep-separated list; ":" on POSIX, ";" on Windows).
@@ -9884,7 +9895,7 @@ def _handle_media(handler, parsed):
                     if rp.is_dir():
                         allowed_roots.append(rp)
                 except Exception:
-                    logger.debug('non-critical operation failed', exc_info=True)
+                    _log_non_critical()
 
     def _path_is_within_root(child: Path, root: Path) -> bool:
         """Return True when ``child`` is inside ``root`` without crashing on Windows drives."""
@@ -11635,7 +11646,7 @@ def _start_chat_stream_for_session(
                 _worker_team_id = _worker_team_id or (str(_ctx.team_id) if _ctx.team_id else None)
                 _worker_project_id = str(_ctx.project_id) if _ctx.project_id else None
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
     else:
         try:
             from api.members import get_bound_runtime_context
@@ -11646,7 +11657,7 @@ def _start_chat_stream_for_session(
                 if _ctx.project_id:
                     _worker_project_id = str(_ctx.project_id)
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
     diag.stage("worker_thread_start") if diag else None
     _worker_scope = None
     try:
@@ -11657,7 +11668,7 @@ def _start_chat_stream_for_session(
             team_id=_worker_team_id or getattr(s, "team_id", None),
         )
     except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
+        _log_non_critical()
     thr = threading.Thread(
         target=_run_agent_streaming,
         args=(s.session_id, msg, model, workspace, stream_id, attachments),
@@ -14204,7 +14215,7 @@ def _handle_handoff_summary(handler, body):
                 if ts_val > since:
                     filtered.append(m)
             except Exception:
-                logger.debug('non-critical operation failed', exc_info=True)
+                _log_non_critical()
         msgs = filtered
     else:
         msgs = all_msgs
@@ -14345,7 +14356,7 @@ def _handle_handoff_summary(handler, body):
                         )
                         break
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
         return channel_label
 
     def _agent_text_completion(agent, system_prompt, user_text, max_tokens=700):
@@ -14469,7 +14480,7 @@ def _handle_handoff_summary(handler, body):
                     fallback=True,
                 )
             except Exception:
-                logger.debug('non-critical operation failed', exc_info=True)
+                _log_non_critical()
             return j(handler, {
                 "ok": True,
                 "summary": summary_text,
@@ -14570,7 +14581,7 @@ def _handle_handoff_summary(handler, body):
                 fallback=True,
             )
         except Exception:
-            logger.debug('non-critical operation failed', exc_info=True)
+            _log_non_critical()
         return j(handler, {
             "ok": True,
             "summary": summary_text,

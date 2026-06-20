@@ -1022,6 +1022,16 @@ from gateway.whatsapp_identity import (
 logger = logging.getLogger(__name__)
 
 
+def _log_non_critical(extra: str = "") -> None:
+    """Log a caught exception at DEBUG level with caller context."""
+    import inspect as _inspect
+    _caller = _inspect.currentframe().f_back.f_code.co_name if _inspect.currentframe() and _inspect.currentframe().f_back else "?"
+    _msg = f"non-critical error in {_caller}"
+    if extra:
+        _msg += f": {extra}"
+    logger.debug(_msg, exc_info=True)
+
+
 # Sentinel placed into _running_agents immediately when a session starts
 # processing, *before* any await.  Prevents a second message for the same
 # session from bypassing the "already running" guard during the async gap
@@ -1155,7 +1165,7 @@ def _try_resolve_fallback_provider_inner() -> dict | None:
                 logger.debug("Fallback entry %s failed: %s", entry.get("provider"), fb_exc)
                 continue
     except Exception:
-        logger.debug("non-critical error", exc_info=True)
+        _log_non_critical()
     return None
 
 
@@ -1207,7 +1217,7 @@ async def _probe_audio_duration(path: str) -> Optional[str]:
             secs = await asyncio.to_thread(_wav_duration)
             return _format_duration(secs)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     if ext in (".ogg", ".opus", ".oga"):
         try:
             def _ogg_duration() -> float:
@@ -1216,7 +1226,7 @@ async def _probe_audio_duration(path: str) -> Optional[str]:
             secs = await asyncio.to_thread(_ogg_duration)
             return _format_duration(secs)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -1227,7 +1237,7 @@ async def _probe_audio_duration(path: str) -> Optional[str]:
         if proc.returncode == 0:
             return _format_duration(float(stdout.decode().strip()))
     except Exception:
-        logger.debug("non-critical error", exc_info=True)
+        _log_non_critical()
     return None
 
 
@@ -1378,7 +1388,7 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                         f"Install it with: `intellect skills install {install_path}`"
                     )
     except Exception:
-        logger.debug("non-critical error", exc_info=True)
+        _log_non_critical()
     return None
 
 
@@ -1413,7 +1423,7 @@ def _load_gateway_config() -> dict:
         if config_path == get_config_path():
             return read_raw_config()
     except Exception:
-        logger.debug("non-critical error", exc_info=True)
+        _log_non_critical()
     try:
         if config_path.exists():
             import yaml
@@ -1496,7 +1506,7 @@ def _resolve_intellect_bin() -> Optional[list[str]]:
         if importlib.util.find_spec("intellect_cli") is not None:
             return [sys.executable, "-m", "intellect_cli.main"]
     except Exception:
-        logger.debug("non-critical error", exc_info=True)
+        _log_non_critical()
     return None
 
 
@@ -2217,7 +2227,7 @@ class GatewayRunner:
                 if isinstance(session_key, str) and session_key:
                     return session_key
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         config = getattr(self, "config", None)
         return build_session_key(
             source,
@@ -2493,7 +2503,7 @@ class GatewayRunner:
                         model, runtime_kwargs["provider"],
                     )
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         # Final safety net (#35314): if resolution still produced an empty
         # model — e.g. a transient config-cache miss during a post-interrupt
         # recovery turn returned an empty user_config — reuse the last model we
@@ -2786,7 +2796,7 @@ class GatewayRunner:
                 active_agents=self._running_agent_count(),
             )
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     def _update_platform_runtime_status(
         self,
         platform: str,
@@ -2804,7 +2814,7 @@ class GatewayRunner:
                 error_message=error_message,
             )
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     # ------------------------------------------------------------------
     # Per-platform circuit breaker (pause/resume) — used by the reconnect
     # watcher when a retryable failure recurs past a threshold, and by the
@@ -2839,7 +2849,7 @@ class GatewayRunner:
                 error_message=info["pause_reason"],
             )
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         logger.warning(
             "%s paused after %d consecutive failures (%s) — "
             "fix the underlying issue then run `/platform resume %s` "
@@ -2870,7 +2880,7 @@ class GatewayRunner:
                 error_message=None,
             )
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         logger.info("%s resumed — retrying on next watcher tick", platform.value)
         return True
 
@@ -3104,7 +3114,7 @@ class GatewayRunner:
                     cfg = _y.safe_load(_f) or {}
                 return cfg.get("provider_routing", {}) or {}
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         return {}
 
     @staticmethod
@@ -3125,7 +3135,7 @@ class GatewayRunner:
                 if fb:
                     return fb
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         return None
 
     def _snapshot_running_agents(self) -> Dict[str, Any]:
@@ -3367,7 +3377,7 @@ class GatewayRunner:
                 if current_tool:
                     status_parts.append(f"running: {current_tool}")
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         status_detail = f" ({', '.join(status_parts)})" if status_parts else ""
         if is_steer_mode:
             message = (
@@ -3646,7 +3656,7 @@ class GatewayRunner:
                     platform="gateway",
                 )
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             self._cleanup_agent_resources(agent)
 
     def _cleanup_agent_resources(self, agent: Any) -> None:
@@ -3671,7 +3681,7 @@ class GatewayRunner:
                 else:
                     agent.shutdown_memory_provider()
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Close tool resources (terminal sandboxes, browser daemons,
         # background processes, httpx clients) to prevent zombie
         # process accumulation.
@@ -3679,7 +3689,7 @@ class GatewayRunner:
             if hasattr(agent, "close"):
                 agent.close()
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Auxiliary async clients (session_search/web/vision/etc.) live in a
         # process-global cache and are created inside worker threads. Clean up
         # any entries whose event loop is now dead so their httpx transports do
@@ -3688,7 +3698,7 @@ class GatewayRunner:
             from agent.auxiliary_client import cleanup_stale_async_clients
             cleanup_stale_async_clients()
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     _STUCK_LOOP_THRESHOLD = 3  # restarts while active before auto-suspend
     _STUCK_LOOP_FILE = ".restart_failure_counts"
 
@@ -3717,7 +3727,7 @@ class GatewayRunner:
         try:
             atomic_json_write(path, new_counts, indent=None)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     def _suspend_stuck_loop_sessions(self) -> int:
         """Suspend sessions that have been active across too many restarts.
 
@@ -3751,17 +3761,17 @@ class GatewayRunner:
                         session_key, counts[session_key],
                     )
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         if suspended:
             try:
                 self.session_store._save()
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         # Clear the file — counters start fresh after suspension
         try:
             path.unlink(missing_ok=True)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         return suspended
 
     def _clear_restart_failure_count(self, session_key: str) -> None:
@@ -3783,7 +3793,7 @@ class GatewayRunner:
                 else:
                     path.unlink(missing_ok=True)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     async def _launch_detached_restart_command(self) -> None:
         import shutil
         import subprocess
@@ -4022,7 +4032,7 @@ class GatewayRunner:
                 _effective_max_iter,
             )
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Redaction status: ON by default (#17691). Surface a prominent
         # warning if an operator has explicitly opted out so they don't
         # forget the downgrade is active — the redactor snapshots its
@@ -4045,19 +4055,19 @@ class GatewayRunner:
                     _redact_raw,
                 )
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         try:
             from intellect_cli.profiles import get_active_profile_name
             _profile = get_active_profile_name()
             if _profile and _profile != "default":
                 logger.info("Active profile: %s", _profile)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         try:
             from gateway.status import write_runtime_status
             write_runtime_status(gateway_state="starting", exit_reason=None)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Log any active supply-chain security advisories. Operators see this
         # in gateway.log and `intellect status` surfaces it; we do NOT block
         # startup or surface it inline to user messages, since the gateway
@@ -4131,7 +4141,7 @@ class GatewayRunner:
                 if e.allow_all_env
             )
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         _any_allowlist = any(
             os.getenv(v) for v in _builtin_allowed_vars + _plugin_allowed_vars
         )
@@ -4207,7 +4217,7 @@ class GatewayRunner:
             try:
                 _clean_marker.unlink()
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         else:
             try:
                 suspended = self.session_store.suspend_recently_active()
@@ -4359,7 +4369,7 @@ class GatewayRunner:
                     from gateway.status import write_runtime_status
                     write_runtime_status(gateway_state="startup_failed", exit_reason=reason)
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
                 self._request_clean_exit(reason)
                 return True
             if enabled_platform_count > 0:
@@ -4387,7 +4397,7 @@ class GatewayRunner:
                             exit_reason=None,
                         )
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
                     # Fall through to the normal "running" state — reconnect
                     # watcher takes it from here.
                 # All enabled platforms had no adapter (missing library or credentials).
@@ -4794,7 +4804,7 @@ class GatewayRunner:
                                 platform=_platform,
                             )
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
                         # Shut down memory provider and close tool resources
                         # on the cached agent.  Idle agents live in
                         # _agent_cache (not _running_agents), so look there.
@@ -5701,7 +5711,7 @@ class GatewayRunner:
                     try:
                         conn.close()
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
         def _tick_once() -> "list[tuple[str, Optional[object]]]":
             """Run one dispatch_once per board. Returns (slug, result) pairs.
 
@@ -5751,7 +5761,7 @@ class GatewayRunner:
                         try:
                             conn.close()
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
             return False
 
         # Auto-decompose: turn fresh triage tasks into ready workgraphs
@@ -5996,7 +6006,7 @@ class GatewayRunner:
                             from gateway.channel_directory import build_channel_directory
                             await build_channel_directory(self.adapters)
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
                     # Check if the failure is non-retryable
                     elif adapter.has_fatal_error and not adapter.fatal_error_retryable:
                         self._update_platform_runtime_status(
@@ -6359,7 +6369,7 @@ class GatewayRunner:
                 try:
                     (_intellect_home / ".clean_shutdown").touch()
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
             else:
                 logger.info(
                     "Skipping .clean_shutdown marker — drain timed out with "
@@ -6452,7 +6462,7 @@ class GatewayRunner:
                     if _raw not in {None, ""}:
                         _notify_mode = str(_raw).strip().lower()
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
             _notify_mode = _notify_mode or "important"
             if _notify_mode not in {"all", "important"}:
                 logger.warning(
@@ -6757,7 +6767,7 @@ class GatewayRunner:
                     if entry.allow_all_env:
                         platform_allow_all_map[source.platform] = entry.allow_all_env
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         # Per-platform allow-all flag (e.g., DISCORD_ALLOW_ALL_USERS=true)
         platform_allow_all_var = platform_allow_all_map.get(source.platform, "")
         if platform_allow_all_var and os.getenv(platform_allow_all_var, "").lower() in {"true", "1", "yes"}:
@@ -7277,7 +7287,7 @@ class GatewayRunner:
                         f"| iteration={_sa.get('api_call_count', 0)}/{_sa.get('max_iterations', 0)}"
                     )
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
             # Evict if: agent is idle beyond timeout, OR wall-clock age is
             # extreme (10x timeout or 2h, whichever is larger — catches
             # cases where the agent object was garbage-collected).
@@ -7913,7 +7923,7 @@ class GatewayRunner:
             try:
                 event.text = steer_payload
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             # Do NOT return — fall through to _handle_message_with_agent
             # at the end of this function so the rewritten text is sent
             # to the agent as a regular user turn.
@@ -8288,7 +8298,7 @@ class GatewayRunner:
                                 metadata=_stt_meta,
                             )
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
         if audio_file_paths:
             from tools.credential_files import to_agent_visible_cache_path as _to_agent_path
             for _apath in audio_file_paths:
@@ -8372,7 +8382,7 @@ class GatewayRunner:
                         if _msg_raw_ctx is not None:
                             _msg_config_ctx = int(_msg_raw_ctx)
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
                 _msg_ctx_len = get_model_context_length(
                     self._model,
                     base_url=self._base_url or _msg_runtime.get("base_url") or "",
@@ -8425,7 +8435,7 @@ class GatewayRunner:
             while len(cached_sources) > max_size:
                 cached_sources.popitem(last=False)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     def _get_cached_session_source(self, session_key: str):
         if not session_key:
             return None
@@ -8437,7 +8447,7 @@ class GatewayRunner:
             try:
                 cached_sources.move_to_end(session_key)
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         return source
 
     async def _handle_message_with_agent(self, event, source, _quick_key: str, run_generation: int):
@@ -8465,7 +8475,7 @@ class GatewayRunner:
             try:
                 event.source = source
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         session_entry = self.session_store.get_or_create_session(source)
         session_key = session_entry.session_key
         self._cache_session_source(session_key, source)
@@ -8565,7 +8575,7 @@ class GatewayRunner:
             _pcfg = _load_gateway_config()
             _redact_pii = bool((_pcfg.get("privacy") or {}).get("redact_pii", False))
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Build the context prompt to inject
         context_prompt = build_session_context_prompt(context, redact_pii=_redact_pii)
         
@@ -8622,7 +8632,7 @@ class GatewayRunner:
                             if session_info:
                                 notice = f"{notice}\n\n{session_info}"
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
                         await adapter.send(
                             source.chat_id, notice,
                             metadata=self._thread_metadata_for_source(source),
@@ -8758,7 +8768,7 @@ class GatewayRunner:
                     _hyg_base_url = _hyg_runtime.get("base_url") or _hyg_base_url
                     _hyg_api_key = _hyg_runtime.get("api_key") or _hyg_api_key
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
                 # Check custom_providers per-model context_length
                 # (same fallback as run_agent.py lines 1171-1189).
                 # Must run after runtime resolution so _hyg_base_url is set.
@@ -8787,7 +8797,7 @@ class GatewayRunner:
                     except (TypeError, ValueError):
                         pass
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             if _hyg_compression_enabled:
                 _hyg_context_length = get_model_context_length(
                     _hyg_model,
@@ -9091,7 +9101,7 @@ class GatewayRunner:
                 if _typing_adapter and hasattr(_typing_adapter, "stop_typing"):
                     await _typing_adapter.stop_typing(source.chat_id)
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             if not self._is_session_run_current(_quick_key, run_generation):
                 logger.info(
                     "Discarding stale agent result for %s — generation %d is no longer current",
@@ -9469,7 +9479,7 @@ class GatewayRunner:
                 if _err_adapter and hasattr(_err_adapter, "stop_typing"):
                     await _err_adapter.stop_typing(source.chat_id)
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             logger.exception("Agent error in session %s", session_key)
             error_type = type(e).__name__
             error_detail = str(e)[:300] if str(e) else "no details available"
@@ -9490,7 +9500,7 @@ class GatewayRunner:
                         if not isinstance(_err_json, dict):
                             _err_json = {}
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
                 if _err_json.get("type") == "usage_limit_reached":
                     _resets_in = _err_json.get("resets_in_seconds")
                     if _resets_in and _resets_in > 0:
@@ -9561,7 +9571,7 @@ class GatewayRunner:
                 except Exception:
                     custom_provs = data.get("custom_providers")
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Also check custom_providers for context_length when top-level model.context_length is not set
         if config_context_length is None and data:
             try:
@@ -9595,7 +9605,7 @@ class GatewayRunner:
                                 except (TypeError, ValueError):
                                     pass
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         # Resolve runtime credentials for probing
         try:
             runtime = _resolve_runtime_agent_kwargs()
@@ -9603,7 +9613,7 @@ class GatewayRunner:
             base_url = base_url or runtime.get("base_url")
             api_key = runtime.get("api_key")
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         context_length = get_model_context_length(
             model,
             base_url=base_url or "",
@@ -9676,12 +9686,12 @@ class GatewayRunner:
             from tools.env_passthrough import clear_env_passthrough
             clear_env_passthrough()
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         try:
             from tools.credential_files import clear_credential_files
             clear_credential_files()
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Reset the session
         new_entry = self.session_store.reset_session(session_key)
 
@@ -9704,7 +9714,7 @@ class GatewayRunner:
             _invoke_hook("on_session_finalize", session_id=_old_sid,
                          platform=source.platform.value if source.platform else "")
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Emit session:end hook (session is ending)
         await self.hooks.emit("session:end", {
             "platform": source.platform.value if source.platform else "",
@@ -9749,7 +9759,7 @@ class GatewayRunner:
                 except ValueError as e:
                     _title_note = t("gateway.reset.title_error_untitled", error=str(e))
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
             elif not _title_note:
                 # sanitize_title returned empty (whitespace-only / unprintable)
                 _title_note = t("gateway.reset.title_empty_untitled")
@@ -9773,7 +9783,7 @@ class GatewayRunner:
             _invoke_hook("on_session_reset", session_id=_new_sid,
                          platform=source.platform.value if source.platform else "")
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Append a random tip to the reset message
         try:
             from intellect_cli.tips import get_random_tip
@@ -9924,15 +9934,15 @@ class GatewayRunner:
                     else:
                         result += "\n**Status:** offline"
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
                 finally:
                     if _mdb:
                         try:
                             _mdb.close()
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         return result
 
     # ── OAuth gateway commands ──────────────────────────────────────────
@@ -9970,7 +9980,7 @@ class GatewayRunner:
                 config=_cfg, db=self._session_db,
             )
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         if not member_id:
             return "Not logged in as a member. Use /login first."
 
@@ -10005,7 +10015,7 @@ class GatewayRunner:
                 config=_cfg, db=self._session_db,
             )
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         if not member_id:
             return "Not logged in."
 
@@ -10695,7 +10705,7 @@ class GatewayRunner:
                 if len(sorted_cmds) > 10:
                     lines.append(t("gateway.help.more_use_commands", count=len(sorted_cmds) - 10))
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         return _telegramize_command_mentions(
             "\n".join(lines),
             getattr(getattr(event, "source", None), "platform", None),
@@ -10725,7 +10735,7 @@ class GatewayRunner:
                     desc = skill_cmds[cmd].get("description", "").strip() or t("gateway.commands.default_desc")
                     entries.append(f"`{cmd}` — {desc}")
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         if not entries:
             return t("gateway.commands.none")
 
@@ -10784,7 +10794,7 @@ class GatewayRunner:
                 from intellect_cli.models import clear_provider_models_cache
                 clear_provider_models_cache()
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         # Read current model/provider from config
         current_model = ""
         current_provider = "openrouter"
@@ -10808,7 +10818,7 @@ class GatewayRunner:
                 except Exception:
                     custom_provs = cfg.get("custom_providers")
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Check for session override
         source = event.source
         session_key = self._session_key_for_source(source)
@@ -10940,7 +10950,7 @@ class GatewayRunner:
                                 if _sw_raw is not None:
                                     _sw_config_ctx = int(_sw_raw)
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
                         ctx = resolve_display_context_length(
                             result.new_model,
                             result.target_provider,
@@ -10998,7 +11008,7 @@ class GatewayRunner:
                         lines.append(f"  `{p['api_url']}`")
                     lines.append("")
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             lines.append(t("gateway.model.usage_switch_model"))
             lines.append(t("gateway.model.usage_switch_provider"))
             lines.append(t("gateway.model.usage_persist"))
@@ -11127,7 +11137,7 @@ class GatewayRunner:
                 if _sw2_raw is not None:
                     _sw2_config_ctx = int(_sw2_raw)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         ctx = resolve_display_context_length(
             result.new_model,
             result.target_provider,
@@ -11771,7 +11781,7 @@ class GatewayRunner:
                 data = json.loads(session_file.read_text())
                 return data.get("member_id")
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Fallback: first enabled member
         try:
             from agent.membership import MembershipDB
@@ -12044,7 +12054,7 @@ class GatewayRunner:
                 safe_text = transcript[:2000].replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
                 await channel.send(f"**[Voice]** <@{user_id}>: {safe_text}")
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Build a synthetic MessageEvent and feed through the normal pipeline
         # Use SimpleNamespace as raw_message so _get_guild_id() can extract
         # guild_id and _send_voice_reply() plays audio in the voice channel.
@@ -12324,7 +12334,7 @@ class GatewayRunner:
                 if isinstance(cp_cfg, bool):
                     cp_cfg = {"enabled": cp_cfg}
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         if not cp_cfg.get("enabled", False):
             return t("gateway.rollback.not_enabled")
 
@@ -12547,7 +12557,7 @@ class GatewayRunner:
                             metadata=_thread_metadata,
                         )
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
                 # Send media files
                 for media_path, _is_voice in (media_files or []):
                     try:
@@ -12557,7 +12567,7 @@ class GatewayRunner:
                             metadata=_thread_metadata,
                         )
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
             else:
                 preview = prompt[:60] + ("..." if len(prompt) > 60 else "")
                 await adapter.send(
@@ -12575,7 +12585,7 @@ class GatewayRunner:
                     metadata=_thread_metadata,
                 )
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
     async def _handle_reasoning_command(self, event: MessageEvent) -> str:
         """Handle /reasoning command — manage reasoning effort and display toggle.
 
@@ -13673,7 +13683,7 @@ class GatewayRunner:
                     db=self._session_db,
                 )
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             sessions = self._session_db.list_sessions_rich(
                 source=user_source, limit=10, member_id=_mid,
             )
@@ -13723,7 +13733,7 @@ class GatewayRunner:
                     db=self._session_db,
                 )
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             # Try direct session ID lookup first (so `/resume <session_id>`
             # works in the gateway, not just `/resume <title>`).
             session = self._session_db.get_session(name, actor_member_id=_actor_mid)
@@ -13851,7 +13861,7 @@ class GatewayRunner:
         try:
             self._session_db.set_session_title(new_session_id, branch_title)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Switch the session store entry to the new session
         new_entry = self.session_store.switch_session(session_key, new_session_id)
         if not new_entry:
@@ -13968,7 +13978,7 @@ class GatewayRunner:
                 elif cost_result.status == "included":
                     lines.append(t("gateway.usage.label_cost_included"))
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             # Context window and compressions
             ctx = agent.context_compressor
             if ctx.last_prompt_tokens:
@@ -14407,7 +14417,7 @@ class GatewayRunner:
             if isinstance(approvals, dict):
                 confirm_required = bool(approvals.get("destructive_slash_confirm", True))
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         if not confirm_required:
             return await execute()
 
@@ -14996,7 +15006,7 @@ class GatewayRunner:
                             session_key = f"{platform_str}:{chat_id}"
                     break
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
         if not adapter or not chat_id:
             logger.warning("Update watcher: cannot resolve adapter/chat_id, falling back to completion-only")
             # Fall back to old behavior: wait for exit code and send final notification
@@ -15153,7 +15163,7 @@ class GatewayRunner:
                     metadata=metadata,
                 )
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             for p in (pending_path, claimed_path, output_path,
                       exit_code_path, prompt_path):
                 p.unlink(missing_ok=True)
@@ -16223,7 +16233,7 @@ class GatewayRunner:
             if interrupt_event is not None:
                 setattr(interrupt_event, "_intellect_run_generation", int(generation))
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     async def _interrupt_and_clear_session(
         self,
         session_key: str,
@@ -16295,7 +16305,7 @@ class GatewayRunner:
                 # fall back to the legacy full-close path.
                 self._cleanup_agent_resources(agent)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
     def _enforce_agent_cache_cap(self) -> None:
         """Evict oldest cached agents when cache exceeds _AGENT_CACHE_MAX_SIZE.
 
@@ -16594,7 +16604,7 @@ class GatewayRunner:
             try:
                 await _adapter.send_typing(source.chat_id, metadata=_thread_metadata)
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         # Make the HTTP request with SSE streaming -----------------------
         full_response = ""
         _start = time.time()
@@ -16791,7 +16801,7 @@ class GatewayRunner:
             _tpl = resolve_display_setting(user_config, platform_key, "tool_preview_length", 0)
             set_tool_preview_max_len(int(_tpl) if _tpl else 0)
         except Exception:
-            logger.debug("non-critical error", exc_info=True)
+            _log_non_critical()
         # Tool progress mode — resolved per-platform with env var fallback
         _resolved_tp = resolve_display_setting(user_config, platform_key, "tool_progress")
         _env_tp = os.getenv("intellect_TOOL_PROGRESS_MODE")
@@ -16915,7 +16925,7 @@ class GatewayRunner:
                 ):
                     return
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             # "new" mode: only report when tool changes
             if progress_mode == "new" and tool_name == last_tool[0]:
                 return
@@ -17161,7 +17171,7 @@ class GatewayRunner:
                             await asyncio.sleep(0)
                             continue
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
                     # Handle dedup messages: update last line with repeat counter
                     if isinstance(raw, tuple) and len(raw) == 3 and raw[0] == "__dedup__":
                         _, base_msg, count = raw
@@ -17300,7 +17310,7 @@ class GatewayRunner:
                                     try:
                                         await _edit_progress_message(progress_msg_id, _pending_text)
                                     except Exception:
-                                        logger.debug("non-critical error", exc_info=True)
+                                        _log_non_critical()
                                 progress_msg_id = None
                                 progress_lines = []
                                 last_progress_msg[0] = None
@@ -17318,7 +17328,7 @@ class GatewayRunner:
                         try:
                             await _edit_progress_message(progress_msg_id, full_text)
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
                     return
                 except Exception as e:
                     logger.error("Progress message error: %s", e)
@@ -17661,7 +17671,7 @@ class GatewayRunner:
                             f"session:{session_key}:project_id"
                         )
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
                     # Resolve member from source
                     _member_id, _member_role = resolve_member_id(
                         platform=source.platform.value if source.platform else "cli",
@@ -17703,16 +17713,16 @@ class GatewayRunner:
                                 _ext_id,
                             )
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
                         finally:
                             if _odb:
                                 try:
                                     _odb.close()
                                 except Exception:
-                                    logger.debug("non-critical error", exc_info=True)
+                                    _log_non_critical()
                     agent.runtime_context = ctx
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
             # Per-message state — callbacks and reasoning config change every
             # turn and must not be baked into the cached agent constructor.
             agent.tool_progress_callback = progress_callback if tool_progress_enabled else None
@@ -17809,7 +17819,7 @@ class GatewayRunner:
                 try:
                     _status_adapter.pause_typing_for_chat(_status_chat_id)
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
                 send_ok = False
                 fut = safe_schedule_threadsafe(
                     _status_adapter.send_clarify(
@@ -18125,7 +18135,7 @@ class GatewayRunner:
                     from tools.clarify_gateway import clear_session as _clear_clarify_session
                     _clear_clarify_session(_approval_session_key)
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
                 reset_current_session_key(_approval_session_token)
             result_holder[0] = result
 
@@ -18330,7 +18340,7 @@ class GatewayRunner:
                         **maybe_auto_title_kwargs,
                     )
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
             return {
                 "final_response": final_response,
                 "last_reasoning": result.get("last_reasoning"),
@@ -18508,7 +18518,7 @@ class GatewayRunner:
                         if _parts:
                             _status_detail = " — " + ", ".join(_parts)
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
                 _heartbeat_text = f"⏳ Working — {_elapsed_mins} min{_status_detail}"
                 try:
                     _notify_res = None
@@ -18610,7 +18620,7 @@ class GatewayRunner:
                             _act = _agent_ref.get_activity_summary()
                             _idle_secs = _act.get("seconds_since_activity", 0.0)
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
                     # Staged warning: fire once before escalating to full timeout.
                     if (not _warning_fired and _agent_warning is not None
                             and _idle_secs >= _agent_warning):
@@ -18659,7 +18669,7 @@ class GatewayRunner:
                     try:
                         _activity = _timed_out_agent.get_activity_summary()
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
                 _last_desc = _activity.get("last_activity_desc", "unknown")
                 _secs_ago = _activity.get("seconds_since_activity", 0)
                 _cur_tool = _activity.get("current_tool")
@@ -18792,7 +18802,7 @@ class GatewayRunner:
                             pending_event = None
                             pending = None
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
             if self._draining and (pending_event or pending):
                 logger.info(
                     "Discarding pending follow-up for session %s during gateway %s",
@@ -18883,7 +18893,7 @@ class GatewayRunner:
                                 if inspect.isawaitable(_bg_result):
                                     await _bg_result
                             except Exception:
-                                logger.debug("non-critical error", exc_info=True)
+                                _log_non_critical()
                     elif adapter and hasattr(adapter, "_post_delivery_callbacks"):
                         _bg_cb = adapter._post_delivery_callbacks.pop(session_key, None)
                         if callable(_bg_cb):
@@ -18892,7 +18902,7 @@ class GatewayRunner:
                                 if inspect.isawaitable(_bg_result):
                                     await _bg_result
                             except Exception:
-                                logger.debug("non-critical error", exc_info=True)
+                                _log_non_critical()
                 # else: interrupted — discard the interrupted response ("Operation
                 # interrupted." is just noise; the user already knows they sent a
                 # new message).
@@ -18931,7 +18941,7 @@ class GatewayRunner:
                             metadata=_status_thread_metadata,
                         )
                     except Exception:
-                        logger.debug("non-critical error", exc_info=True)
+                        _log_non_critical()
                 followup_result = await self._run_agent(
                     message=next_message,
                     context_prompt=context_prompt,
@@ -19091,7 +19101,7 @@ class GatewayRunner:
                                 _chat_id_snapshot, _mid
                             )
                         except Exception:
-                            logger.debug("non-critical error", exc_info=True)
+                            _log_non_critical()
                 try:
                     safe_schedule_threadsafe(
                         _delete_all(), _loop_snapshot,
@@ -19099,7 +19109,7 @@ class GatewayRunner:
                         log_message="Temp bubble cleanup scheduling error",
                     )
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
             try:
                 _cleanup_adapter.register_post_delivery_callback(
                     session_key,
@@ -19364,7 +19374,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
                     from gateway.status import clear_takeover_marker
                     clear_takeover_marker()
                 except Exception:
-                    logger.debug("non-critical error", exc_info=True)
+                    _log_non_critical()
                 return False
             # Wait up to 10 seconds for the old process to exit.
             # ``os.kill(pid, 0)`` on Windows is NOT a no-op — use the
@@ -19391,14 +19401,14 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
             try:
                 (get_intellect_home() / "gateway.pid").unlink(missing_ok=True)
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             # Clean up any takeover marker the old process didn't consume
             # (e.g. SIGKILL'd before its shutdown handler could read it).
             try:
                 from gateway.status import clear_takeover_marker
                 clear_takeover_marker()
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
             # Also release all scoped locks left by the old process.
             # Stopped (Ctrl+Z) processes don't release locks on exit,
             # leaving stale lock files that block the new gateway from starting.
@@ -19411,7 +19421,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
                 if _released:
                     logger.info("Released %d stale scoped lock(s) from old gateway.", _released)
             except Exception:
-                logger.debug("non-critical error", exc_info=True)
+                _log_non_critical()
         else:
             intellect_home = str(get_intellect_home())
             logger.error(
@@ -19432,7 +19442,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
         from tools.skills_sync import sync_skills
         sync_skills(quiet=True)
     except Exception:
-        logger.debug("non-critical error", exc_info=True)
+        _log_non_critical()
     # Centralized logging — agent.log (INFO+), errors.log (WARNING+),
     # and gateway.log (INFO+, gateway-component records only).
     # Idempotent, so repeated calls from AIAgent.__init__ won't duplicate.
@@ -19720,7 +19730,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
         from tools.mcp_tool import shutdown_mcp_servers
         shutdown_mcp_servers()
     except Exception:
-        logger.debug("non-critical error", exc_info=True)
+        _log_non_critical()
     # Stop the periodic memory monitor (if it was started above).
     # This also emits one final "[MEMORY] shutdown rss=..." line so the
     # last RSS reading before gateway exit is always in the log.
@@ -19729,7 +19739,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
         _memory_monitor.stop_memory_monitoring(timeout=2.0)
     except Exception:
-        logger.debug("non-critical error", exc_info=True)
+        _log_non_critical()
     if runner.exit_code is not None:
         raise SystemExit(runner.exit_code)
 
@@ -19772,7 +19782,7 @@ def main():
         from intellect_cli.stdio import configure_windows_stdio
         configure_windows_stdio()
     except Exception:
-        logger.debug("non-critical error", exc_info=True)
+        _log_non_critical()
     import argparse
     
     parser = argparse.ArgumentParser(description="Intellect Gateway - Multi-platform messaging")
