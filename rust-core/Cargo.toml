@@ -1,6 +1,6 @@
 [package]
 name = "intellect-community-core"
-version = "0.1.0"
+version = "0.6.6"
 edition = "2021"
 description = "Intellect Agent core layer — Rust (PyO3) native extension"
 
