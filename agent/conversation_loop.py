@@ -1065,6 +1065,10 @@ def run_conversation(
             tcs = am.get("tool_calls")
             if not tcs:
                 continue
+            # Skip normalization for messages already processed in a prior
+            # iteration — sort_keys re-serialization is O(n log n) per call.
+            if am.get("_tc_normalized"):
+                continue
             new_tcs = []
             for tc in tcs:
                 if isinstance(tc, dict) and "function" in tc:
@@ -1084,6 +1088,7 @@ def run_conversation(
                         )
                 new_tcs.append(tc)
             am["tool_calls"] = new_tcs
+            am["_tc_normalized"] = True
 
         # Proactively strip any surrogate characters before the API call.
         # Models served via Ollama (Kimi K2.5, GLM-5, Qwen) can return
@@ -1091,12 +1096,20 @@ def run_conversation(
         # the OpenAI SDK. Sanitizing here prevents the 3-retry cycle.
         _sanitize_messages_surrogates(api_messages)
 
-        # Calculate approximate request size for logging
-        total_chars = sum(len(str(msg)) for msg in api_messages)
-        approx_tokens = estimate_messages_tokens_rough(api_messages)
-        approx_request_tokens = estimate_request_tokens_rough(
-            api_messages, tools=agent.tools or None
-        )
+        # Calculate approximate request size for logging.
+        # Cache based on message count — estimate rarely changes between
+        # API calls within the same turn (only tool results are appended).
+        _msg_count = len(api_messages)
+        _cached = getattr(agent, '_cached_approx_tokens', None)
+        if _cached and _cached[0] == _msg_count:
+            approx_tokens, approx_request_tokens, total_chars = _cached[1], _cached[2], _cached[3]
+        else:
+            total_chars = sum(len(str(msg)) for msg in api_messages)
+            approx_tokens = estimate_messages_tokens_rough(api_messages)
+            approx_request_tokens = estimate_request_tokens_rough(
+                api_messages, tools=agent.tools or None
+            )
+            agent._cached_approx_tokens = (_msg_count, approx_tokens, approx_request_tokens, total_chars)
 
         _runtime_context_error = _ollama_context_limit_error(
             agent, approx_request_tokens

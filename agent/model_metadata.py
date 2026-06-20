@@ -1683,34 +1683,52 @@ def _count_image_tokens(msg: Dict[str, Any], cost_per_image: int) -> int:
 def _estimate_message_chars(msg: Dict[str, Any]) -> int:
     """Char count for token estimation, excluding base64 image data.
 
-    Base64 images are counted via `_count_image_tokens` instead; including
+    Base64 images are counted via ``_count_image_tokens`` instead; including
     their raw chars here would massively overestimate token usage.
+
+    Counts chars inline without building intermediate shadow dicts —
+    ``len(str(shadow))`` was O(message_size) memory allocation per call.
     """
     if not isinstance(msg, dict):
         return len(str(msg))
-    shadow: Dict[str, Any] = {}
-    for k, v in msg.items():
+    total = 0
+    # Add overhead for dict literal: {"k1": v1, "k2": v2, ...}
+    # Approximate: 2 chars per key (quotes + colon) + 2 for braces + commas
+    total += 2  # opening/closing braces
+    for i, (k, v) in enumerate(msg.items()):
+        if i > 0:
+            total += 2  # ", " separator between items
+        total += len(repr(k))  # quoted key
+        total += 2             # ": " separator
         if k == "_anthropic_content_blocks":
+            total += 2  # "[]" for skipped list
             continue
         if k == "content":
             if isinstance(v, list):
-                cleaned = []
-                for part in v:
-                    if isinstance(part, dict):
-                        if part.get("type") in {"image", "image_url", "input_image"}:
-                            cleaned.append({"type": part.get("type"), "image": "[stripped]"})
-                        else:
-                            cleaned.append(part)
-                    else:
-                        cleaned.append(part)
-                shadow[k] = cleaned
-            elif isinstance(v, dict) and v.get("_multimodal"):
-                shadow[k] = v.get("text_summary", "")
+                total += _count_content_parts_chars(v)
+                continue
+            if isinstance(v, dict) and v.get("_multimodal"):
+                total += len(str(v.get("text_summary", "")))
+                continue
+        total += len(str(v))
+    return total
+
+
+def _count_content_parts_chars(parts: list) -> int:
+    """Count chars of a content-parts list, replacing image parts with stubs."""
+    total = 2  # "[]"
+    for i, part in enumerate(parts):
+        if i > 0:
+            total += 2
+        if isinstance(part, dict):
+            ptype = part.get("type", "")
+            if ptype in {"image", "image_url", "input_image"}:
+                total += len(repr({"type": ptype, "image": "[stripped]"}))
             else:
-                shadow[k] = v
+                total += len(repr(part))
         else:
-            shadow[k] = v
-    return len(str(shadow))
+            total += len(str(part))
+    return total
 
 
 def estimate_request_tokens_rough(

@@ -203,6 +203,25 @@ def _try_termux_ultrafast_version() -> bool:
 if _try_termux_ultrafast_version():
     raise SystemExit(0)
 
+# ── Fast path: --version and --help skip heavy module-level init ──────
+# Saves ~50-100ms by avoiding config read, .env load, logging setup,
+# and IPv4 preference application when only version/help is needed.
+def _is_fast_argv(argv: list[str]) -> bool:
+    if not argv:
+        return False
+    a = argv[0].lstrip("-")
+    return a in ("-version", "V", "v", "-help", "h", "help")
+
+if _is_fast_argv(sys.argv[1:]):
+    from intellect_cli import __version__, __release_date__
+    if sys.argv[1:] and sys.argv[1] in ("--help", "-h", "help"):
+        print(f"intellect v{__version__} ({__release_date__})")
+        print("Usage: intellect [subcommand] [options]")
+        print("Run 'intellect --help' for full help after startup.")
+    else:
+        print(f"intellect v{__version__} ({__release_date__})")
+    raise SystemExit(0)
+
 import argparse
 import json
 import shutil
