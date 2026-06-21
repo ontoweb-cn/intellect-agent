@@ -17,6 +17,8 @@ from gateway.skill_session_helpers import (
 
 logger = logging.getLogger(__name__)
 
+from gateway.helpers import _get_pending_sentinel
+
 # Lazy accessors — avoid circular import with gateway.run at module level
 # while preserving test monkeypatch-ability (no caching, reads live value).
 def _get_agent_cache_max_size():
@@ -27,11 +29,6 @@ def _get_agent_cache_max_size():
 def _get_agent_cache_idle_ttl():
     import gateway.run as _run
     return _run._AGENT_CACHE_IDLE_TTL_SECS
-
-
-def _get_pending_sentinel():
-    import gateway.run as _run
-    return _run._AGENT_PENDING_SENTINEL
 
 
 def _get_evict_executor():

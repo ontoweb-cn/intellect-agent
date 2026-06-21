@@ -122,9 +122,7 @@ _ADAPTER_DISCONNECT_TIMEOUT_SECS_DEFAULT = 5.0
 
 # Telegram regex constants — extracted to gateway.message_helpers
 
-from gateway.message_helpers import _TELEGRAM_COMMAND_MENTION_RE as _TELEGRAM_COMMAND_MENTION_RE  # noqa: E402
 
-from gateway.message_helpers import _TELEGRAM_NOISY_STATUS_RE as _TELEGRAM_NOISY_STATUS_RE  # noqa: E402
 
 _GATEWAY_PROVIDER_ERROR_RE = re.compile(
 
@@ -154,40 +152,27 @@ _GATEWAY_PROVIDER_ERROR_RE = re.compile(
 
 # Network/error regex constants — extracted to gateway.helpers
 
-from gateway.helpers import _GATEWAY_PROVIDER_POLICY_RE as _GATEWAY_PROVIDER_POLICY_RE  # noqa: E402
 
-from gateway.helpers import _GATEWAY_AUTH_ERROR_RE as _GATEWAY_AUTH_ERROR_RE  # noqa: E402
 
-from gateway.helpers import _GATEWAY_RATE_LIMIT_RE as _GATEWAY_RATE_LIMIT_RE  # noqa: E402
 
-from gateway.helpers import _GATEWAY_SECRET_PATTERNS as _GATEWAY_SECRET_PATTERNS  # noqa: E402
 
-from gateway.helpers import _GATEWAY_PROVIDER_ERROR_SHAPE_RE as _GATEWAY_PROVIDER_ERROR_SHAPE_RE  # noqa: E402
-from gateway.helpers import gateway_platform_value as _gateway_platform_value  # noqa: E402, F401
 
 # Network error classification — extracted to gateway.helpers
 
-from gateway.helpers import _is_transient_network_error as _is_transient_network_error  # noqa: E402
 
 from gateway.helpers import _gateway_loop_exception_handler as _gateway_loop_exception_handler  # noqa: E402
 
 # Provider error reply sanitization — extracted to gateway.helpers
 
-from gateway.helpers import _redact_gateway_user_facing_secrets as _redact_gateway_user_facing_secrets  # noqa: E402
 
-from gateway.helpers import _gateway_provider_error_reply as _gateway_provider_error_reply  # noqa: E402
 
-from gateway.helpers import _looks_like_gateway_provider_error as _looks_like_gateway_provider_error  # noqa: E402
 
 from gateway.helpers import _sanitize_gateway_final_response as _sanitize_gateway_final_response  # noqa: E402
 
 # Status message / command mention helpers — extracted to gateway.message_helpers
 
-from gateway.message_helpers import _prepare_gateway_status_message as _prepare_gateway_status_message  # noqa: E402
 
-from gateway.message_helpers import _send_or_update_status_coro as _send_or_update_status_coro  # noqa: E402
 
-from gateway.message_helpers import _telegramize_command_mentions as _telegramize_command_mentions  # noqa: E402
 
 # Only auto-continue interrupted gateway turns while the interruption is fresh.
 
@@ -215,12 +200,8 @@ from gateway.message_helpers import _telegramize_command_mentions as _telegramiz
 
 # Auto-continue freshness — extracted to gateway.helpers
 
-from gateway.helpers import _AUTO_CONTINUE_FRESHNESS_SECS_DEFAULT as _AUTO_CONTINUE_FRESHNESS_SECS_DEFAULT  # noqa: E402
 
-from gateway.helpers import _auto_continue_freshness_window as _auto_continue_freshness_window  # noqa: E402
 
-from gateway.helpers import _is_fresh_gateway_interruption as _is_fresh_gateway_interruption  # noqa: E402
-from gateway.helpers import coerce_gateway_timestamp as _coerce_gateway_timestamp  # noqa: E402, F401
 from gateway.helpers import float_env as _float_env  # noqa: E402
 
 # Replay / observed context / transcript helpers — extracted to gateway.message_helpers
@@ -229,19 +210,14 @@ from gateway.message_helpers import _ASSISTANT_REPLAY_FIELDS as _ASSISTANT_REPLA
 
 from gateway.message_helpers import _build_replay_entry as _build_replay_entry  # noqa: E402
 
-from gateway.message_helpers import _TELEGRAM_OBSERVED_CONTEXT_PROMPT_MARKER as _TELEGRAM_OBSERVED_CONTEXT_PROMPT_MARKER  # noqa: E402
 
-from gateway.message_helpers import _OBSERVED_GROUP_CONTEXT_HEADER as _OBSERVED_GROUP_CONTEXT_HEADER  # noqa: E402
 
-from gateway.message_helpers import _CURRENT_ADDRESSED_MESSAGE_HEADER as _CURRENT_ADDRESSED_MESSAGE_HEADER  # noqa: E402
 
-from gateway.message_helpers import _uses_telegram_observed_group_context as _uses_telegram_observed_group_context  # noqa: E402
 
 from gateway.message_helpers import _build_gateway_agent_history as _build_gateway_agent_history  # noqa: E402
 
 from gateway.message_helpers import _wrap_current_message_with_observed_context as _wrap_current_message_with_observed_context  # noqa: E402
 
-from gateway.message_helpers import _last_transcript_timestamp as _last_transcript_timestamp  # noqa: E402
 
 # SSL certificate auto-detection — extracted to gateway.helpers
 
@@ -1096,11 +1072,9 @@ def _try_resolve_fallback_provider_inner() -> dict | None:
 
 # Media placeholder — extracted to gateway.message_helpers
 
-from gateway.message_helpers import _build_media_placeholder as _build_media_placeholder  # noqa: E402
 
 # Audio/time/misc — extracted to gateway.helpers
 
-from gateway.helpers import _format_duration as _format_duration  # noqa: E402
 
 from gateway.helpers import _probe_audio_duration as _probe_audio_duration  # noqa: E402
 
@@ -1114,15 +1088,12 @@ from gateway.skill_session_helpers import _INTERRUPT_REASON_STOP as _INTERRUPT_R
 
 from gateway.skill_session_helpers import _INTERRUPT_REASON_RESET as _INTERRUPT_REASON_RESET  # noqa: E402
 
-from gateway.skill_session_helpers import _INTERRUPT_REASON_TIMEOUT as _INTERRUPT_REASON_TIMEOUT  # noqa: E402
 
-from gateway.skill_session_helpers import _INTERRUPT_REASON_SSE_DISCONNECT as _INTERRUPT_REASON_SSE_DISCONNECT  # noqa: E402
 
 from gateway.skill_session_helpers import _INTERRUPT_REASON_GATEWAY_SHUTDOWN as _INTERRUPT_REASON_GATEWAY_SHUTDOWN  # noqa: E402
 
 from gateway.skill_session_helpers import _INTERRUPT_REASON_GATEWAY_RESTART as _INTERRUPT_REASON_GATEWAY_RESTART  # noqa: E402
 
-from gateway.skill_session_helpers import _CONTROL_INTERRUPT_MESSAGES as _CONTROL_INTERRUPT_MESSAGES  # noqa: E402
 
 from gateway.skill_session_helpers import _is_control_interrupt_message as _is_control_interrupt_message  # noqa: E402
 

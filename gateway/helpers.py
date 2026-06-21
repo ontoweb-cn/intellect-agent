@@ -440,3 +440,17 @@ def _is_fresh_gateway_interruption(
         return True
     current = time.time() if now is None else now
     return current - timestamp <= window
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Lazy accessors for run.py module-level constants (extracted from mixins)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _get_pending_sentinel():
+    """Return the _AGENT_PENDING_SENTINEL from gateway.run.
+
+    Uses lazy import to avoid circular dependency (gateway.run imports
+    the mixin modules, which import this module).
+    """
+    import gateway.run as _run
+    return _run._AGENT_PENDING_SENTINEL

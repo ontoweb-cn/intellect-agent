@@ -36,9 +36,7 @@ def _get_load_gateway_runtime_config():
     return _run._load_gateway_runtime_config
 
 
-def _get_pending_sentinel():
-    import gateway.run as _run
-    return _run._AGENT_PENDING_SENTINEL
+from gateway.helpers import _get_pending_sentinel
 
 
 def _get_teams_pipeline_plugin_enabled():

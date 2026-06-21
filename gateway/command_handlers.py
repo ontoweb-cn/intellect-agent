@@ -1,6 +1,5 @@
-# ruff: noqa: F821 — handler methods reference GatewayRunner module-level
-# names (MessageEvent, _AGENT_PENDING_SENTINEL, etc.) that resolve at
-# runtime when the mixin is bound to a GatewayRunner instance.
+# ruff: noqa: F821 — mixin methods reference GatewayRunner module-level names
+# (_load_gateway_config, _intellect_home, etc.) resolved via MRO at runtime.
 """Gateway slash-command handler mixin extracted from run.py."""
 
 from __future__ import annotations
@@ -10,20 +9,18 @@ import logging
 import os
 import re
 import time
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 from agent.i18n import t
-from gateway.platforms.base import EphemeralReply
-from gateway.helpers import _log_non_critical
+from gateway.helpers import _log_non_critical, _get_pending_sentinel
 from gateway.skill_session_helpers import _INTERRUPT_REASON_STOP
 from gateway.config import Platform
+from gateway.platforms.base import EphemeralReply
+
+if TYPE_CHECKING:
+    from gateway.platforms.base import MessageEvent  # noqa: F401
 
 logger = logging.getLogger(__name__)
-
-# Lazy accessor — avoids circular import while preserving test monkeypatch-ability.
-def _get_pending_sentinel():
-    import gateway.run as _run
-    return _run._AGENT_PENDING_SENTINEL
 
 
 class GatewayCommandHandlers:

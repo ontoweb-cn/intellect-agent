@@ -6,7 +6,6 @@
 //! Task 6: ``canonical_tool_args`` from ``agent/tool_guardrails.py``.
 
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
 
 // ── Task 2: File mutation result classification ────────────────────────────
 
