@@ -27,20 +27,18 @@
 
 ## 🟡 P1 — 改进项
 
-### [TODO-003] Python 测试运行超时
+### [TODO-003] ~~Python 测试运行超时~~ ✅ 已修复
 
-**状态**: 待调查
-**影响**: pytest 运行超过 5 分钟未出结果
+**状态**: 已修复 (2026-06-22)
+**提交**: `ed41748 fix(TODO-003): resolve pytest collection errors`
 
-**详情**: 之前用 `--tb=line` 启动后台 pytest，5+ 分钟无输出。可能原因：
-- 某些测试在真实等待（网络/IO）
-- 测试之间死锁
-- 某个测试在 sleep 死循环
+**根因分析**:
+1. `tools/transcription_tools.py:42` 语法错误 — `from agent.safe_print import safe_print` 错插入另一 import 块中间，阻塞 5 个测试文件收集
+2. TB3 shim 清理过度 — 6 个 `gateway/run.py` re-export shim 被删但测试仍依赖，阻塞 2 个测试文件
 
-**行动**:
-1. 用 `pytest tests/<dir> -x` 逐目录跑定位慢测试
-2. 加 `--timeout=60` 全局超时避免无限等待
-3. 找出根因后决定是否调整测试隔离性
+**修复后**: 26,820 测试在 6.59s 内完成收集（之前 26,657 / 7 错误），仅剩 1 个预存 `_PROVIDER_PREFIXES` 导入错误
+
+**全局超时**: `--timeout=30` 已在 `pyproject.toml` addopts 中配置
 
 ---
 
@@ -105,6 +103,10 @@
 
 ## 📝 完成归档
 
+- ✅ **A1 gateway/run.py 单体拆分 (TODO-009)**: 19,808→10,510行 (-46.9%), 5 mixin + 4 helper, MRO 派发链
+- ✅ **A1 技术债务 (TB1-TB4)**: getter 去重, shim 清理, Rust warning, TYPE_CHECKING
+- ✅ **TODO-003 pytest 超时**: 语法错误 + shim 恢复, 26,820 测试 6.59s 收集
+- ✅ **P5-P10 性能分析**: P7/P10 已实现, P5 可实现, P6/P8/P9 需架构改动
 - ✅ **T1-T4 Rust 迁移技术债务**: 死代码移除 ~112 行, CI parity 测试 17→49, 文档修正
 - ✅ **AST 双层防御 (TODO-007)**: 7 类检测 + auto-deny, 18 payloads 渗透 0 bypasses
 - ✅ **v0.6.2 本地 bug 修复**: sandbox python -c 正则 + gateway 测试数据
@@ -120,28 +122,40 @@
 
 ## 🔵 Phase C — 架构改进（长期）
 
-### [TODO-009] A1: `gateway/run.py` 单体拆分
+### [TODO-009] ~~A1: `gateway/run.py` 单体拆分~~ ✅ 已完成
 
-**状态**: 🔵 Phase 1 完成 (2026-06-21), Phase 2 待执行
-**影响**: `gateway/run.py` 19,808 → 18,937 行 (-871, -4.4%)
-**详情**: 见 `docs/plans/optimization-roadmap.md` A1 行 + `.claude/plans/temporal-mapping-swing.md`（详细方案）
+**状态**: ✅ 全部阶段完成 (2026-06-22)
+**影响**: `gateway/run.py` 19,808 → 10,510 行 (-46.9%)
+**提交**: `5858667` (Phase 1-6), `f72ca26` (TB1-TB4 技术债务)
 
-**Phase 1 完成项**:
+**最终结构**:
 
-| 批次 | 内容 | 目标文件 | 行数 |
-|------|------|------|:--:|
-| 1.1 | 网络/错误/SSL/Provider 错误分类 (8 函数 + 5 regex 常量) | `gateway/helpers.py` 扩展 | ~255 |
-| 1.2 | 消息构建/转录回放/Telegram 上下文 (10 函数 + 4 常量) | `gateway/message_helpers.py` 新 | ~320 |
-| 1.3 | 配置/运行时路径 (3 函数) | `gateway/config_helpers.py` 新 | ~50 |
-| 1.4 | 时间/媒体/日志/auto-continue (6 函数 + 1 常量) | `gateway/helpers.py` 扩展 | ~185 |
-| 1.5 | Skill/Session/Agent响应/中断常量 (17 函数 + 8 常量) | `gateway/skill_session_helpers.py` 新 | ~300 |
+| 模块 | 行数 | 内容 |
+|------|:---:|------|
+| `run.py` | 10,510 | GatewayRunner 骨架 + 13 个核心方法 (start/stop/dispatch) |
+| `command_handlers.py` | 3,705 | 57 命令处理器 + `_COMMAND_DISPATCH` 注册表派发 |
+| `agent_runner.py` | 3,865 | 29 agent 生命周期方法 (_run_agent, cache, cleanup) |
+| `platform_handlers.py` | 1,399 | 41 Telegram/平台适配方法 |
+| `infrastructure_handlers.py` | 4,363 | 90 session/通知/认证/voice/goal/watcher/queue 方法 |
+| `helpers.py` | 442 | 网络/SSL/错误/时间/媒体/lazy accessor |
+| `message_helpers.py` | 324 | 消息构建/转录回放/Telegram/媒体占位 |
+| `config_helpers.py` | 54 | 二进制解析/home-target env |
+| `skill_session_helpers.py` | 305 | 中断常量/Skill/Session/Agent响应 |
 
-**验证**: ruff 零错误, `from gateway.run import GatewayRunner` 通过, 全量 pytest 通过（1 个预存失败与 A1 无关）
+**MRO 链**: `GatewayRunner → CommandHandlers → AgentRunner → PlatformHandlers → InfrastructureHandlers`
 
-**待执行**:
-1. Phase 2: 创建 `gateway/command_handlers.py`，提取 `GatewayCommandHandlers` mixin + 注册表派发替代 45-branch if/elif 链
-2. Phase 3-6: Agent / 平台 / 会话 / 杂项 → 各独立模块
-3. 每阶段跑全量 pytest + ruff 验证
+**Code review 修复** (提交 `5858667`):
+- 8 个 `@staticmethod` 缺失 → TypeError in `__init__`
+- `MessageType` / `Platform` 错误导入路径
+- `_intellect_home` / `_AGENT_PENDING_SENTINEL` 裸名引用 → lazy accessor
+- `/start` logging 丢失, `_log_non_critical()` 丢失
+- `_DESTRUCTIVE_CONFIRM_COMMANDS` 死代码, F401 死导入
+
+**技术债务修复** (提交 `f72ca26`):
+- TB2: `_get_pending_sentinel()` 去重 → `helpers.py`
+- TB3: 29 无用 re-export shim 移除
+- TB4: Rust `unused import PyTuple` 修复
+- TB1: `TYPE_CHECKING` 导入 + imports 合并
 
 ---
 
@@ -172,7 +186,7 @@
 
 ---
 
-最后更新: 2026-06-20 (A1 gateway 拆分计划)
+最后更新: 2026-06-22 (A1 完成, TODO-003 修复, TB1-TB4 完成)
 
 ---
 

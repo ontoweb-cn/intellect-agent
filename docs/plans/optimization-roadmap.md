@@ -16,20 +16,20 @@
 
 ## 🔴 性能优化 — 后续（P5-P10）
 
-| # | 问题 | 位置 | 方案 |
-|---|------|------|------|
-| **P5** | `get_session()` 用 `SELECT *` 加载 35 列含 system_prompt（可 100K+） | `intellect_state.py:1321` | 按调用方需求只 SELECT 需要的列 |
-| **P6** | `list_sessions_rich()` 压缩链每个 session 一次查询 | `intellect_state.py:1700-1707` | CTE 批量化或缓存压缩 tip |
-| **P7** | `_save_session_log` 每次读整个日志文件再解析仅为了跳过写入 | `run_agent.py:1863-1865` | 内存侧追踪 `_last_message_count` 避免磁盘读 |
-| **P8** | System prompt 压缩事件后全量重建（含 skills/media 扫描） | `conversation_loop.py:582-594` | 区分 stable/volatile 层，仅重建变化的部分 |
-| **P9** | `_flush_messages_to_session_db` 每条消息单独序列化 6 次 `json.dumps` | `run_agent.py:1492-1530` | 批量 `replace_messages` 或预序列化 |
-| **P10** | `model_metadata.py` endpoint 缓存无 LRU 上限 | `model_metadata.py:78` | 加 `OrderedDict` + 上限 32 条目 |
+| # | 问题 | 位置 | 方案 | 状态 |
+|---|------|------|------|:--:|
+| **P5** | `get_session()` 用 `SELECT *` 加载 35 列含 system_prompt（可 100K+） | `intellect_state.py:1321` | 按调用方需求只 SELECT 需要的列 | ⬜ 可实现 |
+| **P6** | `list_sessions_rich()` 压缩链每个 session 一次查询 | `intellect_state.py:1700-1707` | CTE 批量化或缓存压缩 tip | ⏸️ SQL 重构 |
+| **P7** | `_save_session_log` 每次读整个日志文件再解析仅为了跳过写入 | `run_agent.py:1863-1865` | 内存侧追踪 `_last_message_count` 避免磁盘读 | ✅ 已实现 |
+| **P8** | System prompt 压缩事件后全量重建（含 skills/media 扫描） | `conversation_loop.py:582-594` | 区分 stable/volatile 层，仅重建变化的部分 | ⏸️ 架构改动 |
+| **P9** | `_flush_messages_to_session_db` 每条消息单独序列化 6 次 `json.dumps` | `run_agent.py:1492-1530` | 批量 `replace_messages` 或预序列化 | ⏸️ DB schema 依赖 |
+| **P10** | `model_metadata.py` endpoint 缓存无 LRU 上限 | `model_metadata.py:78` | 加 `OrderedDict` + 上限 32 条目 | ✅ 已实现 |
 
 ## 🟡 架构优化（中影响）
 
 | # | 问题 | 位置 | 方案 | 状态 |
 |---|------|------|------|:--:|
-| A1 | `gateway/run.py` 19,808 行单体 | 整个文件 | 📋 计划已制定 — Phase 1: 模块级函数 → `helpers.py` (~1,500行); Phase 2: 命令处理器 mixin → `command_handlers.py` (~5,400行) |
+| A1 | `gateway/run.py` 19,808 行单体 | 整个文件 | ✅ **已完成** — 19,808→10,510行 (-46.9%), 5 mixin (command/agent/platform/infrastructure) + 4 helper, MRO 注册表派发 |
 | A2 | `cli.py` 15,313 行 | 整个文件 | ✅ worktree 管理提取 → `worktree_helpers.py`（349 行） |
 | A3 | `conversation_loop.py` `run_conversation()` 4,439 行 | 整个函数 | ✅ helper 函数提取 → `conversation_helpers.py`（290 行）+ Phase 1-5 标记 |
 | A4 | 18 个平台适配器 ~34,000 行 | `plugins/platforms/*` | ✅ `check_platform_requirements()` 共享 helper（12 适配器，-195 行） |
