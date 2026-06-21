@@ -29,7 +29,7 @@
 
 | # | 问题 | 位置 | 方案 | 状态 |
 |---|------|------|------|:--:|
-| A1 | `gateway/run.py` 19,799 行单体 | 整个文件 | ⏸️ 函数间交叉引用密集，需独立 session |
+| A1 | `gateway/run.py` 19,808 行单体 | 整个文件 | 📋 计划已制定 — Phase 1: 模块级函数 → `helpers.py` (~1,500行); Phase 2: 命令处理器 mixin → `command_handlers.py` (~5,400行) |
 | A2 | `cli.py` 15,313 行 | 整个文件 | ✅ worktree 管理提取 → `worktree_helpers.py`（349 行） |
 | A3 | `conversation_loop.py` `run_conversation()` 4,439 行 | 整个函数 | ✅ helper 函数提取 → `conversation_helpers.py`（290 行）+ Phase 1-5 标记 |
 | A4 | 18 个平台适配器 ~34,000 行 | `plugins/platforms/*` | ✅ `check_platform_requirements()` 共享 helper（12 适配器，-195 行） |

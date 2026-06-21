@@ -120,6 +120,31 @@
 
 ## 🔵 Phase C — 架构改进（长期）
 
+### [TODO-009] A1: `gateway/run.py` 单体拆分
+
+**状态**: 🔵 Phase 1 完成 (2026-06-21), Phase 2 待执行
+**影响**: `gateway/run.py` 19,808 → 18,937 行 (-871, -4.4%)
+**详情**: 见 `docs/plans/optimization-roadmap.md` A1 行 + `.claude/plans/temporal-mapping-swing.md`（详细方案）
+
+**Phase 1 完成项**:
+
+| 批次 | 内容 | 目标文件 | 行数 |
+|------|------|------|:--:|
+| 1.1 | 网络/错误/SSL/Provider 错误分类 (8 函数 + 5 regex 常量) | `gateway/helpers.py` 扩展 | ~255 |
+| 1.2 | 消息构建/转录回放/Telegram 上下文 (10 函数 + 4 常量) | `gateway/message_helpers.py` 新 | ~320 |
+| 1.3 | 配置/运行时路径 (3 函数) | `gateway/config_helpers.py` 新 | ~50 |
+| 1.4 | 时间/媒体/日志/auto-continue (6 函数 + 1 常量) | `gateway/helpers.py` 扩展 | ~185 |
+| 1.5 | Skill/Session/Agent响应/中断常量 (17 函数 + 8 常量) | `gateway/skill_session_helpers.py` 新 | ~300 |
+
+**验证**: ruff 零错误, `from gateway.run import GatewayRunner` 通过, 全量 pytest 通过（1 个预存失败与 A1 无关）
+
+**待执行**:
+1. Phase 2: 创建 `gateway/command_handlers.py`，提取 `GatewayCommandHandlers` mixin + 注册表派发替代 45-branch if/elif 链
+2. Phase 3-6: Agent / 平台 / 会话 / 杂项 → 各独立模块
+3. 每阶段跑全量 pytest + ruff 验证
+
+---
+
 ### [TODO-007] ~~AST 解析方案跟踪~~ ✅ 已完成
 
 **状态**: ✅ 已实现 (2026-06-14) — `_check_python_ast()` 已集成到 `check_execute_code_guard`，支持 7 类检测 + auto-deny，12 单元测试。
@@ -147,7 +172,7 @@
 
 ---
 
-最后更新: 2026-06-18 (T1-T4 技术债务清理, v0.6.5)
+最后更新: 2026-06-20 (A1 gateway 拆分计划)
 
 ---
 

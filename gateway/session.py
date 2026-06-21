@@ -64,9 +64,8 @@ from .whatsapp_identity import (
     canonical_whatsapp_identifier,
     normalize_whatsapp_identifier,  # noqa: F401 - re-exported for gateway.session callers
 )
-from utils import atomic_replace
 
-from intellect_rust import PlatformRetryScheduler as _RustPlatformRetryScheduler, rust_build_session_key as _rust_build_key, rust_check_expiry_batch as _rust_check_expiry_batch
+from intellect_rust import rust_build_session_key as _rust_build_key, rust_check_expiry_batch as _rust_check_expiry_batch
 
 
 @dataclass
