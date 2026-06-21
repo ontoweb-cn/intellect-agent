@@ -207,6 +207,12 @@ from gateway.helpers import float_env as _float_env  # noqa: E402
 # Replay / observed context / transcript helpers — extracted to gateway.message_helpers
 
 from gateway.message_helpers import _ASSISTANT_REPLAY_FIELDS as _ASSISTANT_REPLAY_FIELDS  # noqa: E402
+from gateway.helpers import _auto_continue_freshness_window as _auto_continue_freshness_window  # noqa: E402, F401
+from gateway.helpers import coerce_gateway_timestamp as _coerce_gateway_timestamp  # noqa: E402, F401
+from gateway.helpers import _is_fresh_gateway_interruption as _is_fresh_gateway_interruption  # noqa: E402, F401
+from gateway.helpers import _is_transient_network_error as _is_transient_network_error  # noqa: E402, F401
+from gateway.message_helpers import _last_transcript_timestamp as _last_transcript_timestamp  # noqa: E402, F401
+from gateway.message_helpers import _prepare_gateway_status_message as _prepare_gateway_status_message  # noqa: E402, F401
 
 from gateway.message_helpers import _build_replay_entry as _build_replay_entry  # noqa: E402
 
