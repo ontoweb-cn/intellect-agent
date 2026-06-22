@@ -103,10 +103,11 @@
 
 ## 📝 完成归档
 
-- ✅ **A1 gateway/run.py 单体拆分 (TODO-009)**: 19,808→10,510行 (-46.9%), 5 mixin + 4 helper, MRO 派发链
-- ✅ **A1 技术债务 (TB1-TB4)**: getter 去重, shim 清理, Rust warning, TYPE_CHECKING
+- ✅ **A1 gateway/run.py 单体拆分 (TODO-009)**: 19,808→10,098行 (-49.0%), 5 mixin + 4 helper, MRO 派发链
+- ✅ **A1 技术债务 (TB1-TB7)**: getter 去重, shim 清理, Rust warning, TYPE_CHECKING, accessor 统一, 剩余函数迁出
 - ✅ **TODO-003 pytest 超时**: 语法错误 + shim 恢复, 26,820 测试 6.59s 收集
-- ✅ **P5-P10 性能分析**: P7/P10 已实现, P5 可实现, P6/P8/P9 需架构改动
+- ✅ **P5**: get_session() 默认跳过 system_prompt (100K+), 仅 1 个调用方显式加载
+- ✅ **WebUI 进程组终止**: POSIX os.killpg, 防止孤儿进程
 - ✅ **T1-T4 Rust 迁移技术债务**: 死代码移除 ~112 行, CI parity 测试 17→49, 文档修正
 - ✅ **AST 双层防御 (TODO-007)**: 7 类检测 + auto-deny, 18 payloads 渗透 0 bypasses
 - ✅ **v0.6.2 本地 bug 修复**: sandbox python -c 正则 + gateway 测试数据
@@ -139,23 +140,20 @@
 | `infrastructure_handlers.py` | 4,363 | 90 session/通知/认证/voice/goal/watcher/queue 方法 |
 | `helpers.py` | 442 | 网络/SSL/错误/时间/媒体/lazy accessor |
 | `message_helpers.py` | 324 | 消息构建/转录回放/Telegram/媒体占位 |
-| `config_helpers.py` | 54 | 二进制解析/home-target env |
+| `config_helpers.py` | 504 | 二进制解析/home-target env/配置加载/认证回退/运行时缓存 |
 | `skill_session_helpers.py` | 305 | 中断常量/Skill/Session/Agent响应 |
 
 **MRO 链**: `GatewayRunner → CommandHandlers → AgentRunner → PlatformHandlers → InfrastructureHandlers`
 
-**Code review 修复** (提交 `5858667`):
-- 8 个 `@staticmethod` 缺失 → TypeError in `__init__`
-- `MessageType` / `Platform` 错误导入路径
+**A1 技术债务** (提交 `f72ca26`, `1a5e7e8`):
+- TB2: `_get_pending_sentinel()` 去重 → helpers.py
+- TB3: 29 无用 re-export shim 移除 (后恢复 6 个测试需要的)
+- TB4: Rust unused import 修复
+- TB6: `_get_intellect_home()` 统一到 helpers.py
+- TB7: 9 个剩余函数迁至 config_helpers.py (run.py -418行)
 - `_intellect_home` / `_AGENT_PENDING_SENTINEL` 裸名引用 → lazy accessor
 - `/start` logging 丢失, `_log_non_critical()` 丢失
 - `_DESTRUCTIVE_CONFIRM_COMMANDS` 死代码, F401 死导入
-
-**技术债务修复** (提交 `f72ca26`):
-- TB2: `_get_pending_sentinel()` 去重 → `helpers.py`
-- TB3: 29 无用 re-export shim 移除
-- TB4: Rust `unused import PyTuple` 修复
-- TB1: `TYPE_CHECKING` 导入 + imports 合并
 
 ---
 
@@ -186,7 +184,7 @@
 
 ---
 
-最后更新: 2026-06-22 (A1 完成, TODO-003 修复, TB1-TB4 完成)
+最后更新: 2026-06-22 (A1 完成, TODO-003, TB1-TB7, P5, webui fix)
 
 ---
 

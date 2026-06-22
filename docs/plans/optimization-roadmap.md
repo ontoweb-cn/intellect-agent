@@ -51,6 +51,13 @@
 
 | 项目 | 状态 |
 |------|:--:|
+| A1 gateway/run.py 拆分 (19,808→10,098行) | ✅ |
+| A1 技术债务 (TB1-TB7) | ✅ |
+| P5 get_session() SELECT * 优化 | ✅ |
+| P7 _save_session_log 内存追踪 | ✅ 已实现 |
+| P10 endpoint 缓存 LRU | ✅ 已实现 |
+| WebUI 进程组终止 fix | ✅ |
+| TODO-003 pytest 超时修复 | ✅ |
 | SessionDB 读写 Rust 统一 | ✅ M16 |
 | 错误分类器 Rust 迁移 | ✅ M1 |
 | 消息清理 Rust 迁移 | ✅ M4 |
