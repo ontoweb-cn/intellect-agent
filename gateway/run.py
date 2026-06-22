@@ -831,14 +831,7 @@ from gateway.config_helpers import _teams_pipeline_plugin_enabled as _teams_pipe
 
 from gateway.config_helpers import _load_gateway_config as _load_gateway_config  # noqa: E402
 
-# ── Runtime config cache ─────────────────────────────────────────────────
-
-# Avoid deepcopy-per-message: _load_gateway_runtime_config expands env vars
-
-# via copy.deepcopy(raw_config). Cache the expanded result with mtime-based
-
-# invalidation so the hot path skips expansion.
-
+# Runtime config helpers — extracted to gateway.config_helpers
 from gateway.config_helpers import _load_gateway_runtime_config as _load_gateway_runtime_config  # noqa: E402
 
 from gateway.config_helpers import _resolve_gateway_model as _resolve_gateway_model  # noqa: E402

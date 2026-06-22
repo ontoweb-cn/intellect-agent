@@ -1363,7 +1363,7 @@ class APIServerAdapter(BasePlatformAdapter):
         db = self._ensure_session_db()
         if db is None:
             return None, web.json_response(_openai_error("Session database unavailable", code="session_db_unavailable"), status=503)
-        session = db.get_session(session_id)
+        session = db.get_session(session_id, include_system_prompt=True)
         if not session:
             return None, web.json_response(_openai_error(f"Session not found: {session_id}", code="session_not_found"), status=404)
         return session, None
@@ -1429,7 +1429,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response(_openai_error("Invalid session ID", code="invalid_session_id"), status=400)
         if len(session_id) > self._MAX_SESSION_HEADER_LEN:
             return web.json_response(_openai_error("Session ID too long", code="invalid_session_id"), status=400)
-        if db.get_session(session_id):
+        if db.get_session(session_id, include_system_prompt=False):
             return web.json_response(_openai_error(f"Session already exists: {session_id}", code="session_exists"), status=409)
 
         model = body.get("model") or self._model_name
@@ -1444,7 +1444,7 @@ class APIServerAdapter(BasePlatformAdapter):
             except ValueError as exc:
                 db.delete_session(session_id)
                 return web.json_response(_openai_error(str(exc), code="invalid_title"), status=400)
-        session = db.get_session(session_id) or {"id": session_id, "source": "api_server", "model": model, "title": title}
+        session = db.get_session(session_id, include_system_prompt=True) or {"id": session_id, "source": "api_server", "model": model, "title": title}
         return web.json_response({"object": "intellect.session", "session": self._session_response(session)}, status=201)
 
     async def _handle_get_session(self, request: "web.Request") -> "web.Response":
@@ -1482,7 +1482,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 return web.json_response(_openai_error(str(exc), code="invalid_title"), status=400)
         if body.get("end_reason"):
             db.end_session(session_id, str(body["end_reason"]))
-        session = db.get_session(session_id) or session
+        session = db.get_session(session_id, include_system_prompt=True) or session
         return web.json_response({"object": "intellect.session", "session": self._session_response(session)})
 
     async def _handle_delete_session(self, request: "web.Request") -> "web.Response":
@@ -1531,7 +1531,7 @@ class APIServerAdapter(BasePlatformAdapter):
         fork_id = str(body.get("id") or body.get("session_id") or f"api_{int(time.time())}_{uuid.uuid4().hex[:8]}").strip()
         if not fork_id or re.search(r'[\r\n\x00]', fork_id):
             return web.json_response(_openai_error("Invalid session ID", code="invalid_session_id"), status=400)
-        if db.get_session(fork_id):
+        if db.get_session(fork_id, include_system_prompt=False):
             return web.json_response(_openai_error(f"Session already exists: {fork_id}", code="session_exists"), status=409)
 
         # Match the CLI /branch semantics: mark the original as branched, then
@@ -1559,7 +1559,7 @@ class APIServerAdapter(BasePlatformAdapter):
             db.set_session_title(fork_id, str(title))
         except ValueError as exc:
             return web.json_response(_openai_error(str(exc), code="invalid_title"), status=400)
-        fork = db.get_session(fork_id) or {"id": fork_id, "parent_session_id": source_id}
+        fork = db.get_session(fork_id, include_system_prompt=True) or {"id": fork_id, "parent_session_id": source_id}
         return web.json_response({"object": "intellect.session", "session": self._session_response(fork)}, status=201)
 
     async def _handle_session_chat(self, request: "web.Request") -> "web.Response":

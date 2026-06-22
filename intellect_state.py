@@ -3040,7 +3040,7 @@ class SessionDB:
 
     def export_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Export a single session with all its messages as a dict."""
-        session = self.get_session(session_id)
+        session = self.get_session(session_id, include_system_prompt=True)
         if not session:
             return None
         messages = self.get_messages(session_id)
