@@ -813,8 +813,28 @@ def run_conversation(
         
         # ── Start thinking indicator ──────────────────────────────────
         from agent.conversation_helpers import _start_thinking_indicator
-        agent._api_call_count_hint = api_call_count  # pass context to helper
+        agent._api_call_count_hint = api_call_count
         thinking_spinner = _start_thinking_indicator(agent)
+        # Diagnostic output (not extracted — depends on local variables)
+        if not agent.quiet_mode:
+            agent._vprint(
+                f"{agent.log_prefix}   📊 Request size: {len(api_messages)} messages, "
+                f"~{approx_tokens:,} tokens (~{total_chars:,} chars)"
+            )
+            agent._vprint(
+                f"{agent.log_prefix}   🔧 Available tools: "
+                f"{len(agent.tools) if agent.tools else 0}"
+            )
+        if agent.verbose_logging:
+            logging.debug(
+                "API Request - Model: %s, Messages: %d, Tools: %d",
+                agent.model, len(messages), len(agent.tools) if agent.tools else 0,
+            )
+            logging.debug(
+                "Last message role: %s",
+                messages[-1]['role'] if messages else 'none',
+            )
+            logging.debug("Total message size: ~%s tokens", f"{approx_tokens:,}")
         
         # ==================================================================
         # Phase 3: API call + streaming response + token counting

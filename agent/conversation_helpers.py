@@ -494,9 +494,12 @@ def _start_thinking_indicator(agent: Any) -> Any:
             f"/{agent.max_iterations}..."
         )
         return None
+    # (diagnostic output lines restored to run_conversation()
+    #  because they depend on local variables api_messages,
+    #  approx_tokens, total_chars, messages)
 
     import random
-    from agent.kawaii_spinner import KawaiiSpinner
+    from agent.display import KawaiiSpinner
     face = random.choice(KawaiiSpinner.get_thinking_faces())
     verb = random.choice(KawaiiSpinner.get_thinking_verbs())
     if agent.thinking_callback:
