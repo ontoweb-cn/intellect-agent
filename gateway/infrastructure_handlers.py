@@ -15,15 +15,12 @@ from typing import Any, Dict, Optional
 
 from intellect_cli.config import cfg_get
 from intellect_cli.fallback_config import get_fallback_chain
-from gateway.helpers import _log_non_critical
+from gateway.helpers import _log_non_critical, _get_intellect_home, _get_pending_sentinel
 
 logger = logging.getLogger(__name__)
 
 # Lazy accessors — avoid circular import while preserving test monkeypatch-ability
 # (no caching — each call reads the live value from run.py).
-def _get_intellect_home():
-    import gateway.run as _run
-    return _run._intellect_home
 
 
 def _get_load_gateway_config():
@@ -36,7 +33,6 @@ def _get_load_gateway_runtime_config():
     return _run._load_gateway_runtime_config
 
 
-from gateway.helpers import _get_pending_sentinel
 
 
 def _get_teams_pipeline_plugin_enabled():

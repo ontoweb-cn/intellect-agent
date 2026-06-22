@@ -454,3 +454,13 @@ def _get_pending_sentinel():
     """
     import gateway.run as _run
     return _run._AGENT_PENDING_SENTINEL
+
+
+def _get_intellect_home():
+    """Return the Intellect home directory (cached in gateway.run).
+
+    Uses lazy import to avoid circular dependency.  Reads the live
+    module attribute so test monkeypatching works correctly.
+    """
+    import gateway.run as _run
+    return _run._intellect_home
