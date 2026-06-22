@@ -172,7 +172,7 @@
 
 ### [TODO-012] conversation_loop.py 拆分
 
-**状态**: 🔵 C1 实施中 (2026-06-22)
+**状态**: 🔵 C1 部分完成 — `_build_turn_exit_diagnostic()` 已提取, `ConversationState` dataclass 已创建 (2026-06-22)
 **影响**: `agent/conversation_loop.py` `run_conversation()` 4,546 行单函数
 
 **当前结构**:
