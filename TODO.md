@@ -135,6 +135,41 @@
 
 ---
 
+### [TODO-011] 发布机制优化
+
+**状态**: 📋 已分析 + 部分实施 (2026-06-22)
+**详情**: GitHub Actions + Gitee Go + PyPI 三方发布链，涉及 4 平台构建、双源同步。
+
+**当前架构**:
+
+| 平台 | 触发 | 构建内容 | 发布目标 |
+|------|:--:|------|------|
+| GitHub Actions | tag push | 4平台 wheel + installer (Rust+Python) | GitHub Release (中转) |
+| GitHub Actions | CalVer tag | Python sdist + wheel | PyPI |
+| Gitee Go | tag push | Linux wheel 原生构建 | Gitee Release |
+| Gitee Go | tag push | macOS/Windows 从 GitHub 轮询同步 | Gitee Release |
+
+**Gitee 限制**: Gitee Go 仅提供 Linux runners，macOS/Windows 必须依赖 GitHub Actions 构建后轮询下载。同步链: GitHub Release → 900s 超时 × 3 次重试 → Gitee Release，失败标记 `non-fatal`。
+
+**改进项**:
+
+| 优先级 | 改进 | 投入 | 状态 |
+|:--:|------|:--:|:--:|
+| 🔴 | 发布后冒烟测试 (下载→安装→`--version`) | 低 | ⬜ |
+| 🔴 | Gitee SHA256SUMS 同步 | 低 | ⬜ |
+| 🟡 | 从 GitHub Artifacts 直接下载 (替代 Release API) | 中 | ⬜ |
+| 🟡 | 自动化 changelog (conventional commits) | 中 | ⬜ |
+| 🟡 | GPG 签名 SHA256SUMS | 中 | ⬜ |
+| 🟢 | 国内 PyPI 镜像 (阿里云/清华) | 中 | ⬜ |
+| 🟢 | 产物命名统一 | 低 | ⬜ |
+| 🟢 | Docker 发布与 tag 联动 | 中 | ⬜ |
+
+**不适合改进**:
+- ❌ Gitee macOS/Windows 独立构建 — Gitee Go 无对应 runner
+- ❌ 二进制 delta 更新 — 工具链复杂，收益有限
+
+---
+
 ## 📝 完成归档
 
 - ✅ **A1 gateway/run.py 单体拆分 (TODO-009)**: 19,808→10,098行 (-49.0%), 5 mixin + 4 helper, MRO 派发链

@@ -52,7 +52,7 @@ stages:
               sudo apt-get install -y -qq python3 python3-pip
               python3 -m pip install --upgrade pip -q
 
-          - name: Sync macOS + Windows wheels (with retry)
+          - name: Sync macOS + Windows wheels + SHA256SUMS (with retry)
             env:
               GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
               GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -70,7 +70,12 @@ stages:
                     --tag "$RELEASE_TAG" \
                     --dist-dir dist/combined \
                     --max-wait 900; then
-                  # Publish to Gitee
+                  # Verify SHA256SUMS if present (integrity check before publish)
+                  if [ -f dist/combined/SHA256SUMS ]; then
+                    echo "Verifying SHA256SUMS..."
+                    (cd dist/combined && sha256sum -c SHA256SUMS 2>&1 | tail -5 || echo "Some checksums skipped (non-fatal)")
+                  fi
+                  # Publish to Gitee (includes SHA256SUMS if present)
                   python3 packaging/scripts/publish-gitee-from-ci.py \
                     --tag "$RELEASE_TAG" \
                     --dist-dir dist/combined

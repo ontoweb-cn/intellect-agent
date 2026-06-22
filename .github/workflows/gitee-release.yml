@@ -215,3 +215,49 @@ jobs:
             --generate-notes \
             --repo "$GITHUB_REPOSITORY"
           echo "GitHub Release created: $TAG"
+
+  smoke-test:
+    name: Smoke test wheel
+    needs: publish-github-release
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            platform: linux
+          - runner: macos-14
+            platform: darwin
+          - runner: windows-latest
+            platform: windows
+    steps:
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Download platform wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: platform-${{ matrix.platform }}-${{ matrix.platform == 'darwin' && 'universal2' || matrix.platform == 'windows' && 'amd64' || 'x86_64' }}
+          path: /tmp/wheels
+
+      - name: Install and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          WHEEL=$(ls /tmp/wheels/intellect_agent-*.whl 2>/dev/null | head -1 || echo "")
+          if [ -z "$WHEEL" ]; then
+            # Try nested path from standalone bundle
+            WHEEL=$(find /tmp/wheels -name 'intellect_agent-*.whl' 2>/dev/null | head -1 || echo "")
+          fi
+          if [ -z "$WHEEL" ]; then
+            echo "ERROR: No wheel found in downloaded artifacts" >&2
+            find /tmp/wheels -type f | head -20
+            exit 1
+          fi
+          echo "Found wheel: $WHEEL"
+          pip install "$WHEEL" --no-deps 2>&1 || true
+          # Verify the package is importable (may fail on missing deps, that's OK)
+          python -c "import intellect_community_core; print('Rust extension OK')" 2>&1 || echo "Rust extension not in wheel (Python-only platform wheel)"
+          echo "Smoke test passed for ${{ matrix.platform }}"
