@@ -90,23 +90,32 @@ def run_conversation(
     persist_user_message: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Run a complete conversation with tool calling until completion.
+    Run a complete conversation turn with the LLM.
+
+    Structure (5 phases):
+      Phase 1 (L303-600):  System prompt restore + preflight compression
+      Phase 2 (L600-805):  Build API messages (steer drain, tool repair,
+                           context injection, message merge)
+      Phase 3 (L805-1953): API call + streaming response + token counting
+      Phase 4 (L1953-4158): Error classification + 9 recovery paths
+      Phase 5 (L4158-end):  Post-turn cleanup (diagnostics, verifier,
+                            explainer, hooks, persistence)
+
+    Extracted helpers (agent/conversation_helpers.py):
+      _drain_pre_api_steer, _assemble_system_message,
+      _start_thinking_indicator, _build_turn_exit_diagnostic,
+      _apply_file_mutation_verifier_footer, _apply_turn_completion_explainer
 
     Args:
-        user_message (str): The user's message/question
-        system_message (str): Custom system message (optional, overrides ephemeral_system_prompt if provided)
-        conversation_history (List[Dict]): Previous conversation messages (optional)
-        task_id (str): Unique identifier for this task to isolate VMs between concurrent tasks (optional, auto-generated if not provided)
-        stream_callback: Optional callback invoked with each text delta during streaming.
-            Used by the TTS pipeline to start audio generation before the full response.
-            When None (default), API calls use the standard non-streaming path.
-        persist_user_message: Optional clean user message to store in
-            transcripts/history when user_message contains API-only
-            synthetic prefixes.
-                or queuing follow-up prefetch work.
+        user_message: The user's message/question
+        system_message: Custom system message (overrides ephemeral_system_prompt if provided)
+        conversation_history: Previous conversation messages
+        task_id: Unique task identifier (auto-generated if not provided)
+        stream_callback: Called with text deltas during streaming (TTS integration)
+        persist_user_message: Clean message for transcript storage (API-only prefixes stripped)
 
     Returns:
-        Dict: Complete conversation result with final response and message history
+        Dict with final_response, messages, api_calls, completed, failed, error
     """
     # Guard stdio against OSError from broken pipes (systemd/headless/daemon).
     # Installed once, transparent when streams are healthy, prevents crash on write.
@@ -807,6 +816,9 @@ def run_conversation(
         agent._api_call_count_hint = api_call_count  # pass context to helper
         thinking_spinner = _start_thinking_indicator(agent)
         
+        # ==================================================================
+        # Phase 3: API call + streaming response + token counting
+        # ==================================================================
         api_start_time = time.time()
         retry_count = 0
         max_retries = agent._api_max_retries
