@@ -43,3 +43,26 @@ Add the key to your trusted keyring:
 ```bash
 echo "7770F3E587EFAA74:6:" | gpg --import-ownertrust
 ```
+
+## Installing from China (domestic mirrors)
+
+If `pypi.org` is slow from mainland China, use a domestic mirror:
+
+```bash
+# Tsinghua TUNA mirror (recommended)
+pip install intellect-agent -i https://pypi.tuna.tsinghua.edu.cn/simple/
+
+# Alibaba Cloud mirror
+pip install intellect-agent -i https://mirrors.aliyun.com/pypi/simple/
+
+# USTC mirror
+pip install intellect-agent -i https://pypi.mirrors.ustc.edu.cn/simple/
+```
+
+Or set it permanently:
+
+```bash
+pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple/
+```
+
+Mirrors sync from pypi.org daily. New releases may take up to 24 hours to appear.

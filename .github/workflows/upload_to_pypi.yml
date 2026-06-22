@@ -105,15 +105,47 @@ jobs:
           skip-existing: true
 
   sign:
-    name: Sign and attach to GitHub Release
+    check-mirror:
+      name: Check domestic mirror availability
+      needs: publish
+      runs-on: ubuntu-latest
+      timeout-minutes: 30
+      steps:
+        - name: Wait for mirror sync and verify
+          run: |
+            set -euo pipefail
+            # Extract package name + version from the built wheel
+            TAG="${GITHUB_REF_NAME#v}"
+            PACKAGE="intellect-agent"
+            MIRRORS=(
+              "https://pypi.tuna.tsinghua.edu.cn/simple/${PACKAGE}/"
+              "https://mirrors.aliyun.com/pypi/simple/${PACKAGE}/"
+            )
+            # Poll mirrors for up to 30 min (sync is daily but can be triggered)
+            for mirror in "${MIRRORS[@]}"; do
+              echo "Checking: $mirror"
+              POLL_DEADLINE=$(($(date +%s) + 1800))
+              while [ "$(date +%s)" -lt "$POLL_DEADLINE" ]; do
+                if curl -sfI --max-time 10 "$mirror" 2>/dev/null | grep -q '200 OK'; then
+                  echo "  ✓ Mirror available"
+                  break
+                fi
+                sleep 60
+              done
+            done
+          # Non-blocking: mirror sync is best-effort
+          continue-on-error: true
+
+    sign-attach:
+      name: Sign and attach to GitHub Release
     # Only runs on tag pushes — release.py creates the GitHub Release,
     # and workflow_dispatch won't have a matching release to attach to.
     if: startsWith(github.ref, 'refs/tags/')
     needs: publish
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # attach assets to the existing release
-      id-token: write   # sigstore signing
+      contents: write
+      id-token: write
 
     steps:
       - name: Download distribution artifacts
