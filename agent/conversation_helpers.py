@@ -187,7 +187,7 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
     stored_state = "missing"
     if conversation_history and agent._session_db:
         try:
-            session_row = agent._session_db.get_session(agent.session_id)
+            session_row = agent._session_db.get_session(agent.session_id, include_system_prompt=True)
             if session_row is not None:
                 raw_prompt = session_row.get("system_prompt")
                 if raw_prompt is None:

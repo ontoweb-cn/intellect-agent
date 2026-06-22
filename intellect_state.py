@@ -1303,6 +1303,20 @@ class SessionDB:
 
         return self._execute_write(_do) or 0
 
+    # Columns excluded from default get_session() queries because they
+    # can be very large (system_prompt may exceed 100K). Callers that
+    # need these columns should pass include_system_prompt=True.
+    _GET_SESSION_BASE_COLS = (
+        "id, source, user_id, model, model_config, parent_session_id, "
+        "started_at, ended_at, end_reason, message_count, tool_call_count, "
+        "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
+        "reasoning_tokens, billing_provider, billing_base_url, billing_mode, "
+        "estimated_cost_usd, actual_cost_usd, cost_status, cost_source, "
+        "pricing_version, title, api_call_count, handoff_state, "
+        "handoff_platform, handoff_error, member_id, team_id, project_id, "
+        "project_workspace"
+    )
+
     def get_session(
         self,
         session_id: str,
@@ -1310,15 +1324,24 @@ class SessionDB:
         actor_member_id: str = None,
         config: dict = None,
         membership_store: Any = None,
+        include_system_prompt: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """Get a session by ID.
 
         When *actor_member_id* is provided, visibility follows
         ``agent.session_visibility`` (strict NULL by default).
+
+        By default excludes ``system_prompt`` (can be 100K+) from the
+        result. Pass ``include_system_prompt=True`` to load it.
         """
+        cols = (
+            f"{self._GET_SESSION_BASE_COLS}, system_prompt"
+            if include_system_prompt
+            else self._GET_SESSION_BASE_COLS
+        )
         with self._lock:
             cursor = self._conn.execute(
-                "SELECT * FROM sessions WHERE id = ?", (session_id,)
+                f"SELECT {cols} FROM sessions WHERE id = ?", (session_id,)
             )
             row = cursor.fetchone()
         if row is None:
