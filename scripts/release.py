@@ -1459,10 +1459,17 @@ def next_available_tag(base_tag: str) -> tuple[str, str]:
 
 
 def get_current_version():
-    """Read current semver from __init__.py."""
-    content = VERSION_FILE.read_text()
-    match = re.search(r'__version__\s*=\s*"([^"]+)"', content)
-    return match.group(1) if match else "0.0.0"
+    """Read current semver from pyproject.toml (canonical source).
+
+    __init__.py auto-reads from pyproject.toml at import time,
+    so only pyproject.toml needs to be bumped.
+    """
+    try:
+        import tomllib
+    except ImportError:
+        import tomli as tomllib
+    cfg = tomllib.loads(PYPROJECT_FILE.read_text(encoding="utf-8"))
+    return cfg.get("project", {}).get("version", "0.0.0")
 
 
 def bump_version(current: str, part: str) -> str:
@@ -1488,22 +1495,9 @@ def bump_version(current: str, part: str) -> str:
 
 
 def update_version_files(semver: str, calver_date: str):
-    """Update version strings in source files."""
-    # Update __init__.py
-    content = VERSION_FILE.read_text()
-    content = re.sub(
-        r'__version__\s*=\s*"[^"]+"',
-        f'__version__ = "{semver}"',
-        content,
-    )
-    content = re.sub(
-        r'__release_date__\s*=\s*"[^"]+"',
-        f'__release_date__ = "{calver_date}"',
-        content,
-    )
-    VERSION_FILE.write_text(content)
-
-    # Update pyproject.toml
+    """Update version strings. Only pyproject.toml is canonical —
+    intellect_cli/__init__.py auto-reads from it at import time."""
+    # Update pyproject.toml (single source of truth)
     pyproject = PYPROJECT_FILE.read_text()
     pyproject = re.sub(
         r'^version\s*=\s*"[^"]+"',
@@ -2004,7 +1998,7 @@ def main():
             print(f"  ✓ Updated version files to v{new_version} ({calver_date})")
 
             # Commit version bump
-            add_files = [str(VERSION_FILE), str(PYPROJECT_FILE)]
+            add_files = [str(PYPROJECT_FILE)]  # pyproject.toml is canonical; __init__.py auto-reads it
             if ACP_REGISTRY_MANIFEST.exists():
                 add_files.append(str(ACP_REGISTRY_MANIFEST))
             add_result = git_result("add", *add_files)
