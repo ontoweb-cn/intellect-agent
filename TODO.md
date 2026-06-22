@@ -101,6 +101,40 @@
 
 ---
 
+### [TODO-010] Gateway 模块 Rust 迁移 — 后续
+
+**状态**: 📋 已分析 (2026-06-22)
+**详情**: 当前 Rust 已覆盖 15 个模块（session DB、token、sandbox、crypto、stream 等），但 gateway 层仍有 3 个模块可迁。
+
+**已迁至 Rust (✅)**:
+
+| Rust 模块 | 功能 | 函数/类数 |
+|------|------|:--:|
+| `backend.rs` | SQLiteBackend — Session/Message DB 读写 | 5 |
+| `tokens.rs` | Token 计数/模型名标准化/估算 | 15 |
+| `error_classifier.rs` | API 错误分类 | 13 |
+| `sandbox.rs` | 命令沙箱/危险检测 | 16 |
+| `crypto.rs` | 加密/解密/PKCE/JWT | 12 |
+| `gateway.rs` | TokenBucket/session key/backoff | 6 |
+| `stream.rs` | StreamAccumulator — SSE 流解析 | 1 class |
+| `usage.rs` | Usage 标准化 + TokenAccumulator | 6 |
+| 其他 7 模块 | FTS/压缩/counters/prompt_cache/tool_utils/sanitize/schema | ~20 |
+
+**待迁 (⬜)**:
+
+| 优先级 | 模块 | 行数 | 可迁内容 | 理由 |
+|:--:|------|:--:|------|------|
+| 1 | `gateway/session.py` | 1,495 | `list_sessions_rich()` SQL CTE、过期检查、分页排序 | 消息热路径，每次请求都走 SQL |
+| 2 | `gateway/stream_consumer.py` | 1,328 | SSE 缓冲解析/JSON 增量提取/工具调用修复 | 每 token 经过 Python 层 |
+| 3 | `gateway/delivery.py` | 433 | 消息投递路由/格式化 | 频率低于前两者 |
+
+**行动**:
+1. 分析 `gateway/session.py` 中可迁至 `rust-core/src/gateway.rs` 的纯函数/查询构建逻辑
+2. 分析 `gateway/stream_consumer.py` 中可迁至 `rust-core/src/stream.rs` 的缓冲逻辑
+3. 评估迁移动对性能的影响并排优先级
+
+---
+
 ## 📝 完成归档
 
 - ✅ **A1 gateway/run.py 单体拆分 (TODO-009)**: 19,808→10,098行 (-49.0%), 5 mixin + 4 helper, MRO 派发链
@@ -184,7 +218,7 @@
 
 ---
 
-最后更新: 2026-06-22 (A1 完成, TODO-003, TB1-TB7, P5, webui fix)
+最后更新: 2026-06-22 (A1 完成, TODO-003, TB1-TB7, P5, webui fix, Rust 迁移分析)
 
 ---
 

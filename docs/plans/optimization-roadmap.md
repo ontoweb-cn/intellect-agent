@@ -66,3 +66,7 @@
 | Gitee/GitHub 双源 wheel 分发 | ✅ |
 | Gitee 原生 release pipeline | ✅ |
 | Rust/Python 版本对齐 0.6.6 | ✅ |
+| Gateway Rust 迁移分析 (TODO-010) | 📋 已分析 |
+| — session.py (1,495行) SQL CTE | ⬜ 可迁 |
+| — stream_consumer.py (1,328行) SSE 解析 | ⬜ 可迁 |
+| — delivery.py (433行) 投递路由 | ⬜ 可迁 |
