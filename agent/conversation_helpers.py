@@ -476,6 +476,42 @@ def _drain_pre_api_steer(agent: Any, messages: list) -> None:
             agent._pending_steer = (existing + "\n" + _pre_api_steer) if existing else _pre_api_steer
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 3: Pre-API-call setup helpers
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _start_thinking_indicator(agent: Any) -> Any:
+    """Start thinking spinner/indicator before API call (Phase 3).
+
+    Returns the spinner object (or None).  In quiet mode, shows an
+    animated KawaiiSpinner or thinking callback; in normal mode, prints
+    request stats.
+    """
+    if not agent.quiet_mode:
+        agent._vprint(
+            f"\n{agent.log_prefix}🔄 Making API call "
+            f"#{getattr(agent, '_api_call_count_hint', 0)}"
+            f"/{agent.max_iterations}..."
+        )
+        return None
+
+    import random
+    from agent.kawaii_spinner import KawaiiSpinner
+    face = random.choice(KawaiiSpinner.get_thinking_faces())
+    verb = random.choice(KawaiiSpinner.get_thinking_verbs())
+    if agent.thinking_callback:
+        agent.thinking_callback(f"{face} {verb}...")
+        return None
+    if not agent._has_stream_consumers() and agent._should_start_quiet_spinner():
+        spinner_type = random.choice(['brain', 'sparkle', 'pulse', 'moon', 'star'])
+        spinner = KawaiiSpinner(
+            f"{face} {verb}...", spinner_type=spinner_type, print_fn=agent._print_fn,
+        )
+        spinner.start()
+        return spinner
+    return None
+
+
 def _assemble_system_message(
     active_system_prompt: str,
     ephemeral_system_prompt: str | None,
