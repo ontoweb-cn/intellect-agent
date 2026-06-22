@@ -74,5 +74,5 @@
 | — 冒烟测试 (3平台) | ✅ 已实施 |
 | — Gitee SHA256SUMS 同步 | ✅ 已实施 |
 | — 自动化 changelog | ⬜ |
-| — GPG 签名 | ⬜ |
+| — GPG 签名 | ✅ 待配置 Secrets |
 | — 国内 PyPI 镜像 | ⬜ |
