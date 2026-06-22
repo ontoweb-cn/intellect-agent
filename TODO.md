@@ -158,7 +158,7 @@
 | 🔴 | 发布后冒烟测试 (下载→安装→`--version`) | 低 | ⬜ |
 | 🔴 | Gitee SHA256SUMS 同步 | 低 | ⬜ |
 | 🟡 | 从 GitHub Artifacts 直接下载 (替代 Release API) | 中 | ⬜ |
-| 🟡 | 自动化 changelog (conventional commits) | 中 | ⬜ |
+| 🟡 | 自动化 changelog (conventional commits) | 中 | ✅ `scripts/changelog.py` |
 | 🟡 | GPG 签名 SHA256SUMS | 中 | ⬜ |
 | 🟢 | 国内 PyPI 镜像 (阿里云/清华) | 中 | ⬜ |
 | 🟢 | 产物命名统一 | 低 | ⬜ |
