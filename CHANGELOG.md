@@ -8,6 +8,16 @@ roadmap.
 
 | Date | Highlights |
 |------|------------|
+| **2026-06-22** | **v0.6.7 — A1 Gateway 拆分 + 发布流水线 + 版本自动化** |
+|                | A1: gateway/run.py 19,808→10,098 (-49%), 5 Mixin + 4 Helper, 注册表派发 |
+|                | CI: 冒烟测试, GPG 签名, changelog 生成, 产物命名统一, 国内镜像文档 |
+|                | 版本: pyproject.toml 单一来源, `__init__.py` 自动解析 |
+|                | 性能: P5 get_session() 跳过 system_prompt, P10 LRU eviction |
+|                | 安全: WebUI 进程组终止, 多项 CVE 缓解 |
+| **2026-06-19** | **v0.6.6 — Rust 模块迁移 (M5-M9) + 统一 Rust 读写 + CI/CD 发布** |
+|                | Rust: prompt builder, dispatch, guardrails, caching 统一切换 |
+|                | CI: Windows 安装脚本兼容, 独立 Gitee 发布流水线, 双源 wheel 下载 |
+|                | 修复: 死锁消除, Windows 兼容, 多平台构建修复 |
 | **2026-06-18** | **v0.6.5 — WebUI 配置统一 + Vault/Quartz 修复 + 技术债务清理** |
 |                | WebUI: 配置路径统一至 `~/.intellect` (全平台), CSRF 豁免修复 |
 |                | Vault/Quartz: SPA 模式修复, 亮色主题统一, 静态文件路由, Quartz v4 构建 |
