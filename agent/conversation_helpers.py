@@ -373,3 +373,57 @@ def _build_turn_exit_diagnostic(
     else:
         logger.info(_diag_msg, *_diag_args)
 
+
+def _apply_file_mutation_verifier_footer(agent: Any, final_response: str, interrupted: bool) -> str:
+    """Append file-mutation failure footer to the assistant response (Phase 5).
+
+    If write_file/patch calls failed during this turn and were never
+    superseded, surfaces the truth so the model cannot silently claim
+    every file was edited.
+    """
+    if not final_response or interrupted:
+        return final_response
+    try:
+        _failed = getattr(agent, "_turn_failed_file_mutations", None) or {}
+        if _failed and agent._file_mutation_verifier_enabled():
+            footer = agent._format_file_mutation_failure_footer(_failed)
+            if footer:
+                return final_response.rstrip() + "\n\n" + footer
+    except Exception as _ver_err:
+        logger.debug("file-mutation verifier footer failed: %s", _ver_err)
+    return final_response
+
+
+def _apply_turn_completion_explainer(
+    agent: Any, final_response: str, turn_exit_reason: str, interrupted: bool
+) -> str:
+    """Append turn-completion explanation for abnormal exits (Phase 5).
+
+    When a turn ends abnormally — empty content after retries, truncated
+    stream, pending tool result, or budget limit — surfaces a user-visible
+    explanation.  Healthy turns are left unchanged.
+    """
+    if interrupted:
+        return final_response
+    try:
+        if not agent._turn_completion_explainer_enabled():
+            return final_response
+        _stripped = (final_response or "").strip()
+        _is_empty_terminal = _stripped == "" or _stripped == "(empty)"
+        _is_partial_fragment = (
+            not _is_empty_terminal
+            and not str(turn_exit_reason).startswith("text_response")
+            and len(_stripped) <= 24
+            and _stripped[-1:] not in {".", "!", "?", "。", "！", "？", "`", ")"}
+        )
+        if _is_empty_terminal or _is_partial_fragment:
+            _explanation = agent._format_turn_completion_explanation(turn_exit_reason)
+            if _explanation:
+                if _is_empty_terminal:
+                    return _explanation
+                else:
+                    return _stripped + "\n\n" + _explanation
+    except Exception as _exp_err:
+        logger.debug("turn-completion explainer failed: %s", _exp_err)
+    return final_response
+
