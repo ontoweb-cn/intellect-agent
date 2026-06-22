@@ -700,7 +700,7 @@ const sidebars: SidebarsConfig = {
         'guides/use-mcp-with-intellect',
         'guides/use-soul-with-intellect',
         'guides/use-voice-mode-with-intellect',
-        'guides/build-a-intellect-plugin',
+        'guides/build-an-intellect-plugin',
         'guides/automate-with-cron',
         'guides/cron-script-only',
         'guides/automation-templates',
