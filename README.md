@@ -4,9 +4,11 @@
 # Intellect Agent (Community Version)
 
 <p align="center">
+  <a href="https://github.com/ontoweb-cn/intellect-agent"><img src="https://img.shields.io/badge/GitHub-ontoweb--cn-black?style=for-the-badge&logo=github" alt="GitHub"></a>
+  <a href="https://gitee.com/ontoweb/intellect-agent"><img src="https://img.shields.io/badge/Gitee-ontoweb-red?style=for-the-badge&logo=gitee" alt="Gitee"></a>
   <a href="https://intellect.ontoweb.cn/docs/"><img src="https://img.shields.io/badge/Docs-intellect.ontoweb.cn-FFD700?style=for-the-badge" alt="Documentation"></a>
   <a href="https://discord.gg/ONTOWEB"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://gitee.com/ontoweb/intellect-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
   <a href="https://ontoweb.cn"><img src="https://img.shields.io/badge/Built%20by-ONTOWEB-blueviolet?style=for-the-badge" alt="Built by ONTOWEB"></a>
   <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/Lang-中文-red?style=for-the-badge" alt="中文"></a>
 </p>
@@ -15,9 +17,15 @@
 
 ## Quick Install
 
+> **GitHub users**: use the first option under each section. **Gitee (国内) users**: use the second option. The scripts are identical — only the download source differs.
+
 ### Linux, macOS, WSL2
 
 ```bash
+# GitHub
+curl -fsSL https://raw.githubusercontent.com/ontoweb-cn/intellect-agent/main/scripts/install.sh | bash
+
+# Gitee (国内)
 curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 ```
 
@@ -25,21 +33,27 @@ curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scr
 
 ### Windows (native, PowerShell)
 
-Run this in PowerShell:
-
 ```powershell
+# GitHub
+iex (irm https://raw.githubusercontent.com/ontoweb-cn/intellect-agent/main/scripts/install.ps1)
+
+# Gitee (国内)
 iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)
 ```
 
 The installer handles everything: uv, Python 3.12, Node.js, ripgrep, ffmpeg, **and a portable Git Bash** (MinGit, unpacked to `%LOCALAPPDATA%\intellect\git` — no admin required, completely isolated from any system Git install). Intellect uses this bundled Git Bash to run shell commands.
 
-> **Rust extension on Windows:** The installer downloads a pre-built wheel from Gitee Releases, falling back to compiling locally via `maturin`.
+> **Rust extension:** The installer downloads a pre-built wheel from the same platform's Release (GitHub Releases or Gitee Releases), falling back to compiling locally via `maturin`.
 
 ### Docker
 
 ```bash
+# GitHub Container Registry
 docker pull ghcr.io/ontoweb/intellect-agent:latest
 docker run -v intellect-data:/opt/data ghcr.io/ontoweb/intellect-agent:latest
+
+# Gitee (国内, via docker pull from GHCR)
+docker pull ghcr.io/ontoweb/intellect-agent:latest
 ```
 
 See [Docker deployment guide](https://intellect.ontoweb.cn/docs/deployment/docker) for compose files and configuration.
@@ -53,6 +67,19 @@ brew install intellect-agent
 ```
 
 > Homebrew-managed installs receive updates via `brew upgrade`. The `intellect update` command is disabled for managed installs.
+
+### pip (Python package)
+
+```bash
+# PyPI
+pip install intellect-agent
+
+# Tsinghua mirror (国内)
+pip install intellect-agent -i https://pypi.tuna.tsinghua.edu.cn/simple/
+
+# Gitee Release wheel (国内, 手动指定版本)
+pip install https://gitee.com/ontoweb/intellect-agent/releases/download/v0.6.6/intellect_agent-0.6.6-py3-none-any.whl
+```
 
 > **WSL2:** The Linux one-liner above works inside WSL2. Native Windows install lives under `%LOCALAPPDATA%\intellect`; WSL2 installs under `~/.intellect` as on Linux.
 
@@ -151,7 +178,11 @@ We welcome contributions! See the [Contributing Guide](https://intellect.ontoweb
 Quick start for contributors — clone and go with `setup-intellect.sh`:
 
 ```bash
+# GitHub
+git clone https://github.com/ontoweb-cn/intellect-agent.git
+# Gitee (国内)
 git clone https://gitee.com/ontoweb/intellect-agent.git
+
 cd intellect-agent
 ./setup-intellect.sh     # installs uv, creates venv, installs .[all], symlinks ~/.local/bin/intellect
 ./intellect              # auto-detects the venv, no need to `source` first
@@ -168,6 +199,10 @@ scripts/run_tests.sh
 ```
 
 ---
+
+## Verifying Releases
+
+All releases are GPG-signed. See [VERIFY.md](VERIFY.md) for instructions.
 
 ## License
 
