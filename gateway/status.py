@@ -73,11 +73,17 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def terminate_pid(pid: int, *, force: bool = False) -> None:
+def terminate_pid(pid: int, *, force: bool = False, process_group: bool = False) -> None:
     """Terminate a PID with platform-appropriate force semantics.
 
     POSIX uses SIGTERM/SIGKILL. Windows uses taskkill /T /F for true force-kill
     because os.kill(..., SIGTERM) is not equivalent to a tree-killing hard stop.
+
+    When *process_group* is True on POSIX, sends the signal to the entire
+    process group (``os.killpg``) instead of the single PID.  This is correct
+    for processes launched with ``start_new_session=True`` (e.g. webui server),
+    where the child is the process-group leader.  On Windows, ``taskkill /T``
+    already handles the process tree, so *process_group* is a no-op.
     """
     if force and _IS_WINDOWS:
         try:
@@ -97,6 +103,14 @@ def terminate_pid(pid: int, *, force: bool = False) -> None:
         return
 
     sig = signal.SIGTERM if not force else getattr(signal, "SIGKILL", signal.SIGTERM)
+
+    if process_group and not _IS_WINDOWS:
+        try:
+            pgid = os.getpgid(pid)
+            os.killpg(pgid, sig)
+            return
+        except (ProcessLookupError, PermissionError, OSError):
+            pass  # Fall through to single-PID kill
     os.kill(pid, sig)
 
 

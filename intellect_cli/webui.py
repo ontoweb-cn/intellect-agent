@@ -353,9 +353,12 @@ def webui_stop(args) -> None:  # noqa: ARG001
 
     print(f"[webui] Stopping (PID {pid})")
 
-    # Graceful shutdown via platform-appropriate mechanism
+    # Graceful shutdown via platform-appropriate mechanism.
+    # WebUI is launched with start_new_session=True so the child is a
+    # process-group leader — use process_group=True so any orphaned
+    # children (indirectly spawned by libraries) are also killed.
     try:
-        terminate_pid(pid, force=False)
+        terminate_pid(pid, force=False, process_group=True)
     except (ProcessLookupError, PermissionError, OSError):
         _clear_stale_files()
         print("[webui] Stopped")
@@ -370,10 +373,10 @@ def webui_stop(args) -> None:  # noqa: ARG001
             return
         time.sleep(0.2)
 
-    # Force kill if still alive
+    # Force kill if still alive — also process-group scoped
     print("[webui] Not responding; forcing termination", file=sys.stderr)
     try:
-        terminate_pid(pid, force=True)
+        terminate_pid(pid, force=True, process_group=True)
     except (ProcessLookupError, PermissionError, OSError):
         pass
 
