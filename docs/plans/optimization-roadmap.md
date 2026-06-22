@@ -70,3 +70,9 @@
 | — session.py (1,495行) SQL CTE | ⬜ 可迁 |
 | — stream_consumer.py (1,328行) SSE 解析 | ⬜ 可迁 |
 | — delivery.py (433行) 投递路由 | ⬜ 可迁 |
+| 发布机制优化 (TODO-011) | 🔵 部分实施 |
+| — 冒烟测试 (3平台) | ✅ 已实施 |
+| — Gitee SHA256SUMS 同步 | ✅ 已实施 |
+| — 自动化 changelog | ⬜ |
+| — GPG 签名 | ⬜ |
+| — 国内 PyPI 镜像 | ⬜ |
