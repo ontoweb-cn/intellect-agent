@@ -34,7 +34,7 @@ fi
 
 # Find standalone bundle
 if [[ -z "$BUNDLE_DIR" ]]; then
-    BUNDLE_NAME="intellect-${PLATFORM}-${ARCH}-${SEMVER}"
+    BUNDLE_NAME="intellect-agent-${SEMVER}-${PLATFORM}-${ARCH}"
     if [[ "$PLATFORM" == "windows" ]]; then
         BUNDLE_ARCHIVE="$ROOT/dist/standalone/${BUNDLE_NAME}.zip"
     else

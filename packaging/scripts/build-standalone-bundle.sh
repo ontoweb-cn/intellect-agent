@@ -4,7 +4,7 @@
 # Extends build-native-bundle.sh with bundled Node.js, agent-browser,
 # WebUI assets, skills, locales, and smart wrapper scripts.
 #
-# Output: dist/standalone/intellect-{platform}-{arch}-{semver}.tar.gz|.zip
+# Output: dist/standalone/intellect-agent-{semver}-{platform}-{arch}.tar.gz|.zip
 #
 # Usage:
 #   ./packaging/scripts/build-standalone-bundle.sh
@@ -146,7 +146,7 @@ log "Python wheel: $(basename "$PY_WHL")"
 
 # ── Step 4: Create staging directory ───────────────────────────────────────
 
-BUNDLE_NAME="intellect-${PLATFORM}-${ARCH}-${SEMVER}"
+BUNDLE_NAME="intellect-agent-${SEMVER}-${PLATFORM}-${ARCH}"
 STAGING="$ROOT/dist/standalone/${BUNDLE_NAME}"
 rm -rf "$STAGING"
 mkdir -p "$STAGING"/{bin,venv,node-runtime/bin}
