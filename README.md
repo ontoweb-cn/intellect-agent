@@ -92,6 +92,46 @@ intellect              # start chatting!
 
 ---
 
+## WebUI Dashboard
+
+Intellect ships with a browser-based dashboard for session management, real-time streaming, and settings. It runs as a background daemon managed via PID file.
+
+### Start / Restart / Stop
+
+```bash
+intellect webui start       # Start the dashboard in background (default: http://127.0.0.1:9119)
+intellect webui restart     # Stop then start (picks up config changes)
+intellect webui stop        # Graceful shutdown (SIGTERM → 5s grace → SIGKILL)
+intellect webui status      # Show running status, uptime, and health check
+intellect webui logs        # View server logs (--lines N, --follow)
+```
+
+### Lifecycle
+
+| Phase | What happens |
+|-------|-------------|
+| **Start** | Launches `webui.server` as a detached subprocess with `start_new_session=True` (POSIX `os.setsid`). PID written to `~/.intellect/webui.pid`. 0.3s startup check. |
+| **Stop** | Reads PID from file → verifies it's a webui process (command-line check) → SIGTERM (graceful) → 5s poll → SIGKILL (force). POSIX uses process-group kill (`os.killpg`) to prevent orphaned children. |
+| **Restart** | `stop` then `start` in sequence. |
+| **Status** | Reads `~/.intellect/webui.ctl.env` for host/port/started_at, checks PID alive, hits `/health` endpoint for session/stream counts. |
+
+### Configuration
+
+| Env var | Default | Description |
+|---------|:--:|------|
+| `INTELLECT_WEBUI_HOST` | `127.0.0.1` | Bind address |
+| `INTELLECT_WEBUI_PORT` | `9119` | Listen port |
+
+### Runtime files
+
+| File | Purpose |
+|------|------|
+| `~/.intellect/webui.pid` | Running PID (cleared on stop) |
+| `~/.intellect/webui.log` | Server stdout/stderr |
+| `~/.intellect/webui.ctl.env` | Runtime state (host, port, started_at) |
+
+---
+
 ## Getting Started
 
 ```bash
