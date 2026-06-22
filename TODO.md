@@ -159,7 +159,7 @@
 | 🔴 | Gitee SHA256SUMS 同步 | 低 | ⬜ |
 | 🟡 | 从 GitHub Artifacts 直接下载 (替代 Release API) | 中 | ⬜ |
 | 🟡 | 自动化 changelog (conventional commits) | 中 | ✅ `scripts/changelog.py` |
-| 🟡 | GPG 签名 SHA256SUMS | 中 | ⬜ |
+| 🟡 | GPG 签名 SHA256SUMS | 中 | ✅ 代码就绪, 待配置 Secrets |
 | 🟢 | 国内 PyPI 镜像 (阿里云/清华) | 中 | ⬜ |
 | 🟢 | 产物命名统一 | 低 | ✅ `intellect-agent-{ver}-{platform}-{arch}.{ext}` |
 | 🟢 | Docker 发布与 tag 联动 | 中 | ⬜ |
