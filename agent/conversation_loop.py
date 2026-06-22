@@ -4246,48 +4246,18 @@ def run_conversation(
     # Phase 5: Post-turn hooks (diagnostics, persistence, background review)
     # ==================================================================
     # ── Turn-exit diagnostic log ─────────────────────────────────────
-    # Always logged at INFO so agent.log captures WHY every turn ended.
-    # When the last message is a tool result (agent was mid-work), log
-    # at WARNING — this is the "just stops" scenario users report.
-    _last_msg_role = messages[-1].get("role") if messages else None
-    _last_tool_name = None
-    if _last_msg_role == "tool":
-        # Walk back to find the assistant message with the tool call
-        for _m in reversed(messages):
-            if _m.get("role") == "assistant" and _m.get("tool_calls"):
-                _tcs = _m["tool_calls"]
-                if _tcs and isinstance(_tcs[0], dict):
-                    _last_tool_name = _tcs[-1].get("function", {}).get("name")
-                break
-
-    _turn_tool_count = sum(
-        1 for m in messages
-        if isinstance(m, dict) and m.get("role") == "assistant" and m.get("tool_calls")
+    from agent.conversation_helpers import _build_turn_exit_diagnostic
+    _build_turn_exit_diagnostic(
+        messages=messages,
+        final_response=final_response,
+        turn_exit_reason=_turn_exit_reason,
+        model=agent.model,
+        api_call_count=api_call_count,
+        max_iterations=agent.max_iterations,
+        iteration_budget=agent.iteration_budget,
+        interrupted=interrupted,
+        session_id=agent.session_id or "none",
     )
-    _resp_len = len(final_response) if final_response else 0
-    _budget_used = agent.iteration_budget.used if agent.iteration_budget else 0
-    _budget_max = agent.iteration_budget.max_total if agent.iteration_budget else 0
-
-    _diag_msg = (
-        "Turn ended: reason=%s model=%s api_calls=%d/%d budget=%d/%d "
-        "tool_turns=%d last_msg_role=%s response_len=%d session=%s"
-    )
-    _diag_args = (
-        _turn_exit_reason, agent.model, api_call_count, agent.max_iterations,
-        _budget_used, _budget_max,
-        _turn_tool_count, _last_msg_role, _resp_len,
-        agent.session_id or "none",
-    )
-
-    if _last_msg_role == "tool" and not interrupted:
-        # Agent was mid-work — this is the "just stops" case.
-        logger.warning(
-            "Turn ended with pending tool result (agent may appear stuck). "
-            + _diag_msg + " last_tool=%s",
-            *_diag_args, _last_tool_name,
-        )
-    else:
-        logger.info(_diag_msg, *_diag_args)
 
     # File-mutation verifier footer.
     # If one or more ``write_file`` / ``patch`` calls failed during this

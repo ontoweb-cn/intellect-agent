@@ -170,6 +170,39 @@
 
 ---
 
+### [TODO-012] conversation_loop.py 拆分
+
+**状态**: 🔵 C1 实施中 (2026-06-22)
+**影响**: `agent/conversation_loop.py` `run_conversation()` 4,546 行单函数
+
+**当前结构**:
+```
+run_conversation() — 4,546 行
+  Phase 1: System prompt + Preflight        L304-L600   (~300行)
+  Phase 2: API messages 构建                L601-L920   (~320行)
+  [Phase 3 嵌入]: API 调用 + 流响应         L921-L2040  (~1,120行)
+  Phase 4: 错误分类 + 9 恢复路径           L2041-L4245 (~2,200行)
+  Phase 5: Post-turn 清理                  L4246-4546  (~300行)
+```
+
+**拆分方案**:
+
+| 阶段 | 内容 | 新模块 | 风险 |
+|:--:|------|------|:--:|
+| C1 | Phase 1 + Phase 5 提取 | `conversation_phase1.py`, `conversation_phase5.py` | 🟢 低 |
+| C2 | Phase 2 提取 (消息构建) | `conversation_phase2.py` | 🟢 低 |
+| C3 | Phase 3 提取 (API 调用) | `conversation_phase3.py` | 🟡 中 |
+| C4 | Phase 4 拆分 (9 错误路径) | `conversation_phase4_errors.py` | 🟡 中 |
+| C5 | 主函数编排层简化 | `conversation_loop.py` → ~200行 | 🟢 低 |
+
+**保障机制**:
+- 契约测试: 每个 Phase 的输入/输出类型验证
+- 数据类承载参数传递 (`ConversationState`, `TurnResult`)
+- 重构前后行为对比测试
+- 每阶段 ruff + pytest 26,000+ 零新增失败
+
+---
+
 ## 📝 完成归档
 
 - ✅ **A1 gateway/run.py 单体拆分 (TODO-009)**: 19,808→10,098行 (-49.0%), 5 mixin + 4 helper, MRO 派发链

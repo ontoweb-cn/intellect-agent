@@ -288,3 +288,88 @@ def _get_continuation_prompt(is_partial_stub: bool, dropped_tools: Optional[List
             "restart or repeat prior text. Finish the answer directly.]"
         )
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# run_conversation() refactoring — data classes and extracted phases
+# ═══════════════════════════════════════════════════════════════════════════
+
+import dataclasses
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class ConversationState:
+    """State passed between phases of run_conversation().
+
+    Eliminates the need for 10+ local variables threaded through
+    a 4,500-line function.  Each phase reads/writes its own fields.
+    """
+    agent: Any
+    messages: list
+    conversation_history: list | None = None
+    system_prompt: str | None = None
+    api_messages: list | None = None
+    final_response: str = ""
+    turn_exit_reason: str = "completed"
+    api_call_count: int = 0
+    interrupted: bool = False
+    token_accumulator: Any = None
+    compression_result: dict | None = None
+
+
+def _build_turn_exit_diagnostic(
+    messages: list,
+    final_response: str,
+    turn_exit_reason: str,
+    model: str,
+    api_call_count: int,
+    max_iterations: int,
+    iteration_budget: Any,
+    interrupted: bool,
+    session_id: str,
+) -> None:
+    """Emit turn-exit diagnostic log (Phase 5).
+
+    Extracted from run_conversation() — pure function: reads inputs,
+    emits log, no side effects on agent state.
+    """
+    _last_msg_role = messages[-1].get("role") if messages else None
+    _last_tool_name = None
+    if _last_msg_role == "tool":
+        for _m in reversed(messages):
+            if _m.get("role") == "assistant" and _m.get("tool_calls"):
+                _tcs = _m["tool_calls"]
+                if _tcs and isinstance(_tcs[0], dict):
+                    _last_tool_name = _tcs[-1].get("function", {}).get("name")
+                break
+
+    _turn_tool_count = sum(
+        1 for m in messages
+        if isinstance(m, dict) and m.get("role") == "assistant" and m.get("tool_calls")
+    )
+    _resp_len = len(final_response) if final_response else 0
+    _budget_used = iteration_budget.used if iteration_budget else 0
+    _budget_max = iteration_budget.max_total if iteration_budget else 0
+
+    _diag_msg = (
+        "Turn ended: reason=%s model=%s api_calls=%d/%d budget=%d/%d "
+        "tool_turns=%d last_msg_role=%s response_len=%d session=%s"
+    )
+    _diag_args = (
+        turn_exit_reason, model, api_call_count, max_iterations,
+        _budget_used, _budget_max,
+        _turn_tool_count, _last_msg_role, _resp_len,
+        session_id or "none",
+    )
+
+    if _last_msg_role == "tool" and not interrupted:
+        logger.warning(
+            "Turn ended with pending tool result (agent may appear stuck). "
+            + _diag_msg + " last_tool=%s",
+            *_diag_args, _last_tool_name,
+        )
+    else:
+        logger.info(_diag_msg, *_diag_args)
+
