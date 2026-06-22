@@ -427,3 +427,73 @@ def _apply_turn_completion_explainer(
         logger.debug("turn-completion explainer failed: %s", _exp_err)
     return final_response
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 2: API message construction helpers
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _drain_pre_api_steer(agent: Any, messages: list) -> None:
+    """Inject a pending /steer into the last tool message before API call (Phase 2).
+
+    If a /steer arrived during the previous API call, drain it now so the
+    model sees the steer text on THIS iteration.  Modifies messages in place.
+    """
+    _pre_api_steer = agent._drain_pending_steer()
+    if not _pre_api_steer:
+        return
+
+    _injected = False
+    for _si in range(len(messages) - 1, -1, -1):
+        _sm = messages[_si]
+        if isinstance(_sm, dict) and _sm.get("role") == "tool":
+            marker = f"\n\nUser guidance: {_pre_api_steer}"
+            existing = _sm.get("content", "")
+            if isinstance(existing, str):
+                _sm["content"] = existing + marker
+            else:
+                try:
+                    blocks = list(existing) if existing else []
+                    blocks.append({"type": "text", "text": marker})
+                    _sm["content"] = blocks
+                except Exception:
+                    logger.debug('non-critical operation failed', exc_info=True)
+            _injected = True
+            logger.debug(
+                "Pre-API-call steer drain: injected into tool msg at index %d", _si,
+            )
+            break
+
+    if not _injected:
+        _lock = getattr(agent, "_pending_steer_lock", None)
+        if _lock is not None:
+            with _lock:
+                if agent._pending_steer:
+                    agent._pending_steer = agent._pending_steer + "\n" + _pre_api_steer
+                else:
+                    agent._pending_steer = _pre_api_steer
+        else:
+            existing = getattr(agent, "_pending_steer", None)
+            agent._pending_steer = (existing + "\n" + _pre_api_steer) if existing else _pre_api_steer
+
+
+def _assemble_system_message(
+    active_system_prompt: str,
+    ephemeral_system_prompt: str | None,
+    prefill_messages: list | None,
+) -> list:
+    """Build the system message + prefill prefix for the API request (Phase 2).
+
+    Ephemeral additions are API-call-time only (not persisted to session DB).
+    Returns a list of message dicts to prepend to api_messages.
+    """
+    prefix: list = []
+    effective = active_system_prompt or ""
+    if ephemeral_system_prompt:
+        effective = (effective + "\n\n" + ephemeral_system_prompt).strip()
+    if effective:
+        prefix.append({"role": "system", "content": effective})
+    if prefill_messages:
+        for pfm in prefill_messages:
+            prefix.append(pfm.copy())
+    return prefix
+

@@ -601,54 +601,8 @@ def run_conversation(
     # Phase 2: Build API messages
     # ==================================================================
         # ── Pre-API-call /steer drain ──────────────────────────────────
-        # If a /steer arrived during the previous API call (while the model
-        # was thinking), drain it now — before we build api_messages — so
-        # the model sees the steer text on THIS iteration.  Without this,
-        # steers sent during an API call only land after the NEXT tool batch,
-        # which may never come if the model returns a final response.
-        #
-        # We scan backwards for the last tool-role message in the messages
-        # list.  If found, the steer is appended there.  If not (first
-        # iteration, no tools yet), the steer stays pending for the next
-        # tool batch — injecting into a user message would break role
-        # alternation, and there's no tool output to piggyback on.
-        _pre_api_steer = agent._drain_pending_steer()
-        if _pre_api_steer:
-            _injected = False
-            for _si in range(len(messages) - 1, -1, -1):
-                _sm = messages[_si]
-                if isinstance(_sm, dict) and _sm.get("role") == "tool":
-                    marker = f"\n\nUser guidance: {_pre_api_steer}"
-                    existing = _sm.get("content", "")
-                    if isinstance(existing, str):
-                        _sm["content"] = existing + marker
-                    else:
-                        # Multimodal content blocks — append text block
-                        try:
-                            blocks = list(existing) if existing else []
-                            blocks.append({"type": "text", "text": marker})
-                            _sm["content"] = blocks
-                        except Exception:
-                            logger.debug('non-critical operation failed', exc_info=True)
-                    _injected = True
-                    logger.debug(
-                        "Pre-API-call steer drain: injected into tool msg at index %d",
-                        _si,
-                    )
-                    break
-            if not _injected:
-                # No tool message to inject into — put it back so
-                # the post-tool-execution drain picks it up later.
-                _lock = getattr(agent, "_pending_steer_lock", None)
-                if _lock is not None:
-                    with _lock:
-                        if agent._pending_steer:
-                            agent._pending_steer = agent._pending_steer + "\n" + _pre_api_steer
-                        else:
-                            agent._pending_steer = _pre_api_steer
-                else:
-                    existing = getattr(agent, "_pending_steer", None)
-                    agent._pending_steer = (existing + "\n" + _pre_api_steer) if existing else _pre_api_steer
+        from agent.conversation_helpers import _drain_pre_api_steer
+        _drain_pre_api_steer(agent, messages)
 
         # Prepare messages for API call
         # If we have an ephemeral system prompt, prepend it to the messages
@@ -733,33 +687,15 @@ def run_conversation(
             # The signature field helps maintain reasoning continuity
             api_messages.append(api_msg)
 
-        # Build the final system message: cached prompt + ephemeral system prompt.
-        # Ephemeral additions are API-call-time only (not persisted to session DB).
-        # External recall context is injected into the user message, not the system
-        # prompt, so the stable cache prefix remains unchanged.
-        #
-        # NOTE: Plugin context from pre_llm_call hooks is injected into the
-        # user message (see injection block above), NOT the system prompt.
-        # This is intentional — system prompt modifications break the prompt
-        # cache prefix.  The system prompt is reserved for Intellect internals.
-        #
-        # Intellect invariant: the system prompt is built ONCE per session
-        # (cached on ``_cached_system_prompt``) and replayed verbatim on
-        # every turn.  We send it as a single content string so the
-        # bytes are byte-stable across turns and upstream prompt caches
-        # stay warm.
-        effective_system = active_system_prompt or ""
-        if agent.ephemeral_system_prompt:
-            effective_system = (effective_system + "\n\n" + agent.ephemeral_system_prompt).strip()
-        if effective_system:
-            api_messages = [{"role": "system", "content": effective_system}] + api_messages
-
-        # Inject ephemeral prefill messages right after the system prompt
-        # but before conversation history. Same API-call-time-only pattern.
-        if agent.prefill_messages:
-            sys_offset = 1 if (api_messages and api_messages[0].get("role") == "system") else 0
-            for idx, pfm in enumerate(agent.prefill_messages):
-                api_messages.insert(sys_offset + idx, pfm.copy())
+        # ── Assemble system message + prefill prefix ────────────────────
+        from agent.conversation_helpers import _assemble_system_message
+        _sys_prefix = _assemble_system_message(
+            active_system_prompt or "",
+            agent.ephemeral_system_prompt,
+            agent.prefill_messages,
+        )
+        if _sys_prefix:
+            api_messages = _sys_prefix + api_messages
 
         # Apply Anthropic prompt caching for Claude models on native
         # Anthropic, OpenRouter, and third-party Anthropic-compatible
