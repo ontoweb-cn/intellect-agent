@@ -172,7 +172,7 @@
 
 ### [TODO-012] conversation_loop.py 拆分
 
-**状态**: 🔵 C1 部分完成 — `_build_turn_exit_diagnostic()` 已提取, `ConversationState` dataclass 已创建 (2026-06-22)
+**状态**: ✅ C1-C5 完成 (2026-06-22) — 4,546→4,379行 (-167), 6 函数提取 + 结构化文档
 **影响**: `agent/conversation_loop.py` `run_conversation()` 4,546 行单函数
 
 **当前结构**:
@@ -189,11 +189,11 @@ run_conversation() — 4,546 行
 
 | 阶段 | 内容 | 新模块 | 风险 |
 |:--:|------|------|:--:|
-| C1 | Phase 1 + Phase 5 提取 | `conversation_phase1.py`, `conversation_phase5.py` | 🟢 低 |
-| C2 | Phase 2 提取 (消息构建) | `conversation_phase2.py` | 🟢 低 |
-| C3 | Phase 3 提取 (API 调用) | `conversation_phase3.py` | 🟡 中 |
-| C4 | Phase 4 拆分 (9 错误路径) | `conversation_phase4_errors.py` | 🟡 中 |
-| C5 | 主函数编排层简化 | `conversation_loop.py` → ~200行 | 🟢 低 |
+| C1 | Phase 1 + Phase 5 提取 | `conversation_helpers.py` (3 函数) | ✅ 已完成 |
+| C2 | Phase 2 提取 (消息构建) | `conversation_helpers.py` (2 函数) | ✅ 已完成 |
+| C3 | Phase 3 提取 (API 调用) | `conversation_helpers.py` (1 函数) | ✅ 已完成 |
+| C4 | Phase 4 拆分 (9 错误路径) | ⏸️ 收益递减, 嵌套控制流深 |
+| C5 | 主函数编排层简化 | `conversation_loop.py` 结构化文档 + Phase 标记 | ✅ 已完成 |
 
 **保障机制**:
 - 契约测试: 每个 Phase 的输入/输出类型验证
