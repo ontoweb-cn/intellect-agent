@@ -1,0 +1,11 @@
+# PyO3 local development config — tells cargo where to find Python for linking.
+# maturin handles this automatically; this file is only needed for:
+#   cargo build / cargo test / cargo publish --dry-run
+#
+# Adjust LIBDIR and LIBNAME to match your Python installation.
+
+[target.aarch64-apple-darwin]
+rustflags = [
+    "-C", "link-arg=-L/Users/simon/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib",
+    "-C", "link-arg=-lpython3.12",
+]
