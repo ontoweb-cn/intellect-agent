@@ -364,7 +364,9 @@ OUT_BASE="dist/standalone/${BUNDLE_NAME}"
 if [[ "$PLATFORM" == "windows" ]]; then
     OUT="${OUT_BASE}.zip"
     log "Packaging ${OUT}..."
-    (cd dist/standalone && zip -rq "${BUNDLE_NAME}.zip" "${BUNDLE_NAME}")
+    # Use Python's shutil (always available) instead of `zip` which is
+    # not pre-installed on Windows GitHub Actions runners.
+    (cd dist/standalone && python3 -c "import shutil; shutil.make_archive('${BUNDLE_NAME}', 'zip', '.', '${BUNDLE_NAME}')")
 else
     OUT="${OUT_BASE}.tar.gz"
     log "Packaging ${OUT}..."
