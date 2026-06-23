@@ -14,10 +14,7 @@ DRY_RUN=0
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-OLD_VERSION="$(python3 -c "
-import tomllib
-print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])
-")"
+OLD_VERSION="$(grep -E '^version\s*=' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 
 RELEASE_DATE="$(date +%Y.%-m.%-d)"
 

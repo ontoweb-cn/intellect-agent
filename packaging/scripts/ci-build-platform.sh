@@ -20,7 +20,7 @@ cd "$ROOT"
 
 log() { printf '[ci-build] %s\n' "$*"; }
 
-SEMVER="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+SEMVER="$(grep -E '^version\s*=' "$ROOT/pyproject.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 OUT="$ROOT/dist/out"
 rm -rf "$OUT"
 mkdir -p "$OUT"

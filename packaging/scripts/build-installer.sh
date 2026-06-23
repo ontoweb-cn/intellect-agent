@@ -27,9 +27,14 @@ done
 
 [[ -n "$PLATFORM" && -n "$ARCH" ]] || { echo "Usage: $0 --platform <linux|darwin|windows> --arch <x86_64|aarch64|universal2|amd64>" >&2; exit 2; }
 
-# Auto-detect semver from pyproject.toml
+# Auto-detect semver from pyproject.toml (grep/sed: works on any Python version,
+# unlike tomllib which requires Python 3.11+)
 if [[ -z "$SEMVER" ]]; then
-    SEMVER="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+    SEMVER="$(grep -E '^version\s*=' "$ROOT/pyproject.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    if [[ -z "$SEMVER" ]]; then
+        echo "ERROR: cannot parse version from pyproject.toml" >&2
+        exit 1
+    fi
 fi
 
 # Find standalone bundle

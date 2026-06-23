@@ -55,7 +55,7 @@ if [[ -z "$ARCH" ]]; then
 fi
 
 if [[ -z "$SEMVER" ]]; then
-    SEMVER="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+    SEMVER="$(grep -E '^version\s*=' "$ROOT/pyproject.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 fi
 
 log() { printf '[native-bundle] %s\n' "$*"; }

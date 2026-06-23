@@ -67,10 +67,12 @@ if [[ -z "$ARCH" ]]; then
 fi
 
 if [[ -z "$SEMVER" ]]; then
-    SEMVER="$(python3 -c "
-import tomllib
-print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])
-")"
+    # grep/sed works on any Python version (tomllib requires Python 3.11+)
+    SEMVER="$(grep -E '^version\s*=' "$ROOT/pyproject.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    if [[ -z "$SEMVER" ]]; then
+        echo "ERROR: cannot parse version from pyproject.toml" >&2
+        exit 1
+    fi
 fi
 
 log() { printf '\e[1;34m[standalone]\e[0m %s\n' "$*" >&2; }
