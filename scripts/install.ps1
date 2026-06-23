@@ -1276,7 +1276,48 @@ else:
 
 function Install-RustExtensionLocal {
     param([string]$PythonExe)
-    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { return $false }
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+        Write-Info "Rust toolchain not found. Attempting auto-install..."
+        $rustInstalled = $false
+        # --- winget (modern Windows, no UAC prompt for user-scoped installs) ---
+        if (-not $rustInstalled -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+            Write-Info "Installing Rust via winget..."
+            try {
+                winget install Rustlang.Rustup --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+                # Refresh PATH so cargo is visible
+                $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
+                if (Get-Command cargo -ErrorAction SilentlyContinue) {
+                    Write-Success "Rust installed via winget ($(cargo --version))"
+                    $rustInstalled = $true
+                }
+            } catch { }
+        }
+        # --- rustup-init.exe (direct download, no package manager needed) ---
+        if (-not $rustInstalled) {
+            Write-Info "Downloading Rust via rustup-init.exe..."
+            $rustupExe = Join-Path $env:TEMP "rustup-init.exe"
+            try {
+                Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupExe -UseBasicParsing
+                & $rustupExe -y --default-toolchain stable 2>&1 | Out-Null
+                Remove-Item $rustupExe -Force -ErrorAction SilentlyContinue
+                # rustup adds ~/.cargo/bin to user PATH; refresh
+                $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+                $env:Path = "$cargoBin;$env:Path"
+                if (Get-Command cargo -ErrorAction SilentlyContinue) {
+                    Write-Success "Rust installed via rustup ($(cargo --version))"
+                    $rustInstalled = $true
+                }
+            } catch {
+                Remove-Item $rustupExe -Force -ErrorAction SilentlyContinue
+            }
+        }
+        if (-not $rustInstalled) {
+            Write-Warn "Could not auto-install Rust. To install manually:"
+            Write-Warn "  winget install Rustlang.Rustup"
+            Write-Warn "  OR visit https://rustup.rs"
+            return $false
+        }
+    }
     Write-Info "Building Rust extension locally (maturin)..."
     $maturinCmd = $null
     if (-not $NoVenv) {
@@ -1347,7 +1388,7 @@ function Install-RustExtensionFromGitHub {
     if (-not $tag) { $tag = "" }
     $script = @'
 import json, os, sys, urllib.parse, urllib.request
-owner, repo = "ontoweb", "intellect-agent"
+owner, repo = "ontoweb-cn", "intellect-agent"
 tag = os.environ.get("INTELLECT_RELEASE_TAG", "").strip()
 hint = "win_amd64"
 base = f"https://api.github.com/repos/{owner}/{repo}/releases"

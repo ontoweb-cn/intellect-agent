@@ -1230,7 +1230,7 @@ try_download_github_rust_wheel() {
         "$pip_py" - <<'PY'
 import json, os, urllib.parse, urllib.request
 
-owner, repo = "ontoweb", "intellect-agent"
+owner, repo = "ontoweb-cn", "intellect-agent"
 tag = os.environ.get("INTELLECT_RELEASE_TAG", "").strip()
 hint = os.environ.get("_RUST_HINT", "").lower()
 base = f"https://api.github.com/repos/{owner}/{repo}/releases"
@@ -1282,7 +1282,85 @@ PY
 try_build_rust_local() {
     local pip_py="$(_rust_pip_python)"
     if ! command -v cargo >/dev/null 2>&1; then
-        return 1
+        log_info "Rust toolchain not found. Attempting auto-install..."
+        local rust_installed=false
+        # ── macOS: Homebrew ──
+        if [ "$OS" = "macos" ] && [ "$rust_installed" = false ]; then
+            if command -v brew &> /dev/null; then
+                log_info "Installing Rust via Homebrew..."
+                if brew install rust >/dev/null 2>&1; then
+                    if command -v cargo >/dev/null 2>&1; then
+                        log_success "Rust installed via Homebrew ($(cargo --version))"
+                        rust_installed=true
+                    fi
+                fi
+            fi
+        fi
+        # ── Linux: distro package manager ──
+        if [ "$rust_installed" = false ] && [ "$OS" = "linux" ]; then
+            case "$DISTRO" in
+                ubuntu|debian)
+                    log_info "Installing Rust via apt (cargo + rustc)..."
+                    if command -v sudo >/dev/null 2>&1; then
+                        sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq && \
+                            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cargo rustc >/dev/null 2>&1
+                    else
+                        apt-get update -qq && apt-get install -y -qq cargo rustc >/dev/null 2>&1
+                    fi
+                    if command -v cargo >/dev/null 2>&1; then
+                        log_success "Rust installed via apt ($(cargo --version))"
+                        rust_installed=true
+                    fi
+                    ;;
+                fedora)
+                    log_info "Installing Rust via dnf..."
+                    if command -v sudo >/dev/null 2>&1; then
+                        sudo dnf install -y cargo rust >/dev/null 2>&1
+                    else
+                        dnf install -y cargo rust >/dev/null 2>&1
+                    fi
+                    if command -v cargo >/dev/null 2>&1; then
+                        log_success "Rust installed via dnf ($(cargo --version))"
+                        rust_installed=true
+                    fi
+                    ;;
+                arch)
+                    log_info "Installing Rust via pacman..."
+                    if command -v sudo >/dev/null 2>&1; then
+                        sudo pacman -S --noconfirm rust >/dev/null 2>&1
+                    else
+                        pacman -S --noconfirm rust >/dev/null 2>&1
+                    fi
+                    if command -v cargo >/dev/null 2>&1; then
+                        log_success "Rust installed via pacman ($(cargo --version))"
+                        rust_installed=true
+                    fi
+                    ;;
+            esac
+        fi
+        # ── Universal fallback: rustup ──
+        if [ "$rust_installed" = false ]; then
+            log_info "Installing Rust via rustup (https://rustup.rs)..."
+            if command -v curl >/dev/null 2>&1; then
+                curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable >/dev/null 2>&1
+            elif command -v wget >/dev/null 2>&1; then
+                wget -qO- https://sh.rustup.rs | sh -s -- -y --default-toolchain stable >/dev/null 2>&1
+            fi
+            # rustup installs to ~/.cargo/bin; source the env to pick it up
+            if [ -f "$HOME/.cargo/env" ]; then
+                . "$HOME/.cargo/env"
+            fi
+            if command -v cargo >/dev/null 2>&1; then
+                log_success "Rust installed via rustup ($(cargo --version))"
+                rust_installed=true
+            fi
+        fi
+        if [ "$rust_installed" = false ]; then
+            log_warn "Could not auto-install Rust. To install manually:"
+            log_warn "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+            log_warn "  OR visit https://rustup.rs"
+            return 1
+        fi
     fi
     log_info "Building Rust extension locally (maturin)..."
     if ! command -v maturin >/dev/null 2>&1; then
