@@ -1,5 +1,5 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
-# lgtm[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
 """Shared auxiliary client router for side tasks.
 
 Provides a single resolution chain so every consumer (context compression,

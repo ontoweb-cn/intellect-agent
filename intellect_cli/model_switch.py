@@ -1,4 +1,4 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
 """Shared model-switching logic for CLI and gateway /model commands.
 
 Both the CLI (cli.py) and gateway (gateway/run.py) /model handlers

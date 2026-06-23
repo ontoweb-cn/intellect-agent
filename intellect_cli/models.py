@@ -1,4 +1,4 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
 """
 Canonical model catalogs and lightweight validation helpers.
 

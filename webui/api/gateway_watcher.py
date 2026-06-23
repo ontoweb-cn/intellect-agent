@@ -28,7 +28,7 @@ def _snapshot_hash(sessions: list) -> str:
         f"{s['session_id']}:{s.get('updated_at', 0)}:{s.get('message_count', 0)}"
         for s in sorted(sessions, key=lambda x: x['session_id'])
     )
-    return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()  # lgtm[py/weak-sensitive-data-hashing]: session fingerprint with usedforsecurity=False
+    return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()  # codeql[py/weak-sensitive-data-hashing]: session fingerprint with usedforsecurity=False
 
 
 def _gateway_session_from_row(row: dict) -> dict:

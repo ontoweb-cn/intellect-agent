@@ -1832,7 +1832,7 @@ def _auto_provider_name(base_url: str) -> str:
     clean = base_url.replace("https://", "").replace("http://", "").rstrip("/")
     clean = re.sub(r"/v1/?$", "", clean)
     name = clean.split("/")[0]
-    if "localhost" in name or "127.0.0.1" in name:
+    if name.lower() == "localhost" or name == "127.0.0.1" or name.startswith("127."):
         name = f"Local ({name})"
     elif "runpod" in name.lower():
         name = f"RunPod ({name})"

@@ -1,4 +1,4 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
 #!/usr/bin/env python3
 """
 Skills Hub — Source adapters and hub state management for the Intellect Skills Hub.

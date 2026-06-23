@@ -1242,7 +1242,7 @@ def cache_document_from_bytes(data: bytes, filename: str) -> str:
     cached_name = f"doc_{uuid.uuid4().hex[:12]}_{safe_name}"
     filepath = cache_dir / cached_name
     # Final safety check: ensure path stays inside cache dir
-    # lgtm[py/path-injection]: validated by resolve().is_relative_to() above
+    # codeql[py/path-injection]: validated by resolve().is_relative_to() above
     if not filepath.resolve().is_relative_to(cache_dir.resolve()):
         raise ValueError(f"Path traversal rejected: {filename!r}")
     filepath.write_bytes(data)

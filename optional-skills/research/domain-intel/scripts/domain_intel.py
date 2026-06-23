@@ -83,14 +83,14 @@ def check_ssl(host, port=443, timeout=10):
 
     warning = None
     try:
-        ctx = ssl.create_default_context()  # lgtm[py/insecure-protocol]: Python 3.12+ uses TLS 1.2+ by default
+        ctx = ssl.create_default_context()  # codeql[py/insecure-protocol]: Python 3.12+ uses TLS 1.2+ by default
         with socket.create_connection((host, port), timeout=timeout) as sock:
-            with ctx.wrap_socket(sock, server_hostname=host) as s:  # lgtm[py/insecure-protocol]
+            with ctx.wrap_socket(sock, server_hostname=host) as s:  # codeql[py/insecure-protocol]
                 cert, cipher, proto = s.getpeercert(), s.cipher(), s.version()
     except ssl.SSLCertVerificationError as e:
         warning = str(e)
-        ctx = ssl.create_default_context()  # lgtm[py/insecure-protocol]: Python 3.12+ default is secure
-        ctx.check_hostname = False  # lgtm[py/insecure-protocol]: intentional fallback to inspect cert details on failure
+        ctx = ssl.create_default_context()  # codeql[py/insecure-protocol]: Python 3.12+ default is secure
+        ctx.check_hostname = False  # codeql[py/insecure-protocol]: intentional fallback to inspect cert details on failure
         ctx.verify_mode = ssl.CERT_NONE
         with socket.create_connection((host, port), timeout=timeout) as sock:
             with ctx.wrap_socket(sock, server_hostname=host) as s:
@@ -273,7 +273,7 @@ def check_available(domain):
     ssl_up = False
     try:
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False  # lgtm[py/insecure-protocol]: reconnect without verification for SSL reachability check
+        ctx.check_hostname = False  # codeql[py/insecure-protocol]: reconnect without verification for SSL reachability check
         ctx.verify_mode = ssl.CERT_NONE
         with socket.create_connection((domain, 443), timeout=3) as s:
             with ctx.wrap_socket(s, server_hostname=domain):

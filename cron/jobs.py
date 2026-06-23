@@ -491,7 +491,7 @@ def _normalize_workdir(workdir: Optional[str]) -> Optional[str]:
     if not raw:
         return None
     expanded = Path(raw).expanduser()
-    # lgtm[py/path-injection]: validated by is_absolute() + '..' rejection below
+    # codeql[py/path-injection]: validated by is_absolute() + '..' rejection below
     if not expanded.is_absolute():
         raise ValueError(
             f"Cron workdir must be an absolute path (got {raw!r}). "

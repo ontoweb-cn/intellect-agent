@@ -1,4 +1,4 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
 """
 Intellect Web UI -- SSE streaming engine and agent thread runner.
 Includes Sprint 10 cancel support via CANCEL_FLAGS.
@@ -3309,7 +3309,7 @@ def _agent_cache_api_key_sig(resolved_api_key, credential_pool) -> str:
     if credential_pool is not None:
         return 'credential-pool'
     import hashlib as _hashlib
-    return _hashlib.sha256((resolved_api_key or '').encode()).hexdigest()[:16]  # lgtm[py/weak-sensitive-data-hashing]: cache fingerprint, not credential storage
+    return _hashlib.sha256((resolved_api_key or '').encode()).hexdigest()[:16]  # codeql[py/weak-sensitive-data-hashing]: cache fingerprint, not credential storage
 
 
 def _refresh_cached_agent_runtime(agent, agent_kwargs: dict) -> bool:

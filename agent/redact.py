@@ -495,6 +495,35 @@ def _has_http_method_substring(text: str) -> bool:
     return any(method in upper for method in _HTTP_METHOD_SUBSTRINGS)
 
 
+class RedactingFilter(logging.Filter):
+    """Log filter that redacts secrets from every log record at creation time.
+
+    Installed on the root logger at module import time, guaranteeing that
+    ALL log records are redacted BEFORE any handler or formatter sees them
+    — including records emitted before ``setup_logging()`` runs and records
+    routed to third-party handlers that do not use ``RedactingFormatter``.
+
+    This is a defense-in-depth second layer: ``RedactingFormatter`` still
+    operates at the handler level for file/console output, but this filter
+    ensures that even the in-memory ``LogRecord.msg`` is clean.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Redact the formatted message (handles both lazy %s and f-strings).
+        try:
+            record.msg = redact_sensitive_text(record.getMessage())
+            record.args = ()
+        except Exception:
+            pass  # defensive — never break logging
+        # Redact exception text if present.
+        if record.exc_info and record.exc_info[1]:
+            try:
+                record.exc_text = redact_sensitive_text(str(record.exc_info[1]))
+            except Exception:
+                pass
+        return True  # always pass the record through
+
+
 class RedactingFormatter(logging.Formatter):
     """Log formatter that redacts secrets from all log messages."""
 
@@ -504,3 +533,41 @@ class RedactingFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         original = super().format(record)
         return redact_sensitive_text(original)
+
+
+# ---------------------------------------------------------------------------
+# Install redaction at record-creation time
+# ---------------------------------------------------------------------------
+# Replaces the global LogRecord factory with one that redacts every record's
+# message as it is created.  This is the earliest possible defense — it runs
+# before any logger, handler, or formatter sees the record, and catches
+# records emitted before ``setup_logging()`` runs.
+#
+# Uses the same wrapping pattern as ``intellect_logging._install_session_record_factory``
+# so the two compose correctly regardless of import order.
+def _install_redacting_record_factory() -> None:
+    current_factory = logging.getLogRecordFactory()
+    if getattr(current_factory, "_intellect_redact_injector", False):
+        return  # already installed
+
+    def _redacting_record_factory(*args, **kwargs):
+        record = current_factory(*args, **kwargs)
+        # Redact the formatted message — handles both lazy %s and f-strings.
+        try:
+            record.msg = redact_sensitive_text(record.getMessage())
+            record.args = ()
+        except Exception:
+            pass  # defensive — never break logging
+        # Redact exception text if present.
+        if record.exc_info and record.exc_info[1]:
+            try:
+                record.exc_text = redact_sensitive_text(str(record.exc_info[1]))
+            except Exception:
+                pass
+        return record
+
+    _redacting_record_factory._intellect_redact_injector = True  # type: ignore[attr-defined]
+    logging.setLogRecordFactory(_redacting_record_factory)
+
+
+_install_redacting_record_factory()

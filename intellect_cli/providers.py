@@ -1,4 +1,4 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
 """
 Single source of truth for provider identity in Intellect Agent.
 

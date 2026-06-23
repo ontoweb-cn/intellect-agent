@@ -32,6 +32,11 @@ from typing import Optional, Sequence
 
 from intellect_constants import get_config_path, get_intellect_home
 
+# Import early to install the RedactingFilter on the root logger.
+# This ensures ALL log records (including those emitted before
+# setup_logging() runs) are redacted at record creation time.
+import agent.redact  # noqa: F401 — side-effect import (installs filter)
+
 # Sentinel to track whether setup_logging() has already run.  The function
 # is idempotent — calling it twice is safe but the second call is a no-op
 # unless ``force=True``.
@@ -248,7 +253,6 @@ def setup_logging(
     max_bytes = (max_size_mb or cfg_max_size or 5) * 1024 * 1024
     backups = backup_count or cfg_backup or 3
 
-    # Lazy import to avoid circular dependency at module load time.
     from agent.redact import RedactingFormatter
 
     _use_json = JsonLogFormatter.is_enabled()

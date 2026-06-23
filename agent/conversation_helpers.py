@@ -1,5 +1,5 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
-# lgtm[py/clear-text-logging-sensitive-data]: logger.info prints operational data
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/clear-text-logging-sensitive-data]: logger.info prints operational data
 """Helper functions extracted from ``agent/conversation_loop.py``.
 """
 

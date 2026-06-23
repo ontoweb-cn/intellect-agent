@@ -1,4 +1,4 @@
-# lgtm[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
+# codeql[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
 """
 Multi-provider authentication system for Intellect Agent.
 
@@ -727,7 +727,7 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
     if not api_key:
         return default_url
 
-    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]  # lgtm[py/weak-sensitive-data-hashing]: token fingerprint for telemetry
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]  # codeql[py/weak-sensitive-data-hashing]: token fingerprint for telemetry
 
     # Step 1: DB extra_metadata cache (primary)
     try:
@@ -916,7 +916,7 @@ def _token_fingerprint(token: Any) -> Optional[str]:
     cleaned = token.strip()
     if not cleaned:
         return None
-    return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:12]  # lgtm[py/weak-sensitive-data-hashing]: token fingerprint for cache
+    return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:12]  # codeql[py/weak-sensitive-data-hashing]: token fingerprint for cache
 
 
 def _oauth_trace_enabled() -> bool:
@@ -2594,7 +2594,7 @@ def _spotify_code_verifier(length: int = 64) -> str:
 
 
 def _spotify_code_challenge(code_verifier: str) -> str:
-    digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()  # lgtm[py/weak-sensitive-data-hashing]: PKCE S256 per RFC 7636
+    digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()  # codeql[py/weak-sensitive-data-hashing]: PKCE S256 per RFC 7636
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
@@ -5058,7 +5058,7 @@ def _write_shared_ontoweb_state(state: Dict[str, Any]) -> None:
             )
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                    fh.write(json.dumps(shared, indent=2, sort_keys=True))  # lgtm[py/clear-text-storage-sensitive-data]: O_EXCL+0o600 atomic write
+                    fh.write(json.dumps(shared, indent=2, sort_keys=True))  # codeql[py/clear-text-storage-sensitive-data]: O_EXCL+0o600 atomic write
                     fh.flush()
                     os.fsync(fh.fileno())
                 os.replace(tmp, path)

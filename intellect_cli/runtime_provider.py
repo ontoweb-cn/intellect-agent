@@ -1,4 +1,4 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
 """Shared runtime provider resolution for CLI, gateway, cron, and helpers."""
 
 from __future__ import annotations
@@ -191,7 +191,8 @@ def _get_model_config() -> Dict[str, Any]:
             cfg["default"] = cfg["model"]
         default = (cfg.get("default") or "").strip()
         base_url = (cfg.get("base_url") or "").strip()
-        is_local = "localhost" in base_url or "127.0.0.1" in base_url
+        from agent.model_metadata import is_local_endpoint
+        is_local = is_local_endpoint(base_url)
         is_fallback = not default
         if is_local and is_fallback and base_url:
             detected = _auto_detect_local_model(base_url)
@@ -1483,9 +1484,9 @@ def resolve_runtime_provider(
         # would find the Claude Code OAuth token first (priority 3) and return
         # that instead, causing 401s. Detect Azure endpoints and use the env
         # key directly to bypass the OAuth priority chain.
-        _is_azure_endpoint = "azure.com" in base_url.lower() or (
-            cfg_base_url and "azure.com" in cfg_base_url.lower()
-        )
+        _is_azure_endpoint = base_url_host_matches(
+            base_url, "azure.com"
+        ) or (cfg_base_url and base_url_host_matches(cfg_base_url, "azure.com"))
         if _is_azure_endpoint:
             # Honor user-specified env var hints on the model config before
             # falling back to the built-in AZURE_ANTHROPIC_KEY / ANTHROPIC_API_KEY

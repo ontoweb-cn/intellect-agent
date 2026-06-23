@@ -1,5 +1,5 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
-# lgtm[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
 #!/usr/bin/env python3
 """
 AI Agent Runner with Tool Calling
@@ -53,6 +53,7 @@ from agent.timing import timed  # noqa: E402
 import threading
 import uuid
 from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse
 # NOTE: `from openai import OpenAI` is deliberately NOT at module top — the
 # SDK pulls ~240 ms of imports. We expose `OpenAI` as a thin proxy object
 # that imports the SDK on first call/isinstance check. This preserves:
@@ -1017,10 +1018,10 @@ class AIAgent:
         must treat Azure separately from direct OpenAI.
         """
         if base_url is not None:
-            url = str(base_url).lower()
+            hostname = base_url_hostname(str(base_url))
         else:
-            url = getattr(self, "_base_url_lower", "") or ""
-        return "openai.azure.com" in url
+            hostname = getattr(self, "_base_url_hostname", "") or ""
+        return hostname.endswith(".openai.azure.com") or hostname == "openai.azure.com"
 
     def _is_github_copilot_url(self, base_url: str = None) -> bool:
         """Return True when a base URL targets GitHub Copilot's OpenAI-compatible API."""
@@ -1129,7 +1130,9 @@ class AIAgent:
             self.provider == "openai-codex"
             or (
                 getattr(self, "_base_url_hostname", "") == "chatgpt.com"
-                and "/backend-api/codex" in (getattr(self, "_base_url_lower", "") or "")
+                and "/backend-api/codex" in (
+                    urlparse(getattr(self, "_base_url_lower", "") or "").path
+                )
             )
         )
         if not is_codex_backend:
@@ -1273,8 +1276,14 @@ class AIAgent:
         provider_lower = (self.provider or "").lower()
         if "glm" not in model_lower and provider_lower != "zai":
             return False
-        if "ollama" in self._base_url_lower or ":11434" in self._base_url_lower:
-            return True
+        base_url = getattr(self, "_base_url_lower", "") or ""
+        if base_url:
+            parsed = urlparse(base_url)
+            host = (parsed.hostname or "").lower()
+            port = parsed.port
+            path = (parsed.path or "").lower()
+            if "ollama" in host or port == 11434 or "ollama" in path:
+                return True
         return bool(self.base_url and is_local_endpoint(self.base_url))
 
     def _should_treat_stop_as_truncated(
@@ -3692,7 +3701,7 @@ class AIAgent:
         return str(path), path
 
     def _describe_image_for_anthropic_fallback(self, image_url: str, role: str) -> str:
-        cache_key = hashlib.sha256(str(image_url or "").encode("utf-8")).hexdigest()  # lgtm[py/weak-sensitive-data-hashing]: image URL cache key
+        cache_key = hashlib.sha256(str(image_url or "").encode("utf-8")).hexdigest()  # codeql[py/weak-sensitive-data-hashing]: image URL cache key
         cached = self._anthropic_image_fallback_cache.get(cache_key)
         if cached:
             return cached
@@ -4153,9 +4162,9 @@ class AIAgent:
             opts = self._lmstudio_reasoning_options_cached()
             # "off-only" (or absent) means no real reasoning capability.
             return any(opt and opt != "off" for opt in opts)
-        if "openrouter" not in self._base_url_lower:
+        if not base_url_host_matches(self._base_url_lower, "openrouter.ai"):
             return False
-        if "api.mistral.ai" in self._base_url_lower:
+        if base_url_host_matches(self._base_url_lower, "api.mistral.ai"):
             return False
 
         model = (self.model or "").lower()

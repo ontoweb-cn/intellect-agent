@@ -378,8 +378,7 @@ def _is_third_party_anthropic_endpoint(base_url: str | None) -> bool:
     normalized = _normalize_base_url_text(base_url)
     if not normalized:
         return False  # No base_url = direct Anthropic API
-    normalized = normalized.rstrip("/").lower()
-    if "anthropic.com" in normalized:
+    if base_url_host_matches(normalized, "anthropic.com"):
         return False  # Direct Anthropic API — OAuth applies
     return True  # Any other endpoint is a third-party proxy
 
@@ -389,7 +388,10 @@ def _is_kimi_coding_endpoint(base_url: str | None) -> bool:
     normalized = _normalize_base_url_text(base_url)
     if not normalized:
         return False
-    return normalized.rstrip("/").lower().startswith("https://api.kimi.com/coding")
+    parsed = urlparse(normalized)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    path = (parsed.path or "").rstrip("/").lower()
+    return host == "api.kimi.com" and path == "/coding"
 
 
 # Model-name prefixes that identify the Kimi / Moonshot family.  Covers
@@ -471,7 +473,8 @@ def _is_deepseek_anthropic_endpoint(base_url: str | None) -> bool:
     normalized = _normalize_base_url_text(base_url)
     if not normalized:
         return False
-    return "/anthropic" in normalized.rstrip("/").lower()
+    parsed = urlparse(normalized)
+    return (parsed.path or "").rstrip("/").lower() == "/anthropic"
 
 
 def _requires_bearer_auth(base_url: str | None) -> bool:
@@ -485,19 +488,25 @@ def _requires_bearer_auth(base_url: str | None) -> bool:
     normalized = _normalize_base_url_text(base_url)
     if not normalized:
         return False
-    normalized = normalized.rstrip("/").lower()
+    normalized_lower = normalized.rstrip("/").lower()
+    parsed = urlparse(normalized)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    path = (parsed.path or "").rstrip("/").lower()
     return (
-        normalized.startswith(("https://api.minimax.io/anthropic", "https://api.minimaxi.com/anthropic"))
-        or "azure.com" in normalized
+        (host == "api.minimax.io" and path == "/anthropic")
+        or (host == "api.minimaxi.com" and path.startswith("/anthropic"))
+        or ".azure.com" in f".{host}."
     )
 
 
 def _base_url_needs_context_1m_beta(base_url: str | None) -> bool:
     """Return True for endpoints that still gate 1M context behind a beta."""
-    normalized = _normalize_base_url_text(base_url).lower()
+    normalized = _normalize_base_url_text(base_url)
     if not normalized:
         return False
-    return "azure.com" in normalized
+    parsed = urlparse(normalized)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return host == "azure.com" or host.endswith(".azure.com")
 
 
 def _is_minimax_anthropic_endpoint(base_url: str | None) -> bool:
@@ -509,10 +518,10 @@ def _is_minimax_anthropic_endpoint(base_url: str | None) -> bool:
     normalized = _normalize_base_url_text(base_url)
     if not normalized:
         return False
-    normalized = normalized.rstrip("/").lower()
-    return normalized.startswith(
-        ("https://api.minimax.io/anthropic", "https://api.minimaxi.com/anthropic")
-    )
+    parsed = urlparse(normalized)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    path = (parsed.path or "").rstrip("/").lower()
+    return host in ("api.minimax.io", "api.minimaxi.com") and path == "/anthropic"
 
 
 def _is_azure_anthropic_endpoint(base_url: str | None) -> bool:
@@ -1010,6 +1019,8 @@ def _write_claude_code_credentials(
     as valid.  Claude Code >=2.1.81 gates on the presence of ``"user:inference"``
     in the stored scopes before it will use the token.
     """
+    import time
+
     cred_path = Path.home() / ".claude" / ".credentials.json"
     try:
         # Read existing file to preserve other fields

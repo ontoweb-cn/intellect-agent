@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring used for migration path detection
+# codeql[py/incomplete-url-substring-sanitization]: URL substring used for migration path detection
 """OpenClaw -> intellect migration helper.
 
 This script migrates the parts of an OpenClaw user footprint that map cleanly

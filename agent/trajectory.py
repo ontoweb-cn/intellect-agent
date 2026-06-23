@@ -50,7 +50,7 @@ def save_trajectory(trajectory: List[Dict[str, Any]], model: str,
 
     try:
         with open(filename, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")  # lgtm[py/clear-text-storage-sensitive-data]: diagnostic session log
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")  # codeql[py/clear-text-storage-sensitive-data]: diagnostic session log
         logger.info("Trajectory saved to %s", filename)
     except Exception as e:
         logger.warning("Failed to save trajectory: %s", e)

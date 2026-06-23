@@ -813,7 +813,7 @@ class GatewayAgentRunner:
         # (e.g. "eyJhbGci"), which can cause false cache hits across auth
         # switches if only the first few characters are considered.
         _api_key = str(runtime.get("api_key", "") or "")
-        _api_key_fingerprint = hashlib.sha256(_api_key.encode()).hexdigest() if _api_key else ""  # lgtm[py/weak-sensitive-data-hashing]: cache key fingerprint
+        _api_key_fingerprint = hashlib.sha256(_api_key.encode()).hexdigest() if _api_key else ""  # codeql[py/weak-sensitive-data-hashing]: cache key fingerprint
 
         _cache_keys_sorted = sorted((cache_keys or {}).items())
 
@@ -835,7 +835,7 @@ class GatewayAgentRunner:
             sort_keys=True,
             default=str,
         )
-        return hashlib.sha256(blob.encode()).hexdigest()[:16]  # lgtm[py/weak-sensitive-data-hashing]: agent identity cache key
+        return hashlib.sha256(blob.encode()).hexdigest()[:16]  # codeql[py/weak-sensitive-data-hashing]: agent identity cache key
 
     def _release_running_agent_state(
         self,

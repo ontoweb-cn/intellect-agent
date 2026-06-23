@@ -1,5 +1,5 @@
-# lgtm[py/incomplete-url-substring-sanitization]: URL substring for provider identification
-# lgtm[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
+# codeql[py/incomplete-url-substring-sanitization]: URL substring for provider identification
+# codeql[py/clear-text-logging-sensitive-data]: logger.info prints operational data (model names, token counts), not secrets
 #!/usr/bin/env python3
 """
 Intellect CLI - Main entry point.

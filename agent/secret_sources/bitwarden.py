@@ -371,7 +371,7 @@ def _expected_sha256(checksum_file: Path, asset_name: str) -> str:
 
 
 def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()  # lgtm[py/weak-sensitive-data-hashing]: config hash for cache invalidation
+    h = hashlib.sha256()  # codeql[py/weak-sensitive-data-hashing]: config hash for cache invalidation
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
@@ -402,7 +402,7 @@ def _pick_zip_member(zf: zipfile.ZipFile, binary_name: str) -> str:
 
 def _token_fingerprint(token: str) -> str:
     """SHA-256 prefix used as a cache key — never logged, never displayed."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]  # lgtm[py/weak-sensitive-data-hashing]: token fingerprint for cache
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]  # codeql[py/weak-sensitive-data-hashing]: token fingerprint for cache
 
 
 def fetch_bitwarden_secrets(

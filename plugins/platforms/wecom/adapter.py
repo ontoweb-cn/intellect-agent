@@ -1177,7 +1177,7 @@ class WeComAdapter(BasePlatformAdapter):
                 "filename": filename,
                 "total_size": total_size,
                 "total_chunks": total_chunks,
-                "md5": hashlib.md5(data).hexdigest()  # lgtm[py/weak-sensitive-data-hashing]: WeCom media upload API requires MD5,
+                "md5": hashlib.md5(data).hexdigest()  # codeql[py/weak-sensitive-data-hashing]: WeCom media upload API requires MD5,
             },
         )
         self._raise_for_wecom_error(init_response, "media upload init")
