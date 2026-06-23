@@ -37,6 +37,13 @@ updates:
       website-patch:
         update-types:
           - "patch"
+    ignore:
+      # Docusaurus is pinned to 3.9.2 — see commit 5baac08
+      - dependency-name: "@docusaurus/core"
+      - dependency-name: "@docusaurus/preset-classic"
+      - dependency-name: "@docusaurus/types"
+      - dependency-name: "@docusaurus/module-type-aliases"
+      - dependency-name: "docusaurus-theme-mermaid"
 
   # TUI (Ink/React) dependencies
   - package-ecosystem: "npm"
