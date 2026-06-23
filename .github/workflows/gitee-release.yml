@@ -206,6 +206,7 @@ jobs:
 
       - name: Import GPG key and sign SHA256SUMS
         if: env.GPG_PRIVATE_KEY != ''
+        continue-on-error: true  # GPG signing is optional; don't block release
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
