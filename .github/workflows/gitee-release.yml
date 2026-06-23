@@ -46,7 +46,7 @@ jobs:
 
       - name: Build TUI + Python distributions
         run: |
-          cd ui-tui && npm ci && npm run build
+          (cd ui-tui && npm ci && npm run build)
           mkdir -p intellect_cli/tui_dist
           cp ui-tui/dist/entry.js intellect_cli/tui_dist/entry.js
           mkdir -p intellect_cli/scripts
