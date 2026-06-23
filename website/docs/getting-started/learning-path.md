@@ -85,7 +85,7 @@ Cron jobs let Intellect Agent run tasks on a schedule — daily summaries, perio
 Extend Intellect Agent with your own tools and reusable skill packages.
 
 1. [Plugins](/user-guide/features/plugins)
-2. [Build an Intellect Plugin](/guides/build-a-intellect-plugin)
+2. [Build an Intellect Plugin](/guides/build-an-intellect-plugin)
 3. [Tools Overview](/user-guide/features/tools)
 4. [Skills Overview](/user-guide/features/skills)
 5. [MCP (Model Context Protocol)](/user-guide/features/mcp)

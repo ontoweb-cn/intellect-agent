@@ -121,7 +121,7 @@ SECTIONS: list[tuple[str, list[tuple[str, str, str | None]]]] = [
         ("guides/use-mcp-with-intellect", "Use MCP with Intellect", None),
         ("guides/use-voice-mode-with-intellect", "Use Voice Mode with Intellect", None),
         ("guides/use-soul-with-intellect", "Use SOUL.md with Intellect", None),
-        ("guides/build-a-intellect-plugin", "Build an Intellect Plugin", None),
+        ("guides/build-an-intellect-plugin", "Build an Intellect Plugin", None),
         ("guides/automate-with-cron", "Automate with Cron", None),
         ("guides/work-with-skills", "Work with Skills", None),
         ("guides/delegation-patterns", "Delegation Patterns", None),

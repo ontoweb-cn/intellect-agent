@@ -1207,7 +1207,7 @@ Provider plugin selections are saved to `config.yaml`:
 
 General plugin disabled list is stored in `config.yaml` under `plugins.disabled`.
 
-See [Plugins](../user-guide/features/plugins.md) and [Build an Intellect Plugin](../guides/build-a-intellect-plugin.md).
+See [Plugins](../user-guide/features/plugins.md) and [Build an Intellect Plugin](../guides/build-an-intellect-plugin.md).
 
 ## `intellect tools`
 

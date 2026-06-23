@@ -256,7 +256,7 @@ acme-inference = "acme_intellect_plugin:register"
 
 …where `acme_intellect_plugin:register` is a function that calls `register_provider(profile)`. The general PluginManager picks up entry-point plugins during `discover_and_load()`. For `kind: model-provider` pip plugins, you still need to declare the kind in your manifest (or rely on the source-text heuristic).
 
-See [Building an Intellect Plugin](/guides/build-a-intellect-plugin#distribute-via-pip) for the full entry-points setup.
+See [Building an Intellect Plugin](/guides/build-an-intellect-plugin#distribute-via-pip) for the full entry-points setup.
 
 ## Related pages
 
@@ -264,4 +264,4 @@ See [Building an Intellect Plugin](/guides/build-a-intellect-plugin#distribute-v
 - [Adding Providers](/developer-guide/adding-providers) — end-to-end checklist for new inference backends (covers both the fast plugin path and the full CLI/auth integration)
 - [Memory Provider Plugins](/developer-guide/memory-provider-plugin)
 - [Context Engine Plugins](/developer-guide/context-engine-plugin)
-- [Building an Intellect Plugin](/guides/build-a-intellect-plugin) — general plugin authoring
+- [Building an Intellect Plugin](/guides/build-an-intellect-plugin) — general plugin authoring

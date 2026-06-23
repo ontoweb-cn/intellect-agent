@@ -98,7 +98,7 @@ See the [Messaging Gateway overview](/user-guide/messaging) for the platform com
 ## Plugins
 
 - **[Plugin System](/user-guide/features/plugins)** — Extend Intellect with custom tools, lifecycle hooks, and CLI commands without modifying core code. Plugins are discovered from `~/.intellect/plugins/`, project-local `.intellect/plugins/`, and pip-installed entry points.
-- **[Build a Plugin](/guides/build-a-intellect-plugin)** — Step-by-step guide for creating Intellect plugins with tools, hooks, and CLI commands.
+- **[Build a Plugin](/guides/build-an-intellect-plugin)** — Step-by-step guide for creating Intellect plugins with tools, hooks, and CLI commands.
 
 ## Training & Evaluation
 
