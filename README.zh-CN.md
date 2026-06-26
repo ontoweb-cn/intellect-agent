@@ -39,8 +39,12 @@ iex (irm https://raw.githubusercontent.com/ontoweb/intellect-agent/main/scripts/
 ### Docker
 
 ```bash
-docker pull ghcr.io/ontoweb/intellect-agent:latest
-docker run -v intellect-data:/opt/data ghcr.io/ontoweb/intellect-agent:latest
+# Docker Hub
+docker pull ontoweb/intellect-agent:latest
+docker run -v intellect-data:/opt/data ontoweb/intellect-agent:latest
+
+# 阿里云容器镜像（国内加速）
+docker pull registry.cn-hangzhou.aliyuncs.com/ontoweb/intellect-agent:latest
 ```
 
 ### Homebrew（macOS）

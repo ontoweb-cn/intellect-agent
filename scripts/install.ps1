@@ -1279,36 +1279,86 @@ function Install-RustExtensionLocal {
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
         Write-Info "Rust toolchain not found. Attempting auto-install..."
         $rustInstalled = $false
+
+        # Helper: refresh PATH from registry and also ensure ~/.cargo/bin is
+        # visible (rustup puts all binaries there after `rustup default`).
+        function _RefreshRustPath {
+            $env:Path = "$env:USERPROFILE\.cargo\bin;" +
+                [Environment]::GetEnvironmentVariable("Path", "User") + ";" +
+                [Environment]::GetEnvironmentVariable("Path", "Machine")
+        }
+
         # --- winget (modern Windows, no UAC prompt for user-scoped installs) ---
         if (-not $rustInstalled -and (Get-Command winget -ErrorAction SilentlyContinue)) {
             Write-Info "Installing Rust via winget..."
             try {
-                winget install Rustlang.Rustup --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-                # Refresh PATH so cargo is visible
-                $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
-                if (Get-Command cargo -ErrorAction SilentlyContinue) {
-                    Write-Success "Rust installed via winget ($(cargo --version))"
-                    $rustInstalled = $true
+                $wingetOutput = winget install Rustlang.Rustup --silent --accept-package-agreements --accept-source-agreements 2>&1
+                _RefreshRustPath
+                # winget installs the rustup MANAGER, not the toolchain.
+                # cargo.exe / rustc.exe only appear after `rustup default stable`.
+                $rustupCmd = Get-Command rustup -ErrorAction SilentlyContinue
+                if ($rustupCmd) {
+                    Write-Info "Running rustup to install the stable toolchain (this may take a few minutes)..."
+                    $rustupOutput = & rustup default stable 2>&1
+                    _RefreshRustPath
+                    if (Get-Command cargo -ErrorAction SilentlyContinue) {
+                        Write-Success "Rust installed via winget ($(cargo --version))"
+                        $rustInstalled = $true
+                    } else {
+                        Write-Warn "winget installed rustup, but `rustup default stable` did not produce cargo."
+                        Write-Warn "rustup output: $rustupOutput"
+                    }
+                } else {
+                    Write-Warn "winget reported success but rustup is not on PATH."
+                    Write-Warn "winget output: $wingetOutput"
                 }
-            } catch { }
+            } catch {
+                Write-Warn "winget Rust install threw: $_"
+            }
         }
+
         # --- rustup-init.exe (direct download, no package manager needed) ---
         if (-not $rustInstalled) {
             Write-Info "Downloading Rust via rustup-init.exe..."
             $rustupExe = Join-Path $env:TEMP "rustup-init.exe"
-            try {
-                Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupExe -UseBasicParsing
-                & $rustupExe -y --default-toolchain stable 2>&1 | Out-Null
-                Remove-Item $rustupExe -Force -ErrorAction SilentlyContinue
-                # rustup adds ~/.cargo/bin to user PATH; refresh
-                $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
-                $env:Path = "$cargoBin;$env:Path"
-                if (Get-Command cargo -ErrorAction SilentlyContinue) {
-                    Write-Success "Rust installed via rustup ($(cargo --version))"
-                    $rustInstalled = $true
+            $downloadOk = $false
+            # Try official URL first, then TUNA mirror (GFW-friendly).
+            foreach ($url in @(
+                "https://win.rustup.rs/x86_64",
+                "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup/init/x86_64-pc-windows-msvc/rustup-init.exe"
+            )) {
+                try {
+                    Write-Info "  Trying $url"
+                    Invoke-WebRequest -Uri $url -OutFile $rustupExe -UseBasicParsing -TimeoutSec 30
+                    $downloadOk = $true
+                    break
+                } catch {
+                    Write-Warn "  Download failed: $_"
                 }
-            } catch {
-                Remove-Item $rustupExe -Force -ErrorAction SilentlyContinue
+            }
+            if ($downloadOk) {
+                try {
+                    # Point rustup at a China mirror for the toolchain download
+                    # so it doesn't hit static.rust-lang.org (slow/unreachable
+                    # from mainland China).  This is harmless elsewhere — TUNA
+                    # is a well-connected public mirror.
+                    $env:RUSTUP_DIST_SERVER = "https://mirrors.tuna.tsinghua.edu.cn/rustup"
+                    $env:RUSTUP_UPDATE_ROOT = "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup"
+                    Write-Info "Running rustup-init (this may take a few minutes)..."
+                    $rustupOutput = & $rustupExe -y --default-toolchain stable 2>&1
+                    Remove-Item $rustupExe -Force -ErrorAction SilentlyContinue
+                    _RefreshRustPath
+                    if (Get-Command cargo -ErrorAction SilentlyContinue) {
+                        Write-Success "Rust installed via rustup ($(cargo --version))"
+                        $rustInstalled = $true
+                    } else {
+                        Write-Warn "rustup-init ran but cargo is still not on PATH."
+                        Write-Warn "rustup output (last 5 lines): $($rustupOutput[-5..-1] -join ' ')"
+                    }
+                } catch {
+                    Write-Warn "rustup-init failed: $_"
+                    Remove-Item $rustupExe -Force -ErrorAction SilentlyContinue
+                }
             }
         }
         if (-not $rustInstalled) {

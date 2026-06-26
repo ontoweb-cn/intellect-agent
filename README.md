@@ -48,12 +48,12 @@ The installer handles everything: uv, Python 3.12, Node.js, ripgrep, ffmpeg, **a
 ### Docker
 
 ```bash
-# GitHub Container Registry
-docker pull ghcr.io/ontoweb/intellect-agent:latest
-docker run -v intellect-data:/opt/data ghcr.io/ontoweb/intellect-agent:latest
+# Docker Hub
+docker pull ontoweb/intellect-agent:latest
+docker run -v intellect-data:/opt/data ontoweb/intellect-agent:latest
 
-# Gitee (国内, via docker pull from GHCR)
-docker pull ghcr.io/ontoweb/intellect-agent:latest
+# Gitee / 国内 (阿里云容器镜像)
+docker pull registry.cn-hangzhou.aliyuncs.com/ontoweb/intellect-agent:latest
 ```
 
 See [Docker deployment guide](https://intellect.ontoweb.cn/docs/deployment/docker) for compose files and configuration.
