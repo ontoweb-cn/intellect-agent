@@ -5911,10 +5911,12 @@ def handle_get(handler, parsed) -> bool:
         )
         # Inject the running version so the UI badge stays in sync with git tags
         # without any manual release step.
+        # Since v0.6.1 the WebUI and Agent are a single unified repo — one version.
         try:
-            from api.updates import AGENT_VERSION, WEBUI_VERSION
-            settings["webui_version"] = WEBUI_VERSION
-            settings["agent_version"] = AGENT_VERSION
+            from api.updates import VERSION, AGENT_VERSION, WEBUI_VERSION
+            settings["version"] = VERSION
+            settings["webui_version"] = WEBUI_VERSION   # backward compat
+            settings["agent_version"] = AGENT_VERSION    # backward compat
         except Exception:
             _log_non_critical()
         return j(handler, settings)
@@ -6536,7 +6538,6 @@ def handle_get(handler, parsed) -> bool:
         settings = load_settings()
         if not settings.get("check_for_updates", True):
             return j(handler, {"disabled": True})
-        include_agent_updates = not bool(settings.get("ignore_agent_updates"))
         qs = parse_qs(parsed.query)
         force = qs.get("force", ["0"])[0] == "1"
         # ?simulate=1 returns fake behind counts for UI testing (localhost only)
@@ -6547,31 +6548,39 @@ def handle_get(handler, parsed) -> bool:
             return j(
                 handler,
                 {
-                    "webui": {
-                        "name": "webui",
+                    "updates": {
+                        "name": "intellect-agent",
                         "behind": 3,
                         "current_sha": "abc1234",
                         "latest_sha": "def5678",
-                        "branch": "master",
-                        "repo_url": "https://gitee.com/ontoweb/intellect-webui",
-                        "compare_url": "https://gitee.com/ontoweb/intellect-webui/compare/abc1234...def5678",
+                        "branch": "main",
+                        "repo_url": "https://gitee.com/ontoweb/intellect-agent",
+                        "compare_url": "https://gitee.com/ontoweb/intellect-agent/compare/abc1234...def5678",
+                    },
+                    "webui": {
+                        "name": "intellect-agent",
+                        "behind": 3,
+                        "current_sha": "abc1234",
+                        "latest_sha": "def5678",
+                        "branch": "main",
+                        "repo_url": "https://gitee.com/ontoweb/intellect-agent",
+                        "compare_url": "https://gitee.com/ontoweb/intellect-agent/compare/abc1234...def5678",
                     },
                     "agent": {
-                        "name": "agent",
-                        "behind": 1 if include_agent_updates else 0,
-                        "ignored": not include_agent_updates,
-                        "current_sha": "aaa0001",
-                        "latest_sha": "bbb0002",
-                        "branch": "master",
-                        "repo_url": "https://github.com/NousResearch/intellect-agent",
-                        "compare_url": "https://github.com/NousResearch/intellect-agent/compare/aaa0001...bbb0002",
+                        "name": "intellect-agent",
+                        "behind": 3,
+                        "current_sha": "abc1234",
+                        "latest_sha": "def5678",
+                        "branch": "main",
+                        "repo_url": "https://gitee.com/ontoweb/intellect-agent",
+                        "compare_url": "https://gitee.com/ontoweb/intellect-agent/compare/abc1234...def5678",
                     },
                     "checked_at": 0,
                 },
             )
         from api.updates import check_for_updates
 
-        return j(handler, check_for_updates(force=force, include_agent=include_agent_updates))
+        return j(handler, check_for_updates(force=force))
 
     if parsed.path == "/api/chat/stream/status":
         stream_id = parse_qs(parsed.query).get("stream_id", [""])[0]
@@ -8608,16 +8617,16 @@ def handle_post(handler, parsed) -> bool:
     # ── Self-update (POST) ──
     if parsed.path == "/api/updates/apply":
         target = body.get("target", "")
-        if target not in ("webui", "agent"):
-            return bad(handler, 'target must be "webui" or "agent"')
+        if target not in ("webui", "agent", "intellect-agent"):
+            return bad(handler, 'target must be "webui", "agent", or "intellect-agent"')
         from api.updates import apply_update
 
         return j(handler, apply_update(target))
 
     if parsed.path == "/api/updates/force":
         target = body.get("target", "")
-        if target not in ("webui", "agent"):
-            return bad(handler, 'target must be "webui" or "agent"')
+        if target not in ("webui", "agent", "intellect-agent"):
+            return bad(handler, 'target must be "webui", "agent", or "intellect-agent"')
         from api.updates import apply_force_update
 
         return j(handler, apply_force_update(target))

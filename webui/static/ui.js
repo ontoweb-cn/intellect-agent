@@ -4581,16 +4581,12 @@ function _updateCompareUrl(info){
   return _isSafeUpdateCompareUrl(fallbackUrl)?fallbackUrl:null;
 }
 function _updateWhatsNewTargets(data){
-  const targets=[
-    {key:'webui',label:'WebUI',info:data&&data.webui},
-    {key:'agent',label:'Agent',info:data&&data.agent},
-  ];
-  return targets.map((target)=>({
-    key:target.key,
-    label:target.label,
-    info:target.info,
-    url:_updateCompareUrl(target.info),
-  })).filter((target)=>target.info&&target.info.behind>0&&target.url);
+  // Unified updates (v0.6.1+): prefer 'updates' key, fall back to legacy keys
+  const info = (data&&data.updates) || (data&&data.webui);
+  if(!info||!(info.behind>0)) return [];
+  const url=_updateCompareUrl(info);
+  if(!url) return [];
+  return [{key:'intellect-agent',label:'Intellect',info:info,url:url}];
 }
 function _appendUpdateDiffLinks(container,targets,prefix){
   if(!container) return;
@@ -4645,9 +4641,8 @@ function _updateSummarySignature(info){
   return [info.current_sha||'',info.latest_sha||'',info.behind||0,info.compare_url||''].join('|');
 }
 function _updateSummaryButtonLabel(target,data){
-  const labels=target.key==='webui'
-    ? {generate:'Generate WebUI update summary',view:'View generated WebUI update summary',regenerate:'Re-generate WebUI update summary'}
-    : {generate:'Generate Agent update summary',view:'View generated Agent update summary',regenerate:'Re-generate Agent update summary'};
+  // Since v0.6.1 there is a single unified update target; no webui/agent distinction.
+  const labels={generate:'Generate update summary',view:'View generated update summary',regenerate:'Re-generate update summary'};
   const cache=_loadStoredUpdateSummaries()[target.key];
   const signature=_updateSummarySignature(data&&data[target.key]);
   if(cache&&cache.signature===signature&&cache.payload) return labels.view;
@@ -4788,11 +4783,13 @@ function _renderUpdateWhatsNewLinks(data){
   _appendUpdateDiffLinks(container,targets,"What's new: ");
 }
 function _showUpdateBanner(data){
+  // Unified update data (v0.6.1+): prefer 'updates' key, fall back to legacy keys.
+  // Normalize so downstream consumers always find data.updates.
+  if (!data.updates) data.updates = data.webui || data.agent;
+  const updateInfo = data.updates;
   const parts=[];
-  const webuiPart=_formatUpdateTargetStatus('WebUI',data.webui);
-  const agentPart=_formatUpdateTargetStatus('Agent',data.agent);
-  if(webuiPart) parts.push(webuiPart);
-  if(agentPart) parts.push(agentPart);
+  const unifiedPart=_formatUpdateTargetStatus('Intellect',updateInfo);
+  if(unifiedPart) parts.push(unifiedPart);
   window._updateData=data;
   if(!parts.length){
     _renderUpdateWhatsNewLinks(data);
@@ -4843,8 +4840,8 @@ async function applyUpdates(){
   const forceBtnReset=$('btnForceUpdate');
   if(forceBtnReset){forceBtnReset.style.display='none';forceBtnReset.dataset.target='';}
   const targets=[];
-  if(window._updateData?.webui?.behind>0) targets.push('webui');
-  if(window._updateData?.agent?.behind>0) targets.push('agent');
+  // Unified updates (v0.6.1+): single target
+  if(window._updateData?.updates?.behind>0) targets.push('intellect-agent');
   if(!targets.length){
     const msg='No update target selected. Refresh update status and retry.';
     if(errEl){errEl.textContent=msg;errEl.style.display='block';}

@@ -29,7 +29,7 @@ try:
 except ImportError:
     _AGENT_DIR = None
 
-_update_cache = {'webui': None, 'agent': None, 'checked_at': 0, 'include_agent': True}
+_update_cache = {'updates': None, 'webui': None, 'agent': None, 'checked_at': 0}
 _SUMMARY_CACHE_MAX = 16
 _summary_cache: OrderedDict = OrderedDict()
 _cache_lock = threading.Lock()
@@ -137,10 +137,12 @@ def _describe_git_version(path: Path, *, timeout=5, dirty_timeout=1) -> str | No
     return out + _dirty_suffix(path, timeout=dirty_timeout)
 
 
-def _detect_webui_version() -> str:
-    """Detect the running WebUI version from git or a baked-in fallback file.
+def _detect_version() -> str:
+    """Detect the running version from git or a baked-in fallback file.
 
-    Resolution order:
+    Since the WebUI and Agent were merged into a single repository (v0.6.1),
+    there is only one version to detect.  Resolution order:
+
       1. ``git describe --tags --always --dirty`` — works in any git checkout.
          Returns the exact tag on tagged commits (e.g. ``v0.50.124``), a
          post-tag descriptor between releases (e.g. ``v0.50.124-1-ge91325d``),
@@ -148,7 +150,10 @@ def _detect_webui_version() -> str:
       2. ``api/_version.py`` — a fallback written by the Docker / CI release
          workflow when ``.git`` is not present in the image.  Expected to define
          ``__version__ = 'vX.Y.Z'``.
-      3. ``'unknown'`` — last resort; displayed as-is in the settings badge.
+      3. ``importlib.metadata.version("intellect-agent")`` — pip-installed
+         distribution version (Docker images with a pre-built venv but no
+         source checkout).
+      4. ``'unknown'`` — last resort; displayed as-is in the settings badge.
     """
     # Timeout capped at 3s: git describe on a healthy local repo is <50ms;
     # a 10s stall on import (NFS-mounted .git, broken git binary) is unacceptable.
@@ -157,6 +162,16 @@ def _detect_webui_version() -> str:
     if out:
         return out
 
+
+    # Tarball / source-dist deployments: VERSION file at the project root.
+    version_file = REPO_ROOT.parent / "VERSION"
+    try:
+        if version_file.exists():
+            text = version_file.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+    except Exception:
+        pass
     # Docker / baked-image fallback: api/_version.py written by CI at build time.
     # Parse with regex rather than exec() — the file holds exactly one assignment
     # and regex is sufficient; exec() on a build artifact is an unnecessary surface.
@@ -173,60 +188,24 @@ def _detect_webui_version() -> str:
         except Exception:
             pass
 
-    return 'unknown'
-
-
-def _detect_agent_version_from_metadata() -> str | None:
-    """Return the pip-installed intellect-agent version, if any.
-
-    Docker images pre-build a venv with ``intellect-agent[all]`` but often have
-    no agent *source* checkout on disk — ``_discover_agent_dir()`` is None and
-    git-based detection fails.  ``importlib.metadata`` reads the installed
-    distribution version instead.
-    """
+    # pip-installed distribution version (Docker / non-git deployments)
     try:
         from importlib.metadata import PackageNotFoundError, version
 
         v = version("intellect-agent")
-        return v.strip() if v and v.strip() else None
-    except PackageNotFoundError:
-        return None
-    except Exception:
-        return None
+        if v and v.strip():
+            return v.strip()
+    except (PackageNotFoundError, Exception):
+        pass
 
-
-def _detect_agent_version() -> str:
-    """Detect the running Intellect Agent version for UI display."""
-    if _AGENT_DIR is not None:
-        version_file = Path(_AGENT_DIR) / "VERSION"
-        try:
-            if version_file.exists():
-                text = version_file.read_text(encoding='utf-8').strip()
-                if text:
-                    return text
-        except Exception:
-            pass
-
-        # Fallback: infer from git describe when the checkout exists but no VERSION
-        # file is available (common in source checkouts and developer environments).
-        if Path(_AGENT_DIR).exists():
-            # Symmetric with _detect_webui_version() above — `--dirty` flags a
-            # locally-modified checkout so operators can see when their agent has
-            # uncommitted changes vs a clean tag. Per Opus advisor on stage-293.
-            out, ok = _run_git(['describe', '--tags', '--always', '--dirty'], _AGENT_DIR, timeout=3)
-            if ok and out:
-                return out
-
-    meta = _detect_agent_version_from_metadata()
-    if meta:
-        return meta
-
-    return 'not detected'
+    return 'unknown'
 
 
 # Resolved once at import time — tags cannot change without a process restart.
-WEBUI_VERSION: str = _detect_webui_version()
-AGENT_VERSION: str = _detect_agent_version()
+VERSION: str = _detect_version()
+# Backward-compat aliases (pre-v0.6.x standalone WebUI + Agent model)
+WEBUI_VERSION: str = VERSION
+AGENT_VERSION: str = VERSION
 
 
 def _normalize_remote_url(remote_url):
@@ -234,8 +213,8 @@ def _normalize_remote_url(remote_url):
 
     Git remotes may be HTTPS or SSH and may include a literal ``.git`` suffix.
     Strip only that literal suffix — never use ``str.rstrip('.git')`` because it
-    treats the argument as a character set and can truncate ``intellect-webui`` to
-    ``intellect-webu``.
+    treats the argument as a character set and can truncate ``intellect-agent`` to
+    ``intellect-age``.
     """
     if not remote_url:
         return remote_url
@@ -549,19 +528,21 @@ def _check_repo(path, name):
     return _check_repo_branch(path, name, fetch=False)
 
 
-def _ignored_agent_update_info() -> dict:
-    """Return a stable update-check payload for intentionally ignored Agent updates."""
-    return {'name': 'agent', 'behind': 0, 'ignored': True}
-
-
 def check_for_updates(force=False, *, include_agent=True):
-    """Return cached update status for webui and agent repos."""
+    """Return cached update status for the unified intellect-agent repo.
+
+    Since the WebUI was merged into the agent repo (v0.6.1), there is only
+    one git working tree to check.  ``include_agent`` is accepted for caller
+    backward compatibility but has no effect — the unified check always runs.
+
+    Returns a dict with keys ``updates`` (the single update info dict or None)
+    and ``checked_at`` (epoch seconds).  Legacy ``webui`` and ``agent`` keys
+    are populated as aliases so existing consumers continue to work.
+    """
     global _check_in_progress
-    include_agent = bool(include_agent)
     with _cache_lock:
         if (
             not force
-            and _update_cache.get('include_agent') == include_agent
             and time.time() - _update_cache['checked_at'] < CACHE_TTL
         ):
             return dict(_update_cache)
@@ -570,16 +551,15 @@ def check_for_updates(force=False, *, include_agent=True):
         _check_in_progress = True
 
     try:
-        # Run checks outside the lock (network I/O)
-        # REPO_ROOT is webui/ inside the agent project; .git lives in REPO_ROOT.parent
-        webui_info = _check_repo(REPO_ROOT.parent, 'webui')
-        agent_info = _check_repo(_AGENT_DIR, 'agent') if include_agent else _ignored_agent_update_info()
+        # Single unified check — REPO_ROOT.parent is the project root
+        # (webui/ lives inside the agent repo, .git is one level up).
+        info = _check_repo(REPO_ROOT.parent, 'intellect-agent')
 
         with _cache_lock:
-            _update_cache['webui'] = webui_info
-            _update_cache['agent'] = agent_info
+            _update_cache['updates'] = info
+            _update_cache['webui'] = info    # backward compat
+            _update_cache['agent'] = info    # backward compat
             _update_cache['checked_at'] = time.time()
-            _update_cache['include_agent'] = include_agent
             return dict(_update_cache)
     finally:
         _check_in_progress = False
@@ -589,8 +569,8 @@ def _repo_path_for_update_target(target: str):
     if target == 'webui':
         # REPO_ROOT is webui/ inside the agent project; .git lives in REPO_ROOT.parent
         return REPO_ROOT.parent
-    if target == 'agent':
-        return _AGENT_DIR
+    if target in ('agent', 'intellect-agent'):
+        return REPO_ROOT.parent
     return None
 
 
@@ -606,7 +586,7 @@ def _commit_subjects_for_update_with_limit(info: dict, *, limit: int = 24) -> tu
         return [], False
     target = info.get('name')
     if target not in ('webui', 'agent'):
-        target = 'webui' if info.get('repo_url', '').endswith('intellect-webui') else target
+        target = 'webui' if info.get('repo_url', '').endswith('intellect-agent') else target
     path = _repo_path_for_update_target(target)
     if path is None or not (Path(path) / '.git').exists():
         return [], False
@@ -816,10 +796,16 @@ def summarize_update_payload(updates: dict, llm_callback=None, *, target: str | 
     """
     if not isinstance(updates, dict):
         updates = {}
+    # Accept 'webui' or 'agent' for backward compat; both map to the unified repo
     requested_target = target if target in ('webui', 'agent') else None
     details = []
-    for key, label in (('webui', 'WebUI'), ('agent', 'Agent')):
+    unified_found = False
+    # Try the unified key first, then fall back to legacy webui/agent keys
+    for key, label in (('updates', 'Intellect'), ('webui', 'WebUI'), ('agent', 'Agent')):
         if requested_target and key != requested_target:
+            continue
+        # Skip legacy keys when we already processed the unified one
+        if key in ('webui', 'agent') and unified_found:
             continue
         info = updates.get(key)
         if not isinstance(info, dict) or int(info.get('behind') or 0) <= 0:
@@ -829,7 +815,7 @@ def summarize_update_payload(updates: dict, llm_callback=None, *, target: str | 
         behind = int(info.get('behind') or 0)
         item = {
             'name': key,
-            'label': label,
+            'label': label if key == 'updates' else 'Intellect',
             'behind': behind,
             'current_sha': info.get('current_sha'),
             'latest_sha': info.get('latest_sha'),
@@ -839,6 +825,8 @@ def summarize_update_payload(updates: dict, llm_callback=None, *, target: str | 
             'commits_truncated': bool(commits_truncated or (commits and behind > len(commits))),
         }
         details.append(item)
+        if key == 'updates':
+            unified_found = True
     cache_key = _summary_cache_key(updates, details)
     if use_cache:
         with _cache_lock:
@@ -1065,11 +1053,9 @@ def apply_force_update(target: str) -> dict:
     if not _apply_lock.acquire(blocking=False):
         return {'ok': False, 'message': 'Update already in progress'}
     try:
-        if target == 'webui':
-            # REPO_ROOT is webui/ inside the agent project; .git lives in REPO_ROOT.parent
+        # All targets map to the unified repo (webui was merged into agent in v0.6.1)
+        if target in ('webui', 'agent', 'intellect-agent'):
             path = REPO_ROOT.parent
-        elif target == 'agent':
-            path = _AGENT_DIR
         else:
             return {'ok': False, 'message': f'Unknown target: {target}'}
 
@@ -1126,11 +1112,9 @@ def apply_update(target):
 
 def _apply_update_inner(target):
     """Inner implementation of apply_update, called under _apply_lock."""
-    if target == 'webui':
-        # REPO_ROOT is webui/ inside the agent project; .git lives in REPO_ROOT.parent
+    # All targets map to the unified repo (webui was merged into agent in v0.6.1)
+    if target in ('webui', 'agent', 'intellect-agent'):
         path = REPO_ROOT.parent
-    elif target == 'agent':
-        path = _AGENT_DIR
     else:
         return {'ok': False, 'message': f'Unknown target: {target}'}
 

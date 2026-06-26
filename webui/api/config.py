@@ -525,10 +525,7 @@ def print_startup_config() -> None:
             "\n"
             "      To fix, set one of:\n"
             "        export INTELLECT_WEBUI_AGENT_DIR=/path/to/intellect-agent\n"
-            "        export INTELLECT_HOME=/path/to/.intellect\n"
-            "\n"
-            "      Or clone intellect-agent as a sibling of this repo:\n"
-            "        git clone <intellect-agent-repo> ../intellect-agent\n",
+            "        export INTELLECT_HOME=/path/to/.intellect\n",
             flush=True,
         )
 
@@ -2463,10 +2460,10 @@ _provider_models_invalidated_ts: dict[str, float] = {}  # provider_id -> timesta
 # pollute the production server's cache. Also works on macOS and Windows
 # where /dev/shm does not exist.
 def _current_webui_version() -> str | None:
-    """Lazy resolver for the WebUI version, used to stamp the disk cache (#1633).
+    """Lazy resolver for the runtime version, used to stamp the disk cache (#1633).
 
     `api.updates` imports `api.config` at module-load time, so we cannot
-    `from api.updates import WEBUI_VERSION` at the top of this module without a
+    `from api.updates import VERSION` at the top of this module without a
     circular import. Instead we resolve lazily on each cache load/save.
 
     Returns the runtime version string (e.g. ``v0.50.293``) when api.updates
@@ -2482,7 +2479,7 @@ def _current_webui_version() -> str | None:
         mod = _sys.modules.get('api.updates')
         if mod is None:
             return None
-        v = getattr(mod, 'WEBUI_VERSION', None)
+        v = getattr(mod, 'VERSION', None)
         return str(v) if v else None
     except Exception:
         return None

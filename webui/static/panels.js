@@ -6177,16 +6177,13 @@ function _retryPreferencesAutosave(){
 async function loadSettingsPanel(){
   try{
     const settings=await api('/api/settings');
-    // Populate the version badges from the server — keeps them in sync with git
+    // Populate the version badge from the server — keeps it in sync with git
     // tags automatically without any manual release step.
-    const webuiBadge = $('settings-webui-version-badge');
-    if(webuiBadge){
-      webuiBadge.textContent = `WebUI: ${settings.webui_version || 'not detected'}`;
-    }
-    const agentBadge = $('settings-agent-version-badge');
-    if(agentBadge){
-      const agentVersion = (settings.agent_version || 'not detected').toString().trim() || 'not detected';
-      agentBadge.textContent = `Agent: ${agentVersion}`;
+    // Since v0.6.1, WebUI and Agent are a unified repo with a single version.
+    const versionBadge = $('settings-version-badge');
+    if(versionBadge){
+      const v = settings.version || settings.webui_version || 'not detected';
+      versionBadge.textContent = `Intellect: ${v}`;
     }
     // Hydrate appearance controls first so a slow /api/models request
     // cannot overwrite an in-progress theme/skin selection.

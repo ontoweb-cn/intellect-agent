@@ -176,7 +176,7 @@ from api.profiles import set_request_profile, clear_request_profile
 from api.routes import handle_delete, handle_get, handle_patch, handle_post, handle_put
 from api.session_visibility import SessionAccessDenied
 from api.startup import auto_install_agent_deps, fix_credential_permissions
-from api.updates import WEBUI_VERSION
+from api.updates import VERSION
 
 
 class QuietHTTPServer(ThreadingHTTPServer):
@@ -264,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPALIVE, 10)
             except OSError:
                 pass
-    _ver_suffix = WEBUI_VERSION.removeprefix('v')
+    _ver_suffix = VERSION.removeprefix('v')
     server_version = ('IntellectWebUI/' + _ver_suffix) if _ver_suffix != 'unknown' else 'IntellectWebUI'
     _CSP_REPORT_TO = '{"group":"csp-endpoint","max_age":10886400,"endpoints":[{"url":"/api/csp-report"}]}'
 
