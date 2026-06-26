@@ -1210,6 +1210,129 @@ function Test-RustExtensionInstalled {
     }
 }
 
+function Test-MsvcLinkerAvailable {
+    # On Windows the default Rust toolchain (`stable-x86_64-pc-windows-msvc`)
+    # needs the Microsoft C++ linker.  Without it maturin/cargo fail with
+    #   error: linker `link.exe` not found
+    # This check runs BEFORE we attempt a local build so we can surface a
+    # clear, actionable message instead of a cryptic cargo stack trace.
+
+    # 1. link.exe directly on PATH (e.g. Developer Command Prompt session)
+    if (Get-Command link.exe -ErrorAction SilentlyContinue) { return $true }
+
+    # 2. The active toolchain is GNU — uses MinGW linker, not MSVC
+    if (Get-Command rustup -ErrorAction SilentlyContinue) {
+        $target = & rustup show active-toolchain 2>$null
+        if ($target -match "gnu") { return $true }
+    }
+
+    # 3. vswhere.exe is Microsoft's official locator for VS installations.
+    #    It ships with any VS 2017+ / Build Tools install.
+    $vswhere = Get-Command vswhere.exe -ErrorAction SilentlyContinue
+    if ($vswhere) {
+        $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath 2>$null
+        if ($vsPath) {
+            # VS with C++ tools is installed, but the current shell may not
+            # have them on PATH yet.  Refresh PATH from the registry.
+            $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                        [Environment]::GetEnvironmentVariable("Path", "User")
+            if (Get-Command link.exe -ErrorAction SilentlyContinue) { return $true }
+        }
+    }
+
+    return $false
+}
+
+function Install-VsBuildTools {
+    param([bool]$NonInteractive)
+
+    Write-Err "The MSVC C++ linker (link.exe) is required to build the Rust extension."
+    Write-Info "Rust's default Windows toolchain uses the Microsoft Visual C++ linker."
+    Write-Info ""
+
+    if ($NonInteractive) {
+        Write-Info "To install manually:"
+        Write-Info "  1. Download: https://aka.ms/vs/17/release/vs_buildtools.exe"
+        Write-Info "  2. Run it, select 'Desktop development with C++' workload"
+        Write-Info "  3. Re-run this install script"
+        return $false
+    }
+
+    Write-Info "How would you like to proceed?"
+    Write-Info "  [1] Download and launch VS Build Tools installer (you click through the UI)"
+    Write-Info "  [2] Silent install (automatic, ~10-30 min, requires admin)"
+    Write-Info "  [3] Skip — I'll install it manually and re-run"
+    $choice = Read-Host "Enter choice [1/2/3]"
+
+    switch ($choice) {
+        "1" {
+            $bootstrapper = Join-Path $env:TEMP "vs_buildtools.exe"
+            Write-Info "Downloading VS Build Tools bootstrapper..."
+            try {
+                Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" `
+                    -OutFile $bootstrapper -UseBasicParsing
+                Write-Info "Launching installer... (select 'Desktop development with C++' workload)"
+                Start-Process -FilePath $bootstrapper -Wait
+                # Refresh PATH so link.exe (and friends) become visible
+                $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                            [Environment]::GetEnvironmentVariable("Path", "User")
+                if (Test-MsvcLinkerAvailable) {
+                    Write-Success "MSVC linker found after install"
+                    return $true
+                }
+                Write-Warn "VS Build Tools installed but linker still not found."
+                Write-Warn "You may need to restart your shell and re-run the script."
+                return $false
+            } catch {
+                Write-Warn "Download failed: $_"
+                Write-Info "Please install manually from: https://aka.ms/vs/17/release/vs_buildtools.exe"
+                return $false
+            }
+        }
+        "2" {
+            $bootstrapper = Join-Path $env:TEMP "vs_buildtools.exe"
+            Write-Info "Downloading VS Build Tools bootstrapper..."
+            try {
+                Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" `
+                    -OutFile $bootstrapper -UseBasicParsing
+                Write-Info "Running silent install (this may take 10-30 minutes)..."
+                Write-Info "You may see a UAC prompt — please approve it."
+                $proc = Start-Process -FilePath $bootstrapper `
+                    -ArgumentList "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended" `
+                    -Wait -PassThru
+                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+                    # 3010 = success, reboot required (harmless for our purposes)
+                    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                                [Environment]::GetEnvironmentVariable("Path", "User")
+                    if (Test-MsvcLinkerAvailable) {
+                        Write-Success "Visual Studio Build Tools installed successfully"
+                        return $true
+                    }
+                    Write-Warn "Install completed but linker not on PATH yet."
+                    Write-Warn "Restart your shell and re-run the script."
+                    return $false
+                } else {
+                    Write-Warn "Installer exited with code $($proc.ExitCode)"
+                    return $false
+                }
+            } catch {
+                Write-Warn "Silent install failed: $_"
+                return $false
+            }
+        }
+        default {
+            Write-Info "Skipping VS Build Tools install."
+            Write-Info "To install later:"
+            Write-Info "  Download: https://aka.ms/vs/17/release/vs_buildtools.exe"
+            Write-Info "  Select 'Desktop development with C++' workload during install"
+            Write-Info "  Then re-run this install script"
+            return $false
+        }
+    }
+}
+
 function Install-RustExtensionFromGitee {
     param([string]$PythonExe)
     $tag = $env:INTELLECT_RELEASE_TAG
@@ -1368,6 +1491,17 @@ function Install-RustExtensionLocal {
             return $false
         }
     }
+
+    # The default Windows Rust toolchain (stable-x86_64-pc-windows-msvc)
+    # requires the Microsoft C++ linker.  Check early so the user gets a
+    # clear message rather than a cryptic cargo stack trace.
+    if (-not (Test-MsvcLinkerAvailable)) {
+        if (-not (Install-VsBuildTools -NonInteractive:$NonInteractive.IsPresent)) {
+            Write-Err "Cannot build Rust extension without the MSVC linker."
+            return $false
+        }
+    }
+
     Write-Info "Building Rust extension locally (maturin)..."
     $maturinCmd = $null
     if (-not $NoVenv) {
@@ -1510,7 +1644,8 @@ function Install-RustExtension {
     Write-Info "To install later:"
     Write-Info "  1. `$env:INTELLECT_RELEASE_TAG='vYYYY.M.D' and re-run (Gitee Release wheel)"
     Write-Info "  2. Install Rust: winget install Rustlang.Rustup"
-    Write-Info "  3. cd $InstallDir\rust-core; maturin develop --release"
+    Write-Info "  3. Install VS Build Tools (C++ workload): https://aka.ms/vs/17/release/vs_buildtools.exe"
+    Write-Info "  4. cd $InstallDir\rust-core; maturin develop --release"
 }
 
 function Install-Dependencies {
