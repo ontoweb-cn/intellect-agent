@@ -162,8 +162,12 @@ COPY --chown=intellect:intellect . .
 RUN cd ui-tui && npm run build
 
 # Rust extension (required since v0.6.2 — intellect_community_core).
+# PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 is needed because PyO3 0.21.x
+# does not support Python 3.13; the flag tells PyO3 to use the stable
+# ABI (abi3) instead of version-specific internals.
 RUN . /opt/intellect/.venv/bin/activate && \
     uv pip install --no-cache-dir maturin && \
+    export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 && \
     cd rust-core && maturin develop --release
 
 # ---------- Permissions ----------

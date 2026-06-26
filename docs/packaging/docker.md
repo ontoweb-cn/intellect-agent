@@ -193,7 +193,7 @@ Gitee tag push v2026.6.16
 国内用户可从 Gitee 容器镜像服务同步（P3）：
 
 ```
-registry.cn-hangzhou.aliyuncs.com/ontoweb/intellect-agent:0.6.3
+crpi-okdl7kgk1p2exqcm.cn-hangzhou.personal.cr.aliyuncs.com/ontoweb/intellect-agent:0.6.7
 ```
 
 与 Docker Hub 使用相同 tag 命名，定期从 Release 构建同步。

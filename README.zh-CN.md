@@ -44,7 +44,7 @@ docker pull ontoweb/intellect-agent:latest
 docker run -v intellect-data:/opt/data ontoweb/intellect-agent:latest
 
 # 阿里云容器镜像（国内加速）
-docker pull registry.cn-hangzhou.aliyuncs.com/ontoweb/intellect-agent:latest
+docker pull crpi-okdl7kgk1p2exqcm.cn-hangzhou.personal.cr.aliyuncs.com/ontoweb/intellect-agent:latest
 ```
 
 ### Homebrew（macOS）

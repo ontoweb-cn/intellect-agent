@@ -1062,6 +1062,8 @@ from intellect_cli.worktree_helpers import (
     _prune_stale_worktrees,
     _git_repo_root,
     _path_is_within_root,
+    _run_state_db_auto_maintenance,
+    _run_checkpoint_auto_maintenance,
 )
 
 def _prune_orphaned_branches(repo_root: str) -> None:
