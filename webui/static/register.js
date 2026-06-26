@@ -62,6 +62,41 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+  function _safeRedirect(url) {
+    // Relative paths (starting with / or ./) are always same-origin.
+    if (url && (url.charAt(0) === '/' && url.charAt(1) !== '/' && url.charAt(1) !== '\\')) {
+      window.location.href = url;
+      return;
+    }
+    if (url && url.indexOf('./') === 0 && url.indexOf('//') !== 0) {
+      window.location.href = url;
+      return;
+    }
+    // Absolute URLs: only allow same-origin https/http.
+    try {
+      var parsed = new URL(url, window.location.origin);
+      if ((parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+          parsed.origin === window.location.origin) {
+        window.location.href = parsed.href;
+        return;
+      }
+    } catch (_) {}
+    // Fallback: navigate to current directory.
+    window.location.href = './';
+  }
+
+  function _safeExternalRedirect(url) {
+    // Only allow HTTPS external redirects (e.g. OAuth provider pages).
+    try {
+      var parsed = new URL(url, window.location.origin);
+      if (parsed.protocol === 'https:') {
+        window.location.href = parsed.href;
+        return;
+      }
+    } catch (_) {}
+    window.location.href = './';
+  }
+
   function setFieldHint(el, msg, isErr) {
     if (!el) return;
     el.textContent = msg || '';
@@ -195,12 +230,12 @@ document.addEventListener('DOMContentLoaded', function () {
     if (openEl) openEl.classList.toggle('hidden', !open);
     if (!open) {
       if (ctx && ctx.login_complete) {
-        window.location.href = _safeNextPath();
+        _safeRedirect(_safeNextPath());
       }
       return;
     }
     if (ctx && ctx.login_complete) {
-      window.location.href = _safeNextPath();
+      _safeRedirect(_safeNextPath());
       return;
     }
     renderOAuthButtons((ctx.members && ctx.members.oauth_providers) || []);
@@ -269,7 +304,7 @@ document.addEventListener('DOMContentLoaded', function () {
       return_to: _safeNextPath(),
       registration_token: token,
     });
-    window.location.href = _api('api/members/oauth/authorize?' + q.toString());
+    _safeRedirect(_api('api/members/oauth/authorize?' + q.toString()));
   }
 
   async function submitLocalRegistration(e) {
@@ -325,7 +360,7 @@ document.addEventListener('DOMContentLoaded', function () {
         showErr(data.error || connFailed);
         return;
       }
-      window.location.href = _safeNextPath();
+      _safeRedirect(_safeNextPath());
     } catch (_) {
       showErr(connFailed);
     }

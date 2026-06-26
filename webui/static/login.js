@@ -57,6 +57,40 @@ document.addEventListener('DOMContentLoaded', function () {
     return document.baseURI ? new URL('.', document.baseURI).pathname : '/';
   }
 
+  // Validated redirect helpers — these functions provide the safety checks
+  // that the code-scanning rules require before assigning to location.href.
+  function _safeRedirect(url) {
+    // Relative paths (starting with /) are always same-origin.
+    if (url && url.charAt(0) === '/' && url.charAt(1) !== '/' && url.charAt(1) !== '\\') {
+      window.location.href = url;
+      return;
+    }
+    // Absolute URLs: only allow same-origin https/http.
+    try {
+      var parsed = new URL(url, window.location.origin);
+      if ((parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+          parsed.origin === window.location.origin) {
+        window.location.href = parsed.href;
+        return;
+      }
+    } catch (_) {}
+    // Fallback: navigate home.
+    window.location.href = _homePath();
+  }
+
+  function _safeExternalRedirect(url) {
+    // Only allow HTTPS external redirects (e.g. OAuth provider login pages).
+    try {
+      var parsed = new URL(url, window.location.origin);
+      if (parsed.protocol === 'https:') {
+        window.location.href = parsed.href;
+        return;
+      }
+    } catch (_) {}
+    // Fallback: navigate home rather than following an untrusted URL.
+    window.location.href = _homePath();
+  }
+
   function _safeNextPath() {
     try {
       var raw = new URL(window.location.href).searchParams.get('next');
@@ -159,7 +193,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (multiEl) multiEl.classList.add('hidden');
     if (continueBtn) {
       continueBtn.onclick = function () {
-        window.location.href = _safeNextPath();
+        _safeRedirect(_safeNextPath());
       };
     }
   }
@@ -186,7 +220,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!loginSignedOut && ctx.login_complete) {
           var nextPath = _safeNextPath();
           if (!_isSessionDeeplinkPath(nextPath)) {
-            window.location.href = nextPath;
+            _safeRedirect(nextPath);
             return;
           }
         }
@@ -202,7 +236,12 @@ document.addEventListener('DOMContentLoaded', function () {
     if (members.oauth_host_mismatch && members.oauth_canonical_origin) {
       try {
         if (window.location.origin !== members.oauth_canonical_origin) {
-          window.location.replace(members.oauth_canonical_origin + window.location.pathname + window.location.search);
+          // Validate oauth_canonical_origin is an https URL before redirecting.
+          var targetUrl = members.oauth_canonical_origin + window.location.pathname + window.location.search;
+          var parsedTarget = new URL(targetUrl);
+          if (parsedTarget.protocol === 'https:') {
+            window.location.replace(parsedTarget.href);
+          }
           return;
         }
       } catch (_) {}
@@ -277,7 +316,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var data = {};
       try { data = await res.json(); } catch (_) {}
       if (res.ok && data.ok) {
-        window.location.href = _safeNextPath();
+        _safeRedirect(_safeNextPath());
       } else {
         showErr(data.error || invalidPw);
       }
@@ -313,7 +352,7 @@ document.addEventListener('DOMContentLoaded', function () {
           showErr(L('login_pending_approval', data.error || 'Your account is pending admin approval.'));
         } else if (data.error_code === 'oauth_host_mismatch' && data.oauth_canonical_origin) {
           showErr(data.error || L('oauth_host_mismatch_login', 'Use the OAuth callback host to sign in.'));
-          window.location.href = data.oauth_canonical_origin + '/login';
+          _safeExternalRedirect(data.oauth_canonical_origin + '/login');
         } else {
           showErr(data.error || invalidPw);
         }
@@ -321,7 +360,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       if (typeof rememberWebuiActorMemberId === 'function') rememberWebuiActorMemberId(mid);
       if (typeof window.invalidateMembersStatusCache === 'function') window.invalidateMembersStatusCache();
-      window.location.href = _safeNextPath();
+      _safeRedirect(_safeNextPath());
     } catch (ex) {
       showErr(connFailed);
     }
@@ -380,7 +419,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       if (typeof rememberWebuiActorMemberId === 'function') rememberWebuiActorMemberId(mid);
       if (typeof window.invalidateMembersStatusCache === 'function') window.invalidateMembersStatusCache();
-      window.location.href = _safeNextPath();
+      _safeRedirect(_safeNextPath());
     } catch (ex) {
       showErr(connFailed);
     }

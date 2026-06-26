@@ -20,6 +20,13 @@ _WEBUI_DIR = os.path.dirname(os.path.abspath(__file__))
 if _WEBUI_DIR not in sys.path:
     sys.path.insert(0, _WEBUI_DIR)
 
+# Install the sensitive-data logging filter before any loggers are created.
+try:
+    from intellect_cli.logging_utils import install_sensitive_data_filter
+    install_sensitive_data_filter()
+except Exception:
+    pass
+
 # ── Test-mode network isolation ─────────────────────────────────────────────
 # When `INTELLECT_WEBUI_TEST_NETWORK_BLOCK=1` is set in the environment, refuse
 # outbound socket connections to anything that is not loopback / RFC1918 /

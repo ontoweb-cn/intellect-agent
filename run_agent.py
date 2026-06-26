@@ -40,6 +40,8 @@ import functools
 import hashlib
 import json
 import logging
+from intellect_cli.logging_utils import install_sensitive_data_filter
+install_sensitive_data_filter()
 logger = logging.getLogger(__name__)
 import os
 import re

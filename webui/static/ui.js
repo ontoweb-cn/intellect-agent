@@ -7686,7 +7686,10 @@ function renderMermaidBlocks(container){
   blocks.forEach(async(block)=>{
     block.dataset.rendered='true';
     const code=block.textContent;
-    const id=block.dataset.mermaidId||('m-'+Math.random().toString(36).slice(2));
+    var id=block.dataset.mermaidId||('m-'+Math.random().toString(36).slice(2));
+    // Sanitize: only allow alphanumeric, hyphen, underscore in the id
+    // to prevent DOM clobbering or selector injection via dataset values.
+    id=id.replace(/[^a-zA-Z0-9_-]/g,'_');
     try{
       const {svg}=await mermaid.render(id,code);
       const tmp=document.getElementById('d'+id);

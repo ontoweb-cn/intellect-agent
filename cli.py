@@ -24,6 +24,8 @@ except ModuleNotFoundError:
     pass
 
 import logging
+from intellect_cli.logging_utils import install_sensitive_data_filter
+install_sensitive_data_filter()
 import os
 import shutil
 import sys

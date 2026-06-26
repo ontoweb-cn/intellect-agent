@@ -30,7 +30,7 @@
     "@types/react": "^19.2.17",
     "@typescript-eslint/eslint-plugin": "^8.61.1",
     "@typescript-eslint/parser": "^8.61.1",
-    "esbuild": "^0.27.7",
+    "esbuild": "^0.28.1",
     "eslint": "^9.39.4",
     "eslint-plugin-perfectionist": "^5.9.1",
     "eslint-plugin-react": "^7.37.5",

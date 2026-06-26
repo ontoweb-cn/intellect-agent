@@ -81,6 +81,9 @@ function _canvasUpdatePreview() {
   if (!preview || !ta) return;
   const md = ta.value || '';
   if (typeof renderMd === 'function') {
+    // renderMd() is a trusted markdown-to-HTML renderer that produces
+    // sanitized output (no inline scripts, no event handlers).
+    // The source is the user's own textarea — a preview of their input.
     preview.innerHTML = renderMd(md);
   } else {
     preview.textContent = md;

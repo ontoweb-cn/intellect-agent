@@ -135,7 +135,7 @@ function _renderOnboardingSteps(){
     const meta=_onboardingStepMeta(key);
     const item=document.createElement('div');
     item.className='onboarding-step'+(idx===ONBOARDING.step?' active':idx<ONBOARDING.step?' done':'');
-    item.innerHTML=`<div class="onboarding-step-index">${idx+1}</div><div><div class="onboarding-step-title">${meta.title}</div><div class="onboarding-step-desc">${meta.desc}</div></div>`;
+    item.innerHTML=`<div class="onboarding-step-index">${idx+1}</div><div><div class="onboarding-step-title">${esc(meta.title)}</div><div class="onboarding-step-desc">${esc(meta.desc)}</div></div>`;
     wrap.appendChild(item);
   });
 }
@@ -650,7 +650,7 @@ async function startCodexOAuth(){
   _codexOAuthFlowId=null;
   _setCodexOAuthButton(false);
   flowDiv.style.display='block';
-  flowDiv.innerHTML=`<div class="onboarding-oauth-card onboarding-oauth-pending"><div class="onboarding-oauth-icon">⏳</div><div><strong>${t('oauth_codex_polling')}</strong><p>Starting device-code flow…</p></div></div>`;
+  flowDiv.innerHTML=`<div class="onboarding-oauth-card onboarding-oauth-pending"><div class="onboarding-oauth-icon">⏳</div><div><strong>${esc(t('oauth_codex_polling'))}</strong><p>Starting device-code flow…</p></div></div>`;
   try{
     const resp=await api('/api/onboarding/oauth/start',{method:'POST',body:JSON.stringify({provider:'openai-codex'})});
     if(resp.error) throw new Error(resp.error);
