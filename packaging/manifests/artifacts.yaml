@@ -61,7 +61,7 @@ rust_wheels:
 channels:
   gitee_ci:
     workflow: .github/workflows/gitee-release.yml
-    secret: GITEE_TOKEN
+    secret: RELEASE_TOKEN
     matrix:
       - linux/x86_64
       - linux/aarch64

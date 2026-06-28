@@ -2030,7 +2030,7 @@ def main():
             print(f"  ✓ Pushed to origin")
             print(
                 "  ℹ CI workflow .github/workflows/gitee-release.yml will build "
-                "full platform matrix and publish to Gitee (needs GITEE_TOKEN secret)."
+                "full platform matrix and publish to Gitee (needs RELEASE_TOKEN secret)."
             )
         else:
             print(f"  ✗ Failed to push to origin: {push_result.stderr.strip()}")
@@ -2102,7 +2102,7 @@ def main():
                 print(f"    Release notes kept at: {changelog_file}")
                 print(f"    Create manually on Gitee: {gitee_releases_url}")
         elif not gitee_published:
-            print("  ✗ No GITEE_TOKEN and no `gh` CLI — release not uploaded.")
+            print("  ✗ No RELEASE_TOKEN and no `gh` CLI — release not uploaded.")
             print(f"    Release notes kept at: {changelog_file}")
             print(f"    Upload artifacts manually to Gitee Release {tag_name}")
         elif gitee_published:

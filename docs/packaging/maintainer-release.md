@@ -58,12 +58,12 @@ python scripts/release.py --bump patch --publish
 
 | Secret | 说明 |
 |--------|------|
-| `GITEE_TOKEN` | Gitee 私人令牌（repo 权限） |
+| `RELEASE_TOKEN` | Gitee 私人令牌（repo 权限） |
 
 ### 可选：本地立即上传（仅当前平台，不完整）
 
 ```bash
-export GITEE_TOKEN="..."
+export RELEASE_TOKEN="..."
 python scripts/release.py --bump patch --publish --gitee-local
 ```
 

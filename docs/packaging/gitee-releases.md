@@ -192,7 +192,7 @@ https://gitee.com/ontoweb/intellect-agent/releases/download/v2026.6.16/{filename
 
 ### 自动化（推荐）
 
-1. GitHub 仓库 Secrets 配置 `GITEE_TOKEN`
+1. Gitee 仓库 Secrets 配置 `RELEASE_TOKEN`
 2. `python scripts/release.py --bump patch --publish`（打 tag 并 push）
 3. **`.github/workflows/gitee-release.yml`** 自动：
    - 构建 Python sdist/wheel
@@ -206,7 +206,7 @@ https://gitee.com/ontoweb/intellect-agent/releases/download/v2026.6.16/{filename
 手动补救：
 
 ```bash
-GITEE_TOKEN=... python packaging/scripts/publish-gitee-from-ci.py \
+RELEASE_TOKEN=... python packaging/scripts/publish-gitee-from-ci.py \
   --tag v2026.6.16 --dist-dir dist/combined
 ```
 

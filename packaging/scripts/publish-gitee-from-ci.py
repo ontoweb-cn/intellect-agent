@@ -4,7 +4,7 @@
 Called by .github/workflows/gitee-release.yml after matrix builds complete.
 
 Usage:
-  GITEE_TOKEN=... python packaging/scripts/publish-gitee-from-ci.py \\
+  RELEASE_TOKEN=... python packaging/scripts/publish-gitee-from-ci.py \\
       --tag v2026.6.16 \\
       --dist-dir dist/combined
 """

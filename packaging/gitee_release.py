@@ -2,7 +2,7 @@
 
 Used by scripts/release.py and documented in docs/packaging/gitee-releases.md.
 
-Requires GITEE_TOKEN (private token with repo scope) for create/upload.
+Requires RELEASE_TOKEN (private token with repo scope) for create/upload.
 Public read endpoints work without a token.
 """
 
