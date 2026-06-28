@@ -286,14 +286,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          WHEEL=$(ls /tmp/wheels/intellect_agent-*.whl 2>/dev/null | head -1 || echo "")
+          WHEEL=$(ls /tmp/wheels/intellect_agent-*.whl 2>/dev/null | head -1) || WHEEL=""
           if [ -z "$WHEEL" ]; then
             # Try nested path from standalone bundle
-            WHEEL=$(find /tmp/wheels -name 'intellect_agent-*.whl' 2>/dev/null | head -1 || echo "")
+            WHEEL=$(find /tmp/wheels -name 'intellect_agent-*.whl' 2>/dev/null | head -1) || WHEEL=""
           fi
           if [ -z "$WHEEL" ]; then
             echo "ERROR: No wheel found in downloaded artifacts" >&2
-            find /tmp/wheels -type f | head -20
+            find /tmp/wheels -type f 2>/dev/null | head -20 || true
             exit 1
           fi
           echo "Found wheel: $WHEEL"
