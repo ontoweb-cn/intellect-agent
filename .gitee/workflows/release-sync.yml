@@ -9,7 +9,7 @@ name: Gitee Release Sync (macOS + Windows)
 #
 # Requires two secrets configured in Gitee:
 #   GITHUB_PAT  — read-only access to the GitHub repo
-#   GITEE_TOKEN — repo-scoped token for creating Gitee releases + uploading assets
+#   RELEASE_TOKEN — repo-scoped token for creating Gitee releases + uploading assets
 
 triggers:
   push:
@@ -55,7 +55,7 @@ stages:
           - name: Sync macOS + Windows wheels + SHA256SUMS (with retry)
             env:
               GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
-              GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+              RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
             run: |
               set -euo pipefail
               MAX_RETRIES=3

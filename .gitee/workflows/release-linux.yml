@@ -9,7 +9,7 @@ name: Gitee Native Release
 # the companion release-sync.yml workflow.
 #
 # Required secret in Gitee repo Settings → Secrets:
-#   GITEE_TOKEN — Gitee private token with repo scope
+#   RELEASE_TOKEN — Gitee private token with repo scope
 
 triggers:
   push:
@@ -150,7 +150,7 @@ stages:
           # ── Publish to Gitee Release ──────────────────────────────────
           - name: Publish to Gitee Release
             env:
-              GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+              RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
             run: |
               python3 packaging/scripts/publish-gitee-from-ci.py \
                 --tag "$RELEASE_TAG" \

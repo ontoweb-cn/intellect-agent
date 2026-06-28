@@ -50,7 +50,7 @@ def _request(
 
 
 def get_token() -> str | None:
-    return os.environ.get("GITEE_TOKEN") or os.environ.get("GITEE_ACCESS_TOKEN")
+    return os.environ.get("GITEE_TOKEN") or os.environ.get("GITEE_ACCESS_TOKEN") or os.environ.get("RELEASE_TOKEN")
 
 
 def get_latest_release(*, token: str | None = None) -> dict | None:
@@ -148,7 +148,7 @@ def publish_gitee_release(
     """
     token = token or get_token()
     if not token:
-        return False, "GITEE_TOKEN not set — skipping Gitee Release upload"
+        return False, "RELEASE_TOKEN/GITEE_TOKEN not set — skipping Gitee Release upload"
 
     existing = get_release_by_tag(tag_name, token=token)
     if existing and existing.get("id"):

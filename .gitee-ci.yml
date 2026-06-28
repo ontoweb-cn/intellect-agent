@@ -4,7 +4,7 @@
 # Trigger:  CalVer tag (v2026.6.16) or SemVer tag (v0.6.4) push, or workflow_dispatch
 #
 # Required secret (GitHub repo settings → Secrets):
-#   GITEE_TOKEN — Gitee private token with repo scope
+#   RELEASE_TOKEN — Gitee private token with repo scope (GITEE_ prefix reserved by Gitee Go)
 #
 # This file prevents Gitee's default Python plugin from failing on pyproject.toml layout.
 
@@ -17,7 +17,7 @@ stages:
       - name: verify project structure
         run: |
           echo "Intellect Agent release CI: .github/workflows/gitee-release.yml"
-          echo "Set GITEE_TOKEN in GitHub Actions secrets for Gitee Release upload"
+          echo "Set RELEASE_TOKEN in Gitee Go CI/CD variables for Gitee Release upload"
           test -f pyproject.toml && echo "pyproject.toml: OK"
           test -f rust-core/Cargo.toml && echo "Cargo.toml: OK"
           test -f .github/workflows/gitee-release.yml && echo "gitee-release.yml: OK"
