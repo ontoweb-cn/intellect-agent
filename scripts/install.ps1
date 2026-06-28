@@ -471,9 +471,9 @@ function Test-Python {
     }
 
     Write-Err "Failed to install Python $PythonVersion"
-    Write-Info "Install Python 3.11 manually, then re-run this script:"
+    Write-Info "Install Python $PythonVersion manually, then re-run this script:"
     Write-Info "  https://www.python.org/downloads/"
-    Write-Info "  Or: winget install Python.Python.3.11"
+    Write-Info "  Or: winget install Python.Python.$PythonVersion"
     return $false
 }
 

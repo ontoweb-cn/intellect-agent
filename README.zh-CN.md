@@ -18,10 +18,16 @@
 
 ## 快速安装
 
+> **GitHub 用户**：使用每条下的第一个命令。**Gitee（国内）用户**：使用第二个命令。脚本完全相同，仅下载源不同。
+
 ### Linux, macOS, WSL2
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ontoweb/intellect-agent/main/scripts/install.sh | bash
+# GitHub
+curl -fsSL https://raw.githubusercontent.com/ontoweb-cn/intellect-agent/main/scripts/install.sh | bash
+
+# Gitee（国内）
+curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 ```
 
 > 安装程序创建虚拟环境、安装 Python 依赖，并编译 Rust 扩展（`intellect_community_core`）。
@@ -29,7 +35,11 @@ curl -fsSL https://raw.githubusercontent.com/ontoweb/intellect-agent/main/script
 ### Windows（原生 PowerShell）
 
 ```powershell
-iex (irm https://raw.githubusercontent.com/ontoweb/intellect-agent/main/scripts/install.ps1)
+# GitHub
+iex (irm https://raw.githubusercontent.com/ontoweb-cn/intellect-agent/main/scripts/install.ps1)
+
+# Gitee（国内）
+iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)
 ```
 
 安装程序自动处理：uv、Python 3.12、Node.js、ripgrep、ffmpeg 和便携式 Git Bash。
@@ -53,11 +63,51 @@ docker pull crpi-okdl7kgk1p2exqcm.cn-hangzhou.personal.cr.aliyuncs.com/ontoweb/i
 brew install intellect-agent
 ```
 
+### pip（Python 包）
+
+```bash
+# PyPI
+pip install intellect-agent
+
+# 清华镜像（国内）
+pip install intellect-agent -i https://pypi.tuna.tsinghua.edu.cn/simple/
+
+# Gitee Release wheel（国内，手动指定版本）
+pip install https://gitee.com/ontoweb/intellect-agent/releases/download/v0.6.6/intellect_agent-0.6.6-py3-none-any.whl
+```
+
 安装后：
 
 ```bash
 source ~/.bashrc    # 重新加载 shell（或: source ~/.zshrc）
 intellect              # 开始对话！
+```
+
+---
+
+## 国内用户加速指南
+
+国内用户可通过以下方式加速安装与依赖下载：
+
+| 资源 | 国内推荐 | 备注 |
+|------|----------|------|
+| 安装脚本 | Gitee raw（见上方快速安装第二条命令） | 已有 |
+| 源码 clone | `gitee.com/ontoweb/intellect-agent` | 已有 |
+| pip / uv | `UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/` | 清华 `https://pypi.tuna.tsinghua.edu.cn/simple/` 也可用 |
+| Docker | 阿里云容器镜像（见上方 Docker 节） | 已有 |
+| Rust wheel | Gitee Releases | 安装器已自动尝试 |
+| npm（仅开发环境） | `registry.npmmirror.com` | 仅 `git clone` 后开发时使用 |
+
+**国内加速安装示例**（设置 PyPI 镜像后运行 Gitee 脚本）：
+
+```bash
+export UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
+```
+
+```powershell
+$env:UV_INDEX_URL = "https://mirrors.aliyun.com/pypi/simple/"
+iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)
 ```
 
 ---
@@ -143,20 +193,34 @@ Intellect 有两种入口：用 `intellect` 启动终端 UI，或运行网关从
 
 欢迎贡献！请参阅 [贡献指南](https://intellect.ontoweb.cn/docs/developer-guide/contributing) 了解开发设置、代码风格和 PR 流程。
 
-贡献者快速开始——克隆并使用 `setup-intellect.sh`：
+贡献者快速开始——克隆并使用 `setup-intellect.sh` / `setup-intellect.ps1`：
+
+**Linux / macOS / WSL2：**
 
 ```bash
-git clone https://gitee.com/ontoweb/intellect-agent.git
+# GitHub
+git clone --recurse-submodules https://github.com/ontoweb-cn/intellect-agent.git
+# Gitee（国内）
+git clone --recurse-submodules https://gitee.com/ontoweb/intellect-agent.git
+
 cd intellect-agent
 ./setup-intellect.sh     # 安装 uv、创建 venv、安装 .[all]、创建符号链接 ~/.local/bin/intellect
 ./intellect              # 自动检测 venv，无需先 source
+```
+
+**Windows（原生 PowerShell）：**
+
+```powershell
+git clone --recurse-submodules https://gitee.com/ontoweb/intellect-agent.git
+cd intellect-agent
+.\setup-intellect.ps1    # 安装 uv、创建 venv、安装 .[all]、配置 PATH
 ```
 
 手动安装（等效于上述命令）：
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv venv --python 3.11
+uv venv venv --python 3.12
 source venv/bin/activate
 uv pip install -e ".[all,dev]"
 python -m pytest tests/ -q

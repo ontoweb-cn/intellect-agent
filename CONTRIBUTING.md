@@ -74,18 +74,38 @@ This isn't a quality bar — it's a coupling-and-maintenance decision. Memory pr
 | Requirement | Notes |
 |-------------|-------|
 | **Git** | With `--recurse-submodules` support, and the `git-lfs` extension installed |
-| **Python 3.11+** | uv will install it if missing |
+| **Python 3.12+** | uv will install it if missing |
 | **uv** | Fast Python package manager ([install](https://docs.astral.sh/uv/)) |
 | **Node.js 20+** | Optional — needed for browser tools and WhatsApp bridge (matches root `package.json` engines) |
 
 ### Clone and install
 
+**Quick path — use the setup script (recommended):**
+
 ```bash
+# GitHub
+git clone --recurse-submodules https://github.com/ontoweb-cn/intellect-agent.git
+# Gitee (国内)
+git clone --recurse-submodules https://gitee.com/ontoweb/intellect-agent.git
+
+cd intellect-agent
+./setup-intellect.sh     # installs uv, creates venv, installs deps, symlinks CLI
+```
+
+**Windows (native PowerShell):**
+
+```powershell
 git clone --recurse-submodules https://gitee.com/ontoweb/intellect-agent.git
 cd intellect-agent
+.\setup-intellect.ps1    # installs uv, creates venv, installs deps, configures PATH
+```
 
-# Create venv with Python 3.11
-uv venv venv --python 3.11
+<details>
+<summary>Manual path (advanced)</summary>
+
+```bash
+# Create venv with Python 3.12
+uv venv venv --python 3.12
 export VIRTUAL_ENV="$(pwd)/venv"
 
 # Install with all extras (messaging, cron, CLI menus, dev tools)
@@ -94,6 +114,8 @@ uv pip install -e ".[all,dev]"
 # Optional: browser tools
 npm install
 ```
+
+</details>
 
 ### Configure for development
 
@@ -896,6 +918,71 @@ feat(gateway): add WhatsApp multi-user session isolation
 fix(security): prevent shell injection in sudo password piping
 test(tools): add unit tests for file_operations
 ```
+
+---
+
+## CI Secrets for Maintainers
+
+Maintainers with repository admin access need to configure the following secrets for CI workflows to function correctly.
+
+### Required Secrets
+
+These must be configured in **GitHub repo → Settings → Secrets and variables → Actions**:
+
+---
+
+#### Docker Hub Publishing
+
+| Secret | Purpose |
+|--------|---------|
+| `DOCKERHUB_USERNAME` | Docker Hub username |
+| `DOCKERHUB_TOKEN` | Docker Hub access token (NOT password) |
+
+**Workflow**: `.github/workflows/docker-publish.yml` — publishes multi-arch Docker images on push to `main`.
+
+**Setup**:
+1. Go to [Docker Hub](https://hub.docker.com/) → **Account Settings** → **Personal access tokens**
+2. Generate a new token with **Read & Write** permissions (name it `intellect-agent-ci`)
+3. Add the token and your username to GitHub Secrets
+
+**Missing behavior**: Without these, Docker push steps are silently skipped. PRs pass but no image is published.
+
+---
+
+#### Nix Lockfile Auto-Fix
+
+| Secret | Purpose |
+|--------|---------|
+| `APP_ID` | GitHub App ID (a numeric identifier) |
+| `APP_PRIVATE_KEY` | GitHub App private key (PEM format, includes BEGIN/END lines) |
+
+**Workflow**: `.github/workflows/nix-lockfile-fix.yml` — auto-fixes stale Nix lockfile hashes on `main` and commits the fix. Uses a GitHub App token (not `GITHUB_TOKEN`) so the fix commit triggers downstream CI workflows.
+
+**Setup**:
+1. Go to GitHub → **Settings** → **Developer settings** → **GitHub Apps** → **New GitHub App**
+   - Name: `intellect-agent-nix-fix`
+   - Uncheck **Active** under Webhook
+   - **Repository permissions**: `Contents` → **Read & Write**, `Pull requests` → **Read & Write**
+   - **Where can this GitHub App be installed**: Only on this account
+2. Record the **App ID** shown after creation
+3. Scroll to **Private keys** → **Generate a private key** → download the `.pem` file
+4. Go to the App page → **Install App** → select the repository → **Install**
+5. Add to GitHub Secrets: `APP_ID` (the numeric ID) and `APP_PRIVATE_KEY` (the full PEM file content)
+
+**Missing behavior**: The `auto-fix-main` job fails with an authentication error. Stale Nix lockfiles on `main` will not be auto-remediated.
+
+---
+
+### Optional Secrets
+
+These will gracefully degrade if not configured:
+
+| Secret | Workflow | Behavior if Missing |
+|--------|----------|---------------------|
+| `CACHIX_AUTH_TOKEN` | `nix.yml`, `nix-lockfile-fix.yml` | Nix cache runs read-only (writes skipped via `continue-on-error: true`) |
+| `VERCEL_DEPLOY_HOOK` | `deploy-site.yml` | Vercel deploy step is skipped with a log message |
+| `GPG_PRIVATE_KEY` | `gitee-release.yml` | Release artifacts published without GPG signatures |
+| `GPG_KEY_ID` | `gitee-release.yml` | (paired with `GPG_PRIVATE_KEY`) |
 
 ---
 

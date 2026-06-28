@@ -215,24 +215,34 @@ All documentation lives at **[intellect.ontoweb.cn/docs](https://intellect.ontow
 
 We welcome contributions! See the [Contributing Guide](https://intellect.ontoweb.cn/docs/developer-guide/contributing) for development setup, code style, and PR process.
 
-Quick start for contributors — clone and go with `setup-intellect.sh`:
+Quick start for contributors — clone and go with `setup-intellect.sh` / `setup-intellect.ps1`:
+
+**Linux / macOS / WSL2:**
 
 ```bash
 # GitHub
-git clone https://github.com/ontoweb-cn/intellect-agent.git
+git clone --recurse-submodules https://github.com/ontoweb-cn/intellect-agent.git
 # Gitee (国内)
-git clone https://gitee.com/ontoweb/intellect-agent.git
+git clone --recurse-submodules https://gitee.com/ontoweb/intellect-agent.git
 
 cd intellect-agent
 ./setup-intellect.sh     # installs uv, creates venv, installs .[all], symlinks ~/.local/bin/intellect
 ./intellect              # auto-detects the venv, no need to `source` first
 ```
 
+**Windows (native PowerShell):**
+
+```powershell
+git clone --recurse-submodules https://gitee.com/ontoweb/intellect-agent.git
+cd intellect-agent
+.\setup-intellect.ps1    # installs uv, creates venv, installs .[all], configures PATH
+```
+
 Manual path (equivalent to the above):
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv .venv --python 3.11
+uv venv .venv --python 3.12
 source .venv/bin/activate
 uv pip install -e ".[all,dev]"
 scripts/run_tests.sh

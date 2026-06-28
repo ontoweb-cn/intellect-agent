@@ -34,18 +34,37 @@ We value contributions in this order:
 | Requirement | Notes |
 |-------------|-------|
 | **Git** | With `--recurse-submodules` support, and the `git-lfs` extension installed |
-| **Python 3.11+** | uv will install it if missing |
+| **Python 3.12+** | uv will install it if missing |
 | **uv** | Fast Python package manager ([install](https://docs.astral.sh/uv/)) |
 | **Node.js 20+** | Optional — needed for browser tools and WhatsApp bridge (matches root `package.json` engines) |
 
 ### Clone and Install
 
+**Quick path — use the setup script (recommended):**
+
 ```bash
+# GitHub
+git clone --recurse-submodules https://github.com/ontoweb-cn/intellect-agent.git
+# Gitee (国内)
+git clone --recurse-submodules https://gitee.com/ontoweb/intellect-agent.git
+
+cd intellect-agent
+./setup-intellect.sh     # installs uv, creates venv, installs deps, symlinks CLI
+```
+
+**Windows (native PowerShell):**
+
+```powershell
 git clone --recurse-submodules https://gitee.com/ontoweb/intellect-agent.git
 cd intellect-agent
+.\setup-intellect.ps1    # installs uv, creates venv, installs deps, configures PATH
+```
 
-# Create venv with Python 3.11
-uv venv venv --python 3.11
+<details>
+<summary>Manual path (advanced)</summary>
+
+```bash
+uv venv venv --python 3.12
 export VIRTUAL_ENV="$(pwd)/venv"
 
 # Install with all extras (messaging, cron, CLI menus, dev tools)
@@ -54,6 +73,8 @@ uv pip install -e ".[all,dev]"
 # Optional: browser tools
 npm install
 ```
+
+</details>
 
 ### Configure for Development
 

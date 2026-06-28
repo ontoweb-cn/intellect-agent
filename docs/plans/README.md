@@ -21,6 +21,7 @@ See also: [WebUI Documentation](../webui/) — user guide and architecture overv
 | 📋 | — | `hindsight-graphiti-hybrid-memory-plan.md` | Hindsight + Graphiti 混合记忆方案 |
 | 📋 | — | `ontoweb-provider-architecture.md` | ONTOWEB Provider 架构 |
 | 📋 | — | `oauth-device-code-msal-p3.md` | Device code + MSAL（P3 可选） |
+| 📋 | 2026-06-28 | `2026-06-28-domestic-install-and-setup-scripts-plan.md` | 国内安装文档 + 源码 setup 脚本（Phase 1+2） |
 | 📖 | 2026-06 | `2026-06-profile-management-disabled-restore.md` | Profile 管理恢复手册（参考） |
 
 ## Archived (📦) — 2026-06-18 Batch

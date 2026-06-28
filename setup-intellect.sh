@@ -6,7 +6,13 @@
 # Uses uv for desktop/server setup and Python's stdlib venv + pip on Termux.
 #
 # Usage:
-#   ./setup-intellect.sh
+#   ./setup-intellect.sh                  # Interactive (default)
+#   ./setup-intellect.sh --non-interactive # CI / automation
+#   ./setup-intellect.sh --skip-setup      # Skip setup wizard prompt
+#
+# Environment variables:
+#   INTELLECT_SKIP_SETUP=1       Equivalent to --skip-setup (CI-friendly)
+#   INTELLECT_NON_INTERACTIVE=1  Equivalent to --non-interactive
 #
 # This script:
 # 1. Detects desktop/server vs Android/Termux setup path
@@ -18,6 +24,37 @@
 # ============================================================================
 
 set -e
+
+# Parse arguments
+SKIP_SETUP=false
+NON_INTERACTIVE=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --skip-setup)    SKIP_SETUP=true ;;
+        --non-interactive) NON_INTERACTIVE=true ;;
+        --help|-h)
+            echo "Usage: $0 [--skip-setup] [--non-interactive]"
+            echo ""
+            echo "  --skip-setup        Skip the setup wizard prompt at the end"
+            echo "  --non-interactive   Run non-interactively (skip all prompts, assume defaults)"
+            echo ""
+            echo "Environment variables:"
+            echo "  INTELLECT_SKIP_SETUP=1       Equivalent to --skip-setup"
+            echo "  INTELLECT_NON_INTERACTIVE=1  Equivalent to --non-interactive"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Usage: $0 [--skip-setup] [--non-interactive]"
+            exit 1
+            ;;
+    esac
+done
+
+# Support env vars for CI compatibility
+[ "${INTELLECT_SKIP_SETUP:-}" = "1" ] && SKIP_SETUP=true
+[ "${INTELLECT_NON_INTERACTIVE:-}" = "1" ] && NON_INTERACTIVE=true
 
 # Colors
 GREEN='\033[0;32m'
@@ -277,8 +314,13 @@ if command -v rg &> /dev/null; then
     echo -e "${GREEN}✓${NC} ripgrep found"
 else
     echo -e "${YELLOW}⚠${NC} ripgrep not found (file search will use grep fallback)"
-    read -p "Install ripgrep for faster search? [Y/n] " -n 1 -r
-    echo
+    if [ "$NON_INTERACTIVE" = true ]; then
+        echo -e "${CYAN}→${NC} Non-interactive mode — skipping ripgrep install prompt"
+        REPLY="n"
+    else
+        read -p "Install ripgrep for faster search? [Y/n] " -n 1 -r
+        echo
+    fi
     if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
         INSTALLED=false
 
@@ -453,10 +495,16 @@ echo "  intellect doctor        # Diagnose issues"
 echo ""
 
 # Ask if they want to run setup wizard now
-read -p "Would you like to run the setup wizard now? [Y/n] " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-    echo ""
-    # Run directly with venv Python (no activation needed)
-    "$SCRIPT_DIR/venv/bin/python" -m intellect_cli.main setup
+if [ "$SKIP_SETUP" = true ]; then
+    echo -e "${CYAN}→${NC} --skip-setup: skipping setup wizard"
+elif [ "$NON_INTERACTIVE" = true ]; then
+    echo -e "${CYAN}→${NC} Non-interactive mode — skipping setup wizard"
+else
+    read -p "Would you like to run the setup wizard now? [Y/n] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+        echo ""
+        # Run directly with venv Python (no activation needed)
+        "$SCRIPT_DIR/venv/bin/python" -m intellect_cli.main setup
+    fi
 fi

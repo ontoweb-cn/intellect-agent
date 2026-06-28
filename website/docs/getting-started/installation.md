@@ -10,11 +10,17 @@ Get Intellect Agent up and running in under two minutes with the one-line instal
 
 ## Quick Install
 
+> **GitHub users**: use the first option under each section. **Gitee (国内) users**: use the second option. The scripts are identical — only the download source differs.
+
 ### One-Line Installer (Linux / macOS / WSL2)
 
 For a git-based install that tracks `main` and gives you the latest changes immediately:
 
 ```bash
+# GitHub
+curl -fsSL https://raw.githubusercontent.com/ontoweb-cn/intellect-agent/main/scripts/install.sh | bash
+
+# Gitee (国内)
 curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 ```
 
@@ -27,10 +33,14 @@ Native Windows support is **early beta**. It installs and works for the common p
 Open PowerShell and run:
 
 ```powershell
+# GitHub
+iex (irm https://raw.githubusercontent.com/ontoweb-cn/intellect-agent/main/scripts/install.ps1)
+
+# Gitee (国内)
 iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)
 ```
 
-The installer handles **everything**: `uv`, Python 3.11, Node.js 22, `ripgrep`, `ffmpeg`, **and a portable Git Bash** (PortableGit — a self-contained Git-for-Windows distribution that ships `bash.exe` and the full POSIX toolchain Intellect uses for shell commands; on 32-bit Windows the installer falls back to MinGit, which lacks bash and disables terminal-tool / agent-browser features).  It clones the repo under `%LOCALAPPDATA%\intellect\intellect-agent`, creates a virtualenv, and adds `intellect` to your **User PATH**.  Restart your terminal (or open a new PowerShell window) after the install so PATH picks up.
+The installer handles **everything**: `uv`, Python 3.12, Node.js 22, `ripgrep`, `ffmpeg`, **and a portable Git Bash** (PortableGit — a self-contained Git-for-Windows distribution that ships `bash.exe` and the full POSIX toolchain Intellect uses for shell commands; on 32-bit Windows the installer falls back to MinGit, which lacks bash and disables terminal-tool / agent-browser features).  It clones the repo under `%LOCALAPPDATA%\intellect\intellect-agent`, creates a virtualenv, and adds `intellect` to your **User PATH**.  Restart your terminal (or open a new PowerShell window) after the install so PATH picks up.
 
 **How Git is handled:**
 1. If `git` is already on your PATH, the installer uses your existing install.
@@ -49,6 +59,10 @@ If you prefer WSL2, the Linux installer above works inside it; both native and W
 Intellect now ships a Termux-aware installer path too:
 
 ```bash
+# GitHub
+curl -fsSL https://raw.githubusercontent.com/ontoweb-cn/intellect-agent/main/scripts/install.sh | bash
+
+# Gitee (国内)
 curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
 ```
 
@@ -123,12 +137,12 @@ That logs you in, sets ONTOWEB as your provider, and turns on the Tool Gateway i
 
 ## Prerequisites
 
-**pip install:** No prerequisites beyond Python 3.11+. Everything else is handled automatically.
+**pip install:** No prerequisites beyond Python 3.12+. Everything else is handled automatically.
 
 **Git installer:** The only prerequisite is **Git**. The installer automatically handles everything else:
 
 - **uv** (fast Python package manager)
-- **Python 3.11** (via uv, no sudo needed)
+- **Python 3.12** (via uv, no sudo needed)
 - **Node.js v22** (for browser automation and WhatsApp bridge)
 - **ripgrep** (fast file search)
 - **ffmpeg** (audio format conversion for TTS)
@@ -163,12 +177,16 @@ Running Intellect as a dedicated unprivileged user (e.g. a `intellect` systemd s
 
 2. **As the unprivileged service user**, run the regular installer. It will detect the missing sudo, skip `--with-deps`, and install Chromium into the user's local Playwright cache:
    ```bash
+   # GitHub
+   curl -fsSL https://raw.githubusercontent.com/ontoweb-cn/intellect-agent/main/scripts/install.sh | bash
+
+   # Gitee (国内)
    curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash
    ```
 
    If you want to skip the Playwright step entirely — for example because you're running headless and don't need browser automation — pass `--skip-browser`:
    ```bash
-   curl -fsSL https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.sh | bash -s -- --skip-browser
+   curl -fsSL https://raw.githubusercontent.com/ontoweb-cn/intellect-agent/main/scripts/install.sh | bash -s -- --skip-browser
    ```
 
 3. **Make `intellect` available to the service user's shells.** The installer writes the launcher to `~/.local/bin/intellect`. System service accounts often have a minimal PATH that doesn't include `~/.local/bin`. Either add it to the user's environment, or symlink the launcher into a system location:
