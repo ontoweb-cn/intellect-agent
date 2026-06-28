@@ -566,8 +566,53 @@ function Install-Git {
         $tmpFile = "$env:TEMP\$assetName"
         $gitDir = "$intellectHome\git"
 
+        # Mirror fallbacks for mainland China where release-assets.githubusercontent.com
+        # is often blocked (DNS resolution fails).  Tries official URL first, then
+        # progressively falls back to public GitHub proxy mirrors.
+        $downloadUrls = @($downloadUrl)
+        if ($env:INTELLECT_CN -eq "1" -or $env:GITHUB_MIRROR) {
+            # Prepend mirror(s) so they are tried first when INTELLECT_CN is set
+            $mirrors = @()
+            if ($env:GITHUB_MIRROR) { $mirrors += $env:GITHUB_MIRROR.TrimEnd("/") }
+            $mirrors += @(
+                "https://mirror.ghproxy.com",
+                "https://gh-proxy.com",
+                "https://ghfast.top"
+            )
+            foreach ($m in $mirrors) {
+                $downloadUrls = @("$m/$downloadUrl") + $downloadUrls
+            }
+        } else {
+            # Even without INTELLECT_CN, append mirrors as fallbacks so a
+            # transient DNS failure on the official URL can still recover.
+            $downloadUrls += @(
+                "https://mirror.ghproxy.com/$downloadUrl",
+                "https://gh-proxy.com/$downloadUrl",
+                "https://ghfast.top/$downloadUrl"
+            )
+        }
+
         Write-Info "Downloading $assetName (Git for Windows $gitVerTag)..."
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tmpFile -UseBasicParsing
+        $downloadOk = $false
+        foreach ($url in $downloadUrls) {
+            try {
+                $mirrorLabel = if ($url -eq $downloadUrl) { "official" } else { ($url -split "/")[2] }
+                Write-Info "  Trying $mirrorLabel..."
+                Invoke-WebRequest -Uri $url -OutFile $tmpFile -UseBasicParsing -TimeoutSec 300
+                # Verify the download is not an error page (too small = HTML error)
+                if ((Test-Path $tmpFile) -and (Get-Item $tmpFile).Length -gt 1MB) {
+                    $downloadOk = $true
+                    break
+                }
+                Write-Warn "  $mirrorLabel returned a suspiciously small file, trying next..."
+                Remove-Item -Force $tmpFile -ErrorAction SilentlyContinue
+            } catch {
+                Write-Warn "  $mirrorLabel failed: $_"
+            }
+        }
+        if (-not $downloadOk) {
+            throw "Could not download PortableGit from any source. Tried: $($downloadUrls -join ', ')"
+        }
 
         if (Test-Path $gitDir) {
             Write-Info "Removing previous Git install at $gitDir ..."
