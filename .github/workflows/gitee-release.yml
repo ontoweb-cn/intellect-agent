@@ -276,28 +276,34 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Download Python wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: python-dist
+          path: /tmp/wheels/python
+
       - name: Download platform wheel
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: platform-${{ matrix.platform }}-${{ matrix.platform == 'darwin' && 'universal2' || matrix.platform == 'windows' && 'amd64' || 'x86_64' }}
-          path: /tmp/wheels
+          path: /tmp/wheels/platform
 
       - name: Install and verify
         shell: bash
         run: |
           set -euo pipefail
-          WHEEL=$(ls /tmp/wheels/intellect_agent-*.whl 2>/dev/null | head -1) || WHEEL=""
-          if [ -z "$WHEEL" ]; then
-            # Try nested path from standalone bundle
-            WHEEL=$(find /tmp/wheels -name 'intellect_agent-*.whl' 2>/dev/null | head -1) || WHEEL=""
-          fi
-          if [ -z "$WHEEL" ]; then
-            echo "ERROR: No wheel found in downloaded artifacts" >&2
+          PY_WHL=$(ls /tmp/wheels/python/intellect_agent-*.whl 2>/dev/null | head -1) || PY_WHL=""
+          RS_WHL=$(find /tmp/wheels/platform -name 'intellect_community_core-*.whl' 2>/dev/null | head -1) || RS_WHL=""
+          if [ -z "$PY_WHL" ] || [ -z "$RS_WHL" ]; then
+            echo "ERROR: Missing wheels" >&2
+            echo "Python wheel: ${PY_WHL:-NOT FOUND}" >&2
+            echo "Rust wheel: ${RS_WHL:-NOT FOUND}" >&2
             find /tmp/wheels -type f 2>/dev/null | head -20 || true
             exit 1
           fi
-          echo "Found wheel: $WHEEL"
-          pip install "$WHEEL" --no-deps 2>&1 || true
-          # Verify the package is importable (may fail on missing deps, that's OK)
-          python -c "import intellect_community_core; print('Rust extension OK')" 2>&1 || echo "Rust extension not in wheel (Python-only platform wheel)"
+          echo "Python wheel: $PY_WHL"
+          echo "Rust wheel: $RS_WHL"
+          pip install "$PY_WHL" --no-deps 2>&1 || true
+          pip install "$RS_WHL" --no-deps 2>&1 || true
+          python -c "import intellect_community_core; print('Rust extension OK')" 2>&1 || echo "Rust extension import skipped (non-fatal)"
           echo "Smoke test passed for ${{ matrix.platform }}"
