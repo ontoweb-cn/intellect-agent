@@ -280,25 +280,26 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: python-dist
-          path: /tmp/wheels/python
+          path: ${{ runner.temp }}/wheels/python
 
       - name: Download platform wheel
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: platform-${{ matrix.platform }}-${{ matrix.platform == 'darwin' && 'universal2' || matrix.platform == 'windows' && 'amd64' || 'x86_64' }}
-          path: /tmp/wheels/platform
+          path: ${{ runner.temp }}/wheels/platform
 
       - name: Install and verify
         shell: bash
         run: |
           set -euo pipefail
-          PY_WHL=$(ls /tmp/wheels/python/intellect_agent-*.whl 2>/dev/null | head -1) || PY_WHL=""
-          RS_WHL=$(find /tmp/wheels/platform -name 'intellect_community_core-*.whl' 2>/dev/null | head -1) || RS_WHL=""
+          WDIR="${{ runner.temp }}/wheels"
+          PY_WHL=$(ls "$WDIR"/python/intellect_agent-*.whl 2>/dev/null | head -1) || PY_WHL=""
+          RS_WHL=$(find "$WDIR"/platform -name 'intellect_community_core-*.whl' 2>/dev/null | head -1) || RS_WHL=""
           if [ -z "$PY_WHL" ] || [ -z "$RS_WHL" ]; then
             echo "ERROR: Missing wheels" >&2
             echo "Python wheel: ${PY_WHL:-NOT FOUND}" >&2
             echo "Rust wheel: ${RS_WHL:-NOT FOUND}" >&2
-            find /tmp/wheels -type f 2>/dev/null | head -20 || true
+            find "$WDIR" -type f 2>/dev/null | head -20 || true
             exit 1
           fi
           echo "Python wheel: $PY_WHL"
