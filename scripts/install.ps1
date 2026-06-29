@@ -2792,8 +2792,113 @@ function Invoke-PostInstallMode {
     Write-Info "Post-install complete"
 }
 
+function Test-Prerequisites {
+    <#
+    .SYNOPSIS
+    Pre-flight check: scan for large tools that would be auto-downloaded.
+    If any are missing, show size/source/manual-install and let the user
+    choose to abort (so they can install manually first) or continue.
+    #>
+    Write-Host ""
+    Write-Info "Checking prerequisites..."
+
+    $missing = @()
+
+    # --- Git ---
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        Write-Success "Git          - found"
+    } else {
+        Write-Warn   "Git          - NOT FOUND   (~57MB, github.com, may be slow in China)"
+        $missing += @{
+            Name    = "Git"
+            Size    = "~57MB"
+            Source  = "github.com"
+            Manual  = @(
+                "  Download: https://git-scm.com/download/win",
+                "  Or:       winget install Git.Git"
+            )
+        }
+    }
+
+    # --- Node.js ---
+    $hasNode = [bool](Get-Command node -ErrorAction SilentlyContinue)
+    if (-not $hasNode) {
+        $managedNode = "$intellectHome\node\node.exe"
+        if (Test-Path $managedNode) { $hasNode = $true }
+    }
+    if ($hasNode) {
+        Write-Success "Node.js      - found"
+    } else {
+        Write-Warn   "Node.js      - NOT FOUND   (~30MB, nodejs.org)"
+        $missing += @{
+            Name    = "Node.js"
+            Size    = "~30MB"
+            Source  = "nodejs.org"
+            Manual  = @(
+                "  Download: https://nodejs.org/en/download/",
+                "  Or:       winget install OpenJS.NodeJS.LTS"
+            )
+        }
+    }
+
+    # --- uv ---
+    $hasUv = [bool](Get-Command uv -ErrorAction SilentlyContinue)
+    if (-not $hasUv) {
+        foreach ($p in @("$env:USERPROFILE\.local\bin\uv.exe", "$env:USERPROFILE\.cargo\bin\uv.exe")) {
+            if (Test-Path $p) { $hasUv = $true; break }
+        }
+    }
+    if ($hasUv) {
+        Write-Success "uv           - found"
+    } else {
+        # uv is small (~15MB) and downloads fast; just inform, don't add to $missing
+        Write-Info   "uv           - NOT FOUND   (~15MB, astral.sh, usually fast)"
+    }
+
+    # --- Rust (only relevant when building from source) ---
+    if (Get-Command cargo -ErrorAction SilentlyContinue) {
+        Write-Success "Rust         - found"
+    } else {
+        Write-Info   "Rust         - NOT FOUND   (only needed if pre-built wheel unavailable)"
+    }
+
+    # --- Summary & prompt ---
+    if ($missing.Count -eq 0) {
+        Write-Success "All prerequisites found"
+        return
+    }
+
+    Write-Host ""
+    Write-Warn "$($missing.Count) tool(s) missing that will be auto-downloaded."
+    foreach ($m in $missing) {
+        Write-Host "  $($m.Name) ($($m.Size)) from $($m.Source)" -ForegroundColor Yellow
+        foreach ($line in $m.Manual) {
+            Write-Host $line -ForegroundColor DarkGray
+        }
+    }
+    Write-Host ""
+
+    if ($NonInteractive) {
+        Write-Info "Non-interactive mode: continuing with auto-download..."
+        return
+    }
+
+    Write-Host "Auto-downloading may take 5-10 minutes on slow connections." -ForegroundColor Yellow
+    Write-Host ""
+    $response = Read-Host "Continue with auto-download? [Y/n]"
+    if ($response -match '^[Nn]') {
+        Write-Host ""
+        Write-Info "Installation aborted. Install the missing tools listed above, then re-run:"
+        Write-Host ""
+        Write-Host "  iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)" -ForegroundColor Cyan
+        Write-Host ""
+        exit 0
+    }
+}
+
 function Main {
     Write-Banner
+    Test-Prerequisites
     Invoke-AllStages
     if (-not $Json) {
         Write-Completion
