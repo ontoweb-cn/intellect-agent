@@ -571,7 +571,9 @@ function Install-Git {
         # progressively falls back to public GitHub proxy mirrors.
         $downloadUrls = @($downloadUrl)
         if ($env:INTELLECT_CN -eq "1" -or $env:GITHUB_MIRROR) {
-            # Prepend mirror(s) so they are tried first when INTELLECT_CN is set
+            # China network: prepend mirror(s) so they are tried first.
+            # Skipped for overseas users to avoid 300s timeout per China
+            # mirror when GitHub is temporarily unreachable.
             $mirrors = @()
             if ($env:GITHUB_MIRROR) { $mirrors += $env:GITHUB_MIRROR.TrimEnd("/") }
             $mirrors += @(
@@ -582,14 +584,6 @@ function Install-Git {
             foreach ($m in $mirrors) {
                 $downloadUrls = @("$m/$downloadUrl") + $downloadUrls
             }
-        } else {
-            # Even without INTELLECT_CN, append mirrors as fallbacks so a
-            # transient DNS failure on the official URL can still recover.
-            $downloadUrls += @(
-                "https://mirror.ghproxy.com/$downloadUrl",
-                "https://gh-proxy.com/$downloadUrl",
-                "https://ghfast.top/$downloadUrl"
-            )
         }
 
         Write-Info "Downloading $assetName (Git for Windows $gitVerTag)..."
@@ -2815,7 +2809,8 @@ function Test-Prerequisites {
             Source  = "github.com"
             Manual  = @(
                 "  Download: https://git-scm.com/download/win",
-                "  Or:       winget install Git.Git"
+                "  Or:       winget install Git.Git",
+                "  China:    set INTELLECT_CN=1 to enable mirror fallback"
             )
         }
     }
