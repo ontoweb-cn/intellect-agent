@@ -2862,18 +2862,69 @@ function Test-Prerequisites {
         Write-Info   "Rust         - NOT FOUND   (only needed if pre-built wheel unavailable)"
     }
 
+    # --- ripgrep (optional, fast file search) ---
+    if (Get-Command rg -ErrorAction SilentlyContinue) {
+        Write-Success "ripgrep      - found"
+    } else {
+        Write-Warn   "ripgrep      - NOT FOUND   (optional, for faster file search)"
+        $missing += @{
+            Name    = "ripgrep"
+            Size    = "~5MB"
+            Source  = "winget / GitHub"
+            Manual  = @(
+                "  winget install BurntSushi.ripgrep.MSVC",
+                "  Or: scoop install ripgrep",
+                "  Or: https://github.com/BurntSushi/ripgrep/releases"
+            )
+        }
+    }
+
+    # --- ffmpeg (optional, TTS voice messages) ---
+    if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+        Write-Success "ffmpeg       - found"
+    } else {
+        Write-Warn   "ffmpeg       - NOT FOUND   (optional, for TTS voice messages)"
+        $missing += @{
+            Name    = "ffmpeg"
+            Size    = "~80MB"
+            Source  = "winget / GitHub"
+            Manual  = @(
+                "  winget install Gyan.FFmpeg",
+                "  Or: scoop install ffmpeg",
+                "  Or: https://github.com/BtbN/FFmpeg-Builds/releases"
+            )
+        }
+    }
+
     # --- Summary & prompt ---
     if ($missing.Count -eq 0) {
         Write-Success "All prerequisites found"
         return
     }
 
+    # Separate required vs optional
+    $requiredNames = @("Git", "Node.js")
+    $required = @($missing | Where-Object { $requiredNames -contains $_.Name })
+    $optional = @($missing | Where-Object { $requiredNames -notcontains $_.Name })
+
     Write-Host ""
-    Write-Warn "$($missing.Count) tool(s) missing that will be auto-downloaded."
-    foreach ($m in $missing) {
-        Write-Host "  $($m.Name) ($($m.Size)) from $($m.Source)" -ForegroundColor Yellow
-        foreach ($line in $m.Manual) {
-            Write-Host $line -ForegroundColor DarkGray
+    if ($required.Count -gt 0) {
+        Write-Warn "$($required.Count) required tool(s) missing that will be auto-downloaded:"
+        foreach ($m in $required) {
+            Write-Host "  $($m.Name) ($($m.Size)) from $($m.Source)" -ForegroundColor Yellow
+            foreach ($line in $m.Manual) {
+                Write-Host $line -ForegroundColor DarkGray
+            }
+        }
+    }
+    if ($optional.Count -gt 0) {
+        Write-Host ""
+        Write-Info "$($optional.Count) optional tool(s) missing (not required to run Intellect):"
+        foreach ($m in $optional) {
+            Write-Host "  $($m.Name) ($($m.Size)) from $($m.Source)" -ForegroundColor DarkYellow
+            foreach ($line in $m.Manual) {
+                Write-Host $line -ForegroundColor DarkGray
+            }
         }
     }
     Write-Host ""
@@ -2883,16 +2934,19 @@ function Test-Prerequisites {
         return
     }
 
-    Write-Host "Auto-downloading may take 5-10 minutes on slow connections." -ForegroundColor Yellow
-    Write-Host ""
-    $response = Read-Host "Continue with auto-download? [Y/n]"
-    if ($response -match '^[Nn]') {
+    if ($required.Count -gt 0) {
+        Write-Host "Auto-downloading required tools may take 5-10 minutes on slow connections." -ForegroundColor Yellow
+        Write-Host "You can abort, install them manually, then re-run this script." -ForegroundColor Yellow
         Write-Host ""
-        Write-Info "Installation aborted. Install the missing tools listed above, then re-run:"
-        Write-Host ""
-        Write-Host "  iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)" -ForegroundColor Cyan
-        Write-Host ""
-        exit 0
+        $response = Read-Host "Continue with auto-download? [Y/n]"
+        if ($response -match '^[Nn]') {
+            Write-Host ""
+            Write-Info "Installation aborted. Install the missing tools listed above, then re-run:"
+            Write-Host ""
+            Write-Host "  iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scripts/install.ps1)" -ForegroundColor Cyan
+            Write-Host ""
+            exit 0
+        }
     }
 }
 
