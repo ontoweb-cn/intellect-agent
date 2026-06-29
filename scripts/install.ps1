@@ -39,7 +39,13 @@ param(
 
     # --- Ensure mode (dep_ensure.py entry point) ---
     [string]$Ensure = "",
-    [switch]$PostInstall
+    [switch]$PostInstall,
+
+    # --- Skip optional tools ---
+    # When set, skips auto-installation of non-blocking tools (ripgrep,
+    # ffmpeg, Node.js, agent-browser, messaging platform SDKs).
+    # Core tools (uv, Python, Git, venv, dependencies) are always installed.
+    [switch]$SkipOptional
 )
 
 $ErrorActionPreference = "Stop"
@@ -2595,18 +2601,18 @@ function Write-Completion {
 # stages; ``NeedsUserInput`` tells UIs "this stage prompts -- either skip it
 # or arrange to provide answers another way."
 $InstallStages = @(
-    @{ Name = "uv";               Title = "Installing uv package manager";        Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Uv" }
-    @{ Name = "python";           Title = "Verifying Python $PythonVersion";      Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Python" }
-    @{ Name = "git";              Title = "Installing Git";                       Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Git" }
-    @{ Name = "node";             Title = "Detecting Node.js";                    Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Node" }
-    @{ Name = "system-packages";  Title = "Installing ripgrep and ffmpeg";        Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-SystemPackages" }
-    @{ Name = "repository";       Title = "Cloning Intellect repository";            Category = "install";      NeedsUserInput = $false; Worker = "Stage-Repository" }
-    @{ Name = "venv";             Title = "Creating Python virtual environment";  Category = "install";      NeedsUserInput = $false; Worker = "Stage-Venv" }
-    @{ Name = "dependencies";     Title = "Installing Python dependencies";       Category = "install";      NeedsUserInput = $false; Worker = "Stage-Dependencies" }
-    @{ Name = "node-deps";        Title = "Installing Node.js dependencies";      Category = "install";      NeedsUserInput = $false; Worker = "Stage-NodeDeps" }
-    @{ Name = "path";             Title = "Adding Intellect to PATH";                Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-Path" }
-    @{ Name = "config-templates"; Title = "Writing configuration templates";      Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-ConfigTemplates" }
-    @{ Name = "platform-sdks";    Title = "Installing messaging platform SDKs";   Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-PlatformSdks" }
+    @{ Name = "uv";               Title = "Installing uv package manager";        Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Uv";             Optional = $false }
+    @{ Name = "python";           Title = "Verifying Python $PythonVersion";      Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Python";         Optional = $false }
+    @{ Name = "git";              Title = "Installing Git";                       Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Git";            Optional = $false }
+    @{ Name = "node";             Title = "Detecting Node.js";                    Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Node";           Optional = $true }
+    @{ Name = "system-packages";  Title = "Installing ripgrep and ffmpeg";        Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-SystemPackages";  Optional = $true }
+    @{ Name = "repository";       Title = "Cloning Intellect repository";            Category = "install";      NeedsUserInput = $false; Worker = "Stage-Repository";     Optional = $false }
+    @{ Name = "venv";             Title = "Creating Python virtual environment";  Category = "install";      NeedsUserInput = $false; Worker = "Stage-Venv";           Optional = $false }
+    @{ Name = "dependencies";     Title = "Installing Python dependencies";       Category = "install";      NeedsUserInput = $false; Worker = "Stage-Dependencies";   Optional = $false }
+    @{ Name = "node-deps";        Title = "Installing Node.js dependencies";      Category = "install";      NeedsUserInput = $false; Worker = "Stage-NodeDeps";       Optional = $true }
+    @{ Name = "path";             Title = "Adding Intellect to PATH";                Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-Path";           Optional = $false }
+    @{ Name = "config-templates"; Title = "Writing configuration templates";      Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-ConfigTemplates"; Optional = $false }
+    @{ Name = "platform-sdks";    Title = "Installing messaging platform SDKs";   Category = "finalize";     NeedsUserInput = $false; Worker = "Stage-PlatformSdks";   Optional = $true }
     # Interactive stages.  In non-interactive mode these become no-ops; the
     # caller (GUI / CI) handles the equivalent UX themselves.
     @{ Name = "configure";        Title = "Configuring API keys and models";      Category = "post-install"; NeedsUserInput = $true;  Worker = "Stage-Configure" }
@@ -2740,6 +2746,10 @@ function Invoke-Stage {
 function Invoke-AllStages {
     Step-OutOfInstallDir
     foreach ($s in $InstallStages) {
+        if ($SkipOptional -and $s.Optional) {
+            Write-Info "Skipping optional: $($s.Name) (-SkipOptional)"
+            continue
+        }
         Invoke-Stage -StageDef $s
     }
 }
@@ -2860,6 +2870,8 @@ function Test-Prerequisites {
     # --- ripgrep (optional, fast file search) ---
     if (Get-Command rg -ErrorAction SilentlyContinue) {
         Write-Success "ripgrep      - found"
+    } elseif ($SkipOptional) {
+        Write-Info   "ripgrep      - skipped (-SkipOptional)"
     } else {
         Write-Warn   "ripgrep      - NOT FOUND   (optional, for faster file search)"
         $missing += @{
@@ -2877,6 +2889,8 @@ function Test-Prerequisites {
     # --- ffmpeg (optional, TTS voice messages) ---
     if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
         Write-Success "ffmpeg       - found"
+    } elseif ($SkipOptional) {
+        Write-Info   "ffmpeg       - skipped (-SkipOptional)"
     } else {
         Write-Warn   "ffmpeg       - NOT FOUND   (optional, for TTS voice messages)"
         $missing += @{
