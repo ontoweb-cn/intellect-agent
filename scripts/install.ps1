@@ -1262,8 +1262,29 @@ function Test-MsvcLinkerAvailable {
     # This check runs BEFORE we attempt a local build so we can surface a
     # clear, actionable message instead of a cryptic cargo stack trace.
 
-    # 1. link.exe directly on PATH (e.g. Developer Command Prompt session)
-    if (Get-Command link.exe -ErrorAction SilentlyContinue) { return $true }
+    # Helper: check if a link.exe path is the MSVC linker (not Git Bash's
+    # Unix `link` which lives in Git\usr\bin\).
+    function _IsMsvcLinker {
+        param([string]$LinkPath)
+        if (-not $LinkPath) { return $false }
+        # Git for Windows ships Unix `link` in <Git>\usr\bin\link.exe
+        if ($LinkPath -match "\\Git\\usr\\bin\\") { return $false }
+        # MSVC link.exe lives under Visual Studio or Build Tools paths
+        if ($LinkPath -match "\\Microsoft Visual Studio\\" -or
+            $LinkPath -match "\\VC\\Tools\\" -or
+            $LinkPath -match "\\MSVC\\") { return $true }
+        # Unknown path — run it to check.  MSVC link.exe prints usage with
+        # "Microsoft (R)" prefix; Unix link prints "Usage: link ...".
+        try {
+            $out = & $LinkPath 2>&1 | Select-Object -First 1
+            if ($out -match "Microsoft") { return $true }
+        } catch {}
+        return $false
+    }
+
+    # 1. link.exe directly on PATH — but verify it's MSVC, not Git's Unix link
+    $linkCmd = Get-Command link.exe -ErrorAction SilentlyContinue
+    if ($linkCmd -and (_IsMsvcLinker $linkCmd.Source)) { return $true }
 
     # 2. The active toolchain is GNU — uses MinGW linker, not MSVC
     if (Get-Command rustup -ErrorAction SilentlyContinue) {
@@ -1283,7 +1304,8 @@ function Test-MsvcLinkerAvailable {
             # have them on PATH yet.  Refresh PATH from the registry.
             $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
                         [Environment]::GetEnvironmentVariable("Path", "User")
-            if (Get-Command link.exe -ErrorAction SilentlyContinue) { return $true }
+            $linkCmd = Get-Command link.exe -ErrorAction SilentlyContinue
+            if ($linkCmd -and (_IsMsvcLinker $linkCmd.Source)) { return $true }
         }
     }
 
