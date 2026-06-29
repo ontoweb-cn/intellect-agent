@@ -1444,17 +1444,51 @@ else:
 
 function Install-RustExtensionLocal {
     param([string]$PythonExe)
+
+    # Helper: refresh PATH from registry and also ensure ~/.cargo/bin is
+    # visible (rustup puts all binaries there after `rustup default`).
+    function _RefreshRustPath {
+        $env:Path = "$env:USERPROFILE\.cargo\bin;" +
+            [Environment]::GetEnvironmentVariable("Path", "User") + ";" +
+            [Environment]::GetEnvironmentVariable("Path", "Machine")
+    }
+
+    # Ensure rustc is available.  rustup can be installed without a default
+    # toolchain (e.g. winget install Rustlang.Rustup only installs the
+    # manager).  cargo.exe may exist but rustc won't, causing maturin to
+    # fail with "rustup could not choose a version of rustc to run".
+    if (Get-Command rustup -ErrorAction SilentlyContinue) {
+        $hasRustc = $false
+        try {
+            $prevEAP = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            $ver = & rustc --version 2>&1
+            $hasRustc = ($LASTEXITCODE -eq 0) -and ($ver -match "rustc")
+            $ErrorActionPreference = $prevEAP
+        } catch {
+            if ($prevEAP) { $ErrorActionPreference = $prevEAP }
+        }
+        if (-not $hasRustc) {
+            Write-Info "rustup found but no default toolchain. Running 'rustup default stable'..."
+            $env:RUSTUP_DIST_SERVER = "https://mirrors.tuna.tsinghua.edu.cn/rustup"
+            $env:RUSTUP_UPDATE_ROOT = "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup"
+            $prevEAP = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            & rustup default stable 2>&1 | Out-Null
+            $ErrorActionPreference = $prevEAP
+            _RefreshRustPath
+            if (Get-Command cargo -ErrorAction SilentlyContinue) {
+                Write-Success "Rust toolchain ready ($(cargo --version))"
+            } else {
+                Write-Warn "rustup default stable ran but cargo still not found"
+                return $false
+            }
+        }
+    }
+
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
         Write-Info "Rust toolchain not found. Attempting auto-install..."
         $rustInstalled = $false
-
-        # Helper: refresh PATH from registry and also ensure ~/.cargo/bin is
-        # visible (rustup puts all binaries there after `rustup default`).
-        function _RefreshRustPath {
-            $env:Path = "$env:USERPROFILE\.cargo\bin;" +
-                [Environment]::GetEnvironmentVariable("Path", "User") + ";" +
-                [Environment]::GetEnvironmentVariable("Path", "Machine")
-        }
 
         # --- winget (modern Windows, no UAC prompt for user-scoped installs) ---
         if (-not $rustInstalled -and (Get-Command winget -ErrorAction SilentlyContinue)) {
