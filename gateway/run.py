@@ -914,6 +914,56 @@ from gateway.platform_handlers import GatewayPlatformHandlers  # noqa: E402
 
 from gateway.infrastructure_handlers import GatewayInfrastructureHandlers  # noqa: E402
 
+
+def _bootstrap_gateway_mixins() -> None:
+    """Inject run.py module symbols into extracted gateway mixin modules.
+
+    The handler mixins were split out of run.py but still reference names
+    that previously lived in this module's scope.  Runtime method lookup does
+    not inherit those imports via MRO, so we copy the live run.py namespace
+    into each mixin module before GatewayRunner starts handling traffic.
+    """
+    import gateway.agent_runner as _agent_runner
+    import gateway.command_handlers as _command_handlers
+    import gateway.config_helpers as _config_helpers
+    import gateway.helpers as _helpers
+    import gateway.infrastructure_handlers as _infrastructure_handlers
+    import gateway.message_helpers as _message_helpers
+    import gateway.platform_handlers as _platform_handlers
+    import gateway.restart as _restart
+    import gateway.session as _session
+    import gateway.skill_session_helpers as _skill_helpers
+    import gateway.platforms.base as _platforms_base
+
+    _exports: dict[str, object] = {}
+    for _src in (
+        globals(),
+        _config_helpers.__dict__,
+        _helpers.__dict__,
+        _message_helpers.__dict__,
+        _skill_helpers.__dict__,
+        _restart.__dict__,
+        _session.__dict__,
+        _platforms_base.__dict__,
+    ):
+        for name, value in _src.items():
+            if name.startswith("__"):
+                continue
+            _exports.setdefault(name, value)
+
+    for _mod in (
+        _agent_runner,
+        _command_handlers,
+        _infrastructure_handlers,
+        _platform_handlers,
+    ):
+        for name, value in _exports.items():
+            _mod.__dict__.setdefault(name, value)
+
+
+_bootstrap_gateway_mixins()
+
+
 class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformHandlers, GatewayInfrastructureHandlers):
 
     """
