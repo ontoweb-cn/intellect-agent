@@ -48,6 +48,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+MAX_BATCH_OPERATIONS = 64
+
 # Where memory files live — resolved dynamically so profile overrides
 # (INTELLECT_HOME env var changes) are always respected.  The old module-level
 # constant was cached at import time and could go stale if a profile switch
@@ -478,6 +480,219 @@ class MemoryStore:
 
         return self._success_response(target, "Entry removed.")
 
+    @staticmethod
+    def _simulate_add(entries: List[str], content: str, limit: int) -> tuple[List[str], Optional[Dict[str, Any]]]:
+        content = content.strip()
+        if not content:
+            return entries, {"success": False, "error": "Content cannot be empty."}
+        scan_error = _scan_memory_content(content)
+        if scan_error:
+            return entries, {"success": False, "error": scan_error}
+        if content in entries:
+            return entries, {"success": False, "error": "Entry already exists (no duplicate added)."}
+        new_entries = entries + [content]
+        new_total = len(ENTRY_DELIMITER.join(new_entries))
+        if new_total > limit:
+            current = len(ENTRY_DELIMITER.join(entries)) if entries else 0
+            return entries, {
+                "success": False,
+                "error": (
+                    f"Memory at {current:,}/{limit:,} chars. "
+                    f"Adding this entry ({len(content)} chars) would exceed the limit. "
+                    f"Replace or remove existing entries first."
+                ),
+            }
+        return new_entries, None
+
+    @staticmethod
+    def _simulate_replace(
+        entries: List[str], old_text: str, new_content: str, limit: int,
+    ) -> tuple[List[str], Optional[Dict[str, Any]]]:
+        old_text = old_text.strip()
+        new_content = new_content.strip()
+        if not old_text:
+            return entries, {"success": False, "error": "old_text cannot be empty."}
+        if not new_content:
+            return entries, {
+                "success": False,
+                "error": "new_content cannot be empty. Use 'remove' to delete entries.",
+            }
+        scan_error = _scan_memory_content(new_content)
+        if scan_error:
+            return entries, {"success": False, "error": scan_error}
+        matches = [(i, e) for i, e in enumerate(entries) if old_text in e]
+        if not matches:
+            return entries, {"success": False, "error": f"No entry matched '{old_text}'."}
+        if len(matches) > 1:
+            unique_texts = {e for _, e in matches}
+            if len(unique_texts) > 1:
+                previews = [e[:80] + ("..." if len(e) > 80 else "") for _, e in matches]
+                return entries, {
+                    "success": False,
+                    "error": f"Multiple entries matched '{old_text}'. Be more specific.",
+                    "matches": previews,
+                }
+        idx = matches[0][0]
+        test_entries = entries.copy()
+        test_entries[idx] = new_content
+        new_total = len(ENTRY_DELIMITER.join(test_entries))
+        if new_total > limit:
+            return entries, {
+                "success": False,
+                "error": (
+                    f"Replacement would put memory at {new_total:,}/{limit:,} chars. "
+                    f"Shorten the new content or remove other entries first."
+                ),
+            }
+        return test_entries, None
+
+    @staticmethod
+    def _simulate_remove(entries: List[str], old_text: str) -> tuple[List[str], Optional[Dict[str, Any]]]:
+        old_text = old_text.strip()
+        if not old_text:
+            return entries, {"success": False, "error": "old_text cannot be empty."}
+        matches = [(i, e) for i, e in enumerate(entries) if old_text in e]
+        if not matches:
+            return entries, {"success": False, "error": f"No entry matched '{old_text}'."}
+        if len(matches) > 1:
+            unique_texts = {e for _, e in matches}
+            if len(unique_texts) > 1:
+                previews = [e[:80] + ("..." if len(e) > 80 else "") for _, e in matches]
+                return entries, {
+                    "success": False,
+                    "error": f"Multiple entries matched '{old_text}'. Be more specific.",
+                    "matches": previews,
+                }
+        test_entries = entries.copy()
+        test_entries.pop(matches[0][0])
+        return test_entries, None
+
+    def apply_batch(self, operations: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Apply multiple memory operations atomically (all succeed or none persist)."""
+        if not operations:
+            return {"success": False, "error": "operations cannot be empty."}
+        if len(operations) > MAX_BATCH_OPERATIONS:
+            return {
+                "success": False,
+                "error": f"Too many operations (max {MAX_BATCH_OPERATIONS}).",
+            }
+
+        parsed: List[Dict[str, Any]] = []
+        for index, raw in enumerate(operations):
+            if not isinstance(raw, dict):
+                return {
+                    "success": False,
+                    "error": f"Operation {index} must be an object.",
+                }
+            action = (raw.get("action") or "").strip()
+            target = (raw.get("target") or "memory").strip()
+            if target not in {"memory", "user"}:
+                return {
+                    "success": False,
+                    "error": f"Operation {index}: invalid target '{target}'. Use 'memory' or 'user'.",
+                }
+            if action not in {"add", "replace", "remove"}:
+                return {
+                    "success": False,
+                    "error": f"Operation {index}: unknown action '{action}'.",
+                }
+            parsed.append({
+                "index": index,
+                "action": action,
+                "target": target,
+                "content": raw.get("content"),
+                "old_text": raw.get("old_text"),
+            })
+
+        targets = sorted({op["target"] for op in parsed}, key=lambda t: (0 if t == "memory" else 1))
+
+        from contextlib import ExitStack
+
+        with ExitStack() as stack:
+            for target in targets:
+                stack.enter_context(self._file_lock(self._path_for(target)))
+
+            for target in targets:
+                bak = self._reload_target(target)
+                if bak:
+                    return _drift_error(self._path_for(target), bak)
+
+            working: Dict[str, List[str]] = {
+                t: list(self._entries_for(t)) for t in targets
+            }
+            results: List[Dict[str, Any]] = []
+
+            for op in parsed:
+                target = op["target"]
+                entries = working[target]
+                limit = self._char_limit(target)
+                err: Optional[Dict[str, Any]] = None
+
+                if op["action"] == "add":
+                    if not op.get("content"):
+                        err = {"success": False, "error": "Content is required for 'add' action."}
+                        new_entries = entries
+                    else:
+                        new_entries, err = self._simulate_add(entries, op["content"], limit)
+                elif op["action"] == "replace":
+                    if not op.get("old_text"):
+                        err = {"success": False, "error": "old_text is required for 'replace' action."}
+                    elif not op.get("content"):
+                        err = {"success": False, "error": "content is required for 'replace' action."}
+                    else:
+                        new_entries, err = self._simulate_replace(
+                            entries, op["old_text"], op["content"], limit,
+                        )
+                else:
+                    if not op.get("old_text"):
+                        err = {"success": False, "error": "old_text is required for 'remove' action."}
+                    else:
+                        new_entries, err = self._simulate_remove(entries, op["old_text"])
+
+                if err:
+                    err["index"] = op["index"]
+                    err["action"] = op["action"]
+                    err["target"] = target
+                    return {
+                        "success": False,
+                        "error": err.get("error", "Batch operation failed."),
+                        "failed_at": op["index"],
+                        "results": results,
+                        **{k: v for k, v in err.items() if k not in {"success", "error"}},
+                    }
+
+                working[target] = new_entries
+                results.append({
+                    "index": op["index"],
+                    "action": op["action"],
+                    "target": target,
+                    "success": True,
+                    "message": f"{op['action']} on {target} ok",
+                })
+
+            for target in targets:
+                self._set_entries(target, working[target])
+                self.save_to_disk(target)
+
+        summary = f"{len(results)}/{len(parsed)} operations applied"
+        final: Dict[str, Any] = {
+            "success": True,
+            "results": results,
+            "summary": summary,
+            "message": summary,
+        }
+        if len(targets) == 1:
+            final.update(self._success_response(targets[0], summary))
+        else:
+            final["targets"] = {
+                t: {
+                    "entries": self._entries_for(t),
+                    "usage": self._success_response(t)["usage"],
+                }
+                for t in targets
+            }
+        return final
+
     def format_for_system_prompt(self, target: str) -> Optional[str]:
         """
         Return the frozen snapshot for system prompt injection.
@@ -638,10 +853,11 @@ class MemoryStore:
 
 
 def memory_tool(
-    action: str,
+    action: str = None,
     target: str = "memory",
     content: str = None,
     old_text: str = None,
+    operations: Optional[List[Dict[str, Any]]] = None,
     store: Optional[MemoryStore] = None,
 ) -> str:
     """
@@ -651,6 +867,20 @@ def memory_tool(
     """
     if store is None:
         return tool_error("Memory is not available. It may be disabled in config or this environment.", success=False)
+
+    if operations is not None:
+        if action:
+            return tool_error(
+                "Provide either 'operations' or single-action fields (action/target), not both.",
+                success=False,
+            )
+        if not isinstance(operations, list):
+            return tool_error("'operations' must be an array.", success=False)
+        result = store.apply_batch(operations)
+        return json.dumps(result, ensure_ascii=False)
+
+    if not action:
+        return tool_error("Either 'operations' or 'action' is required.", success=False)
 
     if target not in {"memory", "user"}:
         return tool_error(f"Invalid target '{target}'. Use 'memory' or 'user'.", success=False)
@@ -710,15 +940,42 @@ MEMORY_SCHEMA = {
         "- 'memory': your notes -- environment facts, project conventions, tool quirks, lessons learned\n\n"
         "ACTIONS: add (new entry), replace (update existing -- old_text identifies it), "
         "remove (delete -- old_text identifies it).\n\n"
+        "BATCH: pass ``operations`` as an array of {action, target, content?, old_text?} "
+        "objects to apply multiple changes atomically (all succeed or none are written). "
+        "Do not combine ``operations`` with top-level ``action``.\n\n"
         "SKIP: trivial/obvious info, things easily re-discovered, raw data dumps, and temporary task state."
     ),
     "parameters": {
         "type": "object",
         "properties": {
+            "operations": {
+                "type": "array",
+                "description": (
+                    "Batch of memory operations applied atomically. Each item needs "
+                    "action + target; content/old_text per action. Mutually exclusive "
+                    "with top-level action."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["add", "replace", "remove"],
+                        },
+                        "target": {
+                            "type": "string",
+                            "enum": ["memory", "user"],
+                        },
+                        "content": {"type": "string"},
+                        "old_text": {"type": "string"},
+                    },
+                    "required": ["action", "target"],
+                },
+            },
             "action": {
                 "type": "string",
                 "enum": ["add", "replace", "remove"],
-                "description": "The action to perform."
+                "description": "The action to perform (single-op mode). Omit when using operations.",
             },
             "target": {
                 "type": "string",
@@ -734,7 +991,7 @@ MEMORY_SCHEMA = {
                 "description": "Short unique substring identifying the entry to replace or remove."
             },
         },
-        "required": ["action", "target"],
+        "required": [],
     },
 }
 
@@ -747,10 +1004,11 @@ registry.register(
     toolset="memory",
     schema=MEMORY_SCHEMA,
     handler=lambda args, **kw: memory_tool(
-        action=args.get("action", ""),
+        action=args.get("action"),
         target=args.get("target", "memory"),
         content=args.get("content"),
         old_text=args.get("old_text"),
+        operations=args.get("operations"),
         store=kw.get("store")),
     check_fn=check_memory_requirements,
     emoji="🧠",

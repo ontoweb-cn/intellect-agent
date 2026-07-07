@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from agent.image_gen_provider import (
@@ -304,6 +305,133 @@ class OpenAIImageGenProvider(ImageGenProvider):
             provider="openai",
             extra=extra,
         )
+
+    @property
+    def supports_edit(self) -> bool:
+        return True
+
+    def edit(
+        self,
+        prompt: str,
+        source_image: str,
+        aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        prompt = (prompt or "").strip()
+        aspect = resolve_aspect_ratio(aspect_ratio)
+
+        if not prompt:
+            return error_response(
+                error="Prompt is required and must be a non-empty string",
+                error_type="invalid_argument",
+                provider="openai",
+                aspect_ratio=aspect,
+            )
+
+        path_err = _validate_local_image_path(source_image)
+        if path_err:
+            return path_err
+
+        if not os.environ.get("OPENAI_API_KEY"):
+            return error_response(
+                error="OPENAI_API_KEY not set.",
+                error_type="auth_required",
+                provider="openai",
+                aspect_ratio=aspect,
+            )
+
+        try:
+            import openai
+        except ImportError:
+            return error_response(
+                error="openai Python package not installed (pip install openai)",
+                error_type="missing_dependency",
+                provider="openai",
+                aspect_ratio=aspect,
+            )
+
+        tier_id, meta = _resolve_model()
+        size = _SIZES.get(aspect, _SIZES["square"])
+
+        try:
+            client = openai.OpenAI()
+            with open(source_image, "rb") as img_file:
+                response = client.images.edit(
+                    model=API_MODEL,
+                    image=img_file,
+                    prompt=prompt,
+                    size=size,
+                    n=1,
+                    quality=meta["quality"],
+                )
+        except Exception as exc:
+            logger.debug("OpenAI image edit failed", exc_info=True)
+            return error_response(
+                error=f"OpenAI image edit failed: {exc}",
+                error_type="api_error",
+                provider="openai",
+                model=tier_id,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        data = getattr(response, "data", None) or []
+        if not data:
+            return error_response(
+                error="OpenAI returned no image data",
+                error_type="empty_response",
+                provider="openai",
+                model=tier_id,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        first = data[0]
+        b64 = getattr(first, "b64_json", None)
+        if not b64:
+            return error_response(
+                error="OpenAI edit response contained no b64_json",
+                error_type="empty_response",
+                provider="openai",
+                model=tier_id,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        try:
+            saved_path = save_b64_image(b64, prefix=f"openai_edit_{tier_id}")
+        except Exception as exc:
+            return error_response(
+                error=f"Could not save edited image to cache: {exc}",
+                error_type="io_error",
+                provider="openai",
+                model=tier_id,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        return success_response(
+            image=str(saved_path),
+            model=tier_id,
+            prompt=prompt,
+            aspect_ratio=aspect,
+            provider="openai",
+            extra={"size": size, "quality": meta["quality"], "source_image": source_image},
+        )
+
+
+def _validate_local_image_path(source_image: str) -> Optional[Dict[str, Any]]:
+    """Return an error_response dict when *source_image* path is invalid."""
+    from tools.path_security import validate_local_image_file
+
+    _path, error, error_type = validate_local_image_file(source_image)
+    if error:
+        return error_response(
+            error=error,
+            error_type=error_type or "invalid_argument",
+            provider="openai",
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------

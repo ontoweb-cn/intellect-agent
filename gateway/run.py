@@ -835,6 +835,8 @@ from gateway.config_helpers import _load_gateway_config as _load_gateway_config 
 from gateway.config_helpers import _load_gateway_runtime_config as _load_gateway_runtime_config  # noqa: E402
 
 from gateway.config_helpers import _resolve_gateway_model as _resolve_gateway_model  # noqa: E402
+from gateway.config_helpers import _resolve_config_model_override as _resolve_config_model_override  # noqa: E402
+from gateway.config_helpers import _apply_model_override_fields as _apply_model_override_fields  # noqa: E402
 
 # Intellect binary resolution — extracted to gateway.config_helpers
 

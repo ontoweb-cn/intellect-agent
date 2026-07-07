@@ -728,26 +728,46 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 agent._vprint(f"  {_get_cute_tool_message_impl('session_search', function_args, tool_duration, result=function_result)}")
         elif function_name == "memory":
             target = function_args.get("target", "memory")
+            batch_ops = function_args.get("operations")
             from tools.memory_tool import memory_tool as _memory_tool
             function_result = _memory_tool(
                 action=function_args.get("action"),
                 target=target,
                 content=function_args.get("content"),
                 old_text=function_args.get("old_text"),
+                operations=batch_ops,
                 store=agent._memory_store,
             )
             # Bridge: notify external memory provider of built-in memory writes
-            if agent._memory_manager and function_args.get("action") in {"add", "replace"}:
+            if agent._memory_manager:
                 try:
-                    agent._memory_manager.on_memory_write(
-                        function_args.get("action", ""),
-                        target,
-                        function_args.get("content", ""),
-                        metadata=agent._build_memory_write_metadata(
-                            task_id=effective_task_id,
-                            tool_call_id=getattr(tool_call, "id", None),
-                        ),
-                    )
+                    if batch_ops:
+                        parsed = json.loads(function_result)
+                        if parsed.get("success"):
+                            meta = agent._build_memory_write_metadata(
+                                task_id=effective_task_id,
+                                tool_call_id=getattr(tool_call, "id", None),
+                            )
+                            for op in batch_ops:
+                                if not isinstance(op, dict):
+                                    continue
+                                if op.get("action") in {"add", "replace"}:
+                                    agent._memory_manager.on_memory_write(
+                                        op.get("action", ""),
+                                        op.get("target", "memory"),
+                                        op.get("content", ""),
+                                        metadata=meta,
+                                    )
+                    elif function_args.get("action") in {"add", "replace"}:
+                        agent._memory_manager.on_memory_write(
+                            function_args.get("action", ""),
+                            target,
+                            function_args.get("content", ""),
+                            metadata=agent._build_memory_write_metadata(
+                                task_id=effective_task_id,
+                                tool_call_id=getattr(tool_call, "id", None),
+                            ),
+                        )
                 except Exception:
                     logger.debug('non-critical operation failed', exc_info=True)
             tool_duration = time.time() - tool_start_time
