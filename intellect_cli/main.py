@@ -8870,10 +8870,10 @@ def _detect_concurrent_intellect_instances(
 
     Windows blocks DELETE/REPLACE on a running .exe — and even RENAME on the
     same .exe when another process opened it without ``FILE_SHARE_DELETE``.
-    The Intellect Desktop Electron app spawns ``intellect.EXE`` as a backend child,
-    so during ``intellect update`` the user-invoked process and the desktop's
-    child both hold the same file. The quarantine rename then fails with
-    ``[WinError 32]`` and uv inherits the lock.
+    Another ``intellect.exe`` child process (e.g. gateway, WebUI daemon, or
+    a future GUI wrapper) can hold the same shim open. During ``intellect update``
+    the user-invoked process and such a child may both reference the same file.
+    The quarantine rename then fails with ``[WinError 32]`` and uv inherits the lock.
 
     This helper enumerates processes whose ``exe`` matches one of the venv's
     shims (``intellect.exe`` / ``intellect-gateway.exe``) and returns ``(pid,
@@ -8920,8 +8920,8 @@ def _detect_concurrent_intellect_instances(
     #      across session/elevation boundaries), leaving the launcher shim in
     #      the candidate set and re-triggering the false positive.
     #   2. Only exclude ancestors whose exe is itself a shim. A genuine second
-    #      intellect.exe sitting *under* a non-Intellect parent (e.g. an Intellect
-    #      Desktop backend child) must still be flagged, so we don't blanket-
+    #      intellect.exe child under a non-Intellect parent (e.g. a GUI wrapper
+    #      or gateway backend) must still be flagged, so we don't blanket-
     #      exclude unrelated ancestors like the shell or terminal.
     # Broad ``except Exception`` guards against partially-stubbed psutil in
     # unit tests; this helper is documented as "never raises".
@@ -8992,8 +8992,9 @@ def _format_concurrent_instances_message(
     lines.append(f"  Updating now would fail to overwrite {shim} because")
     lines.append("  Windows blocks REPLACE on a running executable.")
     lines.append("")
-    lines.append("  Close Intellect Desktop, exit any open `intellect` REPLs, and")
-    lines.append("  stop the gateway (`intellect gateway stop`) before retrying.")
+    lines.append("  Close other `intellect` processes (REPLs, gateway, WebUI")
+    lines.append("  daemon), and stop the gateway (`intellect gateway stop`)")
+    lines.append("  before retrying.")
     lines.append("")
     if matches:
         pid_args = " ".join(f"/PID {pid}" for pid, _ in matches)
@@ -9023,8 +9024,8 @@ def _quarantine_running_intellect_exe(
 
     Rename can still fail when *another* process has opened the .exe without
     ``FILE_SHARE_DELETE`` — typically AV real-time scanners with transient
-    handles (recovers in <1s), or the Intellect Desktop backend child process
-    (won't recover until the user closes it). We mitigate:
+    handles (recovers in <1s), or another ``intellect.exe`` child process
+    (e.g. gateway or WebUI daemon — won't recover until the user closes it). We mitigate:
 
     1. Retry up to ``max_attempts`` times with exponential backoff
        (100/250/500/1000 ms). Handles the AV-scanner case.
@@ -9035,7 +9036,7 @@ def _quarantine_running_intellect_exe(
        update can complete; the user just needs to reboot to fully unload
        the stale image.
     3. Print a clear warning naming the most likely culprit (running
-       Intellect Desktop / gateway / REPL) and pointing to ``--force``.
+       gateway / WebUI / REPL) and pointing to ``--force``.
 
     Returns the list of (original, quarantined) pairs so the caller can roll
     back if the install itself fails before uv writes a replacement. Pairs
@@ -9102,8 +9103,8 @@ def _quarantine_running_intellect_exe(
             f"another process is holding it open)."
         )
         print(
-            "    Close Intellect Desktop, exit other `intellect` REPLs, stop the "
-            "gateway, or pause AV scanning, then re-run `intellect update`."
+            "    Close other `intellect` REPLs, stop the gateway or WebUI daemon, "
+            "or pause AV scanning, then re-run `intellect update`."
         )
 
     return moved

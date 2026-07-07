@@ -1,4 +1,5 @@
 {
   "tests/intellect_cli/test_api_key_secrets.py": 0.31,
-  "tests/intellect_cli/test_model_provider_persistence.py": 1.067
+  "tests/intellect_cli/test_model_provider_persistence.py": 1.067,
+  "tests/intellect_cli/test_update_concurrent_quarantine.py": 0.52
 }

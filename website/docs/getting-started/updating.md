@@ -83,7 +83,7 @@ updates:
 
 ### Windows: another `intellect.exe` is running
 
-On Windows, `intellect update` will refuse to run if it detects another `intellect.exe` process holding the venv's entry-point executable open — most commonly the Intellect Desktop app's spawned backend, an open `intellect` REPL in another terminal, or a running gateway:
+On Windows, `intellect update` will refuse to run if it detects another `intellect.exe` process holding the venv's entry-point executable open — most commonly an open `intellect` REPL in another terminal, a running gateway, or the WebUI daemon:
 
 ```
 $ intellect update
@@ -93,7 +93,7 @@ $ intellect update
   Updating now would fail to overwrite ...\venv\Scripts\intellect.exe because
   Windows blocks REPLACE on a running executable.
 
-  Close Intellect Desktop, exit any open `intellect` REPLs, and
+  Close other `intellect` processes (REPLs, gateway, WebUI daemon), and
   stop the gateway (`intellect gateway stop`) before retrying.
   Override with `intellect update --force` if you've already
   confirmed those processes will not write to the venv.
