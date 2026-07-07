@@ -14,6 +14,7 @@ See also: [WebUI Documentation](../webui/) — user guide and architecture overv
 | 🔄 | 2026-07-08 | `2026-07-08-desktop-docs-correction-pr.md` | Desktop 误导文档修正 PR 清单（补丁已起草） |
 | ✅ | 2026-07-08 | `2026-07-08-intellect-desktop-feasibility-review.md` | Desktop 可行性调查（技术评审版，含「Windows 已有」更正） |
 | ✅ | 2026-07-08 | `2026-07-08-hermes-v0.16-v0.18-port-design.md` | Hermes v0.16–v0.18 功能移植设计（已评审，含评审记录） |
+| ✅ | 2026-07-08 | `2026-07-08-hermes-port-phase0-security-audit.md` | Hermes 安全轮 Phase 0 审计 + 移植记录 |
 | 🔄 | 2026-07-08 | `2026-07-08-hermes-v0.16-v0.18-port-todo.md` | Hermes 移植正式 TODO 分解（HP-001…HP-406） |
 | 🔄 | 2026-06-12 | `2026-06-12-cli-refactoring-plan.md` | cli.py 重构（进行中） |
 | 📋 | 2026-06-02 | `2026-06-02-multi-database-cache-mq-design.md` | 多数据库/缓存/MQ 架构（P1–P4 已完成，P5 TBD） |

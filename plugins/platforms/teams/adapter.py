@@ -667,7 +667,8 @@ class TeamsAdapter(BasePlatformAdapter):
 
         try:
             # Set up aiohttp app first — the bridge adapter wires SDK routes into it
-            aiohttp_app = web.Application()
+            _TEAMS_WEBHOOK_BODY_MAX_BYTES = 1_048_576  # 1 MiB — Bot Framework activities are JSON
+            aiohttp_app = web.Application(client_max_size=_TEAMS_WEBHOOK_BODY_MAX_BYTES)
             aiohttp_app.router.add_get("/health", lambda _: web.Response(text="ok"))
 
             self._app = App(
