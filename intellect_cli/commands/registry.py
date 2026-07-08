@@ -103,6 +103,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
                args_hint="[list|show <id>|cancel <id>]"),
     CommandDef("learn", "Distill session to skill (sends transcript to auxiliary LLM)", "Tools & Skills",
                args_hint="[name] | save | discard"),
+    CommandDef("journey", "Learning timeline — skills and memories over time", "Tools & Skills",
+               aliases=("memory-graph", "learning"), args_hint="[list|delete|edit]"),
     CommandDef("agents", "Show active agents and running tasks", "Session",
                aliases=("tasks",)),
     CommandDef("queue", "Queue a prompt for the next turn (doesn't interrupt)", "Session",

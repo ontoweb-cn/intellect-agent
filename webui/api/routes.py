@@ -5813,6 +5813,18 @@ def handle_get(handler, parsed) -> bool:
         return True
 
     # ── Insights / knowledge status ──
+    if parsed.path == "/api/learning/graph":
+        from api.learning import handle_learning_graph_get
+
+        return handle_learning_graph_get(handler, parsed)
+    if parsed.path == "/api/learning/node":
+        from api.learning import handle_learning_node_get
+
+        return handle_learning_node_get(handler, parsed)
+    if parsed.path == "/api/learning/frames":
+        from api.learning import handle_learning_frames_get
+
+        return handle_learning_frames_get(handler, parsed)
     if parsed.path == "/api/insights":
         return _handle_insights(handler, parsed)
     if parsed.path == "/api/analytics":
@@ -8889,9 +8901,15 @@ def handle_put(handler, parsed) -> bool:
     if parsed.path.startswith("/api/oauth/providers/"):
         from api import oauth_providers as oauth_p_api
         return oauth_p_api.handle_put(handler, parsed, body)
+    if parsed.path == "/api/mcp/servers":
+        return _handle_mcp_servers_replace(handler, body)
     if parsed.path.startswith("/api/mcp/servers/"):
         name = parsed.path[len("/api/mcp/servers/"):]
         return _handle_mcp_server_update(handler, name, body)
+    if parsed.path == "/api/learning/node":
+        from api.learning import handle_learning_node_put
+
+        return handle_learning_node_put(handler, body)
     return False
 
 
@@ -8908,6 +8926,10 @@ def handle_delete(handler, parsed) -> bool:
         if members_api.handle_delete(handler, parsed):
             return True
     body = read_body(handler)
+    if parsed.path == "/api/learning/node":
+        from api.learning import handle_learning_node_delete
+
+        return handle_learning_node_delete(handler, body)
     if parsed.path.startswith("/api/kanban/"):
         from api.kanban_bridge import handle_kanban_delete
 
@@ -15863,6 +15885,20 @@ def _strip_masked_values(submitted, existing):
         else:
             cleaned[k] = v
     return cleaned
+
+
+def _handle_mcp_servers_replace(handler, body):
+    """Replace the entire ``mcp_servers`` map (bulk editor save)."""
+    from intellect_cli.mcp_config import _replace_mcp_servers
+
+    servers = body.get("servers") if isinstance(body, dict) else None
+    if not isinstance(servers, dict):
+        return bad(handler, "servers object is required")
+    ok, issues = _replace_mcp_servers(servers)
+    if not ok:
+        return bad(handler, "; ".join(issues))
+    reload_config()
+    return j(handler, {"ok": True})
 
 
 def _handle_mcp_server_update(handler, name, body):

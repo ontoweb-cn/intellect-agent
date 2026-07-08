@@ -3737,3 +3737,30 @@ class GatewayCommandHandlers:
             self._learn_pending_drafts[session_key] = draft
         return status
 
+    async def _handle_journey_command(self, event: "MessageEvent") -> str:
+        """Gateway /journey — list-only (HP-401f)."""
+        from agent.learning_graph import build_learning_graph
+        from agent.learning_graph_render import format_date
+
+        args = (event.get_command_args() or "").strip().lower()
+        if args and args not in {"list", "ls"}:
+            return "Gateway /journey supports list only — try: /journey list"
+
+        payload = build_learning_graph()
+        nodes = sorted(payload.get("nodes", []), key=lambda n: n.get("timestamp") or 0)
+        if not nodes:
+            return (
+                "No learning yet — use /learn, the memory tool, or install hub skills; "
+                "then check again with /journey list."
+            )
+
+        lines = ["Journey (learned skills & memories):"]
+        for node in nodes[:25]:
+            glyph = "◆" if node.get("kind") == "memory" else "●"
+            date = format_date(node.get("timestamp"))
+            label = node.get("label") or node.get("id", "")
+            lines.append(f"  {glyph} {node.get('id')} — {label} ({date})")
+        if len(nodes) > 25:
+            lines.append(f"  … and {len(nodes) - 25} more (intellect journey list)")
+        return "\n".join(lines)
+

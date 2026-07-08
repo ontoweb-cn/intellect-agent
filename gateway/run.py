@@ -1102,6 +1102,8 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
 
         "learn": "_handle_learn_command",
 
+        "journey": "_handle_journey_command",
+
         "goal": "_handle_goal_command",
 
         "subgoal": "_handle_subgoal_command",
@@ -4441,6 +4443,10 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
             if _cmd_def_inner and _cmd_def_inner.name == "learn":
 
                 return await self._handle_learn_command(event)
+
+            if _cmd_def_inner and _cmd_def_inner.name == "journey":
+
+                return await self._handle_journey_command(event)
 
             # /kanban must bypass the guard. It writes to a profile-agnostic
 
