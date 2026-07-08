@@ -19,7 +19,7 @@ use crate::compression;
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-const WRITE_MAX_RETRIES: usize = 15;
+pub const WRITE_MAX_RETRIES: usize = 15;
 const WRITE_RETRY_MIN_MS: u64 = 20;
 const WRITE_RETRY_MAX_MS: u64 = 150;
 const CHECKPOINT_EVERY_N_WRITES: u64 = 50;

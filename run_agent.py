@@ -1502,16 +1502,18 @@ class AIAgent:
                 self._ensure_db_session()
             start_idx = len(conversation_history) if conversation_history else 0
             flush_from = max(start_idx, self._last_flushed_db_idx)
-            for msg in messages[flush_from:]:
+            to_flush = messages[flush_from:]
+            if not to_flush:
+                return
+
+            # HP-402: batch-append path via Rust write merge queue
+            batch_entries = []
+            for msg in to_flush:
                 role = msg.get("role", "unknown")
                 content = msg.get("content")
-                # Persist multimodal tool results as their text summary only —
-                # base64 images would bloat the session DB and aren't useful
-                # for cross-session replay.
                 if _is_multimodal_tool_result(content):
                     content = _multimodal_text_summary(content)
                 elif isinstance(content, list):
-                    # List of OpenAI-style content parts: strip images, keep text.
                     _txt = []
                     for p in content:
                         if isinstance(p, dict) and p.get("type") == "text":
@@ -1520,27 +1522,63 @@ class AIAgent:
                             _txt.append("[screenshot]")
                     content = "\n".join(_txt) if _txt else None
                 tool_calls_data = None
+                num_tool_calls = 0
                 if hasattr(msg, "tool_calls") and isinstance(msg.tool_calls, list) and msg.tool_calls:
                     tool_calls_data = [
                         {"name": tc.function.name, "arguments": tc.function.arguments}
                         for tc in msg.tool_calls
                     ]
+                    num_tool_calls = len(msg.tool_calls)
                 elif isinstance(msg.get("tool_calls"), list):
                     tool_calls_data = msg["tool_calls"]
-                self._session_db.append_message(
-                    session_id=self.session_id,
-                    role=role,
-                    content=content,
-                    tool_name=msg.get("tool_name"),
-                    tool_calls=tool_calls_data,
-                    tool_call_id=msg.get("tool_call_id"),
-                    finish_reason=msg.get("finish_reason"),
-                    reasoning=msg.get("reasoning") if role == "assistant" else None,
-                    reasoning_content=msg.get("reasoning_content") if role == "assistant" else None,
-                    reasoning_details=msg.get("reasoning_details") if role == "assistant" else None,
-                    codex_reasoning_items=msg.get("codex_reasoning_items") if role == "assistant" else None,
-                    codex_message_items=msg.get("codex_message_items") if role == "assistant" else None,
-                )
+                    num_tool_calls = len(tool_calls_data)
+                batch_entries.append({
+                    "session_id": self.session_id,
+                    "role": role,
+                    "content": content,
+                    "tool_name": msg.get("tool_name"),
+                    "tool_calls_json": json.dumps(tool_calls_data) if tool_calls_data else None,
+                    "tool_call_id": msg.get("tool_call_id"),
+                    "timestamp": msg.get("timestamp") or time.time(),
+                    "token_count": msg.get("token_count"),
+                    "finish_reason": msg.get("finish_reason"),
+                    "reasoning": msg.get("reasoning") if role == "assistant" else None,
+                    "reasoning_content": msg.get("reasoning_content") if role == "assistant" else None,
+                    "reasoning_details_json": json.dumps(msg.get("reasoning_details")) if role == "assistant" and msg.get("reasoning_details") else None,
+                    "codex_items_json": json.dumps(msg.get("codex_reasoning_items")) if role == "assistant" and msg.get("codex_reasoning_items") else None,
+                    "codex_message_items_json": json.dumps(msg.get("codex_message_items")) if role == "assistant" and msg.get("codex_message_items") else None,
+                    "platform_message_id": msg.get("platform_message_id"),
+                    "observed": msg.get("observed", False),
+                    "num_tool_calls": num_tool_calls,
+                })
+
+            # Try Rust batch path first, fall back to per-message Python path
+            _batched = False
+            try:
+                sb = self._session_db._storage_backend if hasattr(self._session_db, '_storage_backend') else None
+                if sb is not None and hasattr(sb, 'append_message_batch'):
+                    import json as _json
+                    result_json = sb.append_message_batch(_json.dumps(batch_entries))
+                    _batched = bool(result_json and result_json != "[]")
+            except Exception:
+                logger.debug("batch append_message failed, falling back to per-message", exc_info=True)
+
+            if not _batched:
+                for entry in batch_entries:
+                    self._session_db.append_message(
+                        session_id=entry["session_id"],
+                        role=entry["role"],
+                        content=entry["content"],
+                        tool_name=entry.get("tool_name"),
+                        tool_calls=json.loads(entry["tool_calls_json"]) if entry.get("tool_calls_json") else None,
+                        tool_call_id=entry.get("tool_call_id"),
+                        finish_reason=entry.get("finish_reason"),
+                        reasoning=entry.get("reasoning"),
+                        reasoning_content=entry.get("reasoning_content"),
+                        reasoning_details=json.loads(entry["reasoning_details_json"]) if entry.get("reasoning_details_json") else None,
+                        codex_reasoning_items=json.loads(entry["codex_items_json"]) if entry.get("codex_items_json") else None,
+                        codex_message_items=json.loads(entry["codex_message_items_json"]) if entry.get("codex_message_items_json") else None,
+                    )
             self._last_flushed_db_idx = len(messages)
         except Exception as e:
             logger.warning("Session DB append_message failed: %s", e)

@@ -6,6 +6,7 @@
 pub mod backend;
 pub mod blueprints;
 pub mod compression;
+pub mod merge_queue;
 pub mod connection;
 pub mod counters;
 pub mod crypto;
@@ -133,6 +134,9 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── HP-304: Automation blueprints ──────────────────────────────────
     m.add_function(wrap_pyfunction!(blueprints::validate_blueprint_yaml, m)?)?;
     m.add_function(wrap_pyfunction!(blueprints::validate_blueprint_params, m)?)?;
+
+    // ── HP-402: Write merge queue ──────────────────────────────────────
+    m.add_function(wrap_pyfunction!(merge_queue::append_message_batch_rs, m)?)?;
 
     Ok(())
 }

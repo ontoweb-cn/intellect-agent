@@ -325,5 +325,11 @@ SQLiteBackend: Any = _CORE.SQLiteBackend if _has() else None
 
 
 # Rust extension is mandatory since v0.6.2 — no fallbacks needed.
+# ── HP-402: Write merge queue ──────────────────────────────────────────────
+
+rust_append_message_batch: Callable = (
+    getattr(_CORE, "append_message_batch_rs", None) if _has() else None
+)
+
 # ensure_rust_available() is called at startup and will raise RuntimeError
 # if the native extension is missing, failing fast with a clear message.
