@@ -250,11 +250,11 @@ def interruptible_api_call(agent, api_kwargs: dict):
                     )
                 finally:
                     loop.close()
-                # Accumulate MoA's N+1 API calls on the usage tracker
+                # Accumulate MoA's N+1 API calls on the token accumulator
                 moa_calls = getattr(result["response"], "_moa_api_calls", 1) if result["response"] else 1
-                if hasattr(agent, "usage_tracker") and agent.usage_tracker is not None:
+                if hasattr(agent, "_token_acc") and agent._token_acc is not None:
                     try:
-                        agent.usage_tracker.add(0, 0, 0, 0, 0, moa_calls, 0)
+                        agent._token_acc.add(0, 0, 0, 0, 0, moa_calls, 0)
                     except Exception:
                         pass
             else:
