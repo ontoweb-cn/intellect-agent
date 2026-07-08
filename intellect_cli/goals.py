@@ -374,6 +374,7 @@ def judge_goal(
     *,
     timeout: float = DEFAULT_JUDGE_TIMEOUT,
     subgoals: Optional[List[str]] = None,
+    evidence: Optional[str] = None,
 ) -> Tuple[str, str, bool]:
     """Ask the auxiliary model whether the goal is satisfied.
 
@@ -435,6 +436,10 @@ def judge_goal(
             response=_truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
             current_time=current_time,
         )
+
+    # HP-303h: inject verification evidence into judge prompt
+    if evidence and evidence.strip():
+        prompt = evidence.strip() + "\n\n" + prompt
 
     try:
         resp = client.chat.completions.create(

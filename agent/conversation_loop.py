@@ -4216,6 +4216,15 @@ def run_conversation(
         agent, final_response, _turn_exit_reason, interrupted,
     )
 
+    # ── HP-303g: Verify-on-stop evidence prompt ────────────────────────
+    try:
+        from agent.verification_stop import apply_verification_stop_prompt
+        final_response = apply_verification_stop_prompt(
+            agent, final_response, interrupted,
+        )
+    except Exception:
+        logger.debug('non-critical operation failed', exc_info=True)
+
     _response_transformed = False
 
     # Plugin hook: transform_llm_output
