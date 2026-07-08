@@ -14898,34 +14898,12 @@ Examples:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    moa_parser.set_defaults(func=_cmd_moa)
+    try:
+        from intellect_cli.moa_cmd import register_cli as _register_moa_cli
 
-    def _cmd_moa(args: argparse.Namespace) -> int:
-        """Handle ``intellect moa`` — list presets with cost information."""
-        try:
-            from intellect_cli.moa_config import list_presets, preset_summary
-        except ImportError:
-            print("MoA config not available.")
-            return 1
-
-        presets = list_presets()
-        if not presets:
-            print("No MoA presets configured. Add presets in ~/.intellect/moa/presets.yaml")
-            return 0
-
-        print("MoA Presets (Mixture of Agents)")
-        print("─" * 50)
-        for name in presets:
-            summary = preset_summary(name)
-            if summary:
-                n_refs = summary["reference_count"]
-                print(f"  {name}")
-                print(f"    References: {n_refs} models")
-                print(f"    Aggregator: {summary['aggregator']}")
-                print(f"    ⚠️  Cost: {n_refs + 1} LLM calls per request")
-                print()
-        print("Usage: /model moa/<preset>  — switch to a MoA preset as main model")
-        return 0
+        _register_moa_cli(moa_parser)
+    except Exception as _exc:
+        logging.getLogger(__name__).debug("moa CLI wiring failed: %s", _exc)
 
     # =========================================================================
     # db command — storage migration (P2)
