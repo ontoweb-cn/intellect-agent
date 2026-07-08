@@ -1506,8 +1506,13 @@ class AIAgent:
             if not to_flush:
                 return
 
-            # HP-402: batch-append path via Rust write merge queue
-            batch_entries = []
+            # HP-402: batch-append path via Rust write merge queue.
+            # For small batches (≤2 messages), skip JSON round-trip and use
+            # the per-message path directly — the overhead isn't worth it.
+            # Collect both raw entries (for fast fallback) and JSON-safe
+            # entries (for the Rust batch path) in one pass.
+            _batch_raw = []
+            _batch_json = []
             for msg in to_flush:
                 role = msg.get("role", "unknown")
                 content = msg.get("content")
@@ -1532,10 +1537,22 @@ class AIAgent:
                 elif isinstance(msg.get("tool_calls"), list):
                     tool_calls_data = msg["tool_calls"]
                     num_tool_calls = len(tool_calls_data)
-                batch_entries.append({
-                    "session_id": self.session_id,
-                    "role": role,
-                    "content": content,
+                _reasoning_details = msg.get("reasoning_details") if role == "assistant" else None
+                _codex_items = msg.get("codex_reasoning_items") if role == "assistant" else None
+                _codex_msg_items = msg.get("codex_message_items") if role == "assistant" else None
+                _batch_raw.append({
+                    "session_id": self.session_id, "role": role, "content": content,
+                    "tool_name": msg.get("tool_name"), "tool_calls": tool_calls_data,
+                    "tool_call_id": msg.get("tool_call_id"),
+                    "finish_reason": msg.get("finish_reason"),
+                    "reasoning": msg.get("reasoning") if role == "assistant" else None,
+                    "reasoning_content": msg.get("reasoning_content") if role == "assistant" else None,
+                    "reasoning_details": _reasoning_details,
+                    "codex_reasoning_items": _codex_items,
+                    "codex_message_items": _codex_msg_items,
+                })
+                _batch_json.append({
+                    "session_id": self.session_id, "role": role, "content": content,
                     "tool_name": msg.get("tool_name"),
                     "tool_calls_json": json.dumps(tool_calls_data) if tool_calls_data else None,
                     "tool_call_id": msg.get("tool_call_id"),
@@ -1544,39 +1561,40 @@ class AIAgent:
                     "finish_reason": msg.get("finish_reason"),
                     "reasoning": msg.get("reasoning") if role == "assistant" else None,
                     "reasoning_content": msg.get("reasoning_content") if role == "assistant" else None,
-                    "reasoning_details_json": json.dumps(msg.get("reasoning_details")) if role == "assistant" and msg.get("reasoning_details") else None,
-                    "codex_items_json": json.dumps(msg.get("codex_reasoning_items")) if role == "assistant" and msg.get("codex_reasoning_items") else None,
-                    "codex_message_items_json": json.dumps(msg.get("codex_message_items")) if role == "assistant" and msg.get("codex_message_items") else None,
+                    "reasoning_details_json": json.dumps(_reasoning_details) if _reasoning_details else None,
+                    "codex_items_json": json.dumps(_codex_items) if _codex_items else None,
+                    "codex_message_items_json": json.dumps(_codex_msg_items) if _codex_msg_items else None,
                     "platform_message_id": msg.get("platform_message_id"),
                     "observed": msg.get("observed", False),
                     "num_tool_calls": num_tool_calls,
                 })
 
-            # Try Rust batch path first, fall back to per-message Python path
+            # Try Rust batch path for batches of 3+ messages.
             _batched = False
-            try:
-                sb = self._session_db._storage_backend if hasattr(self._session_db, '_storage_backend') else None
-                if sb is not None and hasattr(sb, 'append_message_batch'):
-                    result_json = sb.append_message_batch(json.dumps(batch_entries))
-                    _batched = bool(result_json and result_json != "[]")
-            except Exception:
-                logger.debug("batch append_message failed, falling back to per-message", exc_info=True)
+            if len(to_flush) >= 3:
+                try:
+                    sb = self._session_db._storage_backend if hasattr(self._session_db, '_storage_backend') else None
+                    if sb is not None and hasattr(sb, 'append_message_batch'):
+                        result_json = sb.append_message_batch(json.dumps(_batch_json))
+                        _batched = bool(result_json and result_json != "[]")
+                except Exception:
+                    logger.debug("batch append_message failed, falling back to per-message", exc_info=True)
 
             if not _batched:
-                for entry in batch_entries:
+                for entry in _batch_raw:
                     self._session_db.append_message(
                         session_id=entry["session_id"],
                         role=entry["role"],
                         content=entry["content"],
                         tool_name=entry.get("tool_name"),
-                        tool_calls=json.loads(entry["tool_calls_json"]) if entry.get("tool_calls_json") else None,
+                        tool_calls=entry.get("tool_calls"),
                         tool_call_id=entry.get("tool_call_id"),
                         finish_reason=entry.get("finish_reason"),
                         reasoning=entry.get("reasoning"),
                         reasoning_content=entry.get("reasoning_content"),
-                        reasoning_details=json.loads(entry["reasoning_details_json"]) if entry.get("reasoning_details_json") else None,
-                        codex_reasoning_items=json.loads(entry["codex_items_json"]) if entry.get("codex_items_json") else None,
-                        codex_message_items=json.loads(entry["codex_message_items_json"]) if entry.get("codex_message_items_json") else None,
+                        reasoning_details=entry.get("reasoning_details"),
+                        codex_reasoning_items=entry.get("codex_reasoning_items"),
+                        codex_message_items=entry.get("codex_message_items"),
                     )
             self._last_flushed_db_idx = len(messages)
         except Exception as e:
