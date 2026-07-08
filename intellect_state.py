@@ -32,7 +32,7 @@ T = TypeVar("T")
 
 DEFAULT_DB_PATH = get_intellect_home() / "state.db"
 
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 # ---------------------------------------------------------------------------
 # WAL-compatibility fallback
@@ -765,6 +765,26 @@ class SessionDB:
                         ON wiki_contributions(status, created_at DESC);
                     CREATE INDEX IF NOT EXISTS idx_wiki_contributions_submitter
                         ON wiki_contributions(submitter_id, created_at DESC);
+                    """
+                )
+            if current_version < 26:
+                # v26: verification_evidence — HP-303 test/command verification log.
+                cursor.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS verification_evidence (
+                        id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        task_id TEXT,
+                        kind TEXT NOT NULL,
+                        command TEXT NOT NULL,
+                        exit_code INTEGER,
+                        output_summary TEXT NOT NULL DEFAULT '',
+                        passed INTEGER,
+                        created_at INTEGER NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_ve_session ON verification_evidence(session_id);
+                    CREATE INDEX IF NOT EXISTS idx_ve_kind ON verification_evidence(kind);
+                    CREATE INDEX IF NOT EXISTS idx_ve_created ON verification_evidence(created_at);
                     """
                 )
             if current_version < 23:

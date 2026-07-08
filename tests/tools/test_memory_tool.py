@@ -643,3 +643,76 @@ class TestLoadTimeSnapshotSanitization:
         # Block marker appears exactly once, not nested
         assert snapshot.count("[BLOCKED:") == 1
         assert "Clean fact" in snapshot
+
+
+# =========================================================================
+# Batch operations (HP-101)
+# =========================================================================
+
+class TestMemoryBatch:
+    @pytest.fixture
+    def store(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tools.memory_tool.get_memory_dir", lambda: tmp_path)
+        s = MemoryStore()
+        s.load_from_disk()
+        return s
+
+    def test_batch_add_multiple_entries(self, store, tmp_path):
+        result = json.loads(memory_tool(
+            operations=[
+                {"action": "add", "target": "memory", "content": "Fact A"},
+                {"action": "add", "target": "memory", "content": "Fact B"},
+            ],
+            store=store,
+        ))
+        assert result["success"] is True
+        assert len(result["results"]) == 2
+        raw = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
+        assert "Fact A" in raw
+        assert "Fact B" in raw
+
+    def test_batch_failure_rolls_back(self, store, tmp_path):
+        store.add("memory", "Only entry")
+        result = json.loads(memory_tool(
+            operations=[
+                {"action": "add", "target": "memory", "content": "New fact"},
+                {"action": "remove", "target": "memory", "old_text": "missing"},
+            ],
+            store=store,
+        ))
+        assert result["success"] is False
+        raw = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
+        assert "New fact" not in raw
+        assert "Only entry" in raw
+
+    def test_operations_mutually_exclusive_with_action(self, store):
+        result = json.loads(memory_tool(
+            action="add",
+            target="memory",
+            content="x",
+            operations=[{"action": "add", "target": "memory", "content": "y"}],
+            store=store,
+        ))
+        assert result["success"] is False
+        assert "not both" in result["error"].lower()
+
+    def test_batch_cross_target(self, store, tmp_path):
+        result = json.loads(memory_tool(
+            operations=[
+                {"action": "add", "target": "memory", "content": "Env fact"},
+                {"action": "add", "target": "user", "content": "User prefers tea"},
+            ],
+            store=store,
+        ))
+        assert result["success"] is True
+        assert "Env fact" in (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
+        assert "User prefers tea" in (tmp_path / "USER.md").read_text(encoding="utf-8")
+
+    def test_batch_rejects_too_many_operations(self, store):
+        ops = [
+            {"action": "add", "target": "memory", "content": f"Fact {i}"}
+            for i in range(65)
+        ]
+        result = json.loads(memory_tool(operations=ops, store=store))
+        assert result["success"] is False
+        assert "max 64" in result["error"].lower()

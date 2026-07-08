@@ -52,7 +52,11 @@ The installer also sets `intellect_GIT_BASH_PATH` to the located `bash.exe` so I
 
 If you prefer WSL2, the Linux installer above works inside it; both native and WSL installs can coexist without conflict (native data lives under `%LOCALAPPDATA%\intellect`, WSL data lives under `~/.intellect`).
 
-**Desktop installer (alternative):** A thin GUI installer is also available — download Intellect Desktop, run the `.exe`, and on first launch it calls `install.ps1` under the hood to provision Python (via `uv`), Node, PortableGit, and the rest of the dependencies. The desktop app and the PowerShell-installed CLI share the same install and data directories, so you can use either or both. See the [Windows (Native) guide](../user-guide/windows-native#desktop-installer-alternative) for details.
+**Optional: NSIS installer (Early Beta):** Some Gitee Releases attach `Intellect-Agent-{version}-Setup.exe` — a Windows installer for the **CLI/agent native bundle** (venv + `intellect` on PATH), built from `packaging/installer/windows/`. It is **not** a separate chat GUI. For a graphical interface today, run `intellect webui start` and open the URL shown (default `http://127.0.0.1:9119`). See the [Windows (Native) guide](../user-guide/windows-native#optional-nsis-installer) for details.
+
+:::note Native desktop GUI (not shipped)
+There is **no official Intellect Desktop chat app** in this repository yet. A future native GUI may wrap the WebUI or connect to `tui_gateway` over WebSocket — see `docs/plans/2026-07-08-intellect-desktop-feasibility-review.md` in the repo. Third-party projects (e.g. community SwiftUI clients over SSH) are **not** official ONTOWEB releases.
+:::
 
 ### Android / Termux
 

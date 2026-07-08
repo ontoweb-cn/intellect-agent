@@ -199,6 +199,20 @@ class Platform(Enum):
 _BUILTIN_PLATFORM_VALUES = frozenset(m.value for m in Platform.__members__.values())
 
 
+def is_known_platform_name(name: str) -> bool:
+    """Return True when *name* is a built-in or registered plugin platform."""
+    platform_name = (name or "").strip().lower()
+    if not platform_name:
+        return False
+    if platform_name in _BUILTIN_PLATFORM_VALUES:
+        return True
+    try:
+        Platform(platform_name)
+        return True
+    except ValueError:
+        return False
+
+
 @dataclass
 class HomeChannel:
     """

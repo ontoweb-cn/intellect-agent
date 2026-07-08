@@ -1502,16 +1502,23 @@ class AIAgent:
                 self._ensure_db_session()
             start_idx = len(conversation_history) if conversation_history else 0
             flush_from = max(start_idx, self._last_flushed_db_idx)
-            for msg in messages[flush_from:]:
+            to_flush = messages[flush_from:]
+            if not to_flush:
+                return
+
+            # HP-402: batch-append path via Rust write merge queue.
+            # For small batches (≤2 messages), skip JSON round-trip and use
+            # the per-message path directly — the overhead isn't worth it.
+            # Collect both raw entries (for fast fallback) and JSON-safe
+            # entries (for the Rust batch path) in one pass.
+            _batch_raw = []
+            _batch_json = []
+            for msg in to_flush:
                 role = msg.get("role", "unknown")
                 content = msg.get("content")
-                # Persist multimodal tool results as their text summary only —
-                # base64 images would bloat the session DB and aren't useful
-                # for cross-session replay.
                 if _is_multimodal_tool_result(content):
                     content = _multimodal_text_summary(content)
                 elif isinstance(content, list):
-                    # List of OpenAI-style content parts: strip images, keep text.
                     _txt = []
                     for p in content:
                         if isinstance(p, dict) and p.get("type") == "text":
@@ -1520,27 +1527,75 @@ class AIAgent:
                             _txt.append("[screenshot]")
                     content = "\n".join(_txt) if _txt else None
                 tool_calls_data = None
+                num_tool_calls = 0
                 if hasattr(msg, "tool_calls") and isinstance(msg.tool_calls, list) and msg.tool_calls:
                     tool_calls_data = [
                         {"name": tc.function.name, "arguments": tc.function.arguments}
                         for tc in msg.tool_calls
                     ]
+                    num_tool_calls = len(msg.tool_calls)
                 elif isinstance(msg.get("tool_calls"), list):
                     tool_calls_data = msg["tool_calls"]
-                self._session_db.append_message(
-                    session_id=self.session_id,
-                    role=role,
-                    content=content,
-                    tool_name=msg.get("tool_name"),
-                    tool_calls=tool_calls_data,
-                    tool_call_id=msg.get("tool_call_id"),
-                    finish_reason=msg.get("finish_reason"),
-                    reasoning=msg.get("reasoning") if role == "assistant" else None,
-                    reasoning_content=msg.get("reasoning_content") if role == "assistant" else None,
-                    reasoning_details=msg.get("reasoning_details") if role == "assistant" else None,
-                    codex_reasoning_items=msg.get("codex_reasoning_items") if role == "assistant" else None,
-                    codex_message_items=msg.get("codex_message_items") if role == "assistant" else None,
-                )
+                    num_tool_calls = len(tool_calls_data)
+                _reasoning_details = msg.get("reasoning_details") if role == "assistant" else None
+                _codex_items = msg.get("codex_reasoning_items") if role == "assistant" else None
+                _codex_msg_items = msg.get("codex_message_items") if role == "assistant" else None
+                _batch_raw.append({
+                    "session_id": self.session_id, "role": role, "content": content,
+                    "tool_name": msg.get("tool_name"), "tool_calls": tool_calls_data,
+                    "tool_call_id": msg.get("tool_call_id"),
+                    "finish_reason": msg.get("finish_reason"),
+                    "reasoning": msg.get("reasoning") if role == "assistant" else None,
+                    "reasoning_content": msg.get("reasoning_content") if role == "assistant" else None,
+                    "reasoning_details": _reasoning_details,
+                    "codex_reasoning_items": _codex_items,
+                    "codex_message_items": _codex_msg_items,
+                })
+                _batch_json.append({
+                    "session_id": self.session_id, "role": role, "content": content,
+                    "tool_name": msg.get("tool_name"),
+                    "tool_calls_json": json.dumps(tool_calls_data) if tool_calls_data else None,
+                    "tool_call_id": msg.get("tool_call_id"),
+                    "timestamp": msg.get("timestamp") if msg.get("timestamp") is not None else time.time(),
+                    "token_count": msg.get("token_count"),
+                    "finish_reason": msg.get("finish_reason"),
+                    "reasoning": msg.get("reasoning") if role == "assistant" else None,
+                    "reasoning_content": msg.get("reasoning_content") if role == "assistant" else None,
+                    "reasoning_details_json": json.dumps(_reasoning_details) if _reasoning_details else None,
+                    "codex_items_json": json.dumps(_codex_items) if _codex_items else None,
+                    "codex_message_items_json": json.dumps(_codex_msg_items) if _codex_msg_items else None,
+                    "platform_message_id": msg.get("platform_message_id"),
+                    "observed": msg.get("observed", False),
+                    "num_tool_calls": num_tool_calls,
+                })
+
+            # Try Rust batch path for batches of 3+ messages.
+            _batched = False
+            if len(to_flush) >= 3:
+                try:
+                    sb = self._session_db._storage_backend if hasattr(self._session_db, '_storage_backend') else None
+                    if sb is not None and hasattr(sb, 'append_message_batch'):
+                        result_json = sb.append_message_batch(json.dumps(_batch_json))
+                        _batched = bool(result_json and result_json != "[]")
+                except Exception:
+                    logger.debug("batch append_message failed, falling back to per-message", exc_info=True)
+
+            if not _batched:
+                for entry in _batch_raw:
+                    self._session_db.append_message(
+                        session_id=entry["session_id"],
+                        role=entry["role"],
+                        content=entry["content"],
+                        tool_name=entry.get("tool_name"),
+                        tool_calls=entry.get("tool_calls"),
+                        tool_call_id=entry.get("tool_call_id"),
+                        finish_reason=entry.get("finish_reason"),
+                        reasoning=entry.get("reasoning"),
+                        reasoning_content=entry.get("reasoning_content"),
+                        reasoning_details=entry.get("reasoning_details"),
+                        codex_reasoning_items=entry.get("codex_reasoning_items"),
+                        codex_message_items=entry.get("codex_message_items"),
+                    )
             self._last_flushed_db_idx = len(messages)
         except Exception as e:
             logger.warning("Session DB append_message failed: %s", e)
@@ -2090,6 +2145,23 @@ class AIAgent:
         if not targets:
             return
         landed = file_mutation_result_landed(tool_name, result)
+
+        # HP-303e: record verification evidence when a file mutation lands
+        if landed and self._verification_enabled():
+            try:
+                from agent.verification_evidence import record_evidence
+                from intellect_constants import get_intellect_home
+                db_path = str(get_intellect_home() / "state.db")
+                record_evidence(
+                    db_path=db_path,
+                    session_id=getattr(self, "session_id", "") or "",
+                    kind="diff_validation",
+                    command=f"{tool_name}: {', '.join(targets)}",
+                    passed=True,
+                )
+            except Exception:
+                logger.debug('verification evidence: file mutation record failed', exc_info=True)
+
         if is_error and not landed:
             preview = _extract_error_preview(result)
             for path in targets:
@@ -2131,6 +2203,23 @@ class AIAgent:
         except Exception:
             logger.debug('non-critical operation failed', exc_info=True)
         return True  # safe default: verifier on
+
+    def _verification_enabled(self) -> bool:
+        """Check whether verification evidence recording is on (HP-303).
+
+        Config path: ``agent.verification.enabled`` (bool, default False).
+        ``intellect_VERIFICATION_ENABLED`` env var overrides config.
+        """
+        try:
+            import os as _os
+            env = _os.environ.get("intellect_VERIFICATION_ENABLED")
+            if env is not None and env.strip():
+                return env.strip().lower() not in {"0", "false", "no", "off"}
+            from agent.verification_evidence import is_verification_enabled
+            return is_verification_enabled()
+        except Exception:
+            logger.debug('non-critical operation failed', exc_info=True)
+        return False  # safe default: off
 
     # Bare absolute / home / Windows-drive file paths in a footer line.
     # Anchors mirror the gateway's ``extract_local_files`` bare-path
@@ -4499,6 +4588,7 @@ class AIAgent:
             acp_command=function_args.get("acp_command"),
             acp_args=function_args.get("acp_args"),
             role=function_args.get("role"),
+            background=bool(function_args.get("background")),
             parent_agent=self,
         )
 

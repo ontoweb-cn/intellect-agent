@@ -353,6 +353,38 @@ def _check_gateway_service_linger(issues: list[str]) -> None:
         check_warn("Could not verify systemd linger", f"({linger_detail})")
 
 
+def _check_gateway_model_overrides(issues: list[str]) -> None:
+    """Warn when gateway.model_overrides keys use unknown platform prefixes."""
+    from gateway.config import is_known_platform_name
+    from intellect_cli.config import load_config
+
+    cfg = load_config() or {}
+    gateway_cfg = cfg.get("gateway") if isinstance(cfg, dict) else None
+    overrides = gateway_cfg.get("model_overrides") if isinstance(gateway_cfg, dict) else None
+    if not isinstance(overrides, dict) or not overrides:
+        return
+
+    unknown_keys = []
+    for key in overrides:
+        prefix = str(key).split(":", 1)[0].strip().lower()
+        if prefix and not is_known_platform_name(prefix):
+            unknown_keys.append(str(key))
+
+    if not unknown_keys:
+        return
+
+    sample = ", ".join(sorted(unknown_keys)[:5])
+    more = f" (+{len(unknown_keys) - 5} more)" if len(unknown_keys) > 5 else ""
+    check_warn(
+        "Unknown gateway.model_overrides platform key(s)",
+        f"({sample}{more})",
+    )
+    issues.append(
+        "Fix gateway.model_overrides keys — use a platform name (e.g. telegram) "
+        "or session suffix (e.g. telegram:dm:12345). Unknown keys are ignored at runtime."
+    )
+
+
 def _check_project_health(issues: list[str]) -> None:
     """Check multi-project configuration health (spec §31)."""
     from intellect_cli.config import load_config
@@ -454,6 +486,22 @@ def _check_project_health(issues: list[str]) -> None:
             db.close()
         except Exception:
             pass
+
+
+def _check_onepassword_health(issues: list[str]) -> None:
+    """Check 1Password CLI availability (HP-404)."""
+    try:
+        from agent.secret_sources.onepassword import find_op, check_op_cli
+        op_path = find_op()
+        if op_path is None:
+            return  # op not installed — not an error, just unavailable
+        if not check_op_cli():
+            issues.append(
+                "1Password CLI found at %s but not signed in. "
+                "Run 'op signin' to enable 1Password secret source." % op_path
+            )
+    except Exception:
+        pass
 
 
 def _check_oauth_health(issues: list[str]) -> None:
@@ -1597,6 +1645,7 @@ def run_doctor(args):
     )
 
     _check_gateway_service_linger(issues)
+    _check_gateway_model_overrides(issues)
     _check_s6_supervision(issues)
 
     if sys.platform != "win32":
@@ -2704,6 +2753,12 @@ def run_doctor(args):
     # ── OAuth health ──────────────────────────────────────────────────────
     try:
         _check_oauth_health(issues)
+    except Exception:
+        pass
+
+    # ── 1Password secret source (HP-404) ──────────────────────────────────
+    try:
+        _check_onepassword_health(issues)
     except Exception:
         pass
 

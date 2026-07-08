@@ -47,11 +47,15 @@ No admin rights required. The installer goes to `%LOCALAPPDATA%\intellect\` and 
 
 The installer auto-retries flaky git fetches and strips BOM from any downloaded `install.ps1` payload, so a UTF-8 BOM picked up during HTTP transit no longer breaks the `[scriptblock]::Create((irm ...))` form.
 
-### Desktop installer (alternative)
+### Optional NSIS installer
 
-A thin GUI installer is also available — useful if you'd rather double-click an `.exe` than open PowerShell. Download Intellect Desktop, run the installer, and on first launch the GUI calls `install.ps1` under the hood to provision Python (via `uv`), Node, PortableGit, and the rest of the dependency bootstrap described below. After the first run, the desktop app and the PowerShell-installed `intellect` CLI share the same `%LOCALAPPDATA%\intellect\intellect-agent` install and `%USERPROFILE%\.intellect` data directory — switch between the GUI and the CLI freely.
+Some Gitee Releases include `Intellect-Agent-{version}-Setup.exe` — a **Windows installer for the CLI/agent bundle** (not a chat GUI). It unpacks a pre-built native bundle under `%LOCALAPPDATA%\IntellectAgent` (or your chosen directory) with venv + `intellect` on PATH. The PowerShell one-liner above remains the primary install path; use the NSIS installer when you prefer a double-click setup or need an offline bundle from a Release attachment.
 
-Use the desktop installer when you want a familiar Windows install experience or you're handing Intellect to a non-developer; use the PowerShell one-liner when you're already in a terminal.
+:::note Not Intellect Desktop
+This `.exe` installs **Intellect Agent (CLI)**. There is no official **Intellect Desktop** chat application shipped from this repository. For a browser-based dashboard, run `intellect webui start`.
+:::
+
+Use the PowerShell one-liner when you're already in a terminal; use the NSIS installer when you want a familiar Windows setup wizard or an offline Release bundle.
 
 ### Dependency bootstrap (`dep_ensure`)
 

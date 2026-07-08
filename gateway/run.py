@@ -835,6 +835,8 @@ from gateway.config_helpers import _load_gateway_config as _load_gateway_config 
 from gateway.config_helpers import _load_gateway_runtime_config as _load_gateway_runtime_config  # noqa: E402
 
 from gateway.config_helpers import _resolve_gateway_model as _resolve_gateway_model  # noqa: E402
+from gateway.config_helpers import _resolve_config_model_override as _resolve_config_model_override  # noqa: E402
+from gateway.config_helpers import _apply_model_override_fields as _apply_model_override_fields  # noqa: E402
 
 # Intellect binary resolution — extracted to gateway.config_helpers
 
@@ -913,6 +915,56 @@ from gateway.agent_runner import GatewayAgentRunner  # noqa: E402
 from gateway.platform_handlers import GatewayPlatformHandlers  # noqa: E402
 
 from gateway.infrastructure_handlers import GatewayInfrastructureHandlers  # noqa: E402
+
+
+def _bootstrap_gateway_mixins() -> None:
+    """Inject run.py module symbols into extracted gateway mixin modules.
+
+    The handler mixins were split out of run.py but still reference names
+    that previously lived in this module's scope.  Runtime method lookup does
+    not inherit those imports via MRO, so we copy the live run.py namespace
+    into each mixin module before GatewayRunner starts handling traffic.
+    """
+    import gateway.agent_runner as _agent_runner
+    import gateway.command_handlers as _command_handlers
+    import gateway.config_helpers as _config_helpers
+    import gateway.helpers as _helpers
+    import gateway.infrastructure_handlers as _infrastructure_handlers
+    import gateway.message_helpers as _message_helpers
+    import gateway.platform_handlers as _platform_handlers
+    import gateway.restart as _restart
+    import gateway.session as _session
+    import gateway.skill_session_helpers as _skill_helpers
+    import gateway.platforms.base as _platforms_base
+
+    _exports: dict[str, object] = {}
+    for _src in (
+        globals(),
+        _config_helpers.__dict__,
+        _helpers.__dict__,
+        _message_helpers.__dict__,
+        _skill_helpers.__dict__,
+        _restart.__dict__,
+        _session.__dict__,
+        _platforms_base.__dict__,
+    ):
+        for name, value in _src.items():
+            if name.startswith("__"):
+                continue
+            _exports.setdefault(name, value)
+
+    for _mod in (
+        _agent_runner,
+        _command_handlers,
+        _infrastructure_handlers,
+        _platform_handlers,
+    ):
+        for name, value in _exports.items():
+            _mod.__dict__.setdefault(name, value)
+
+
+_bootstrap_gateway_mixins()
+
 
 class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformHandlers, GatewayInfrastructureHandlers):
 
@@ -1045,6 +1097,12 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
         "rollback": "_handle_rollback_command",
 
         "background": "_handle_background_command",
+
+        "delegations": "_handle_delegations_command",
+
+        "learn": "_handle_learn_command",
+
+        "journey": "_handle_journey_command",
 
         "goal": "_handle_goal_command",
 
@@ -1353,6 +1411,7 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
         # Key: session_key, Value: dict with model/provider/api_key/base_url/api_mode
 
         self._session_model_overrides: Dict[str, Dict[str, str]] = {}
+        self._learn_pending_drafts: Dict[str, str] = {}
 
         # Per-session reasoning effort overrides from /reasoning.
 
@@ -2765,6 +2824,39 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
         except Exception as e:
 
             logger.error("Recovered watcher setup error: %s", e)
+
+        try:
+
+            from tools.async_delegation import (
+                pending_delegation_watchers as _dg_watchers,
+                try_start_delegation_watcher,
+            )
+
+            dg_watchers = _dg_watchers
+
+            import tools.async_delegation as _ad_mod
+
+            _ad_mod.pending_delegation_watchers = []
+
+            for watcher in dg_watchers:
+                parent_key = watcher.get("parent_session_key", "")
+                if not try_start_delegation_watcher(parent_key):
+                    logger.debug(
+                        "Skipping duplicate delegation watcher for %s",
+                        parent_key,
+                    )
+                    continue
+
+                asyncio.create_task(self._run_delegation_watcher(watcher))
+
+                logger.info(
+                    "Started delegation watcher for %s",
+                    watcher.get("parent_session_key"),
+                )
+
+        except Exception as e:
+
+            logger.error("Delegation watcher setup error: %s", e)
 
         # Start background session expiry watcher to finalize expired sessions
 
@@ -4343,6 +4435,18 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
             if _cmd_def_inner and _cmd_def_inner.name == "background":
 
                 return await self._handle_background_command(event)
+
+            if _cmd_def_inner and _cmd_def_inner.name == "delegations":
+
+                return await self._handle_delegations_command(event)
+
+            if _cmd_def_inner and _cmd_def_inner.name == "learn":
+
+                return await self._handle_learn_command(event)
+
+            if _cmd_def_inner and _cmd_def_inner.name == "journey":
+
+                return await self._handle_journey_command(event)
 
             # /kanban must bypass the guard. It writes to a profile-agnostic
 
@@ -7245,6 +7349,34 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
             except Exception as e:
 
                 logger.error("Process watcher setup error: %s", e)
+
+            try:
+
+                from tools.async_delegation import (
+                    pending_delegation_watchers as _dg_pending,
+                    try_start_delegation_watcher,
+                )
+
+                import tools.async_delegation as _ad_mod
+
+                _dg_watchers = _dg_pending
+
+                _ad_mod.pending_delegation_watchers = []
+
+                for watcher in _dg_watchers:
+                    parent_key = watcher.get("parent_session_key", "")
+                    if not try_start_delegation_watcher(parent_key):
+                        logger.debug(
+                            "Skipping duplicate delegation watcher for %s",
+                            parent_key,
+                        )
+                        continue
+
+                    asyncio.create_task(self._run_delegation_watcher(watcher))
+
+            except Exception as e:
+
+                logger.error("Delegation watcher setup error: %s", e)
 
             # Drain watch pattern notifications that arrived during the agent run.
 

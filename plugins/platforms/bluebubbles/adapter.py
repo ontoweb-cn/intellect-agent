@@ -21,6 +21,8 @@ from urllib.parse import quote
 
 import httpx
 
+BLUEBUBBLES_AVAILABLE = True  # httpx is a hard import for this adapter
+
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (
     BasePlatformAdapter,
@@ -43,6 +45,7 @@ DEFAULT_WEBHOOK_HOST = "127.0.0.1"
 DEFAULT_WEBHOOK_PORT = 8645
 DEFAULT_WEBHOOK_PATH = "/bluebubbles-webhook"
 MAX_TEXT_LENGTH = 4000
+WEBHOOK_BODY_MAX_BYTES = 1_048_576  # 1 MiB — BlueBubbles events are small JSON/form payloads
 
 # Tapback reaction codes (BlueBubbles associatedMessageType values)
 _TAPBACK_ADDED = {
@@ -81,7 +84,9 @@ def check_bluebubbles_requirements() -> bool:
     if BLUEBUBBLES_AVAILABLE:
         return True
     from gateway.platforms.helpers import check_platform_requirements
-    return check_platform_requirements("platform.bluebubbles", _reimport_bluebubbles)
+    return check_platform_requirements("platform.bluebubbles")
+
+
 def _normalize_server_url(raw: str) -> str:
     value = (raw or "").strip()
     if not value:
@@ -214,7 +219,7 @@ class BlueBubblesAdapter(BasePlatformAdapter):
                 self.client = None
             return False
 
-        app = web.Application()
+        app = web.Application(client_max_size=WEBHOOK_BODY_MAX_BYTES)
         app.router.add_get("/health", lambda _: web.Response(text="ok"))
         app.router.add_post(self.webhook_path, self._handle_webhook)
         # The webhook auth value is carried in the query string because the

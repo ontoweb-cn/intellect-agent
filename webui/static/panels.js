@@ -40,7 +40,7 @@ let _logsSeverityFilter = 'all';
 const APP_TITLEBAR_KEYS = {
   chat: 'tab_chat', tasks: 'tab_tasks', skills: 'tab_skills',
   memory: 'tab_memory', workspaces: 'tab_workspaces',
-  profiles: 'tab_profiles', todos: 'tab_todos', wiki: 'tab_wiki', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
+  profiles: 'tab_profiles', todos: 'tab_todos', wiki: 'tab_wiki', journey: 'tab_journey', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
 };
 
 /**
@@ -258,7 +258,7 @@ async function switchPanel(name, opts = {}) {
   // showing-<name> class on <main>; no class means chat (the default).
   const mainEl = document.querySelector('main.main');
   if (mainEl) {
-    ['settings','skills','memory','tasks','kanban','workspaces','profiles','wiki','insights','logs','todos'].forEach(p => {
+    ['settings','skills','memory','tasks','kanban','workspaces','profiles','wiki','journey','insights','logs','todos'].forEach(p => {
       mainEl.classList.toggle('showing-' + p, nextPanel === p);
     });
   }
@@ -277,6 +277,7 @@ async function switchPanel(name, opts = {}) {
   }
   if (nextPanel === 'todos') loadTodos();
   if (nextPanel === 'wiki' && typeof loadWikiPanel === 'function') await loadWikiPanel();
+  if (nextPanel === 'journey' && typeof loadJourney === 'function') await loadJourney(true);
   if (nextPanel === 'insights') await loadInsights();
   if (nextPanel === 'logs') await loadLogs();
   _syncLogsAutoRefresh();

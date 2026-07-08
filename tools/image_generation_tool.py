@@ -26,6 +26,7 @@ import os
 import datetime
 import threading
 import uuid
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 # fal_client is imported lazily — see _load_fal_client(). Pulling it
@@ -217,6 +218,11 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "prompt", "image_size", "quality", "num_images", "output_format",
             "background", "sync_mode",
         },
+        "edit_endpoint": "fal-ai/gpt-image-1.5/edit",
+        "edit_supports": {
+            "prompt", "image_urls", "image_size", "quality", "num_images",
+            "output_format", "background", "input_fidelity", "sync_mode",
+        },
         "upscale": False,
     },
     "fal-ai/gpt-image-2": {
@@ -248,6 +254,11 @@ FAL_MODELS: Dict[str, Dict[str, Any]] = {
             "sync_mode",
             # openai_api_key (BYOK) intentionally omitted — all users go
             # through the shared FAL billing path.
+        },
+        "edit_endpoint": "fal-ai/gpt-image-2/edit",
+        "edit_supports": {
+            "prompt", "image_urls", "image_size", "quality", "num_images",
+            "output_format", "input_fidelity", "sync_mode",
         },
         "upscale": False,
     },
@@ -552,6 +563,145 @@ def _build_fal_payload(
 
     supports = meta["supports"]
     return {k: v for k, v in payload.items() if k in supports}
+
+
+def _resolve_fal_edit_model() -> tuple:
+    """Return ``(base_model_id, edit_endpoint, metadata)`` for editing."""
+    model_id, meta = _resolve_fal_model()
+    edit_endpoint = meta.get("edit_endpoint")
+    if not edit_endpoint:
+        raise ValueError(
+            f"Model '{model_id}' does not support editing. Configure "
+            "image_gen.model to fal-ai/gpt-image-1.5 or fal-ai/gpt-image-2."
+        )
+    return model_id, str(edit_endpoint), meta
+
+
+def _upload_local_image_for_fal(resolved_path) -> str:
+    """Upload a local image to FAL storage and return a URL."""
+    _load_fal_client()
+    upload = getattr(fal_client, "upload_file", None)
+    if upload is None:
+        raise RuntimeError("fal_client.upload_file is required for image editing")
+    uploaded = upload(str(resolved_path))
+    if isinstance(uploaded, str) and uploaded.strip():
+        return uploaded.strip()
+    url = getattr(uploaded, "url", None)
+    if isinstance(url, str) and url.strip():
+        return url.strip()
+    raise ValueError("FAL upload did not return a URL")
+
+
+def _build_fal_edit_payload(
+    model_id: str,
+    meta: Dict[str, Any],
+    prompt: str,
+    image_url: str,
+    aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build a FAL edit request payload for ``meta['edit_endpoint']``."""
+    size_style = meta["size_style"]
+    sizes = meta["sizes"]
+    aspect = (aspect_ratio or DEFAULT_ASPECT_RATIO).lower().strip()
+    if aspect not in sizes:
+        aspect = DEFAULT_ASPECT_RATIO
+
+    payload: Dict[str, Any] = dict(meta.get("defaults", {}))
+    payload["prompt"] = (prompt or "").strip()
+    payload["image_urls"] = [image_url]
+
+    if size_style in {"image_size_preset", "gpt_literal"}:
+        payload["image_size"] = sizes[aspect]
+    elif size_style == "aspect_ratio":
+        payload["aspect_ratio"] = sizes[aspect]
+
+    if overrides:
+        for key, value in overrides.items():
+            if value is not None:
+                payload[key] = value
+
+    supports = meta.get("edit_supports") or set(meta.get("supports", ())) | {"image_urls"}
+    return {k: v for k, v in payload.items() if k in supports}
+
+
+def fal_image_edit_tool(
+    prompt: str,
+    source_image: str,
+    aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+    **kwargs: Any,
+) -> str:
+    """Edit an existing image via the configured FAL edit endpoint."""
+    from tools.path_security import validate_local_image_file
+
+    model_id, edit_endpoint, meta = _resolve_fal_edit_model()
+    resolved_path, path_error, error_type = validate_local_image_file(source_image)
+    if path_error:
+        return json.dumps({
+            "success": False,
+            "image": None,
+            "error": path_error,
+            "error_type": error_type or "invalid_argument",
+        }, indent=2, ensure_ascii=False)
+
+    start_time = datetime.datetime.now()
+    try:
+        if not prompt or not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("Prompt is required and must be a non-empty string")
+        if not (fal_key_is_configured() or _resolve_managed_fal_gateway()):
+            raise ValueError(_build_no_backend_setup_message())
+
+        aspect_lc = (aspect_ratio or DEFAULT_ASPECT_RATIO).lower().strip()
+        if aspect_lc not in VALID_ASPECT_RATIOS:
+            aspect_lc = DEFAULT_ASPECT_RATIO
+
+        image_url = _upload_local_image_for_fal(resolved_path)
+        passthrough = {
+            key: kwargs[key]
+            for key in ("num_images", "output_format", "quality", "input_fidelity")
+            if key in kwargs and kwargs[key] is not None
+        }
+        arguments = _build_fal_edit_payload(
+            model_id,
+            meta,
+            prompt,
+            image_url,
+            aspect_lc,
+            overrides=passthrough,
+        )
+
+        logger.info(
+            "Editing image with %s via %s — prompt: %s",
+            meta.get("display", model_id),
+            edit_endpoint,
+            prompt[:80],
+        )
+        handler = _submit_fal_request(edit_endpoint, arguments=arguments)
+        result = handler.get()
+
+        if not result or "images" not in result:
+            raise ValueError("Invalid response from FAL.ai edit API — no images returned")
+        images = result.get("images", [])
+        if not images or not isinstance(images[0], dict) or "url" not in images[0]:
+            raise ValueError("No valid image URLs returned from FAL edit API")
+
+        generation_time = (datetime.datetime.now() - start_time).total_seconds()
+        response_data = {
+            "success": True,
+            "image": images[0]["url"],
+            "model": model_id,
+            "edit_endpoint": edit_endpoint,
+            "source_image": str(resolved_path),
+            "generation_time": generation_time,
+        }
+        return json.dumps(response_data, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({
+            "success": False,
+            "image": None,
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        }, indent=2, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------------
@@ -906,6 +1056,13 @@ IMAGE_GENERATE_SCHEMA = {
                 "description": "The aspect ratio of the generated image. 'landscape' is 16:9 wide, 'portrait' is 16:9 tall, 'square' is 1:1.",
                 "default": DEFAULT_ASPECT_RATIO,
             },
+            "source_image": {
+                "type": "string",
+                "description": (
+                    "Optional absolute path to an existing image to edit. Requires "
+                    "image_gen.provider with edit support (e.g. openai, fal). Omit for text-to-image."
+                ),
+            },
         },
         "required": ["prompt"],
     },
@@ -951,7 +1108,26 @@ def _read_configured_image_provider():
     return None
 
 
-def _dispatch_to_plugin_provider(prompt: str, aspect_ratio: str):
+def _validate_source_image_path(source_image: str) -> tuple[Optional[Path], Optional[str]]:
+    """Validate source_image path. Returns (path, error_json) — one will be None."""
+    from tools.path_security import validate_local_image_file
+
+    path, error, error_type = validate_local_image_file(source_image)
+    if error:
+        return None, json.dumps({
+            "success": False,
+            "image": None,
+            "error": error,
+            "error_type": error_type,
+        })
+    return path, None
+
+
+def _dispatch_to_plugin_provider(
+    prompt: str,
+    aspect_ratio: str,
+    source_image: Optional[str] = None,
+):
     """Route the call to a plugin-registered provider when one is selected.
 
     Returns a JSON string on dispatch, or ``None`` to fall through to the
@@ -1005,10 +1181,24 @@ def _dispatch_to_plugin_provider(prompt: str, aspect_ratio: str):
         })
 
     try:
-        kwargs = {"prompt": prompt, "aspect_ratio": aspect_ratio}
+        kwargs: Dict[str, Any] = {"prompt": prompt, "aspect_ratio": aspect_ratio}
         if configured_model:
             kwargs["model"] = configured_model
-        result = provider.generate(**kwargs)
+        if source_image:
+            if not getattr(provider, "supports_edit", False):
+                return json.dumps({
+                    "success": False,
+                    "image": None,
+                    "error": (
+                        f"image_gen.provider='{configured}' does not support editing. "
+                        f"Omit source_image or switch provider."
+                    ),
+                    "error_type": "capability_error",
+                })
+            kwargs["source_image"] = source_image
+            result = provider.edit(**kwargs)
+        else:
+            result = provider.generate(**kwargs)
     except Exception as exc:
         logger.warning(
             "Image gen provider '%s' raised: %s",
@@ -1035,12 +1225,31 @@ def _handle_image_generate(args, **kw):
     if not prompt:
         return tool_error("prompt is required for image generation")
     aspect_ratio = args.get("aspect_ratio", DEFAULT_ASPECT_RATIO)
+    source_image = args.get("source_image")
+    if source_image:
+        resolved, err = _validate_source_image_path(source_image)
+        if err:
+            return err
+        source_image = str(resolved)
 
     # Route to a plugin-registered provider if one is active (and it's
     # not the in-tree FAL path).
-    dispatched = _dispatch_to_plugin_provider(prompt, aspect_ratio)
+    dispatched = _dispatch_to_plugin_provider(
+        prompt, aspect_ratio, source_image=source_image,
+    )
     if dispatched is not None:
         return dispatched
+
+    if source_image:
+        return json.dumps({
+            "success": False,
+            "image": None,
+            "error": (
+                "source_image requires image_gen.provider with edit support "
+                "(e.g. openai). Set image_gen.provider in config.yaml."
+            ),
+            "error_type": "capability_error",
+        })
 
     return image_generate_tool(
         prompt=prompt,

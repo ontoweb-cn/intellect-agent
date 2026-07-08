@@ -47,11 +47,15 @@ iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scrip
 
 安装程序会自动重试不稳定的 git 拉取，并剥离下载的 `install.ps1` 内容中的 BOM，因此 HTTP 传输中携带的 UTF-8 BOM 不再会破坏 `[scriptblock]::Create((irm ...))` 形式。
 
-### 桌面安装程序（备选方案）
+### 可选 NSIS 安装器
 
-也提供了一个轻量 GUI 安装程序——如果你更倾向于双击 `.exe` 而非打开 PowerShell，可以使用它。下载 Intellect Desktop，运行安装程序，首次启动时 GUI 会在后台调用 `install.ps1` 来配置 Python（通过 `uv`）、Node、PortableGit 以及下文描述的其余依赖引导流程。首次运行后，桌面应用与 PowerShell 安装的 `intellect` CLI 共享同一个 `%LOCALAPPDATA%\intellect\intellect-agent` 安装目录和 `%USERPROFILE%\.intellect` 数据目录——可以在 GUI 和 CLI 之间自由切换。
+部分 Gitee Release 包含 `Intellect-Agent-{version}-Setup.exe` — **CLI/agent 包的 Windows 安装器**（不是聊天 GUI）。它将预构建的原生包解压到 `%LOCALAPPDATA%\IntellectAgent`（或你选择的目录），包含 venv 与 PATH 中的 `intellect`。上文 PowerShell 一行命令仍是主要安装方式；需要双击安装或离线 Release 包时使用 NSIS 安装器。
 
-如果你想要熟悉的 Windows 安装体验，或者要将 Intellect 交给非开发者使用，请使用桌面安装程序；如果你已经在终端中，请使用 PowerShell 一行命令。
+:::note 不是 Intellect Desktop
+此 `.exe` 安装的是 **Intellect Agent（CLI）**。本仓库**未发布**官方的 **Intellect Desktop** 聊天应用。浏览器仪表盘请运行 `intellect webui start`。
+:::
+
+已在终端中时优先用 PowerShell 一行命令；需要熟悉 Windows 安装向导或离线 Release 包时使用 NSIS 安装器。
 
 ### 依赖引导（`dep_ensure`）
 

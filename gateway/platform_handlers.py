@@ -4,14 +4,24 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
-import time
+import re
+import time as _time
+from pathlib import Path
 from typing import Any, Dict, Optional
 
+from intellect_cli.config import cfg_get
+from gateway.config import Platform
 from gateway.helpers import _log_non_critical
+from gateway.platforms.base import BasePlatformAdapter, MessageEvent
+from gateway.session import SessionSource
 
 logger = logging.getLogger(__name__)
+
+_PLATFORM_CONNECT_TIMEOUT_SECS_DEFAULT = 30.0
+_ADAPTER_DISCONNECT_TIMEOUT_SECS_DEFAULT = 5.0
 
 
 class GatewayPlatformHandlers:

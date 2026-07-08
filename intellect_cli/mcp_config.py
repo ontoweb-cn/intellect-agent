@@ -24,6 +24,7 @@ from intellect_cli.config import (
     get_intellect_home,  # noqa: F401 — used by test mocks
 )
 from intellect_cli.colors import Colors, color
+from intellect_cli.mcp_security import validate_mcp_server_entry
 from intellect_constants import display_intellect_home
 from tools.mcp_tool import _ENV_VAR_PATTERN
 
@@ -84,11 +85,52 @@ def _get_mcp_servers(config: Optional[dict] = None) -> Dict[str, dict]:
     return servers
 
 
-def _save_mcp_server(name: str, server_config: dict):
-    """Add or update a server entry in config.yaml."""
+def _save_mcp_server(name: str, server_config: dict) -> bool:
+    """Add or update a server entry in config.yaml.
+
+    Returns False when a high-signal exfiltration-shaped stdio command is
+    rejected.
+    """
+    issues = validate_mcp_server_entry(name, server_config)
+    if issues:
+        for issue in issues:
+            _warning(issue)
+        _warning(f"Server '{name}' was NOT saved due to suspicious configuration.")
+        return False
     config = load_config()
     config.setdefault("mcp_servers", {})[name] = server_config
     save_config(config)
+    return True
+
+
+def _replace_mcp_servers(servers: Dict[str, dict]) -> Tuple[bool, List[str]]:
+    """Replace the WHOLE ``mcp_servers`` map in config.yaml.
+
+    Unlike ``_save_mcp_server`` (per-key upsert), this sets the entire map so
+    GUI editors can delete servers, drop an ``enabled: false`` flag, or remove
+    nested fields and have those removals land on disk.  A plain config
+    deep-merge can only add/override keys, never delete them.
+
+    Every entry is validated up front; on any suspicious command/args the whole
+    save is rejected.  An empty map removes the key entirely.
+    """
+    issues: List[str] = []
+    for name, cfg in servers.items():
+        if not isinstance(cfg, dict):
+            issues.append(f"Server '{name}': expected an object")
+            continue
+        issues.extend(validate_mcp_server_entry(name, cfg))
+
+    if issues:
+        return False, issues
+
+    config = load_config()
+    if servers:
+        config["mcp_servers"] = dict(servers)
+    else:
+        config.pop("mcp_servers", None)
+    save_config(config)
+    return True, []
 
 
 def _remove_mcp_server(name: str) -> bool:
@@ -106,7 +148,8 @@ def _remove_mcp_server(name: str) -> bool:
 
 def _env_key_for_server(name: str) -> str:
     """Convert server name to an env-var key like ``MCP_MYSERVER_API_KEY``."""
-    return f"MCP_{name.upper().replace('-', '_')}_API_KEY"
+    suffix = re.sub(r"[^A-Za-z0-9_]", "_", name.upper()).strip("_")
+    return f"MCP_{suffix}_API_KEY"
 
 
 def _parse_env_assignments(raw_env: Optional[List[str]]) -> Dict[str, str]:

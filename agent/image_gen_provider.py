@@ -142,6 +142,31 @@ class ImageGenProvider(abc.ABC):
         should ignore unknown keys.
         """
 
+    @property
+    def supports_edit(self) -> bool:
+        """Return True when :meth:`edit` is implemented for this provider."""
+        return False
+
+    def edit(
+        self,
+        prompt: str,
+        source_image: str,
+        aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Edit an existing image. Default: capability error."""
+        aspect = resolve_aspect_ratio(aspect_ratio)
+        return error_response(
+            error=(
+                f"Image provider '{self.name}' does not support editing. "
+                f"Switch image_gen.provider or omit source_image."
+            ),
+            error_type="capability_error",
+            provider=self.name,
+            prompt=prompt,
+            aspect_ratio=aspect,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Helpers

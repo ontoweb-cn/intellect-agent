@@ -63,7 +63,8 @@ class GatewayAgentRunner:
             except Exception:
                 resolved_session_key = None
 
-        model = _resolve_gateway_model(user_config)
+        effective_config = user_config if user_config is not None else _load_gateway_config()
+        model = _resolve_gateway_model(effective_config)
         override = self._session_model_overrides.get(resolved_session_key) if resolved_session_key else None
         if override:
             override_model = override.get("model", model)
@@ -102,6 +103,11 @@ class GatewayAgentRunner:
                 runtime_model,
             )
             model = runtime_model
+        config_ov = _resolve_config_model_override(resolved_session_key, effective_config)
+        if config_ov:
+            model, runtime_kwargs = _apply_model_override_fields(
+                model, runtime_kwargs, config_ov,
+            )
         if override and resolved_session_key:
             model, runtime_kwargs = self._apply_session_model_override(
                 resolved_session_key, model, runtime_kwargs
@@ -538,6 +544,7 @@ class GatewayAgentRunner:
         Falling back to the currently active foreground event is what causes
         cross-topic bleed, so don't do that.
         """
+        from gateway.config import Platform, _BUILTIN_PLATFORM_VALUES
         from gateway.session import SessionSource
 
         session_key = str(evt.get("session_key") or "").strip()
@@ -768,6 +775,124 @@ class GatewayAgentRunner:
                         logger.error("Watcher delivery error: %s", e)
 
         logger.debug("Process watcher ended: %s", session_id)
+
+    async def _run_delegation_watcher(self, watcher: dict) -> None:
+        """Poll background delegation completions and inject synthesis turns."""
+        from tools.async_delegation import (
+            drain_gateway_completions,
+            finish_delegation_watcher,
+            list_delegations,
+            requeue_gateway_completions,
+            should_inject_delegation_completion,
+        )
+
+        parent_session_key = watcher.get("parent_session_key", "")
+        interval = watcher.get("check_interval", 5)
+        session_key = watcher.get("session_key", parent_session_key)
+        platform_name = watcher.get("platform", "")
+        chat_id = watcher.get("chat_id", "")
+        thread_id = watcher.get("thread_id", "")
+        user_id = watcher.get("user_id", "")
+        user_name = watcher.get("user_name", "")
+        message_id = str(watcher.get("message_id") or "").strip() or None
+        notify_mode = self._load_background_notifications_mode()
+
+        logger.debug(
+            "Delegation watcher started: parent=%s (every %ss)",
+            parent_session_key,
+            interval,
+        )
+
+        try:
+            idle_cycles = 0
+            while True:
+                await asyncio.sleep(interval)
+                synth_text, drained_ids = drain_gateway_completions(parent_session_key)
+                if synth_text:
+                    idle_cycles = 0
+                else:
+                    running = [
+                        d for d in list_delegations(parent_session_key)
+                        if d.get("status") == "running"
+                    ]
+                    if not running:
+                        idle_cycles += 1
+                        if idle_cycles >= 12:
+                            logger.debug(
+                                "Delegation watcher idle exit: %s",
+                                parent_session_key,
+                            )
+                            break
+                    else:
+                        idle_cycles = 0
+                    continue
+
+                registry = None
+                entries_for_mode: list = []
+                try:
+                    from tools.async_delegation import get_registry
+
+                    registry = get_registry()
+                    for hid in drained_ids:
+                        raw = registry.get(hid)
+                        if raw:
+                            entries_for_mode.append(dict(raw))
+                except Exception:
+                    logger.debug("delegation notify mode lookup failed", exc_info=True)
+
+                if entries_for_mode and not should_inject_delegation_completion(
+                    entries_for_mode, notify_mode
+                ):
+                    logger.debug(
+                        "Skipping delegation synthesis inject (notify_mode=%s) for %s",
+                        notify_mode,
+                        parent_session_key,
+                    )
+                    continue
+
+                source = self._build_process_event_source({
+                    "session_id": parent_session_key,
+                    "session_key": session_key,
+                    "platform": platform_name,
+                    "chat_id": chat_id,
+                    "thread_id": thread_id,
+                    "user_id": user_id,
+                    "user_name": user_name,
+                })
+                if not source:
+                    logger.warning(
+                        "Requeueing delegation completion with no routing metadata for %s",
+                        parent_session_key,
+                    )
+                    requeue_gateway_completions(parent_session_key, drained_ids)
+                    continue
+
+                adapter = None
+                for p, a in self.adapters.items():
+                    if p == source.platform:
+                        adapter = a
+                        break
+                if not adapter or not source.chat_id:
+                    requeue_gateway_completions(parent_session_key, drained_ids)
+                    continue
+                try:
+                    synth_event = MessageEvent(
+                        text=synth_text,
+                        message_type=MessageType.TEXT,
+                        source=source,
+                        internal=True,
+                        message_id=message_id,
+                    )
+                    logger.info(
+                        "Background delegation completed — injecting notification for %s",
+                        session_key,
+                    )
+                    await adapter.handle_message(synth_event)
+                except Exception as e:
+                    logger.error("Delegation notify injection error: %s", e)
+                    requeue_gateway_completions(parent_session_key, drained_ids)
+        finally:
+            finish_delegation_watcher(parent_session_key)
 
     @staticmethod
     def _agent_config_signature(

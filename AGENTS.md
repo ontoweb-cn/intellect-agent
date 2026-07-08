@@ -209,7 +209,7 @@ Reasoning content is stored in `assistant_msg["reasoning"]`.
 - `process_command()` is a method on `IntellectCLI` — dispatches on canonical command name resolved via `resolve_command()` from the central registry
 - Skill slash commands: `agent/skill_commands.py` scans `~/.intellect/skills/`, injects as **user message** (not system prompt) to preserve prompt caching
 
-### Slash Command Registry (`intellect_cli/commands.py`)
+### Slash Command Registry (`intellect_cli/commands/registry.py`)
 
 All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandDef` objects. Every downstream consumer derives from this registry automatically:
 
@@ -223,7 +223,7 @@ All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandD
 
 ### Adding a Slash Command
 
-1. Add a `CommandDef` entry to `COMMAND_REGISTRY` in `intellect_cli/commands.py`:
+1. Add a `CommandDef` entry to `COMMAND_REGISTRY` in `intellect_cli/commands/registry.py`:
 ```python
 CommandDef("mycommand", "Description of what it does", "Session",
            aliases=("mc",), args_hint="[arg]"),

@@ -1,7 +1,7 @@
 # Intellect Agent：Rust ↔ Python 架构梳理
 
-> 文档日期：2026-06-19  
-> 适用版本：Python `intellect-agent` 0.6.5 / Rust `intellect-community-core` 0.1.0
+> 文档日期：2026-07-08  
+> 适用版本：Python `intellect-agent` 0.6.7 / Rust `intellect-community-core` 0.6.7
 
 ## 1. 总体定位
 
@@ -23,8 +23,8 @@ Intellect Agent 是一个 **Python 为主进程、Rust 为性能/安全核心** 
 | 维度 | Python | Rust |
 |------|--------|------|
 | **包名** | `intellect-agent` | `intellect-community-core` (Cargo) |
-| **当前版本** | `0.6.5` (`pyproject.toml`) | `0.1.0` (`rust-core/Cargo.toml`) |
-| **版本是否绑定** | **否** — Rust crate 独立 semver，不与 Python 主版本同步 |
+| **当前版本** | `0.6.7` (`pyproject.toml`) | `0.6.7` (`rust-core/Cargo.toml`) |
+| **版本是否绑定** | **是（发布对齐）** — Python 与 Rust crate 版本号同步发布；逻辑耦合仍通过 API 契约 |
 | **Python 模块名** | — | `intellect_community_core` (编译产物 `.so`/`.pyd`) |
 | **Python 版本要求** | `>=3.12` | 由 PyO3 0.21 决定，CI 中在 3.11/3.12 上测试 |
 | **构建方式** | `pip install -e .` / `uv sync` | **单独** `maturin develop --release` |
@@ -33,7 +33,7 @@ Intellect Agent 是一个 **Python 为主进程、Rust 为性能/安全核心** 
 ### 版本交互模型
 
 ```
-intellect-agent 0.6.x          intellect-community-core 0.1.0
+intellect-agent 0.6.x          intellect-community-core 0.6.x
         │                                    │
         │  逻辑耦合（API 契约）               │
         └──────────────┬─────────────────────┘
@@ -45,7 +45,7 @@ intellect-agent 0.6.x          intellect-community-core 0.1.0
 
 **关键结论：**
 
-- **发布版本不同步**：Python 已到 v0.6.3，Rust crate 仍为 v0.1.0；二者通过 **函数/类 API 契约** 耦合，而非版本号对齐。
+- **发布版本对齐**：Python 与 Rust crate 同步 semver（当前 `0.6.7`）；二者通过 **函数/类 API 契约** 耦合。
 - **运行时依赖（v0.6.2+）**：Rust 扩展从「可选加速」变为 **硬性依赖**（见 `RELEASE_v0.6.2.md`）。缺少扩展时，各模块在调用 Rust 函数时会直接失败，不再走 Python 回退。
 - **构建与安装分离**：`pyproject.toml` 注释仍写 "optional"，但 v0.6.2 起实际运行必须手动构建：
 
@@ -65,7 +65,7 @@ intellect-agent 0.6.x          intellect-community-core 0.1.0
 ```mermaid
 flowchart LR
     subgraph Build["构建阶段"]
-        Cargo["rust-core/Cargo.toml\nintellect-community-core 0.1.0"]
+        Cargo["rust-core/Cargo.toml\nintellect-community-core 0.6.7"]
         PyO3["PyO3 0.21\nextension-module"]
         Maturin["maturin develop/build\n(pyproject [tool.maturin])"]
         SO["intellect_community_core.so"]
@@ -451,7 +451,7 @@ Intellect Agent 采用 **「Python 编排 + Rust 热路径加速」** 的 PyO3 �
 
 | 维度 | 说明 |
 |------|------|
-| **版本** | Python `0.6.5` 与 Rust crate `0.1.0` **独立编号**，通过 API 契约耦合 |
+| **版本** | Python 与 Rust crate **同步编号**（当前 `0.6.7`），通过 API 契约耦合 |
 | **构建** | maturin 单独编译，不随 `pip install` 自动完成 |
 | **运行** | v0.6.2 起 Rust 为 **硬性依赖**，经 `intellect_rust.py` 统一接入 |
 | **已迁移** | 存储写路径、沙箱安全检测、流解析、Token 累计、加密、Gateway 调度工具 — 共 4,528 行 Rust |

@@ -43,7 +43,11 @@ _write_origin: contextvars.ContextVar[str] = contextvars.ContextVar(
 # run_agent.py's AIAgent._memory_write_origin override in
 # _spawn_background_review().
 BACKGROUND_REVIEW = "background_review"
+LEARN_COMMAND = "learn_command"
 
+
+def is_learn_command() -> bool:
+    return get_current_write_origin() == LEARN_COMMAND
 
 def set_current_write_origin(origin: str) -> contextvars.Token[str]:
     """Bind the active write origin to the current context.

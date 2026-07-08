@@ -89,7 +89,9 @@ def create_app(adapter: UpstreamAdapter) -> "web.Application":
             "pip install 'intellect-agent[messaging]' or `pip install aiohttp`."
         )
 
-    app = web.Application()
+    _PROXY_MAX_REQUEST_BYTES = 10_000_000  # 10 MB — mirrors api_server MAX_REQUEST_BYTES
+
+    app = web.Application(client_max_size=_PROXY_MAX_REQUEST_BYTES)
     # AppKey ensures forward-compat with future aiohttp versions that strip
     # bare-string keys.
     _adapter_key = web.AppKey("adapter", UpstreamAdapter)

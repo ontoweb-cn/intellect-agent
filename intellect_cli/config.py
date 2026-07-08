@@ -1209,6 +1209,15 @@ DEFAULT_CONFIG = {
             "timeout": 600,
             "extra_body": {},
         },
+        "learn": {
+            "provider": "auto",
+            "model": "",
+            "base_url": "",
+            "api_key": "",
+            "timeout": 120,
+            "extra_body": {},
+            "redact_secrets": False,
+        },
     },
 
     # TEMPORARY: profile create / switch / delete gate (CLI + WebUI).
@@ -1476,7 +1485,8 @@ DEFAULT_CONFIG = {
                                        # raise if children time out before producing output.
         "reasoning_effort": "",  # reasoning effort for subagents: "xhigh", "high", "medium",
                                  # "low", "minimal", "none" (empty = inherit parent's level)
-        "max_concurrent_children": 3,  # max parallel children per batch; floor of 1 enforced, no ceiling
+        "max_concurrent_children": 3,
+        "max_merged_completions": 3,
         # Orchestrator role controls (see tools/delegate_tool.py:_get_max_spawn_depth
         # and _get_orchestrator_enabled).  Values are clamped to [1, 3] with a
         # warning log if out of range.
@@ -1954,6 +1964,11 @@ DEFAULT_CONFIG = {
         # multi-tool agent turn. Bridged to intellect_MEDIA_TRUST_RECENT_SECONDS.
         # Only consulted when ``strict`` is true.
         "trust_recent_files_seconds": 600,
+        # Per-platform / per-channel model overrides for gateway sessions.
+        # Keys: platform name (e.g. "telegram") or session suffix without the
+        # ``agent:main:`` prefix (e.g. "telegram:dm:12345"). Session ``/model``
+        # overrides take precedence. Values: {model?, provider?, api_key?, ...}.
+        "model_overrides": {},
     },
 
     # Pluggable storage / cache / event backends.
@@ -5433,11 +5448,17 @@ def reload_env() -> int:
 
 def get_env_value(key: str) -> Optional[str]:
     """Get a value from ~/.intellect/.env or environment."""
-    # Check environment first
+    try:
+        from agent.secret_scope import current_secret_scope, get_secret
+
+        if current_secret_scope() is not None:
+            return get_secret(key)
+    except ImportError:
+        pass
+
     if key in os.environ:
         return os.environ[key]
-    
-    # Then check .env file
+
     env_vars = load_env()
     return env_vars.get(key)
 

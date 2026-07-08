@@ -42,7 +42,7 @@ Intellect 是 **Python 进程 + PyO3 Rust 扩展**，不是单一静态二进制
 |------|-------------|----------|--------|
 | **Linux** | ✅ | Gitee Release tar.gz + `.deb`（P1） | 高 |
 | **macOS** | ✅ | Gitee Release tar.gz / `.pkg` + Homebrew | 高 |
-| **Windows** | ✅ | `install.ps1` + Gitee Release zip + Desktop `.exe` | 高（Early Beta） |
+| **Windows** | ✅ | `install.ps1` + Gitee Release zip + optional NSIS `Intellect-Agent-*-Setup.exe` | 高（Early Beta） |
 | **Docker** | ✅ | 多架构镜像（见 [docker.md](./docker.md)） | 高（Linux 容器） |
 
 **不可行（短期）**：单个无依赖 `.exe` / AppImage 静态链接全部 Python 运行时（需 Stage 6 `intellectd` 或 PyInstaller 全量打包，维护成本极高）。
@@ -121,7 +121,7 @@ Expand-Archive ia.zip -DestinationPath $env:LOCALAPPDATA\intellect
 | **PowerShell 安装器** | `scripts/install.ps1`（远程执行） | P0，已存在 |
 | **Native zip** | `intellect-windows-amd64-{semver}.zip` | P0，离线/内网 |
 | **Rust wheel** | `*-win_amd64.whl` | pip 路径 |
-| **Desktop .exe** | GUI 安装器 | 已存在，内部调用 `install.ps1` |
+| **NSIS Setup.exe** | `Intellect-Agent-{semver}-Setup.exe` | P1 可选，安装 **CLI/agent native bundle**（见 `packaging/installer/windows/`）；**非** 聊天 Desktop GUI |
 
 Native zip 内含 PortableGit 路径说明；或依赖安装脚本已安装的 `%LOCALAPPDATA%\intellect\git`。
 

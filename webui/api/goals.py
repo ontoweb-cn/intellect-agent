@@ -610,3 +610,32 @@ def evaluate_goal_after_turn(
     decision = dict(decision)
     decision = _goal_decision_payload(decision, getattr(mgr, "state", None))
     return decision
+
+
+# ── HP-303i: Verification evidence listing ─────────────────────────────────
+
+def handle_verification_evidence_get(handler, parsed) -> bool:
+    """GET /api/goals/evidence?session_id=... → verification evidence list."""
+    from api.helpers import j
+    from urllib.parse import parse_qs
+
+    qs = parse_qs(parsed.query or "")
+    session_id = (qs.get("session_id") or [""])[0].strip()
+    if not session_id:
+        return j(handler, {"evidence": [], "note": "session_id required"})
+
+    try:
+        from agent.verification_evidence import query_evidence
+        from intellect_constants import get_intellect_home
+        db_path = str(get_intellect_home() / "state.db")
+        records = query_evidence(db_path, session_id=session_id, limit=20)
+        passed = sum(1 for r in records if r.get("passed"))
+        return j(handler, {
+            "evidence": records,
+            "total": len(records),
+            "passed": passed,
+            "failed": len(records) - passed,
+        })
+    except Exception:
+        logger.debug("verification evidence query failed", exc_info=True)
+        return j(handler, {"evidence": [], "error": "query failed"}, status=500)

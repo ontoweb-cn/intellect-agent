@@ -8,14 +8,24 @@ queue, and config helper methods.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import re
 import time
-from typing import Any, Dict, Optional
+from collections import OrderedDict
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from intellect_cli.config import cfg_get
 from intellect_cli.fallback_config import get_fallback_chain
+from gateway.config import Platform
 from gateway.helpers import _log_non_critical, _get_intellect_home, _get_pending_sentinel
+from gateway.platforms.base import MessageEvent, merge_pending_message_event
+from gateway.restart import DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT, parse_restart_drain_timeout
+from gateway.session import SessionSource, build_session_key
+from utils import is_truthy_value
 
 logger = logging.getLogger(__name__)
 
@@ -430,6 +440,7 @@ class GatewayInfrastructureHandlers:
                 )
         return value
 
+    @staticmethod
     def _load_background_notifications_mode() -> str:
         """Load background process notification mode from config or env var.
 

@@ -49,6 +49,41 @@ from tools.tool_result_storage import (
 logger = logging.getLogger(__name__)
 
 # Maximum number of concurrent worker threads for parallel tool execution.
+
+
+def _record_terminal_evidence(agent, function_args: dict, function_result: str) -> None:
+    """HP-303d: record verification evidence for terminal commands.
+
+    Only fires when the agent's verification gate is open AND the command
+    is classifiable as a verification command.  Guardrail-rejected commands
+    (no exit_code in result) are skipped.
+    """
+    if not agent._verification_enabled():
+        return
+    try:
+        from agent.verification_evidence import record_evidence, classify_command
+        import json as _json
+        _data = _json.loads(function_result) if isinstance(function_result, str) else {}
+        # Skip guardrail-rejected commands that never actually executed
+        if "exit_code" not in _data:
+            return
+        _cmd = str(function_args.get("command", "")) if isinstance(function_args, dict) else ""
+        _kind = classify_command(_cmd)
+        if _kind:
+            from intellect_constants import get_intellect_home
+            record_evidence(
+                db_path=str(get_intellect_home() / "state.db"),
+                session_id=getattr(agent, "session_id", "") or "",
+                kind=_kind,
+                command=_cmd,
+                exit_code=_data.get("exit_code"),
+                output=_data.get("output", ""),
+                passed=(_data.get("exit_code") == 0),
+            )
+    except Exception as _ve_err:
+        logging.debug("verification evidence record failed: %s", _ve_err)
+
+
 # Mirrors the constant in ``run_agent`` for tests/imports that look here.
 _MAX_TOOL_WORKERS = 8
 
@@ -457,6 +492,10 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                 except Exception as _ver_err:
                     logging.debug("file-mutation verifier record failed: %s", _ver_err)
 
+                # HP-303d: record verification evidence for terminal commands
+                if function_name == "terminal":
+                    _record_terminal_evidence(agent, function_args, function_result)
+
             if not blocked and agent.tool_progress_callback:
                 try:
                     agent.tool_progress_callback(
@@ -728,26 +767,46 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 agent._vprint(f"  {_get_cute_tool_message_impl('session_search', function_args, tool_duration, result=function_result)}")
         elif function_name == "memory":
             target = function_args.get("target", "memory")
+            batch_ops = function_args.get("operations")
             from tools.memory_tool import memory_tool as _memory_tool
             function_result = _memory_tool(
                 action=function_args.get("action"),
                 target=target,
                 content=function_args.get("content"),
                 old_text=function_args.get("old_text"),
+                operations=batch_ops,
                 store=agent._memory_store,
             )
             # Bridge: notify external memory provider of built-in memory writes
-            if agent._memory_manager and function_args.get("action") in {"add", "replace"}:
+            if agent._memory_manager:
                 try:
-                    agent._memory_manager.on_memory_write(
-                        function_args.get("action", ""),
-                        target,
-                        function_args.get("content", ""),
-                        metadata=agent._build_memory_write_metadata(
-                            task_id=effective_task_id,
-                            tool_call_id=getattr(tool_call, "id", None),
-                        ),
-                    )
+                    if batch_ops:
+                        parsed = json.loads(function_result)
+                        if parsed.get("success"):
+                            meta = agent._build_memory_write_metadata(
+                                task_id=effective_task_id,
+                                tool_call_id=getattr(tool_call, "id", None),
+                            )
+                            for op in batch_ops:
+                                if not isinstance(op, dict):
+                                    continue
+                                if op.get("action") in {"add", "replace"}:
+                                    agent._memory_manager.on_memory_write(
+                                        op.get("action", ""),
+                                        op.get("target", "memory"),
+                                        op.get("content", ""),
+                                        metadata=meta,
+                                    )
+                    elif function_args.get("action") in {"add", "replace"}:
+                        agent._memory_manager.on_memory_write(
+                            function_args.get("action", ""),
+                            target,
+                            function_args.get("content", ""),
+                            metadata=agent._build_memory_write_metadata(
+                                task_id=effective_task_id,
+                                tool_call_id=getattr(tool_call, "id", None),
+                            ),
+                        )
                 except Exception:
                     logger.debug('non-critical operation failed', exc_info=True)
             tool_duration = time.time() - tool_start_time
@@ -946,6 +1005,10 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 )
             except Exception as _ver_err:
                 logging.debug("file-mutation verifier record failed: %s", _ver_err)
+
+            # HP-303d: record verification evidence for terminal commands
+            if function_name == "terminal":
+                _record_terminal_evidence(agent, function_args, function_result)
 
         if not _execution_blocked and agent.tool_progress_callback:
             try:
