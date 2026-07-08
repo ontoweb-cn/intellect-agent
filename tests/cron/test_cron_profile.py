@@ -302,6 +302,91 @@ class TestRunJobProfileContext:
         assert os.environ["INTELLECT_HOME"] == str(root)
         assert sched._get_intellect_home() == root
 
+    def test_profile_secret_scope_reads_env_without_global_pollution(
+        self, isolated_cron_profile_home, monkeypatch
+    ):
+        import sys
+        import cron.scheduler as sched
+        from intellect_cli.config import get_env_value
+
+        root, profile_home = isolated_cron_profile_home
+        observed: dict = {}
+        (profile_home / ".env").write_text(
+            "intellect_PROFILE_TEST_ONLY=profile-only\n"
+            "intellect_PROFILE_TEST_SHARED=profile-value\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("intellect_PROFILE_TEST_SHARED", "outer")
+        monkeypatch.delenv("intellect_PROFILE_TEST_ONLY", raising=False)
+        monkeypatch.setattr(sched, "_build_job_prompt", lambda job, prerun_script=None: "hi")
+        monkeypatch.setattr(sched, "_resolve_origin", lambda job: None)
+        monkeypatch.setattr(sched, "_resolve_delivery_target", lambda job: None)
+        monkeypatch.setattr(sched, "_resolve_cron_enabled_toolsets", lambda job, cfg: None)
+        monkeypatch.setattr(sched, "_intellect_home", None)
+        monkeypatch.setenv("intellect_CRON_TIMEOUT", "0")
+
+        from intellect_cli import runtime_provider as runtime_provider
+
+        monkeypatch.setattr(
+            runtime_provider,
+            "resolve_runtime_provider",
+            lambda **_kw: {
+                "provider": "test",
+                "api_key": "test-key",
+                "base_url": "http://test.local",
+                "api_mode": "chat_completions",
+            },
+        )
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                observed["scope_only_during_init"] = get_env_value(
+                    "intellect_PROFILE_TEST_ONLY"
+                )
+                observed["scope_shared_during_init"] = get_env_value(
+                    "intellect_PROFILE_TEST_SHARED"
+                )
+
+            def run_conversation(self, *_a, **_kw):
+                observed["scope_only_during_run"] = get_env_value(
+                    "intellect_PROFILE_TEST_ONLY"
+                )
+                observed["scope_shared_during_run"] = get_env_value(
+                    "intellect_PROFILE_TEST_SHARED"
+                )
+                return {"final_response": "done", "messages": []}
+
+            def get_activity_summary(self):
+                return {"seconds_since_activity": 0.0}
+
+            def close(self):
+                pass
+
+        fake_mod = type(sys)("run_agent")
+        fake_mod.AIAgent = FakeAgent
+        monkeypatch.setitem(sys.modules, "run_agent", fake_mod)
+
+        import dotenv
+
+        monkeypatch.setattr(dotenv, "load_dotenv", lambda *_a, **_kw: True)
+
+        job = {
+            "id": "scope-profile",
+            "name": "scope-profile-job",
+            "profile": "support",
+            "schedule_display": "manual",
+        }
+
+        success, _output, _response, error = sched.run_job(job)
+
+        assert success is True, error
+        assert observed["scope_only_during_init"] == "profile-only"
+        assert observed["scope_shared_during_init"] == "profile-value"
+        assert observed["scope_only_during_run"] == "profile-only"
+        assert observed["scope_shared_during_run"] == "profile-value"
+        assert os.environ["intellect_PROFILE_TEST_SHARED"] == "outer"
+        assert "intellect_PROFILE_TEST_ONLY" not in os.environ
+
     def test_no_agent_profile_uses_profile_scripts_dir_and_restores_env(
         self, isolated_cron_profile_home, monkeypatch
     ):

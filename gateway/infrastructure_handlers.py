@@ -440,6 +440,7 @@ class GatewayInfrastructureHandlers:
                 )
         return value
 
+    @staticmethod
     def _load_background_notifications_mode() -> str:
         """Load background process notification mode from config or env var.
 

@@ -1098,6 +1098,12 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
 
         "background": "_handle_background_command",
 
+        "delegations": "_handle_delegations_command",
+
+        "learn": "_handle_learn_command",
+
+        "journey": "_handle_journey_command",
+
         "goal": "_handle_goal_command",
 
         "subgoal": "_handle_subgoal_command",
@@ -1405,6 +1411,7 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
         # Key: session_key, Value: dict with model/provider/api_key/base_url/api_mode
 
         self._session_model_overrides: Dict[str, Dict[str, str]] = {}
+        self._learn_pending_drafts: Dict[str, str] = {}
 
         # Per-session reasoning effort overrides from /reasoning.
 
@@ -2817,6 +2824,39 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
         except Exception as e:
 
             logger.error("Recovered watcher setup error: %s", e)
+
+        try:
+
+            from tools.async_delegation import (
+                pending_delegation_watchers as _dg_watchers,
+                try_start_delegation_watcher,
+            )
+
+            dg_watchers = _dg_watchers
+
+            import tools.async_delegation as _ad_mod
+
+            _ad_mod.pending_delegation_watchers = []
+
+            for watcher in dg_watchers:
+                parent_key = watcher.get("parent_session_key", "")
+                if not try_start_delegation_watcher(parent_key):
+                    logger.debug(
+                        "Skipping duplicate delegation watcher for %s",
+                        parent_key,
+                    )
+                    continue
+
+                asyncio.create_task(self._run_delegation_watcher(watcher))
+
+                logger.info(
+                    "Started delegation watcher for %s",
+                    watcher.get("parent_session_key"),
+                )
+
+        except Exception as e:
+
+            logger.error("Delegation watcher setup error: %s", e)
 
         # Start background session expiry watcher to finalize expired sessions
 
@@ -4395,6 +4435,18 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
             if _cmd_def_inner and _cmd_def_inner.name == "background":
 
                 return await self._handle_background_command(event)
+
+            if _cmd_def_inner and _cmd_def_inner.name == "delegations":
+
+                return await self._handle_delegations_command(event)
+
+            if _cmd_def_inner and _cmd_def_inner.name == "learn":
+
+                return await self._handle_learn_command(event)
+
+            if _cmd_def_inner and _cmd_def_inner.name == "journey":
+
+                return await self._handle_journey_command(event)
 
             # /kanban must bypass the guard. It writes to a profile-agnostic
 
@@ -7297,6 +7349,34 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
             except Exception as e:
 
                 logger.error("Process watcher setup error: %s", e)
+
+            try:
+
+                from tools.async_delegation import (
+                    pending_delegation_watchers as _dg_pending,
+                    try_start_delegation_watcher,
+                )
+
+                import tools.async_delegation as _ad_mod
+
+                _dg_watchers = _dg_pending
+
+                _ad_mod.pending_delegation_watchers = []
+
+                for watcher in _dg_watchers:
+                    parent_key = watcher.get("parent_session_key", "")
+                    if not try_start_delegation_watcher(parent_key):
+                        logger.debug(
+                            "Skipping duplicate delegation watcher for %s",
+                            parent_key,
+                        )
+                        continue
+
+                    asyncio.create_task(self._run_delegation_watcher(watcher))
+
+            except Exception as e:
+
+                logger.error("Delegation watcher setup error: %s", e)
 
             # Drain watch pattern notifications that arrived during the agent run.
 

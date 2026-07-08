@@ -1416,6 +1416,19 @@ def _run_single_child(
         while not _heartbeat_stop.wait(_HEARTBEAT_INTERVAL):
             if parent_agent is None:
                 continue
+            _delegation_hid = getattr(child, "_delegation_handle_id", None)
+            if _delegation_hid:
+                from tools.async_delegation import is_delegation_cancel_requested
+
+                if is_delegation_cancel_requested(_delegation_hid):
+                    try:
+                        if hasattr(child, "interrupt"):
+                            child.interrupt("Cancelled via /delegations cancel")
+                        elif hasattr(child, "_interrupt_requested"):
+                            child._interrupt_requested = True
+                    except Exception:
+                        logger.debug("delegation cancel interrupt failed", exc_info=True)
+                    break
             touch = getattr(parent_agent, "_touch_activity", None)
             if not touch:
                 continue
@@ -1973,6 +1986,7 @@ def delegate_task(
     acp_command: Optional[str] = None,
     acp_args: Optional[List[str]] = None,
     role: Optional[str] = None,
+    background: bool = False,
     parent_agent=None,
 ) -> str:
     """
@@ -2085,6 +2099,10 @@ def delegate_task(
 
     parent_session_sid = _parent_session_id_for_delegate(parent_agent)
     n_tasks = len(task_list)
+    task_labels = [
+        (t.get("goal") or f"Task {i}")[:80]
+        for i, t in enumerate(task_list)
+    ]
     overall_start = time.monotonic()
     results = []
     try:
@@ -2102,6 +2120,7 @@ def delegate_task(
             acp_command=acp_command,
             acp_args=acp_args,
             toolsets=toolsets,
+            background=background,
         )
     finally:
         _restore_parent_session_context(parent_session_sid)
@@ -2122,9 +2141,9 @@ def _delegate_task_execute(
     acp_command,
     acp_args,
     toolsets,
+    background=False,
 ) -> str:
     """Run child build + execution; caller restores parent session id."""
-    # Track goal labels for progress display (truncated for readability)
     _ = task_labels
 
     # Save parent tool names BEFORE any child construction mutates the global.
@@ -2173,6 +2192,43 @@ def _delegate_task_execute(
     finally:
         # Authoritative restore: reset global to parent's tool names after all children built
         _model_tools._last_resolved_tool_names = _parent_tool_names
+
+    if background:
+        from tools.async_delegation import (
+            build_background_tool_response,
+            count_running_delegations,
+            spawn_background_child,
+        )
+
+        running_bg = count_running_delegations()
+        with _active_subagents_lock:
+            sync_running = len(_active_subagents)
+        if running_bg + sync_running + n_tasks > max_children:
+            return tool_error(
+                f"Too many concurrent delegations: {running_bg} background + "
+                f"{sync_running} sync running, cannot start {n_tasks} more "
+                f"(max_concurrent_children={max_children})."
+            )
+        handles = []
+        for i, t, child in children:
+            goal_text = t["goal"]
+
+            def _make_run_fn(idx=i, c=child, g=goal_text):
+                return lambda: _run_single_child(idx, g, c, parent_agent)
+
+            handle_id = spawn_background_child(
+                parent_agent=parent_agent,
+                child=child,
+                task_index=i,
+                goal=goal_text,
+                run_fn=_make_run_fn(),
+            )
+            handles.append({
+                "handle_id": handle_id,
+                "goal": goal_text,
+                "status": "running",
+            })
+        return build_background_tool_response(handles)
 
     if n_tasks == 1:
         # Single task -- run directly (no thread pool overhead)
@@ -2855,6 +2911,16 @@ DELEGATE_TASK_SCHEMA = {
                     "Arguments for the ACP command (default: ['--acp', '--stdio']). "
                     "Only used when acp_command is set. "
                     "Leave empty unless acp_command is explicitly provided."
+                ),
+            },
+            "background": {
+                "type": "boolean",
+                "description": (
+                    "When true, start subagent(s) in the background and return handle id(s) "
+                    "immediately instead of blocking until completion. Results reflow via "
+                    "/delegations or an automatic completion notification. "
+                    "Not durable across process restart — use cronjob or "
+                    "terminal(background=True, notify_on_complete=True) for long-lived work."
                 ),
             },
         },

@@ -3700,3 +3700,67 @@ class GatewayCommandHandlers:
         return t("gateway.update.starting")
 
 
+    async def _handle_delegations_command(self, event: "MessageEvent") -> str:
+        from intellect_cli.delegation_cmd import run_delegations_subcommand
+
+        args = event.get_command_args() or ""
+        session_key = self._session_key_for_source(event.source)
+        return run_delegations_subcommand(args, session_key=session_key)
+
+    async def _handle_learn_command(self, event: "MessageEvent") -> str:
+        from intellect_cli.learn_cmd import run_learn_generate, run_learn_save
+
+        session_key = self._session_key_for_source(event.source)
+        args = (event.get_command_args() or "").strip()
+        arg_lower = args.lower()
+
+        if arg_lower == "discard":
+            self._learn_pending_drafts.pop(session_key, None)
+            return "Learn draft discarded."
+
+        if arg_lower == "save":
+            draft = self._learn_pending_drafts.pop(session_key, None)
+            if not draft:
+                return "No learn draft pending. Run /learn [name] first."
+            return run_learn_save(draft)
+
+        running = getattr(self, "_running_agents", {}).get(session_key)
+        if running is None or running is _get_pending_sentinel():
+            return "No active conversation to distill in this session."
+
+        messages = list(getattr(running, "messages", []) or [])
+        if not messages:
+            return "No conversation to distill yet."
+
+        status, draft = run_learn_generate(args=args, messages=messages)
+        if draft:
+            self._learn_pending_drafts[session_key] = draft
+        return status
+
+    async def _handle_journey_command(self, event: "MessageEvent") -> str:
+        """Gateway /journey — list-only (HP-401f)."""
+        from agent.learning_graph import build_learning_graph
+        from agent.learning_graph_render import format_date
+
+        args = (event.get_command_args() or "").strip().lower()
+        if args and args not in {"list", "ls"}:
+            return "Gateway /journey supports list only — try: /journey list"
+
+        payload = build_learning_graph()
+        nodes = sorted(payload.get("nodes", []), key=lambda n: n.get("timestamp") or 0)
+        if not nodes:
+            return (
+                "No learning yet — use /learn, the memory tool, or install hub skills; "
+                "then check again with /journey list."
+            )
+
+        lines = ["Journey (learned skills & memories):"]
+        for node in nodes[:25]:
+            glyph = "◆" if node.get("kind") == "memory" else "●"
+            date = format_date(node.get("timestamp"))
+            label = node.get("label") or node.get("id", "")
+            lines.append(f"  {glyph} {node.get('id')} — {label} ({date})")
+        if len(nodes) > 25:
+            lines.append(f"  … and {len(nodes) - 25} more (intellect journey list)")
+        return "\n".join(lines)
+

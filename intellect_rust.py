@@ -13,6 +13,7 @@ alias is ``None``.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 # ── Try the single import that gates everything ─────────────────────────────
@@ -44,14 +45,25 @@ def _import_core():
     # also ships a stub at ./intellect_community_core/ (see pyproject.toml
     # [tool.maturin] python-source).  When cwd is the checkout root,
     # sys.path[0] == "" resolves that stub before site-packages.  Retry
-    # without the implicit cwd entry — same effect as ``python -P``.
-    if not sys.path or sys.path[0] != "":
+    # without the implicit cwd entry and without the repo root on sys.path.
+    _purge_core_modules()
+    saved_path = list(sys.path)
+    repo_root = str(Path(__file__).resolve().parent)
+    try:
+        cleaned = [p for p in saved_path if p not in ("", repo_root)]
+        sys.path = cleaned
+        core = _load_core()
+        if core is not None:
+            return core
+    finally:
+        sys.path = saved_path
+
+    if not saved_path or saved_path[0] != "":
         return None
 
     _purge_core_modules()
-    saved_path = sys.path
     try:
-        sys.path = sys.path[1:]
+        sys.path = saved_path[1:]
         return _load_core()
     finally:
         sys.path = saved_path
@@ -167,6 +179,10 @@ PlatformRetryScheduler: Any = (
     _CORE.PlatformRetryScheduler if _has() else None
 )
 HAS_RETRY_SCHEDULER: bool = _has()
+DelegationRegistry: Any = (
+    getattr(_CORE, "DelegationRegistry", None) if _has() else None
+)
+HAS_DELEGATION_REGISTRY: bool = bool(DelegationRegistry)
 
 # ── Compression ────────────────────────────────────────────────────────────
 
@@ -263,6 +279,9 @@ rust_file_mutation_landed: Callable = (
 rust_strip_yaml_frontmatter: Callable = (
     _CORE.strip_yaml_frontmatter_rs if _has() else None
 )
+rust_validate_skill_frontmatter: Callable = (
+    _CORE.validate_skill_frontmatter_rs if _has() else None
+)
 rust_truncate_content: Callable = (
     _CORE.truncate_content_rs if _has() else None
 )
@@ -271,6 +290,27 @@ rust_paths_overlap: Callable = (
 )
 rust_canonical_tool_args: Callable = (
     _CORE.canonical_tool_args_rs if _has() else None
+)
+
+# ── HP-304: Automation blueprints ──────────────────────────────────────────
+
+rust_validate_blueprint_yaml: Callable = (
+    getattr(_CORE, "validate_blueprint_yaml", None) if _has() else None
+)
+rust_validate_blueprint_params: Callable = (
+    getattr(_CORE, "validate_blueprint_params", None) if _has() else None
+)
+
+# ── HP-303: Verification evidence ──────────────────────────────────────────
+
+rust_insert_verification_evidence: Callable = (
+    getattr(_CORE, "insert_verification_evidence", None) if _has() else None
+)
+rust_query_verification_evidence: Callable = (
+    getattr(_CORE, "query_verification_evidence", None) if _has() else None
+)
+rust_classify_verification_command: Callable = (
+    getattr(_CORE, "classify_verification_command", None) if _has() else None
 )
 
 # ── Model normalization ───────────────────────────────────────────────────

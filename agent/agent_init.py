@@ -326,6 +326,13 @@ def init_agent(
     else:
         agent.api_mode = "chat_completions"
 
+    # Detect moa/<preset> virtual provider in model name (HP-302).
+    # Overrides the auto-detected api_mode so the moa transport + runner
+    # handle the call instead of a real LLM endpoint.
+    if agent.model and "/" in str(agent.model) and str(agent.model).startswith("moa/"):
+        agent.api_mode = "moa"
+        agent.provider = "moa"
+
     # Eagerly warm the transport cache so import errors surface at init,
     # not mid-conversation.  Also validates the api_mode is registered.
     try:

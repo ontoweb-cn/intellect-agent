@@ -208,6 +208,30 @@ class TestFalImageGenProviderGenerate:
         assert result["provider"] == "fal"
 
 
+class TestFalImageGenProviderEdit:
+    def test_supports_edit_true_for_gpt_image_model(self, monkeypatch):
+        import tools.image_generation_tool as image_tool
+        from plugins.image_gen.fal import FalImageGenProvider
+
+        monkeypatch.setattr(
+            image_tool,
+            "_resolve_fal_model",
+            lambda: ("fal-ai/gpt-image-1.5", image_tool.FAL_MODELS["fal-ai/gpt-image-1.5"]),
+        )
+        assert FalImageGenProvider().supports_edit is True
+
+    def test_supports_edit_false_for_flux_model(self, monkeypatch):
+        import tools.image_generation_tool as image_tool
+        from plugins.image_gen.fal import FalImageGenProvider
+
+        monkeypatch.setattr(
+            image_tool,
+            "_resolve_fal_model",
+            lambda: ("fal-ai/flux-2/klein/9b", image_tool.FAL_MODELS["fal-ai/flux-2/klein/9b"]),
+        )
+        assert FalImageGenProvider().supports_edit is False
+
+
 # ---------------------------------------------------------------------------
 # Registry wiring
 # ---------------------------------------------------------------------------

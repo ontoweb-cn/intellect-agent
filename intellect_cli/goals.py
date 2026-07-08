@@ -374,6 +374,7 @@ def judge_goal(
     *,
     timeout: float = DEFAULT_JUDGE_TIMEOUT,
     subgoals: Optional[List[str]] = None,
+    evidence: Optional[str] = None,
 ) -> Tuple[str, str, bool]:
     """Ask the auxiliary model whether the goal is satisfied.
 
@@ -435,6 +436,15 @@ def judge_goal(
             response=_truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
             current_time=current_time,
         )
+
+    # HP-303h: inject verification evidence into judge prompt
+    if evidence and evidence.strip():
+        # Truncate evidence to avoid exceeding judge model context window.
+        # Keep it under ~1500 chars so goal + response still fit.
+        _ev = evidence.strip()
+        if len(_ev) > 1500:
+            _ev = _ev[:1500].rsplit("\n", 1)[0] + "\n  ... (truncated)"
+        prompt = _ev + "\n\n" + prompt
 
     try:
         resp = client.chat.completions.create(
@@ -622,6 +632,7 @@ class GoalManager:
         last_response: str,
         *,
         user_initiated: bool = True,
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run the judge and update state. Return a decision dict.
 
@@ -652,8 +663,26 @@ class GoalManager:
         state.turns_used += 1
         state.last_turn_at = time.time()
 
+        # HP-303h: fetch verification evidence if session_id provided
+        _evidence = None
+        if session_id:
+            try:
+                from agent.verification_evidence import query_evidence
+                from agent.verification_stop import _format_evidence_block
+                from intellect_constants import get_intellect_home
+                _records = query_evidence(
+                    str(get_intellect_home() / "state.db"),
+                    session_id=session_id, limit=5,
+                )
+                if _records:
+                    _evidence = _format_evidence_block(_records)
+            except Exception:
+                logger.debug("goal judge: evidence fetch failed", exc_info=True)
+
         verdict, reason, parse_failed = judge_goal(
-            state.goal, last_response, subgoals=state.subgoals or None
+            state.goal, last_response,
+            subgoals=state.subgoals or None,
+            evidence=_evidence,
         )
         state.last_verdict = verdict
         state.last_reason = reason

@@ -14848,6 +14848,64 @@ Examples:
         logging.getLogger(__name__).debug("curator CLI wiring failed: %s", _exc)
 
     # =========================================================================
+    # journey command — learned skills + memories timeline
+    # =========================================================================
+    journey_parser = subparsers.add_parser(
+        "journey",
+        help="Learning timeline — skills and memories over time",
+        description=(
+            "Terminal-native timeline of profile-learned skills and memory chunks. "
+            "Mirrors the WebUI Journey panel and GET /api/learning/graph."
+        ),
+    )
+    try:
+        from intellect_cli.journey import register_cli as _register_journey_cli
+
+        _register_journey_cli(journey_parser)
+    except Exception as _exc:
+        logging.getLogger(__name__).debug("journey CLI wiring failed: %s", _exc)
+
+    # =========================================================================
+    # blueprint command — automation blueprints (HP-304)
+    # =========================================================================
+    blueprint_parser = subparsers.add_parser(
+        "blueprint",
+        help="List, search, and manage automation blueprints",
+    )
+    try:
+        from intellect_cli.blueprint_cmd import register_cli as _register_blueprint_cli
+
+        _register_blueprint_cli(blueprint_parser)
+    except Exception as _exc:
+        logging.getLogger(__name__).debug("blueprint CLI wiring failed: %s", _exc)
+
+    # =========================================================================
+    # moa command — Mixture of Agents preset management (HP-302f+g)
+    # =========================================================================
+    moa_parser = subparsers.add_parser(
+        "moa",
+        help="Mixture of Agents — multi-model aggregation",
+        description=(
+            "MoA (Mixture of Agents) aggregates multiple reference models "
+            "through a synthesizer for higher-quality responses.\n\n"
+            "⚠️  COST NOTICE: Each request makes N+1 LLM calls "
+            "(N reference models + 1 aggregator).\n"
+            "The default preset uses 4 reference models = 5 calls per request.\n\n"
+            "Usage:\n"
+            "  /model moa/default          — switch to MoA as main model\n"
+            "  intellect moa list           — list available presets\n"
+            "  intellect moa                — show this help"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    try:
+        from intellect_cli.moa_cmd import register_cli as _register_moa_cli
+
+        _register_moa_cli(moa_parser)
+    except Exception as _exc:
+        logging.getLogger(__name__).debug("moa CLI wiring failed: %s", _exc)
+
+    # =========================================================================
     # db command — storage migration (P2)
     # =========================================================================
     db_parser = subparsers.add_parser(

@@ -479,6 +479,17 @@ class cron_profile_context_for_home:
             self._prev_env = os.environ.get('INTELLECT_HOME')
             os.environ['INTELLECT_HOME'] = str(self._home)
 
+            # HP-407: install profile-scoped secret resolution so
+            # get_secret() reads from this profile's .env, not os.environ.
+            self._secret_scope_token = None
+            try:
+                from agent.secret_scope import build_profile_secret_scope, set_secret_scope
+                self._secret_scope_token = set_secret_scope(
+                    build_profile_secret_scope(self._home)
+                )
+            except Exception:
+                logger.debug("secret_scope installation failed", exc_info=True)
+
             # Re-patch cron.jobs module-level constants (see main context manager
             # below for the rationale).
             self._prev_cj = None
@@ -532,6 +543,13 @@ class cron_profile_context_for_home:
                     import cron.scheduler as _cs
                     _cs._intellect_home, _cs._LOCK_DIR, _cs._LOCK_FILE = self._prev_cs
                 except (ImportError, AttributeError):
+                    pass
+            # HP-407: restore previous secret scope
+            if getattr(self, '_secret_scope_token', None) is not None:
+                try:
+                    from agent.secret_scope import reset_secret_scope
+                    reset_secret_scope(self._secret_scope_token)
+                except Exception:
                     pass
         finally:
             _pop_cron_profile_context_depth()
