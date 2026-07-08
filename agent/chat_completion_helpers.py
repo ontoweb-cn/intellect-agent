@@ -236,9 +236,11 @@ def interruptible_api_call(agent, api_kwargs: dict):
                     raise RuntimeError("MoA config not available")
                 preset = load_preset(preset_name)
                 if not preset:
+                    from intellect_cli.moa_config import list_presets
+                    available = list_presets()
                     raise RuntimeError(
                         f"MoA preset '{preset_name}' not found. "
-                        f"Available: {', '.join(load_preset.__self__.keys()) if hasattr(load_preset, '__self__') else 'default'}"
+                        f"Available: {', '.join(available) if available else 'default'}"
                     )
                 from agent.moa_loop import MoaRunner
                 runner = MoaRunner(preset)
@@ -2179,7 +2181,11 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 if agent._interrupt_requested:
                     raise InterruptedError("Agent interrupted before stream retry")
                 try:
-                    if agent.api_mode == "anthropic_messages":
+                    if agent.api_mode == "moa":
+                        # MoA does not support streaming — fall back to the
+                        # non-streaming path which has the MoA orchestration.
+                        result["response"] = agent._interruptible_api_call(api_kwargs)
+                    elif agent.api_mode == "anthropic_messages":
                         agent._try_refresh_anthropic_client_credentials()
                         result["response"] = _call_anthropic()
                     else:

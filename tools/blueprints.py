@@ -69,12 +69,14 @@ def instantiate_blueprint(
         import yaml as _yaml
         try:
             from intellect_rust import rust_validate_blueprint_params
-            bp_yaml = _yaml.dump({k: v for k, v in bp.items() if k != "params"})
+        except (ImportError, AttributeError):
+            rust_validate_blueprint_params = None  # type: ignore[assignment]
+
+        if rust_validate_blueprint_params is not None:
+            bp_yaml = _yaml.dump(bp)
             err = rust_validate_blueprint_params(bp_yaml, _json.dumps(params))
             if err:
                 return {"error": err}
-        except (ImportError, AttributeError):
-            pass  # Rust extension not built/available — fall through to Python validation
 
     # Substitute params into prompt template
     prompt = bp["prompt_template"]

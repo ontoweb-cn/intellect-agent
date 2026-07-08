@@ -100,8 +100,8 @@ class TestMoaRunnerBasic:
         response = asyncio.run(_run())
         content = response.choices[0].message.content
         assert "Synthesized" in content
-        # 3 successful refs + 1 aggregator = 4 API calls tracked
-        assert response._moa_api_calls == 5  # 4 refs attempted + 1 agg
+        # 4 refs attempted (1 failed) + 1 aggregator = 5 API calls tracked
+        assert response._moa_api_calls == 5
 
     def test_runner_all_references_fail_raises(self, preset):
         """All N reference models fail → RuntimeError (below MIN_SUCCESSFUL)."""
