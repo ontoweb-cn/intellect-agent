@@ -1,0 +1,5 @@
+name: whatsapp-cloud
+kind: platform
+version: 1.0.0
+description: "WhatsApp Cloud API adapter — official Meta Graph API (complementary to web-bridge WhatsApp)"
+author: "Intellect"
