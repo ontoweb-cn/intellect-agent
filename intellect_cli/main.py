@@ -14866,6 +14866,20 @@ Examples:
         logging.getLogger(__name__).debug("journey CLI wiring failed: %s", _exc)
 
     # =========================================================================
+    # blueprint command — automation blueprints (HP-304)
+    # =========================================================================
+    blueprint_parser = subparsers.add_parser(
+        "blueprint",
+        help="List, search, and manage automation blueprints",
+    )
+    try:
+        from intellect_cli.blueprint_cmd import register_cli as _register_blueprint_cli
+
+        _register_blueprint_cli(blueprint_parser)
+    except Exception as _exc:
+        logging.getLogger(__name__).debug("blueprint CLI wiring failed: %s", _exc)
+
+    # =========================================================================
     # db command — storage migration (P2)
     # =========================================================================
     db_parser = subparsers.add_parser(

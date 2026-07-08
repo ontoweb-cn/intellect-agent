@@ -292,6 +292,27 @@ rust_canonical_tool_args: Callable = (
     _CORE.canonical_tool_args_rs if _has() else None
 )
 
+# ── HP-304: Automation blueprints ──────────────────────────────────────────
+
+rust_validate_blueprint_yaml: Callable = (
+    _CORE.validate_blueprint_yaml if _has() else None
+)
+rust_validate_blueprint_params: Callable = (
+    _CORE.validate_blueprint_params if _has() else None
+)
+
+# ── HP-303: Verification evidence ──────────────────────────────────────────
+
+rust_insert_verification_evidence: Callable = (
+    _CORE.insert_verification_evidence if _has() else None
+)
+rust_query_verification_evidence: Callable = (
+    _CORE.query_verification_evidence if _has() else None
+)
+rust_classify_verification_command: Callable = (
+    _CORE.classify_verification_command if _has() else None
+)
+
 # ── Model normalization ───────────────────────────────────────────────────
 
 rust_normalize_model_name: Callable = (

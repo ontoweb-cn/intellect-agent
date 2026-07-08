@@ -4,6 +4,7 @@
 //! Includes RustConnection/RustCursor for Python callback compatibility.
 
 pub mod backend;
+pub mod blueprints;
 pub mod compression;
 pub mod connection;
 pub mod counters;
@@ -20,6 +21,7 @@ pub mod stream;
 pub mod tokens;
 pub mod tool_utils;
 pub mod usage;
+pub mod verification;
 
 use pyo3::prelude::*;
 
@@ -122,6 +124,15 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<gateway::TokenBucket>()?;
     m.add_class::<gateway::PlatformRetryScheduler>()?;
     m.add_class::<delegation::DelegationRegistry>()?;
+
+    // ── HP-303: Verification evidence storage ──────────────────────────
+    m.add_function(wrap_pyfunction!(verification::insert_verification_evidence, m)?)?;
+    m.add_function(wrap_pyfunction!(verification::query_verification_evidence, m)?)?;
+    m.add_function(wrap_pyfunction!(verification::classify_verification_command, m)?)?;
+
+    // ── HP-304: Automation blueprints ──────────────────────────────────
+    m.add_function(wrap_pyfunction!(blueprints::validate_blueprint_yaml, m)?)?;
+    m.add_function(wrap_pyfunction!(blueprints::validate_blueprint_params, m)?)?;
 
     Ok(())
 }
