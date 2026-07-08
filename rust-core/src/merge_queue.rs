@@ -145,3 +145,127 @@ fn _append_batch_inner(
     c.execute_batch("COMMIT")?;
     Ok(row_ids)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT,
+                tool_call_id TEXT,
+                tool_calls TEXT,
+                tool_name TEXT,
+                timestamp REAL,
+                token_count INTEGER,
+                finish_reason TEXT,
+                reasoning TEXT,
+                reasoning_content TEXT,
+                reasoning_details TEXT,
+                codex_reasoning_items TEXT,
+                codex_message_items TEXT,
+                platform_message_id TEXT,
+                observed INTEGER DEFAULT 0
+            );
+            CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                message_count INTEGER DEFAULT 0,
+                tool_call_count INTEGER DEFAULT 0
+            );
+            INSERT INTO sessions (id, message_count) VALUES ('sess1', 0);
+            INSERT INTO sessions (id, message_count) VALUES ('sess2', 0);"
+        ).unwrap();
+        conn
+    }
+
+    fn make_entry(session_id: &str, role: &str, content: &str) -> MessageBatchEntry {
+        MessageBatchEntry {
+            session_id: session_id.to_string(),
+            role: role.to_string(),
+            content: Some(content.to_string()),
+            tool_call_id: None,
+            tool_calls_json: None,
+            tool_name: None,
+            timestamp: 1000.0,
+            token_count: None,
+            finish_reason: None,
+            reasoning: None,
+            reasoning_content: None,
+            reasoning_details_json: None,
+            codex_items_json: None,
+            codex_message_items_json: None,
+            platform_message_id: None,
+            observed: false,
+            num_tool_calls: 0,
+        }
+    }
+
+    #[test]
+    fn test_batch_insert_multiple_messages() {
+        let conn = setup_db();
+        let conn_ref = Arc::new(Mutex::new(conn));
+        let entries = vec![
+            make_entry("sess1", "user", "hello"),
+            make_entry("sess1", "assistant", "hi there"),
+            make_entry("sess2", "user", "test"),
+        ];
+        let ids = _append_batch_inner(&conn_ref, &entries).unwrap();
+        assert_eq!(ids.len(), 3);
+        assert!(ids[0] > 0);
+        assert!(ids[1] > ids[0]); // row IDs increase
+    }
+
+    #[test]
+    fn test_batch_coalesces_session_counters() {
+        let conn = setup_db();
+        let conn_ref = Arc::new(Mutex::new(conn));
+        let entries = vec![
+            make_entry("sess1", "user", "a"),
+            make_entry("sess1", "user", "b"),
+            make_entry("sess1", "assistant", "c"),
+        ];
+        _append_batch_inner(&conn_ref, &entries).unwrap();
+
+        let c = conn_ref.lock().unwrap();
+        let count: i64 = c
+            .query_row(
+                "SELECT message_count FROM sessions WHERE id = 'sess1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3, "session counter should be incremented by 3");
+    }
+
+    #[test]
+    fn test_batch_empty_returns_empty() {
+        let conn = setup_db();
+        let conn_ref = Arc::new(Mutex::new(conn));
+        let ids = _append_batch_inner(&conn_ref, &[]).unwrap();
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn test_batch_multiple_sessions_independent_counters() {
+        let conn = setup_db();
+        let conn_ref = Arc::new(Mutex::new(conn));
+        let entries = vec![
+            make_entry("sess1", "user", "a"),
+            make_entry("sess2", "user", "b"),
+            make_entry("sess2", "assistant", "c"),
+        ];
+        _append_batch_inner(&conn_ref, &entries).unwrap();
+
+        let c = conn_ref.lock().unwrap();
+        let c1: i64 = c.query_row("SELECT message_count FROM sessions WHERE id='sess1'", [], |r| r.get(0)).unwrap();
+        let c2: i64 = c.query_row("SELECT message_count FROM sessions WHERE id='sess2'", [], |r| r.get(0)).unwrap();
+        assert_eq!(c1, 1);
+        assert_eq!(c2, 2);
+    }
+}
