@@ -190,16 +190,17 @@ class WhatsAppCloudAdapter:
     async def download_media(self, media_id: str) -> Optional[bytes]:
         """Download media attachment by ID.  Stub — extend as needed."""
         try:
-            # Step 1: get media URL
+            # Step 1: get media URL (use auth session)
             session = self._get_session()
             async with session.get(f"{GRAPH_API_BASE}/{media_id}") as resp:
                 meta = await resp.json()
             media_url = meta.get("url", "")
             if not media_url:
                 return None
-            # Step 2: download
-            async with session.get(media_url) as resp:
-                return await resp.read()
+            # Step 2: download from CDN WITHOUT auth headers
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as dl:
+                async with dl.get(media_url) as resp:
+                    return await resp.read()
         except Exception as exc:
             logger.debug("whatsapp_cloud: media download failed: %s", exc)
             return None

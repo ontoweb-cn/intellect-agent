@@ -96,7 +96,7 @@ def _list_items(vault: Optional[str] = None) -> list[dict[str, Any]]:
         args.extend(["--vault", vault])
     rc, stdout, stderr = _run_op(args)
     if rc != 0:
-        logger.debug("op item list failed: %s", stderr)
+        logger.debug("op item list failed (rc=%s): %s", rc, stderr or "unknown error")
         return []
     try:
         return json.loads(stdout)
