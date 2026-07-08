@@ -2,6 +2,9 @@
 
 let _journeyPayload = null;
 let _journeySelectedId = null;
+let _journeyViewMode = 'list';       // 'list' | 'timeline'
+let _journeyTimelineData = null;    // cached render_frames result
+let _journeyReveal = 1.0;           // 0..1 timeline scrubber
 
 function _journeyT(key, fallback) {
   return typeof t === 'function' ? t(key) : fallback;
@@ -130,22 +133,87 @@ function _journeyRenderDetail(detail) {
       : '');
 }
 
+function _journeyRenderTimelineGrid(framesData) {
+  if (!framesData || !framesData.frames || !framesData.frames.length) {
+    return `<div class="journey-empty">${_journeyEsc(_journeyT('journey_empty_title', 'No timeline data'))}</div>`;
+  }
+  // Pick the frame closest to _journeyReveal
+  const total = framesData.frames.length;
+  const idx = Math.min(total - 1, Math.max(0, Math.round(_journeyReveal * (total - 1))));
+  const frame = framesData.frames[idx];
+  // Build a monospace <pre> from the text grid runs
+  let text = '';
+  (frame.grid || []).forEach(function(row) {
+    (row || []).forEach(function(run) {
+      text += (run[0] || '');
+    });
+    text += '\n';
+  });
+  const date = frame.date || '';
+  const visible = frame.visible || 0;
+  const total_nodes = framesData.count || 0;
+  const pct = Math.round(_journeyReveal * 100);
+  return (
+    `<div class="journey-timeline">` +
+    `<pre class="journey-timeline-grid">${_journeyEsc(text)}</pre>` +
+    `<div class="journey-timeline-controls">` +
+    `<input type="range" min="0" max="1" step="0.02" value="${_journeyReveal}" class="journey-reveal-slider" oninput="journeySetReveal(parseFloat(this.value))">` +
+    `<span class="journey-reveal-label">${_journeyEsc(date)} · ${visible}/${total_nodes} revealed · ${pct}%</span>` +
+    `</div></div>`
+  );
+}
+
+async function _journeyLoadTimeline(force) {
+  if (!force && _journeyTimelineData) return _journeyTimelineData;
+  const cols = Math.max(44, Math.floor((document.getElementById('journeyContent')?.clientWidth || 80) * 0.12));
+  const rows = 20;
+  const frames = 48;
+  try {
+    _journeyTimelineData = await api('/api/learning/frames?cols=' + cols + '&rows=' + rows + '&frames=' + frames);
+    return _journeyTimelineData;
+  } catch (_) {
+    return null;
+  }
+}
+
+function journeySetReveal(value) {
+  _journeyReveal = Math.max(0, Math.min(1, value));
+  if (_journeyViewMode === 'timeline' && _journeyTimelineData) {
+    const main = $('journeyContent');
+    if (main) main.innerHTML = _journeyRenderTimelineGrid(_journeyTimelineData);
+  }
+}
+
+function journeyToggleView() {
+  _journeyViewMode = _journeyViewMode === 'list' ? 'timeline' : 'list';
+  const btn = $('journeyViewToggle');
+  if (btn) btn.textContent = _journeyViewMode === 'list' ? '⏱' : '☰';
+  loadJourney(true);
+}
+
 async function loadJourney(force) {
   const main = $('journeyContent');
   const sidebar = $('journeySidebar');
   if (!main) return;
-  if (!force && _journeyPayload) {
+  if (!force && _journeyViewMode === 'list' && _journeyPayload) {
     main.innerHTML = _journeyRenderList(_journeyPayload);
+    if (sidebar) sidebar.innerHTML = _journeyRenderStats(_journeyPayload.stats);
     return;
   }
   const loading = `<div style="color:var(--muted);font-size:12px">${_journeyEsc(_journeyT('loading', 'Loading...'))}</div>`;
   main.innerHTML = loading;
   if (sidebar) sidebar.innerHTML = loading;
   try {
-    const data = await api('/api/learning/graph');
-    _journeyPayload = data || { nodes: [], stats: {} };
-    main.innerHTML = _journeyRenderList(_journeyPayload);
-    if (sidebar) sidebar.innerHTML = _journeyRenderStats(_journeyPayload.stats);
+    if (_journeyViewMode === 'timeline') {
+      const td = await _journeyLoadTimeline(force);
+      main.innerHTML = _journeyRenderTimelineGrid(td);
+      if (sidebar) sidebar.innerHTML = _journeyRenderStats((td && td.legend) ? {} : {});
+    } else {
+      const data = await api('/api/learning/graph');
+      _journeyPayload = data || { nodes: [], stats: {} };
+      main.innerHTML = _journeyRenderList(_journeyPayload);
+      if (sidebar) sidebar.innerHTML = _journeyRenderStats(_journeyPayload.stats);
+    }
     if (_journeySelectedId) await journeySelectNode(_journeySelectedId, true);
   } catch (err) {
     const msg = err && err.message ? err.message : String(err);
