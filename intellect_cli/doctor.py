@@ -488,6 +488,22 @@ def _check_project_health(issues: list[str]) -> None:
             pass
 
 
+def _check_onepassword_health(issues: list[str]) -> None:
+    """Check 1Password CLI availability (HP-404)."""
+    try:
+        from agent.secret_sources.onepassword import find_op, check_op_cli
+        op_path = find_op()
+        if op_path is None:
+            return  # op not installed — not an error, just unavailable
+        if not check_op_cli():
+            issues.append(
+                "1Password CLI found at %s but not signed in. "
+                "Run 'op signin' to enable 1Password secret source." % op_path
+            )
+    except Exception:
+        pass
+
+
 def _check_oauth_health(issues: list[str]) -> None:
     """Check OAuth configuration health."""
     from intellect_cli.config import load_config
@@ -2737,6 +2753,12 @@ def run_doctor(args):
     # ── OAuth health ──────────────────────────────────────────────────────
     try:
         _check_oauth_health(issues)
+    except Exception:
+        pass
+
+    # ── 1Password secret source (HP-404) ──────────────────────────────────
+    try:
+        _check_onepassword_health(issues)
     except Exception:
         pass
 
