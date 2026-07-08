@@ -2090,6 +2090,23 @@ class AIAgent:
         if not targets:
             return
         landed = file_mutation_result_landed(tool_name, result)
+
+        # HP-303e: record verification evidence when a file mutation lands
+        if landed and self._verification_enabled():
+            try:
+                from agent.verification_evidence import record_evidence
+                from intellect_constants import get_intellect_home
+                db_path = str(get_intellect_home() / "state.db")
+                record_evidence(
+                    db_path=db_path,
+                    session_id=getattr(self, "session_id", "") or "",
+                    kind="diff_validation",
+                    command=f"{tool_name}: {', '.join(targets)}",
+                    passed=True,
+                )
+            except Exception:
+                logger.debug('verification evidence: file mutation record failed', exc_info=True)
+
         if is_error and not landed:
             preview = _extract_error_preview(result)
             for path in targets:
@@ -2131,6 +2148,23 @@ class AIAgent:
         except Exception:
             logger.debug('non-critical operation failed', exc_info=True)
         return True  # safe default: verifier on
+
+    def _verification_enabled(self) -> bool:
+        """Check whether verification evidence recording is on (HP-303).
+
+        Config path: ``agent.verification.enabled`` (bool, default False).
+        ``intellect_VERIFICATION_ENABLED`` env var overrides config.
+        """
+        try:
+            import os as _os
+            env = _os.environ.get("intellect_VERIFICATION_ENABLED")
+            if env is not None:
+                return env.strip().lower() not in {"0", "false", "no", "off"}
+            from agent.verification_evidence import is_verification_enabled
+            return is_verification_enabled()
+        except Exception:
+            logger.debug('non-critical operation failed', exc_info=True)
+        return False  # safe default: off
 
     # Bare absolute / home / Windows-drive file paths in a footer line.
     # Anchors mirror the gateway's ``extract_local_files`` bare-path
