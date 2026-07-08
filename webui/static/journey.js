@@ -165,6 +165,8 @@ function _journeyRenderTimelineGrid(framesData) {
 
 async function _journeyLoadTimeline(force) {
   if (!force && _journeyTimelineData) return _journeyTimelineData;
+  // Invalidate cache on forced reload (profile switch, manual refresh)
+  if (force) _journeyTimelineData = null;
   const cols = Math.max(44, Math.floor((document.getElementById('journeyContent')?.clientWidth || 80) * 0.12));
   const rows = 20;
   const frames = 48;
@@ -195,6 +197,7 @@ async function loadJourney(force) {
   const main = $('journeyContent');
   const sidebar = $('journeySidebar');
   if (!main) return;
+  if (force) { _journeyPayload = null; _journeyTimelineData = null; }
   if (!force && _journeyViewMode === 'list' && _journeyPayload) {
     main.innerHTML = _journeyRenderList(_journeyPayload);
     if (sidebar) sidebar.innerHTML = _journeyRenderStats(_journeyPayload.stats);
@@ -207,7 +210,20 @@ async function loadJourney(force) {
     if (_journeyViewMode === 'timeline') {
       const td = await _journeyLoadTimeline(force);
       main.innerHTML = _journeyRenderTimelineGrid(td);
-      if (sidebar) sidebar.innerHTML = _journeyRenderStats((td && td.legend) ? {} : {});
+      if (sidebar && td && td.legend && td.count) {
+        const legendStats = {};
+        (td.legend || []).forEach(function(item) {
+          const match = (item.label || '').match(/\((\d+)\)/);
+          if (match) legendStats[item.label.split(' (')[0].toLowerCase().replace(/s$/, '') + 's'] = parseInt(match[1], 10);
+        });
+        sidebar.innerHTML = _journeyRenderStats({
+          learned_skills: legendStats.skills || td.count || 0,
+          memory_nodes: legendStats.memories || 0,
+          related_edges: 0, memory_skill_edges: 0,
+        });
+      } else if (sidebar) {
+        sidebar.innerHTML = '';
+      }
     } else {
       const data = await api('/api/learning/graph');
       _journeyPayload = data || { nodes: [], stats: {} };
