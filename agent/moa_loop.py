@@ -174,6 +174,9 @@ class MoaRunner:
 
         total_ms = round((time.monotonic() - t0) * 1000, 1)
 
+        # Count API calls for token tracking
+        api_calls = len(ref_results) + 1  # N references + 1 aggregator
+
         # Save trace
         if MoaTrace is not None and save_trace is not None:
             try:
@@ -190,7 +193,7 @@ class MoaRunner:
                 logger.debug("moa_loop: trace save failed", exc_info=True)
 
         # Build an OpenAI-response-shaped result
-        return _FakeResponse(content, ref_results, total_ms)
+        return _FakeResponse(content, ref_results, total_ms, api_calls)
 
 
 class _ChatNamespace:
@@ -212,10 +215,17 @@ class _CompletionsNamespace:
 class _FakeResponse:
     """A minimal object that the response normalizer can read."""
 
-    def __init__(self, content: str, ref_results: list, total_ms: float):
+    def __init__(self, content: str, ref_results: list, total_ms: float, api_calls: int = 1):
         self.choices = [_FakeChoice(content)]
         self._moa_ref_results = ref_results
         self._moa_total_ms = total_ms
+        self._moa_api_calls = api_calls
+        # Minimal usage info so the token tracker sees N+1 calls
+        self.usage = type("_Usage", (), {
+            "total_tokens": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+        })()
 
 
 class _FakeChoice:

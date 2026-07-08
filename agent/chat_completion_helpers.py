@@ -250,6 +250,13 @@ def interruptible_api_call(agent, api_kwargs: dict):
                     )
                 finally:
                     loop.close()
+                # Accumulate MoA's N+1 API calls on the usage tracker
+                moa_calls = getattr(result["response"], "_moa_api_calls", 1) if result["response"] else 1
+                if hasattr(agent, "usage_tracker") and agent.usage_tracker is not None:
+                    try:
+                        agent.usage_tracker.add(0, 0, 0, 0, 0, moa_calls, 0)
+                    except Exception:
+                        pass
             else:
                 request_client = _set_request_client(
                     agent._create_request_openai_client(
