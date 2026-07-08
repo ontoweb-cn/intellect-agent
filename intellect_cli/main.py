@@ -14880,6 +14880,54 @@ Examples:
         logging.getLogger(__name__).debug("blueprint CLI wiring failed: %s", _exc)
 
     # =========================================================================
+    # moa command — Mixture of Agents preset management (HP-302f+g)
+    # =========================================================================
+    moa_parser = subparsers.add_parser(
+        "moa",
+        help="Mixture of Agents — multi-model aggregation",
+        description=(
+            "MoA (Mixture of Agents) aggregates multiple reference models "
+            "through a synthesizer for higher-quality responses.\n\n"
+            "⚠️  COST NOTICE: Each request makes N+1 LLM calls "
+            "(N reference models + 1 aggregator).\n"
+            "The default preset uses 4 reference models = 5 calls per request.\n\n"
+            "Usage:\n"
+            "  /model moa/default          — switch to MoA as main model\n"
+            "  intellect moa list           — list available presets\n"
+            "  intellect moa                — show this help"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    moa_parser.set_defaults(func=_cmd_moa)
+
+    def _cmd_moa(args: argparse.Namespace) -> int:
+        """Handle ``intellect moa`` — list presets with cost information."""
+        try:
+            from intellect_cli.moa_config import list_presets, preset_summary
+        except ImportError:
+            print("MoA config not available.")
+            return 1
+
+        presets = list_presets()
+        if not presets:
+            print("No MoA presets configured. Add presets in ~/.intellect/moa/presets.yaml")
+            return 0
+
+        print("MoA Presets (Mixture of Agents)")
+        print("─" * 50)
+        for name in presets:
+            summary = preset_summary(name)
+            if summary:
+                n_refs = summary["reference_count"]
+                print(f"  {name}")
+                print(f"    References: {n_refs} models")
+                print(f"    Aggregator: {summary['aggregator']}")
+                print(f"    ⚠️  Cost: {n_refs + 1} LLM calls per request")
+                print()
+        print("Usage: /model moa/<preset>  — switch to a MoA preset as main model")
+        return 0
+
+    # =========================================================================
     # db command — storage migration (P2)
     # =========================================================================
     db_parser = subparsers.add_parser(

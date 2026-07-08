@@ -239,8 +239,14 @@ async def mixture_of_agents_tool(
     aggregator_model: Optional[str] = None
 ) -> str:
     """
+    [DEPRECATED] Use ``/model moa/default`` or ``/moa list`` instead.
+
+    This tool is superseded by the MoA virtual provider (``moa/<preset>``),
+    which works as a first-class model selectable via ``/model``, cron jobs,
+    and auxiliary tasks — no OpenRouter lock-in required.
+
     Process a complex query using the Mixture-of-Agents methodology.
-    
+
     This tool leverages multiple frontier language models to collaboratively solve
     extremely difficult problems requiring intense reasoning. It's particularly
     effective for:
