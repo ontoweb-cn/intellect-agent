@@ -2748,7 +2748,8 @@ class IntellectCLI:
         "history": "show_history",
         "image": "_handle_image_command",
         "insights": "_show_insights",
-        "kanban": "_handle_kanban_command",
+        "delegations": "_handle_delegations_command",
+        "learn": "_handle_learn_command",
         "model": "_handle_model_switch",
         "paste": "_handle_paste_command",
         "personality": "_handle_personality_command",
@@ -3162,6 +3163,7 @@ class IntellectCLI:
         # Background task tracking: {task_id: threading.Thread}
         self._background_tasks: Dict[str, threading.Thread] = {}
         self._background_task_counter = 0
+        self._learn_pending_draft: Optional[str] = None
 
     def _invalidate(self, min_interval: float = 0.25) -> None:
         """Throttled UI repaint — prevents terminal blinking on slow/SSH connections."""
@@ -5554,6 +5556,46 @@ class IntellectCLI:
 
         agent_running = getattr(self, "_agent_running", False)
         _cprint(f"  Agent: {'running' if agent_running else 'idle'}")
+
+    def _cli_delegation_session_key(self) -> str:
+        sid = getattr(self.agent, "session_id", None) or "default"
+        return f"agent:main:cli:{sid}"
+
+    def _handle_delegations_command(self, cmd: str = ""):
+        from intellect_cli.delegation_cmd import run_delegations_subcommand
+
+        args = cmd.split(maxsplit=1)[1] if cmd and " " in cmd.strip() else ""
+        text = run_delegations_subcommand(
+            args,
+            session_key=self._cli_delegation_session_key(),
+        )
+        _cprint(text)
+
+    def _handle_learn_command(self, cmd: str = ""):
+        from intellect_cli.learn_cmd import run_learn_generate, run_learn_save
+
+        args = cmd.split(maxsplit=1)[1] if cmd and " " in cmd.strip() else ""
+        arg_lower = args.strip().lower()
+        if arg_lower == "discard":
+            self._learn_pending_draft = None
+            _cprint("  Learn draft discarded.")
+            return
+        if arg_lower == "save":
+            if not self._learn_pending_draft:
+                _cprint("  No learn draft pending. Run /learn [name] first.")
+                return
+            msg = run_learn_save(self._learn_pending_draft)
+            self._learn_pending_draft = None
+            _cprint(f"  {msg}")
+            return
+        messages = list(getattr(self.agent, "messages", []) or [])
+        if not messages:
+            _cprint("  No conversation to distill yet.")
+            return
+        status, draft = run_learn_generate(args=args, messages=messages)
+        if draft:
+            self._learn_pending_draft = draft
+        _cprint(status)
 
     def _handle_paste_command(self):
         """Handle /paste — explicitly check clipboard for an image.
@@ -14277,6 +14319,11 @@ class IntellectCLI:
                             from tools.process_registry import process_registry
                             for _evt, _synth in process_registry.drain_notifications():
                                 self._pending_input.put(_synth)
+                            from tools.async_delegation import drain_completion_notifications
+                            _cli_sk = self._cli_delegation_session_key()
+                            for _sk, _synth in drain_completion_notifications(_cli_sk):
+                                if _sk == _cli_sk:
+                                    self._pending_input.put(_synth)
                         except Exception:
                             pass
                     continue
@@ -14405,6 +14452,11 @@ class IntellectCLI:
                         from tools.process_registry import process_registry
                         for _evt, _synth in process_registry.drain_notifications():
                             self._pending_input.put(_synth)
+                        from tools.async_delegation import drain_completion_notifications
+                        _cli_sk = self._cli_delegation_session_key()
+                        for _sk, _synth in drain_completion_notifications(_cli_sk):
+                            if _sk == _cli_sk:
+                                self._pending_input.put(_synth)
                     except Exception:
                         pass  # Non-fatal — don't break the main loop
 

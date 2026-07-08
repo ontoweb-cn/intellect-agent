@@ -8,6 +8,7 @@ pub mod compression;
 pub mod connection;
 pub mod counters;
 pub mod crypto;
+pub mod delegation;
 pub mod error_classifier;
 pub mod fts;
 pub mod gateway;
@@ -81,6 +82,7 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── Tool utilities ────────────────────────────────────────────────
     m.add_function(wrap_pyfunction!(tool_utils::file_mutation_result_landed_rs, m)?)?;
     m.add_function(wrap_pyfunction!(tool_utils::strip_yaml_frontmatter_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(tool_utils::validate_skill_frontmatter_rs, m)?)?;
     m.add_function(wrap_pyfunction!(tool_utils::truncate_content_rs, m)?)?;
     m.add_function(wrap_pyfunction!(tool_utils::paths_overlap_rs, m)?)?;
     m.add_function(wrap_pyfunction!(tool_utils::canonical_tool_args_rs, m)?)?;
@@ -119,6 +121,7 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gateway::backoff_delay_batch_rs, m)?)?;
     m.add_class::<gateway::TokenBucket>()?;
     m.add_class::<gateway::PlatformRetryScheduler>()?;
+    m.add_class::<delegation::DelegationRegistry>()?;
 
     Ok(())
 }
