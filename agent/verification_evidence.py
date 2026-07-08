@@ -20,9 +20,9 @@ def _rust_backend():
     is not built (e.g. during development / CI bootstrap)."""
     try:
         from intellect_rust import (
-            insert_verification_evidence as _insert,
-            query_verification_evidence as _query,
-            classify_verification_command as _classify,
+            rust_insert_verification_evidence as _insert,
+            rust_query_verification_evidence as _query,
+            rust_classify_verification_command as _classify,
         )
         return _insert, _query, _classify
     except ImportError:
