@@ -309,3 +309,20 @@ class RustSQLiteBackend:
         raise NotImplementedError(
             "search is not wired; use SessionDB.search_messages"
         )
+
+    # ── HP-402: Write merge queue ─────────────────────────────────────────
+
+    def append_message_batch(self, entries_json: str) -> str:
+        """Batch-append messages in a single transaction.
+
+        ``entries_json`` is a JSON array of message dicts matching the
+        ``append_message`` parameter shape.  Returns a JSON array of row IDs.
+        """
+        try:
+            from intellect_rust import rust_append_message_batch
+            if rust_append_message_batch is not None:
+                return rust_append_message_batch(entries_json, str(self.db_path))
+            return "[]"
+        except Exception:
+            logger.debug("append_message_batch failed", exc_info=True)
+            return "[]"
