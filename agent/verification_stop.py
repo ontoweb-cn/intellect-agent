@@ -45,9 +45,12 @@ def _format_evidence_block(records: list[dict[str, Any]]) -> str:
         if summary:
             lines.append(f"     {summary}")
 
-    passed_count = sum(1 for r in records if r.get("passed"))
-    total = len(records)
-    lines.append(f"  Total: {passed_count}/{total} passed")
+    displayed = records[:5]
+    passed_count = sum(1 for r in displayed if r.get("passed"))
+    total_displayed = len(displayed)
+    total_all = len(records)
+    lines.append(f"  Total: {passed_count}/{total_displayed} passed"
+                 + (f" (of {total_all} recorded)" if total_all > total_displayed else ""))
     lines.append("── End Evidence ──")
     return "\n".join(lines)
 

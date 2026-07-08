@@ -2158,7 +2158,7 @@ class AIAgent:
         try:
             import os as _os
             env = _os.environ.get("intellect_VERIFICATION_ENABLED")
-            if env is not None:
+            if env is not None and env.strip():
                 return env.strip().lower() not in {"0", "false", "no", "off"}
             from agent.verification_evidence import is_verification_enabled
             return is_verification_enabled()

@@ -4216,15 +4216,6 @@ def run_conversation(
         agent, final_response, _turn_exit_reason, interrupted,
     )
 
-    # ── HP-303g: Verify-on-stop evidence prompt ────────────────────────
-    try:
-        from agent.verification_stop import apply_verification_stop_prompt
-        final_response = apply_verification_stop_prompt(
-            agent, final_response, interrupted,
-        )
-    except Exception:
-        logger.debug('non-critical operation failed', exc_info=True)
-
     _response_transformed = False
 
     # Plugin hook: transform_llm_output
@@ -4267,6 +4258,16 @@ def run_conversation(
             )
         except Exception as exc:
             logger.warning("post_llm_call hook failed: %s", exc)
+
+    # ── HP-303g: Verify-on-stop evidence prompt ────────────────────────
+    # Placed AFTER plugin hooks so transform_llm_output cannot discard it.
+    try:
+        from agent.verification_stop import apply_verification_stop_prompt
+        final_response = apply_verification_stop_prompt(
+            agent, final_response, interrupted,
+        )
+    except Exception:
+        logger.debug('non-critical operation failed', exc_info=True)
 
     # Extract reasoning from the CURRENT turn only.  Walk backwards
     # but stop at the user message that started this turn — anything
