@@ -73,8 +73,8 @@ def instantiate_blueprint(
             err = rust_validate_blueprint_params(bp_yaml, _json.dumps(params))
             if err:
                 return {"error": err}
-        except ImportError:
-            pass  # Rust extension not available — fall through to Python validation
+        except (ImportError, AttributeError):
+            pass  # Rust extension not built/available — fall through to Python validation
 
     # Substitute params into prompt template
     prompt = bp["prompt_template"]
