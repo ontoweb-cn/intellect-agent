@@ -59,6 +59,10 @@ pub fn append_message_batch_rs(entries_json: &str, db_path: &str) -> PyResult<St
         return Ok("[]".to_string());
     }
 
+    // NOTE: opens a new connection per call. For single-threaded agent-loop
+    // usage this is fine — each _flush_messages_to_session_db call is
+    // serialized per session.  If concurrent batch writes become common
+    // (gateway multiplex), switch to a shared connection pool keyed by db_path.
     let conn = Connection::open(db_path).map_err(_map_rusqlite_err)?;
     conn.execute_batch("PRAGMA journal_mode=WAL").ok();
     let conn_ref = Arc::new(Mutex::new(conn));

@@ -1539,7 +1539,7 @@ class AIAgent:
                     "tool_name": msg.get("tool_name"),
                     "tool_calls_json": json.dumps(tool_calls_data) if tool_calls_data else None,
                     "tool_call_id": msg.get("tool_call_id"),
-                    "timestamp": msg.get("timestamp") or time.time(),
+                    "timestamp": msg.get("timestamp") if msg.get("timestamp") is not None else time.time(),
                     "token_count": msg.get("token_count"),
                     "finish_reason": msg.get("finish_reason"),
                     "reasoning": msg.get("reasoning") if role == "assistant" else None,
@@ -1557,8 +1557,7 @@ class AIAgent:
             try:
                 sb = self._session_db._storage_backend if hasattr(self._session_db, '_storage_backend') else None
                 if sb is not None and hasattr(sb, 'append_message_batch'):
-                    import json as _json
-                    result_json = sb.append_message_batch(_json.dumps(batch_entries))
+                    result_json = sb.append_message_batch(json.dumps(batch_entries))
                     _batched = bool(result_json and result_json != "[]")
             except Exception:
                 logger.debug("batch append_message failed, falling back to per-message", exc_info=True)
