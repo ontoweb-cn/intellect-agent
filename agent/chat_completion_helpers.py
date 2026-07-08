@@ -224,6 +224,32 @@ def interruptible_api_call(agent, api_kwargs: dict):
                         invalidate_runtime_client(region)
                     raise
                 result["response"] = normalize_converse_response(raw_response)
+            elif agent.api_mode == "moa":
+                # MoA virtual provider — fan out to reference models + aggregator.
+                # The transport builds kwargs with _moa_preset_name; we run the
+                # async orchestration loop in a dedicated event loop.
+                preset_name = api_kwargs.pop("_moa_preset_name", "default")
+                moa_messages = api_kwargs.pop("messages", [])
+                try:
+                    from intellect_cli.moa_config import load_preset
+                except ImportError:
+                    raise RuntimeError("MoA config not available")
+                preset = load_preset(preset_name)
+                if not preset:
+                    raise RuntimeError(
+                        f"MoA preset '{preset_name}' not found. "
+                        f"Available: {', '.join(load_preset.__self__.keys()) if hasattr(load_preset, '__self__') else 'default'}"
+                    )
+                from agent.moa_loop import MoaRunner
+                runner = MoaRunner(preset)
+                import asyncio
+                loop = asyncio.new_event_loop()
+                try:
+                    result["response"] = loop.run_until_complete(
+                        runner.run(moa_messages, **api_kwargs)
+                    )
+                finally:
+                    loop.close()
             else:
                 request_client = _set_request_client(
                     agent._create_request_openai_client(
@@ -652,6 +678,16 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
             replay_encrypted_reasoning=bool(
                 getattr(agent, "_codex_reasoning_replay_enabled", True)
             ),
+        )
+
+    # ── moa virtual provider ───────────────────────────────────────────
+    if agent.api_mode == "moa":
+        _ct = agent._get_transport()
+        return _ct.build_kwargs(
+            model=agent.model,
+            messages=api_messages,
+            tools=tools_for_api,
+            session_id=getattr(agent, "session_id", None),
         )
 
     # ── chat_completions (default) ─────────────────────────────────────

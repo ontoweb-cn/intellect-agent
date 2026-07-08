@@ -110,7 +110,12 @@ pub fn validate_blueprint_params(yaml_content: &str, params_json: &str) -> Optio
                         return Some(format!("Parameter '{}' must be a boolean", name));
                     }
                 }
-                _ => {}
+                unknown => {
+                    return Some(format!(
+                        "Parameter '{}' has unknown type '{}' (expected string, number, or boolean)",
+                        name, unknown
+                    ));
+                }
             }
         }
     }

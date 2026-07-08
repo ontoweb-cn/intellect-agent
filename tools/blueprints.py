@@ -63,6 +63,19 @@ def instantiate_blueprint(
 
     params = params or {}
 
+    # Validate params against schema via Rust validator
+    if bp.get("params"):
+        import json as _json
+        import yaml as _yaml
+        try:
+            from intellect_rust import rust_validate_blueprint_params
+            bp_yaml = _yaml.dump({k: v for k, v in bp.items() if k != "params"})
+            err = rust_validate_blueprint_params(bp_yaml, _json.dumps(params))
+            if err:
+                return {"error": err}
+        except ImportError:
+            pass  # Rust extension not available — fall through to Python validation
+
     # Substitute params into prompt template
     prompt = bp["prompt_template"]
     for key, value in params.items():

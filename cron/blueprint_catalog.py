@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from pathlib import Path
 from typing import Any, Optional
@@ -12,16 +13,11 @@ from intellect_constants import get_intellect_home
 
 logger = logging.getLogger(__name__)
 
-_BUILTIN_BLUEPRINTS: list[dict[str, Any]] = []
 
-
+@functools.lru_cache(maxsize=1)
 def _load_builtin() -> list[dict[str, Any]]:
-    """Return built-in blueprints. Lazy-loaded once."""
-    global _BUILTIN_BLUEPRINTS
-    if _BUILTIN_BLUEPRINTS:
-        return _BUILTIN_BLUEPRINTS
-
-    _BUILTIN_BLUEPRINTS = [
+    """Return built-in blueprints (thread-safe, cached)."""
+    return [
         {
             "id": "daily-standup",
             "name": "Daily Standup Summary",
@@ -106,29 +102,34 @@ def _load_builtin() -> list[dict[str, Any]]:
             "delivery": "origin",
         },
     ]
-    return _BUILTIN_BLUEPRINTS
 
 
 def _user_catalog_dir() -> Path:
     return get_intellect_home() / "blueprints"
 
 
-def load_catalog() -> list[dict[str, Any]]:
-    """Return the merged catalog: user blueprints override built-in by id."""
-    builtin = {bp["id"]: bp for bp in _load_builtin()}
+@functools.lru_cache(maxsize=1)
+def _load_user_catalog() -> dict[str, dict[str, Any]]:
+    """Load user blueprints from disk (cached, invalidated by process restart)."""
+    user: dict[str, dict[str, Any]] = {}
     user_dir = _user_catalog_dir()
-
     if user_dir.is_dir():
         for yaml_file in sorted(user_dir.glob("*.yaml")):
             try:
                 data = yaml.safe_load(yaml_file.read_text(encoding="utf-8"))
                 if isinstance(data, dict) and data.get("id"):
-                    builtin[data["id"]] = data
+                    user[data["id"]] = data
             except Exception:
                 logger.debug(
                     "blueprint_catalog: failed to load %s", yaml_file, exc_info=True
                 )
+    return user
 
+
+def load_catalog() -> list[dict[str, Any]]:
+    """Return the merged catalog: user blueprints override built-in by id."""
+    builtin = {bp["id"]: bp for bp in _load_builtin()}
+    builtin.update(_load_user_catalog())
     return sorted(builtin.values(), key=lambda b: (b.get("category", ""), b.get("name", "")))
 
 

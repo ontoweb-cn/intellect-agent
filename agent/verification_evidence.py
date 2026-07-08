@@ -1,6 +1,6 @@
 """Verification evidence storage — thin Python wrapper over Rust backend (HP-303).
 
-All operations are fail-open: a write failure logs a warning and returns,
+All operations are fail-open: a write failure logs a debug message and returns,
 never blocks the agent turn.  The config gate ``agent.verification.enabled``
 (default False) controls whether evidence is collected at all.
 """

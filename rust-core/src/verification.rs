@@ -188,7 +188,13 @@ pub fn classify_verification_command(command: &str) -> Option<String> {
     if cmd.starts_with("git diff") || cmd.starts_with("diff ") {
         return Some("diff_validation".to_string());
     }
-    if cmd.contains("check")
+    // Word-boundary match for "check" to avoid false positives on
+    // "git checkout", "git check-ignore", etc.
+    let check_hit = cmd.starts_with("check ")
+        || cmd.contains(" check ")
+        || cmd.ends_with(" check")
+        || cmd == "check";
+    if check_hit
         || cmd.contains("verify")
         || cmd.contains("validate")
         || cmd.contains("lint")

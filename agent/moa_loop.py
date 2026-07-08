@@ -14,9 +14,26 @@ import logging
 import time
 from typing import Any, Optional
 
+from agent.auxiliary_client import call_llm
+
+try:
+    from agent.moa_trace import MoaTrace, save_trace
+except ImportError:
+    MoaTrace = None  # type: ignore[assignment]
+    save_trace = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 MIN_SUCCESSFUL_REFERENCES = 1
+
+
+def _extract_content(result: Any) -> str:
+    """Extract text content from a call_llm result, handling both dict and str."""
+    if isinstance(result, dict):
+        return str(result.get("content") or result.get("text") or "")
+    if isinstance(result, str):
+        return result
+    return ""
 
 
 class MoaRunner:
@@ -52,8 +69,6 @@ class MoaRunner:
         model = ref.get("model", "")
         messages = [{"role": "user", "content": user_message}]
         try:
-            from agent.auxiliary_client import call_llm
-
             result = await asyncio.to_thread(
                 call_llm,
                 messages=messages,
@@ -62,11 +77,7 @@ class MoaRunner:
                 temperature=self._ref_temp,
                 task="moa_reference",
             )
-            content = ""
-            if isinstance(result, dict):
-                content = result.get("content", "") or result.get("text", "") or ""
-            elif isinstance(result, str):
-                content = result
+            content = _extract_content(result)
             latency = (time.monotonic() - t0) * 1000
             return {
                 "model": model,
@@ -146,8 +157,6 @@ class MoaRunner:
         agg_model = self._aggregator.get("model", "")
 
         try:
-            from agent.auxiliary_client import call_llm
-
             agg_result = await asyncio.to_thread(
                 call_llm,
                 messages=agg_messages,
@@ -156,11 +165,7 @@ class MoaRunner:
                 temperature=self._agg_temp,
                 task="moa_aggregator",
             )
-            content = ""
-            if isinstance(agg_result, dict):
-                content = agg_result.get("content", "") or agg_result.get("text", "") or ""
-            elif isinstance(agg_result, str):
-                content = agg_result
+            content = _extract_content(agg_result)
         except Exception as exc:
             logger.warning("moa_loop: aggregator failed: %s", exc)
             # Fall back to best reference response
@@ -170,19 +175,19 @@ class MoaRunner:
         total_ms = round((time.monotonic() - t0) * 1000, 1)
 
         # Save trace
-        try:
-            from agent.moa_trace import MoaTrace, save_trace
-            trace = MoaTrace(
-                preset_name=kwargs.get("_moa_preset_name", "default"),
-                reference_results=ref_results,
-                aggregator_model=f"{agg_provider}/{agg_model}",
-                aggregator_content=content,
-                total_latency_ms=total_ms,
-            )
-            session_id = kwargs.get("_session_id", "")
-            save_trace(trace, session_id)
-        except Exception:
-            logger.debug("moa_loop: trace save failed", exc_info=True)
+        if MoaTrace is not None and save_trace is not None:
+            try:
+                trace = MoaTrace(
+                    preset_name=kwargs.get("_moa_preset_name", "default"),
+                    reference_results=ref_results,
+                    aggregator_model=f"{agg_provider}/{agg_model}",
+                    aggregator_content=content,
+                    total_latency_ms=total_ms,
+                )
+                session_id = kwargs.get("_session_id", "")
+                save_trace(trace, session_id)
+            except Exception:
+                logger.debug("moa_loop: trace save failed", exc_info=True)
 
         # Build an OpenAI-response-shaped result
         return _FakeResponse(content, ref_results, total_ms)
