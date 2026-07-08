@@ -13,8 +13,8 @@
 | MCP auth env key 消毒 | 部分（仅 `-`） | ✅ `_env_key_for_server` 全字符 | — |
 | 浏览器 cloud-metadata 下限 | ✅ sandbox + browser_tool | — | — |
 | aiohttp `client_max_size` | api_server、line 已有 | ✅ bluebubbles、teams、proxy | feishu/sms 等（Hermes 亦排除） |
-| MCP 配置整表持久化 | — | — | ⏸️ 需 WebUI 删除语义，单独 PR |
-| cron profile secret scope | — | — | ⏸️ intellect 无 `set_secret_scope` API |
+| MCP 配置整表持久化 | — | ✅ `_replace_mcp_servers` + WebUI `PUT /api/mcp/servers` | — |
+| cron profile secret scope | — | ✅ `agent/secret_scope.py` + cron `run_job` scope | — |
 | 依赖 CVE 下限（aiohttp 等） | ✅ `aiohttp==3.14.1` 已 pin | — | 随 Dependabot/发版例行 bump |
 
 ---
@@ -27,8 +27,8 @@
 | 2 | MCP server 名 → env key 消毒 | `e53e8a782` `_env_key_for_server` | **已移植** — `intellect_cli/mcp_config.py` | HP-001 ✅ |
 | 3 | Gateway aiohttp body 上限 | `8986981df` bluebubbles/teams/proxy | **已移植** — 三处 `client_max_size` | HP-001 ✅ |
 | 4 | 浏览器 cloud-metadata floor | `0a7561651`, `4612ee946` | **已有** — `rust-core/src/sandbox.rs`, `tools/browser_tool.py` | 无需改动 |
-| 5 | MCP 配置持久化（整表 replace） | `_replace_mcp_servers` | **缺失** — 仅 per-key upsert | Phase 1+ / WebUI 专项 |
-| 6 | cron profile secret scope | `fdab380a1` | **不适用** — 无 Hermes 式 secret scope | 若引入 P6 secret scope 再对齐 |
+| 5 | MCP 配置持久化（整表 replace） | `_replace_mcp_servers` | **已移植** — `intellect_cli/mcp_config.py`, `intellect_cli/mcp_security.py`, WebUI bulk PUT | HP-001 ✅ |
+| 6 | cron profile secret scope | `fdab380a1` | **已移植** — `agent/secret_scope.py`, `cron/scheduler.run_job`, `get_env_value` bridge | HP-001 ✅ |
 | 7 | cron 凭据外泄路径（delivery/redact） | 多个 cron fix | **部分已有** — scheduler 输出 redact | 逐 commit 低优先级跟进 |
 | 8 | aiohttp / 依赖 CVE 下限 | 各 security PR | **已有 pin** — `pyproject.toml` `aiohttp==3.14.1` | 发版时 `uv lock` 例行 |
 | 9 | AGENTS.md 命令注册表路径 | — | **已修正** | HP-002 ✅ |
@@ -42,7 +42,15 @@
 |------|------|
 | `agent/redact.py` | 增加 `xapp-\d+-` prefix pattern |
 | `gateway/helpers.py` | `_GATEWAY_SECRET_PATTERNS` 增加 xapp |
-| `intellect_cli/mcp_config.py` | `_env_key_for_server` 非 env-safe 字符 → `_` |
+| `intellect_cli/mcp_config.py` | `_env_key_for_server` 非 env-safe 字符 → `_`；`_replace_mcp_servers` 整表 replace |
+| `intellect_cli/mcp_security.py` | MCP stdio 安全校验（exfil / persistence / IOC） |
+| `agent/secret_scope.py` | Profile-scoped `set_secret_scope` / `get_secret` |
+| `cron/scheduler.py` | `run_job` 安装 profile secret scope |
+| `intellect_cli/config.py` | `get_env_value` 优先读 active secret scope |
+| `webui/api/routes.py` | `PUT /api/mcp/servers` bulk replace |
+| `tests/agent/test_secret_scope.py` | secret scope 单元测试 |
+| `tests/intellect_cli/test_mcp_security.py` | MCP 安全 + replace 测试 |
+| `tests/cron/test_cron_profile.py` | profile secret scope 隔离测试 |
 | `plugins/platforms/bluebubbles/adapter.py` | `client_max_size=1 MiB` |
 | `plugins/platforms/teams/adapter.py` | `client_max_size=1 MiB` |
 | `intellect_cli/proxy/server.py` | `client_max_size=10 MB` |
@@ -56,13 +64,12 @@
 ## 测试
 
 ```bash
-scripts/run_tests.sh tests/agent/test_redact.py tests/intellect_cli/test_mcp_config.py -q
+scripts/run_tests.sh tests/agent/test_secret_scope.py tests/intellect_cli/test_mcp_security.py tests/cron/test_cron_profile.py
 ```
 
 ---
 
 ## 后续（不在 Phase 0）
 
-- MCP `_replace_mcp_servers` 整表写入（Hermes GUI 持久化 bug 修复）
-- cron `set_secret_scope` 对齐（依赖 profile secret scope 基础设施）
 - feishu / sms / wecom webhook `client_max_size`（Hermes 亦 deferred，按需单独 PR）
+- Gateway multiplex `set_multiplex_active(True)` + per-turn secret scope（cron 已对齐，gateway 待后续 PR）

@@ -171,6 +171,76 @@ class FalImageGenProvider(ImageGenProvider):
                 pass
         return response
 
+    @property
+    def supports_edit(self) -> bool:
+        import tools.image_generation_tool as _it
+
+        try:
+            _model_id, meta = _it._resolve_fal_model()
+            return bool(meta.get("edit_endpoint"))
+        except Exception:
+            return False
+
+    def edit(
+        self,
+        prompt: str,
+        source_image: str,
+        aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Edit an image via the legacy FAL edit pipeline."""
+        import tools.image_generation_tool as _it
+
+        aspect = resolve_aspect_ratio(aspect_ratio)
+        passthrough = {
+            key: kwargs[key]
+            for key in ("num_images", "output_format", "quality", "input_fidelity")
+            if key in kwargs and kwargs[key] is not None
+        }
+
+        try:
+            raw = _it.fal_image_edit_tool(
+                prompt=prompt,
+                source_image=source_image,
+                aspect_ratio=aspect,
+                **passthrough,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("FAL fal_image_edit_tool raised: %s", exc, exc_info=True)
+            return {
+                "success": False,
+                "image": None,
+                "error": f"FAL image edit failed: {exc}",
+                "error_type": type(exc).__name__,
+                "provider": "fal",
+                "prompt": prompt,
+                "aspect_ratio": aspect,
+            }
+
+        try:
+            response = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:  # noqa: BLE001
+            response = {"success": False, "image": None, "error": "Invalid JSON from FAL edit pipeline"}
+
+        if not isinstance(response, dict):
+            response = {
+                "success": False,
+                "image": None,
+                "error": "FAL edit pipeline returned a non-dict response",
+                "error_type": "provider_contract",
+            }
+
+        response.setdefault("provider", "fal")
+        response.setdefault("prompt", prompt)
+        response.setdefault("aspect_ratio", aspect)
+        if "model" not in response:
+            try:
+                model_id, _meta = _it._resolve_fal_model()
+                response["model"] = model_id
+            except Exception:  # noqa: BLE001
+                pass
+        return response
+
 
 # ---------------------------------------------------------------------------
 # Plugin entry point

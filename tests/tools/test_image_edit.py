@@ -140,3 +140,96 @@ class TestImageEditDispatch:
 
         assert result["success"] is False
         assert result["error_type"] == "capability_error"
+
+
+class TestFalImageEdit:
+    def test_fal_edit_rejects_forbidden_path(self, monkeypatch, tmp_path):
+        from plugins.image_gen.fal import FalImageGenProvider
+
+        secret = tmp_path / ".env"
+        secret.write_text("KEY=x", encoding="utf-8")
+        monkeypatch.setattr(
+            "tools.path_security.is_forbidden_path",
+            lambda p: str(p).endswith(".env"),
+        )
+        import tools.image_generation_tool as image_tool
+
+        monkeypatch.setattr(
+            image_tool,
+            "_resolve_fal_model",
+            lambda: ("fal-ai/gpt-image-1.5", image_tool.FAL_MODELS["fal-ai/gpt-image-1.5"]),
+        )
+
+        result = FalImageGenProvider().edit("make it blue", str(secret))
+        assert result["success"] is False
+        assert result["error_type"] == "forbidden_path"
+
+    def test_fal_edit_delegates_to_legacy_pipeline(self, monkeypatch, tmp_path):
+        from plugins.image_gen.fal import FalImageGenProvider
+
+        src = tmp_path / "photo.png"
+        src.write_bytes(b"\x89PNG\r\n\x1a\n")
+        import tools.image_generation_tool as image_tool
+
+        monkeypatch.setattr(
+            image_tool,
+            "_resolve_fal_model",
+            lambda: ("fal-ai/gpt-image-1.5", image_tool.FAL_MODELS["fal-ai/gpt-image-1.5"]),
+        )
+
+        def fake_edit(**kwargs):
+            assert kwargs["source_image"] == str(src)
+            return json.dumps({
+                "success": True,
+                "image": "https://fal.example/edited.png",
+                "model": "fal-ai/gpt-image-1.5",
+            })
+
+        monkeypatch.setattr(image_tool, "fal_image_edit_tool", fake_edit)
+        result = FalImageGenProvider().edit("add a hat", str(src), aspect_ratio="square")
+        assert result["success"] is True
+        assert result["image"] == "https://fal.example/edited.png"
+        assert result["provider"] == "fal"
+
+    def test_routes_to_fal_provider_edit(self, monkeypatch, tmp_path):
+        src = tmp_path / "photo.png"
+        src.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+        with patch(
+            "tools.image_generation_tool._read_configured_image_provider",
+            return_value="fal",
+        ), patch(
+            "tools.image_generation_tool._read_configured_image_model",
+            return_value="fal-ai/gpt-image-1.5",
+        ), patch(
+            "agent.image_gen_registry.get_provider",
+        ) as mock_get_provider, patch(
+            "intellect_cli.plugins._ensure_plugins_discovered",
+        ):
+            from plugins.image_gen.fal import FalImageGenProvider
+            import tools.image_generation_tool as image_tool
+
+            provider = FalImageGenProvider()
+            mock_get_provider.return_value = provider
+            monkeypatch.setattr(
+                image_tool,
+                "_resolve_fal_model",
+                lambda: ("fal-ai/gpt-image-1.5", image_tool.FAL_MODELS["fal-ai/gpt-image-1.5"]),
+            )
+            monkeypatch.setattr(
+                image_tool,
+                "fal_image_edit_tool",
+                lambda **kw: json.dumps({
+                    "success": True,
+                    "image": "https://fal.example/edited.png",
+                }),
+            )
+
+            result = json.loads(_handle_image_generate({
+                "prompt": "add a hat",
+                "source_image": str(src),
+            }))
+
+        assert result["success"] is True
+        assert result["image"] == "https://fal.example/edited.png"

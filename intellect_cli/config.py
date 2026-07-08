@@ -5448,11 +5448,17 @@ def reload_env() -> int:
 
 def get_env_value(key: str) -> Optional[str]:
     """Get a value from ~/.intellect/.env or environment."""
-    # Check environment first
+    try:
+        from agent.secret_scope import current_secret_scope, get_secret
+
+        if current_secret_scope() is not None:
+            return get_secret(key)
+    except ImportError:
+        pass
+
     if key in os.environ:
         return os.environ[key]
-    
-    # Then check .env file
+
     env_vars = load_env()
     return env_vars.get(key)
 

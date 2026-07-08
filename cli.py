@@ -2750,6 +2750,7 @@ class IntellectCLI:
         "insights": "_show_insights",
         "delegations": "_handle_delegations_command",
         "learn": "_handle_learn_command",
+        "journey": "_handle_journey_command",
         "model": "_handle_model_switch",
         "paste": "_handle_paste_command",
         "personality": "_handle_personality_command",
@@ -8210,6 +8211,37 @@ class IntellectCLI:
             pass
         except Exception as exc:
             print(f"(._.) curator: {exc}")
+
+    def _handle_journey_command(self, cmd_original: str) -> None:
+        """Handle /journey — learning timeline (see ``intellect journey``)."""
+        import argparse
+        import io
+        import shlex
+        from contextlib import redirect_stdout
+
+        from cli import _cprint
+        from intellect_cli.journey import register_cli
+
+        parser = argparse.ArgumentParser(prog="/journey", add_help=False)
+        register_cli(parser)
+        rest = cmd_original.split(None, 1)
+        try:
+            args = parser.parse_args(shlex.split(rest[1]) if len(rest) > 1 else [])
+        except SystemExit:
+            return
+
+        interactive = getattr(args, "journey_action", None) in ("delete", "edit")
+        try:
+            if interactive:
+                args.func(args)
+                return
+            args.force_color = True
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                args.func(args)
+            _cprint(buf.getvalue().rstrip("\n"))
+        except Exception as exc:
+            _cprint(f"  /journey failed: {exc}")
 
     def _handle_kanban_command(self, cmd: str):
         """Handle the /kanban command — delegate to the shared kanban CLI.

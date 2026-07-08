@@ -353,6 +353,38 @@ def _check_gateway_service_linger(issues: list[str]) -> None:
         check_warn("Could not verify systemd linger", f"({linger_detail})")
 
 
+def _check_gateway_model_overrides(issues: list[str]) -> None:
+    """Warn when gateway.model_overrides keys use unknown platform prefixes."""
+    from gateway.config import is_known_platform_name
+    from intellect_cli.config import load_config
+
+    cfg = load_config() or {}
+    gateway_cfg = cfg.get("gateway") if isinstance(cfg, dict) else None
+    overrides = gateway_cfg.get("model_overrides") if isinstance(gateway_cfg, dict) else None
+    if not isinstance(overrides, dict) or not overrides:
+        return
+
+    unknown_keys = []
+    for key in overrides:
+        prefix = str(key).split(":", 1)[0].strip().lower()
+        if prefix and not is_known_platform_name(prefix):
+            unknown_keys.append(str(key))
+
+    if not unknown_keys:
+        return
+
+    sample = ", ".join(sorted(unknown_keys)[:5])
+    more = f" (+{len(unknown_keys) - 5} more)" if len(unknown_keys) > 5 else ""
+    check_warn(
+        "Unknown gateway.model_overrides platform key(s)",
+        f"({sample}{more})",
+    )
+    issues.append(
+        "Fix gateway.model_overrides keys — use a platform name (e.g. telegram) "
+        "or session suffix (e.g. telegram:dm:12345). Unknown keys are ignored at runtime."
+    )
+
+
 def _check_project_health(issues: list[str]) -> None:
     """Check multi-project configuration health (spec §31)."""
     from intellect_cli.config import load_config
@@ -1597,6 +1629,7 @@ def run_doctor(args):
     )
 
     _check_gateway_service_linger(issues)
+    _check_gateway_model_overrides(issues)
     _check_s6_supervision(issues)
 
     if sys.platform != "win32":

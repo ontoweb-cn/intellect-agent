@@ -2887,10 +2887,11 @@ main.main > #mainKanban,
 main.main > #mainWorkspaces,
 main.main > #mainProfiles,
 main.main > #mainWiki,
+main.main > #mainJourney,
 main.main > #mainInsights,
 main.main > #mainLogs,
 main.main > #mainTodos{display:none;}
-main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-wiki):not(.showing-insights):not(.showing-logs):not(.showing-todos) > #mainChat{display:flex;}
+main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-wiki):not(.showing-journey):not(.showing-insights):not(.showing-logs):not(.showing-todos) > #mainChat{display:flex;}
 main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto;}
 main.main.showing-skills > #mainSkills{display:flex;}
 main.main.showing-memory > #mainMemory{display:flex;}
@@ -4112,6 +4113,7 @@ main.main > .main-view:not([id="mainChat"]):not([id="mainSettings"]) .main-view-
 
 /* ── Insights panel (#464) ────────────────────────────────────────────────── */
 main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
+main.main.showing-journey > #mainJourney{display:flex;flex-direction:column;overflow-y:auto;}
 .insights-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;}
 .insights-stat{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px;}
 .insights-stat-value{font-size:22px;font-weight:700;color:var(--text);}
@@ -4814,6 +4816,29 @@ main.main.showing-logs > #mainLogs{display:flex;}
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Journey panel (HP-401) */
+.journey-stats{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;}
+.journey-stat{flex:1;min-width:100px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;}
+.journey-stat-value{font-size:20px;font-weight:600;color:var(--text);}
+.journey-stat-label{font-size:11px;color:var(--muted);margin-top:4px;}
+.journey-legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-bottom:8px;}
+.journey-glyph.skill{color:var(--accent, #e8c463);}
+.journey-glyph.memory{color:#7eb8da;}
+.journey-list{display:flex;flex-direction:column;gap:16px;}
+.journey-bucket h3{font-size:12px;font-weight:600;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em;}
+.journey-row{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px;color:var(--text);cursor:pointer;}
+.journey-row:hover{border-color:var(--accent, #e8c463);}
+.journey-row-selected{border-color:var(--accent, #e8c463);box-shadow:0 0 0 1px var(--accent, #e8c463);}
+.journey-row-label{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.journey-row-meta{font-size:11px;color:var(--muted);}
+.journey-empty{padding:24px 12px;text-align:center;color:var(--muted);}
+.journey-empty-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px;}
+.journey-detail-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+.journey-detail-title{font-weight:600;font-size:14px;}
+.journey-detail-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.journey-detail-body{font-size:12px;line-height:1.45;max-height:280px;overflow:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px;white-space:pre-wrap;}
+.journey-detail-hint{font-size:11px;color:var(--muted);margin-top:8px;}
 .code-cell-output-empty {
   color: var(--muted);
   font-style: italic;

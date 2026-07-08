@@ -181,10 +181,12 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
     .env/config loading, script resolution, AIAgent construction, and downstream
     get_intellect_home() callers agree on the same home.
 
-    Some existing provider/config paths still load profile .env values through
-    os.environ, so profile jobs also snapshot and restore the process
-    environment on exit. tick() runs profile jobs sequentially to keep that
-    temporary mutation isolated from other scheduled jobs.
+    Profile jobs install a context-local secret scope in ``run_job`` so
+    ``get_env_value`` / ``get_secret`` read the profile's ``.env`` without
+    relying on cross-profile ``os.environ`` leakage. Some legacy paths still
+    mutate ``os.environ`` via ``load_dotenv``, so profile jobs also snapshot
+    and restore the process environment on exit. tick() runs profile jobs
+    sequentially to keep that temporary mutation isolated from other jobs.
     """
     raw_profile = str(profile or "").strip()
     if not raw_profile:
@@ -1205,7 +1207,19 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
     """Execute a single cron job, applying any per-job profile override."""
     job_id = job["id"]
     with _job_profile_context(job_id, job.get("profile")):
-        return _run_job_impl(job)
+        from agent.secret_scope import (
+            build_profile_secret_scope,
+            reset_secret_scope,
+            set_secret_scope,
+        )
+
+        scope_token = set_secret_scope(
+            build_profile_secret_scope(_get_intellect_home())
+        )
+        try:
+            return _run_job_impl(job)
+        finally:
+            reset_secret_scope(scope_token)
 
 
 def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
