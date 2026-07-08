@@ -5825,6 +5825,10 @@ def handle_get(handler, parsed) -> bool:
         from api.learning import handle_learning_frames_get
 
         return handle_learning_frames_get(handler, parsed)
+    if parsed.path == "/api/goals/evidence":
+        from api.goals import handle_verification_evidence_get
+
+        return handle_verification_evidence_get(handler, parsed)
     if parsed.path == "/api/insights":
         return _handle_insights(handler, parsed)
     if parsed.path == "/api/analytics":
