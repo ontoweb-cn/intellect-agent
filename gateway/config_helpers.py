@@ -502,3 +502,58 @@ def _resolve_gateway_model(config: dict | None = None) -> str:
 
     return ""
 
+
+def _session_key_model_override_suffix(session_key: str) -> Optional[str]:
+    """Return the session-key suffix used for ``gateway.model_overrides`` lookup."""
+    if not session_key:
+        return None
+    for prefix in ("agent:main:", "agent:default:"):
+        if session_key.startswith(prefix):
+            return session_key[len(prefix):]
+    return session_key
+
+
+def _resolve_config_model_override(
+    session_key: Optional[str],
+    config: dict | None,
+) -> Optional[dict]:
+    """Resolve config.yaml ``gateway.model_overrides`` for a session.
+
+    Lookup order: full channel suffix (``telegram:dm:123``) then platform
+    name (``telegram``). Returns None when no override applies.
+    """
+    if not session_key or not isinstance(config, dict):
+        return None
+    gateway_cfg = config.get("gateway")
+    if not isinstance(gateway_cfg, dict):
+        return None
+    overrides = gateway_cfg.get("model_overrides")
+    if not isinstance(overrides, dict) or not overrides:
+        return None
+    suffix = _session_key_model_override_suffix(session_key)
+    if not suffix:
+        return None
+    channel = overrides.get(suffix)
+    if isinstance(channel, dict) and channel:
+        return channel
+    platform = suffix.split(":", 1)[0]
+    plat = overrides.get(platform)
+    if isinstance(plat, dict) and plat:
+        return plat
+    return None
+
+
+def _apply_model_override_fields(
+    model: str,
+    runtime_kwargs: dict,
+    override: dict,
+) -> tuple[str, dict]:
+    """Merge a model override dict into resolved model + runtime kwargs."""
+    merged = dict(runtime_kwargs)
+    resolved_model = override.get("model") or model
+    for key in ("provider", "api_key", "base_url", "api_mode"):
+        val = override.get(key)
+        if val:
+            merged[key] = val
+    return resolved_model, merged
+

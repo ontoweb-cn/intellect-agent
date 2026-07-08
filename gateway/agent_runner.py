@@ -63,7 +63,8 @@ class GatewayAgentRunner:
             except Exception:
                 resolved_session_key = None
 
-        model = _resolve_gateway_model(user_config)
+        effective_config = user_config if user_config is not None else _load_gateway_config()
+        model = _resolve_gateway_model(effective_config)
         override = self._session_model_overrides.get(resolved_session_key) if resolved_session_key else None
         if override:
             override_model = override.get("model", model)
@@ -102,6 +103,11 @@ class GatewayAgentRunner:
                 runtime_model,
             )
             model = runtime_model
+        config_ov = _resolve_config_model_override(resolved_session_key, effective_config)
+        if config_ov:
+            model, runtime_kwargs = _apply_model_override_fields(
+                model, runtime_kwargs, config_ov,
+            )
         if override and resolved_session_key:
             model, runtime_kwargs = self._apply_session_model_override(
                 resolved_session_key, model, runtime_kwargs

@@ -329,7 +329,7 @@ def test_format_message_mentions_pids_and_remediation(tmp_path):
     assert "1234" in msg
     assert "5678" in msg
     assert "intellect.exe" in msg
-    assert "Intellect Desktop" in msg
+    assert "gateway" in msg.lower() or "webui" in msg.lower()
     assert "--force" in msg
     # Mentions the file that would have been overwritten
     assert str(tmp_path / "intellect.exe") in msg
@@ -443,7 +443,7 @@ def test_quarantine_actionable_warning_when_everything_fails(
     # New message format: no raw "[WinError 32]" dump; instead names the cause
     # and tells the user what to do.
     assert "another process" in captured.lower()
-    assert "Intellect Desktop" in captured or "gateway" in captured.lower()
+    assert "gateway" in captured.lower() or "webui" in captured.lower()
 
 
 # ---------------------------------------------------------------------------

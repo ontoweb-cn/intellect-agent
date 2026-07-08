@@ -106,7 +106,8 @@ def _remove_mcp_server(name: str) -> bool:
 
 def _env_key_for_server(name: str) -> str:
     """Convert server name to an env-var key like ``MCP_MYSERVER_API_KEY``."""
-    return f"MCP_{name.upper().replace('-', '_')}_API_KEY"
+    suffix = re.sub(r"[^A-Za-z0-9_]", "_", name.upper()).strip("_")
+    return f"MCP_{suffix}_API_KEY"
 
 
 def _parse_env_assignments(raw_env: Optional[List[str]]) -> Dict[str, str]:

@@ -62,7 +62,7 @@ class TestBlueBubblesHelpers:
     def test_check_requirements(self, monkeypatch):
         monkeypatch.setenv("BLUEBUBBLES_SERVER_URL", "http://localhost:1234")
         monkeypatch.setenv("BLUEBUBBLES_PASSWORD", "secret")
-        from gateway.platforms.bluebubbles import check_bluebubbles_requirements
+        from plugins.platforms.bluebubbles.adapter import check_bluebubbles_requirements
 
         assert check_bluebubbles_requirements() is True
 
@@ -324,7 +324,7 @@ class TestBlueBubblesAttachmentDownload:
             return cached_path
 
         monkeypatch.setattr(
-            "gateway.platforms.bluebubbles.cache_image_from_bytes",
+            "plugins.platforms.bluebubbles.adapter.cache_image_from_bytes",
             mock_cache_image,
         )
 
@@ -359,7 +359,7 @@ class TestBlueBubblesAttachmentDownload:
             return cached_path
 
         monkeypatch.setattr(
-            "gateway.platforms.bluebubbles.cache_audio_from_bytes",
+            "plugins.platforms.bluebubbles.adapter.cache_audio_from_bytes",
             mock_cache_audio,
         )
 
@@ -394,7 +394,7 @@ class TestBlueBubblesAttachmentDownload:
             return cached_path
 
         monkeypatch.setattr(
-            "gateway.platforms.bluebubbles.cache_document_from_bytes",
+            "plugins.platforms.bluebubbles.adapter.cache_document_from_bytes",
             mock_cache_doc,
         )
 

@@ -41,6 +41,11 @@ class TestKnownPrefixes:
         result = redact_sensitive_text(token)
         assert "a" * 14 not in result
 
+    def test_slack_app_level_token(self):
+        token = "xapp-1-A" + "B" * 24
+        result = redact_sensitive_text(token)
+        assert "B" * 24 not in result
+
     def test_google_api_key(self):
         result = redact_sensitive_text("AIzaSyB-abc123def456ghi789jklmno012345")
         assert "abc123def456" not in result

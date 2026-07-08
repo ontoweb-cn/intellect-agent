@@ -26,6 +26,7 @@ import os
 import datetime
 import threading
 import uuid
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 # fal_client is imported lazily — see _load_fal_client(). Pulling it
@@ -906,6 +907,13 @@ IMAGE_GENERATE_SCHEMA = {
                 "description": "The aspect ratio of the generated image. 'landscape' is 16:9 wide, 'portrait' is 16:9 tall, 'square' is 1:1.",
                 "default": DEFAULT_ASPECT_RATIO,
             },
+            "source_image": {
+                "type": "string",
+                "description": (
+                    "Optional absolute path to an existing image to edit. Requires "
+                    "image_gen.provider with edit support (e.g. openai). Omit for text-to-image."
+                ),
+            },
         },
         "required": ["prompt"],
     },
@@ -951,7 +959,26 @@ def _read_configured_image_provider():
     return None
 
 
-def _dispatch_to_plugin_provider(prompt: str, aspect_ratio: str):
+def _validate_source_image_path(source_image: str) -> tuple[Optional[Path], Optional[str]]:
+    """Validate source_image path. Returns (path, error_json) — one will be None."""
+    from tools.path_security import validate_local_image_file
+
+    path, error, error_type = validate_local_image_file(source_image)
+    if error:
+        return None, json.dumps({
+            "success": False,
+            "image": None,
+            "error": error,
+            "error_type": error_type,
+        })
+    return path, None
+
+
+def _dispatch_to_plugin_provider(
+    prompt: str,
+    aspect_ratio: str,
+    source_image: Optional[str] = None,
+):
     """Route the call to a plugin-registered provider when one is selected.
 
     Returns a JSON string on dispatch, or ``None`` to fall through to the
@@ -1005,10 +1032,24 @@ def _dispatch_to_plugin_provider(prompt: str, aspect_ratio: str):
         })
 
     try:
-        kwargs = {"prompt": prompt, "aspect_ratio": aspect_ratio}
+        kwargs: Dict[str, Any] = {"prompt": prompt, "aspect_ratio": aspect_ratio}
         if configured_model:
             kwargs["model"] = configured_model
-        result = provider.generate(**kwargs)
+        if source_image:
+            if not getattr(provider, "supports_edit", False):
+                return json.dumps({
+                    "success": False,
+                    "image": None,
+                    "error": (
+                        f"image_gen.provider='{configured}' does not support editing. "
+                        f"Omit source_image or switch provider."
+                    ),
+                    "error_type": "capability_error",
+                })
+            kwargs["source_image"] = source_image
+            result = provider.edit(**kwargs)
+        else:
+            result = provider.generate(**kwargs)
     except Exception as exc:
         logger.warning(
             "Image gen provider '%s' raised: %s",
@@ -1035,12 +1076,31 @@ def _handle_image_generate(args, **kw):
     if not prompt:
         return tool_error("prompt is required for image generation")
     aspect_ratio = args.get("aspect_ratio", DEFAULT_ASPECT_RATIO)
+    source_image = args.get("source_image")
+    if source_image:
+        resolved, err = _validate_source_image_path(source_image)
+        if err:
+            return err
+        source_image = str(resolved)
 
     # Route to a plugin-registered provider if one is active (and it's
     # not the in-tree FAL path).
-    dispatched = _dispatch_to_plugin_provider(prompt, aspect_ratio)
+    dispatched = _dispatch_to_plugin_provider(
+        prompt, aspect_ratio, source_image=source_image,
+    )
     if dispatched is not None:
         return dispatched
+
+    if source_image:
+        return json.dumps({
+            "success": False,
+            "image": None,
+            "error": (
+                "source_image requires image_gen.provider with edit support "
+                "(e.g. openai). Set image_gen.provider in config.yaml."
+            ),
+            "error_type": "capability_error",
+        })
 
     return image_generate_tool(
         prompt=prompt,

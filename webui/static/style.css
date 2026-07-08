@@ -3114,7 +3114,8 @@ main.main.showing-todos > #mainTodos{display:flex;}
 }
 
 /* ── Provider cards (Settings → Providers) ──
-   Matches intellect-desktop LLM Providers panel. Card uses --sidebar (surface-1),
+   Future native-desktop target: align with a possible Intellect Desktop LLM
+   Providers panel. Card uses --sidebar (surface-1),
    hover rows use --surface (surface-2). Body divider uses a subtle tint. */
 #providersList{gap:12px;}
 .provider-quota-card{

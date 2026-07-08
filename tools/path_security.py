@@ -51,3 +51,26 @@ def has_traversal_component(path_str: str) -> bool:
     """
     parts = Path(path_str).parts
     return ".." in parts
+
+
+def validate_local_image_file(path_str: str) -> tuple[Optional[Path], Optional[str], Optional[str]]:
+    """Validate a local filesystem path for use as an image source.
+
+    Resolves symlinks before forbidden-path checks so a benign-looking path
+    cannot point at sensitive files after ``resolve()``.
+
+    Returns ``(resolved_path, error_message, error_type)``.  On success the
+    error fields are ``None``; on failure ``resolved_path`` is ``None``.
+    """
+    raw = (path_str or "").strip()
+    if not raw:
+        return None, "source_image must be a non-empty file path", "invalid_argument"
+    try:
+        path = Path(raw).expanduser().resolve()
+    except OSError as exc:
+        return None, f"source_image path invalid: {exc}", "invalid_argument"
+    if is_forbidden_path(str(path)):
+        return None, f"Refusing to read sensitive path as source image: {raw}", "forbidden_path"
+    if not path.is_file():
+        return None, f"source_image file not found: {raw}", "invalid_argument"
+    return path, None, None

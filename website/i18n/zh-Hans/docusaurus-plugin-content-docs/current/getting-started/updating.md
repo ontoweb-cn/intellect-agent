@@ -71,7 +71,7 @@ updates:
 
 ### Windows：另一个 `intellect.exe` 正在运行
 
-在 Windows 上，如果 `intellect update` 检测到另一个 `intellect.exe` 进程持有 venv 入口点可执行文件的句柄，它将拒绝运行 — 最常见的情况是 Intellect Desktop 应用启动的后端进程、另一个终端中打开的 `intellect` REPL，或正在运行的 gateway：
+在 Windows 上，如果 `intellect update` 检测到另一个 `intellect.exe` 进程持有 venv 入口点可执行文件的句柄，它将拒绝运行 — 最常见的情况是另一个终端中打开的 `intellect` REPL、正在运行的 gateway，或 WebUI 守护进程：
 
 ```
 $ intellect update
@@ -81,7 +81,7 @@ $ intellect update
   Updating now would fail to overwrite ...\venv\Scripts\intellect.exe because
   Windows blocks REPLACE on a running executable.
 
-  Close Intellect Desktop, exit any open `intellect` REPLs, and
+  Close other `intellect` processes (REPLs, gateway, WebUI daemon), and
   stop the gateway (`intellect gateway stop`) before retrying.
   Override with `intellect update --force` if you've already
   confirmed those processes will not write to the venv.

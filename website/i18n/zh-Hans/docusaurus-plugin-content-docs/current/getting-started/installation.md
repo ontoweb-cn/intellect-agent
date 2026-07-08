@@ -52,7 +52,11 @@ iex (irm https://raw.giteeusercontent.com/ontoweb/intellect-agent/raw/main/scrip
 
 如果你偏好 WSL2，上方的 Linux 安装程序可在其中运行；原生安装和 WSL 安装可以共存而不冲突（原生数据位于 `%LOCALAPPDATA%\intellect`，WSL 数据位于 `~/.intellect`）。
 
-**桌面安装程序（替代方案）：** 也提供一个轻量 GUI 安装程序——下载 Intellect Desktop，运行 `.exe`，首次启动时它会在后台调用 `install.ps1` 来配置 Python（通过 `uv`）、Node、PortableGit 及其余依赖。桌面应用和 PowerShell 安装的 CLI 共享相同的安装目录和数据目录，可以单独或同时使用。详见 [Windows（原生）指南](../user-guide/windows-native#desktop-installer-alternative)。
+**可选：NSIS 安装器（Early Beta）：** 部分 Gitee Release 附件包含 `Intellect-Agent-{version}-Setup.exe` — 用于安装 **CLI/agent 原生包**（venv + PATH 中的 `intellect`），由 `packaging/installer/windows/` 构建。**不是**独立的聊天 GUI。如需图形界面，请运行 `intellect webui start` 并在浏览器中打开显示的 URL（默认 `http://127.0.0.1:9119`）。详见 [Windows（原生）指南](../user-guide/windows-native#optional-nsis-installer)。
+
+:::note 原生 Desktop GUI（尚未发布）
+本仓库**尚未发布**官方的 Intellect Desktop 聊天应用。未来的原生 GUI 可能包装 WebUI 或通过 WebSocket 连接 `tui_gateway` — 见仓库内 `docs/plans/2026-07-08-intellect-desktop-feasibility-review.md`。第三方项目（如通过 SSH 连接的社区 SwiftUI 客户端）**不是** ONTOWEB 官方发行版。
+:::
 
 ### Android / Termux
 

@@ -1954,6 +1954,11 @@ DEFAULT_CONFIG = {
         # multi-tool agent turn. Bridged to intellect_MEDIA_TRUST_RECENT_SECONDS.
         # Only consulted when ``strict`` is true.
         "trust_recent_files_seconds": 600,
+        # Per-platform / per-channel model overrides for gateway sessions.
+        # Keys: platform name (e.g. "telegram") or session suffix without the
+        # ``agent:main:`` prefix (e.g. "telegram:dm:12345"). Session ``/model``
+        # overrides take precedence. Values: {model?, provider?, api_key?, ...}.
+        "model_overrides": {},
     },
 
     # Pluggable storage / cache / event backends.
