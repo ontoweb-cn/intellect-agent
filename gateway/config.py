@@ -435,8 +435,10 @@ class ScaleToZeroConfig:
 
     Disabled by default; when off, the gateway behaves exactly as before.
     Only meaningful for webhook-mode deployments — persistent/long-poll
-    platforms cannot be woken by an inbound socket and are rejected at
-    startup validation (HP-406c).
+    platforms cannot be woken by an inbound socket and will be rejected at
+    startup validation (added in HP-406c; not yet wired). Range/consumer
+    wiring for these fields also lands with HP-406/HP-408; until then they
+    are inert config.
     """
     enabled: bool = False
     # Stop the gateway after this many minutes with no active work.
@@ -827,20 +829,28 @@ def load_gateway_config() -> GatewayConfig:
             if "thread_sessions_per_user" in yaml_cfg:
                 gw_data["thread_sessions_per_user"] = yaml_cfg["thread_sessions_per_user"]
 
-            streaming_cfg = yaml_cfg.get("streaming")
-            if not isinstance(streaming_cfg, dict):
-                # Fall back to nested gateway.streaming written by
-                # ``intellect config set gateway.streaming.*``
-                streaming_cfg = yaml_cfg.get("gateway", {}).get("streaming")
-            if isinstance(streaming_cfg, dict):
+            def _yaml_section(name: str):
+                # Resolve a gateway sub-config from top-level ``name`` or nested
+                # ``gateway.<name>``; return None if neither resolves to a dict.
+                # Guards a present-but-null ``gateway:`` key (yaml_cfg.get("gateway")
+                # -> None), which would otherwise AttributeError on ``.get(name)``
+                # and get swallowed by the outer except, silently dropping the
+                # whole config.yaml.
+                sec = yaml_cfg.get(name)
+                if isinstance(sec, dict):
+                    return sec
+                gw = yaml_cfg.get("gateway")
+                nested = gw.get(name) if isinstance(gw, dict) else None
+                return nested if isinstance(nested, dict) else None
+
+            # Fall back to nested gateway.streaming / gateway.scale_to_zero written
+            # by ``intellect config set gateway.<section>.*``.
+            streaming_cfg = _yaml_section("streaming")
+            if streaming_cfg is not None:
                 gw_data["streaming"] = streaming_cfg
 
-            # Scale-to-zero (HP-406): top-level or nested gateway.scale_to_zero,
-            # mirroring the streaming fallback above.
-            scale_to_zero_cfg = yaml_cfg.get("scale_to_zero")
-            if not isinstance(scale_to_zero_cfg, dict):
-                scale_to_zero_cfg = yaml_cfg.get("gateway", {}).get("scale_to_zero")
-            if isinstance(scale_to_zero_cfg, dict):
+            scale_to_zero_cfg = _yaml_section("scale_to_zero")  # HP-406
+            if scale_to_zero_cfg is not None:
                 gw_data["scale_to_zero"] = scale_to_zero_cfg
 
             if "reset_triggers" in yaml_cfg:

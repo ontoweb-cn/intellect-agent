@@ -48,6 +48,35 @@ class TestScaleToZeroConfig:
         assert ScaleToZeroConfig.from_dict({}) == ScaleToZeroConfig()
 
 
+class TestNullGatewayKeyDoesNotDiscardConfig:
+    """Regression: a present-but-null ``gateway:`` key must not crash the
+    streaming/scale_to_zero fallback and silently discard the whole config.yaml.
+    """
+
+    def test_null_gateway_key_with_top_level_streaming(self, monkeypatch, tmp_path):
+        from gateway.config import load_gateway_config
+
+        intellect_home = tmp_path / ".intellect"
+        intellect_home.mkdir()
+        # Top-level streaming dict (so the streaming fallback is skipped) plus a
+        # bare `gateway:` key that parses to None — the exact shape that made
+        # the scale_to_zero fallback do None.get(...) and discard the config.
+        (intellect_home / "config.yaml").write_text(
+            "streaming:\n"
+            "  enabled: true\n"
+            "gateway:\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("INTELLECT_HOME", str(intellect_home))
+
+        cfg = load_gateway_config()
+
+        # config.yaml was honored (not swallowed): streaming.enabled came through.
+        assert cfg.streaming.enabled is True
+        # scale_to_zero stays at defaults (no nested value present).
+        assert cfg.scale_to_zero.enabled is False
+
+
 class TestHomeChannelRoundtrip:
     def test_to_dict_from_dict(self):
         hc = HomeChannel(platform=Platform.DISCORD, chat_id="999", name="general")
