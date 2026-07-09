@@ -421,6 +421,59 @@ class StreamingConfig:
         )
 
 
+# Scale-to-zero defaults (HP-406). Conservative so the default-off path never
+# thrashes: 30-min idle window amortizes cold starts; 120s min-uptime floor
+# prevents "wake then immediately self-stop" churn.
+DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES: int = 30
+DEFAULT_SCALE_TO_ZERO_MIN_UPTIME_SECONDS: int = 120
+DEFAULT_CRON_TRIGGER_PORT: int = 8722
+
+
+@dataclass
+class ScaleToZeroConfig:
+    """Gateway idle self-stop + socket-activation wake (HP-406).
+
+    Disabled by default; when off, the gateway behaves exactly as before.
+    Only meaningful for webhook-mode deployments — persistent/long-poll
+    platforms cannot be woken by an inbound socket and are rejected at
+    startup validation (HP-406c).
+    """
+    enabled: bool = False
+    # Stop the gateway after this many minutes with no active work.
+    idle_timeout_minutes: int = DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES
+    # Minimum lifetime after (re)start before self-stop is allowed; guards
+    # against wake→immediately-idle→stop churn.
+    min_uptime_seconds: int = DEFAULT_SCALE_TO_ZERO_MIN_UPTIME_SECONDS
+    # Dedicated port for the authed /cron/run-due endpoint (bound only when
+    # cron.provider="chronos"); listed in the systemd .socket ListenStream.
+    cron_trigger_port: int = DEFAULT_CRON_TRIGGER_PORT
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "idle_timeout_minutes": self.idle_timeout_minutes,
+            "min_uptime_seconds": self.min_uptime_seconds,
+            "cron_trigger_port": self.cron_trigger_port,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ScaleToZeroConfig":
+        if not data:
+            return cls()
+        return cls(
+            enabled=_coerce_bool(data.get("enabled"), False),
+            idle_timeout_minutes=_coerce_int(
+                data.get("idle_timeout_minutes"), DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES,
+            ),
+            min_uptime_seconds=_coerce_int(
+                data.get("min_uptime_seconds"), DEFAULT_SCALE_TO_ZERO_MIN_UPTIME_SECONDS,
+            ),
+            cron_trigger_port=_coerce_int(
+                data.get("cron_trigger_port"), DEFAULT_CRON_TRIGGER_PORT,
+            ),
+        )
+
+
 # -----------------------------------------------------------------------------
 # Built-in platform connection checkers
 # -----------------------------------------------------------------------------
@@ -515,6 +568,9 @@ class GatewayConfig:
     # months.  Pruning is invisible to users — if they resume, they get a
     # fresh session exactly as if the reset policy had fired.  0 = disabled.
     session_store_max_age_days: int = 90
+
+    # Gateway scale-to-zero (HP-406): idle self-stop + socket-activation wake.
+    scale_to_zero: ScaleToZeroConfig = field(default_factory=ScaleToZeroConfig)
 
     def get_connected_platforms(self) -> List[Platform]:
         """Return list of platforms that are enabled and configured."""
@@ -611,6 +667,7 @@ class GatewayConfig:
             "unauthorized_dm_behavior": self.unauthorized_dm_behavior,
             "streaming": self.streaming.to_dict(),
             "session_store_max_age_days": self.session_store_max_age_days,
+            "scale_to_zero": self.scale_to_zero.to_dict(),
         }
     
     @classmethod
@@ -682,6 +739,7 @@ class GatewayConfig:
             unauthorized_dm_behavior=unauthorized_dm_behavior,
             streaming=StreamingConfig.from_dict(data.get("streaming", {})),
             session_store_max_age_days=session_store_max_age_days,
+            scale_to_zero=ScaleToZeroConfig.from_dict(data.get("scale_to_zero", {})),
         )
 
     def get_unauthorized_dm_behavior(self, platform: Optional[Platform] = None) -> str:
@@ -776,6 +834,14 @@ def load_gateway_config() -> GatewayConfig:
                 streaming_cfg = yaml_cfg.get("gateway", {}).get("streaming")
             if isinstance(streaming_cfg, dict):
                 gw_data["streaming"] = streaming_cfg
+
+            # Scale-to-zero (HP-406): top-level or nested gateway.scale_to_zero,
+            # mirroring the streaming fallback above.
+            scale_to_zero_cfg = yaml_cfg.get("scale_to_zero")
+            if not isinstance(scale_to_zero_cfg, dict):
+                scale_to_zero_cfg = yaml_cfg.get("gateway", {}).get("scale_to_zero")
+            if isinstance(scale_to_zero_cfg, dict):
+                gw_data["scale_to_zero"] = scale_to_zero_cfg
 
             if "reset_triggers" in yaml_cfg:
                 gw_data["reset_triggers"] = yaml_cfg["reset_triggers"]

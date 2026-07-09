@@ -8,11 +8,44 @@ from gateway.config import (
     HomeChannel,
     Platform,
     PlatformConfig,
+    ScaleToZeroConfig,
     SessionResetPolicy,
     StreamingConfig,
     _apply_env_overrides,
     load_gateway_config,
 )
+
+
+class TestScaleToZeroConfig:
+    def test_default_off(self):
+        gc = GatewayConfig()
+        assert gc.scale_to_zero.enabled is False
+        assert gc.scale_to_zero.idle_timeout_minutes == 30
+        assert gc.scale_to_zero.min_uptime_seconds == 120
+        assert gc.scale_to_zero.cron_trigger_port == 8722
+
+    def test_to_dict_from_dict_roundtrip(self):
+        gc = GatewayConfig(
+            scale_to_zero=ScaleToZeroConfig(
+                enabled=True, idle_timeout_minutes=5, min_uptime_seconds=90,
+                cron_trigger_port=9001,
+            )
+        )
+        restored = GatewayConfig.from_dict(gc.to_dict())
+        assert restored.scale_to_zero.enabled is True
+        assert restored.scale_to_zero.idle_timeout_minutes == 5
+        assert restored.scale_to_zero.min_uptime_seconds == 90
+        assert restored.scale_to_zero.cron_trigger_port == 9001
+
+    def test_from_dict_partial_fills_defaults(self):
+        stz = ScaleToZeroConfig.from_dict({"enabled": True})
+        assert stz.enabled is True
+        assert stz.idle_timeout_minutes == 30
+        assert stz.min_uptime_seconds == 120
+        assert stz.cron_trigger_port == 8722
+
+    def test_from_dict_empty_is_default(self):
+        assert ScaleToZeroConfig.from_dict({}) == ScaleToZeroConfig()
 
 
 class TestHomeChannelRoundtrip:

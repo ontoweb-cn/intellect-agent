@@ -1767,6 +1767,23 @@ DEFAULT_CONFIG = {
         # 1 = serial (pre-v0.9 behaviour).
         # Also overridable via intellect_CRON_MAX_PARALLEL env var.
         "max_parallel_jobs": None,
+        # Cron execution provider (HP-408).
+        #   "builtin"  — the gateway ticks the scheduler every 60s (default).
+        #   "chronos"  — the in-process ticker is disabled; an external
+        #                scheduler (systemd .timer, cloud scheduler, k8s
+        #                CronJob, hosted Chronos) drives due jobs by POSTing
+        #                to the authed /cron/run-due endpoint. Required when
+        #                gateway.scale_to_zero is enabled with cron jobs so
+        #                jobs still fire while the gateway is stopped.
+        "provider": "builtin",
+        "chronos": {
+            # Bearer/HMAC secret guarding the /cron/run-due endpoint. Empty +
+            # provider=chronos on a network bind is rejected at startup.
+            "trigger_token": "",
+            # Optional source-IP CIDR allowlist (matched on the socket peer;
+            # X-Forwarded-For is not trusted). null = no IP restriction.
+            "allowed_source_cidr": None,
+        },
     },
 
     # Kanban multi-agent coordination — controls the dispatcher loop that
@@ -1969,6 +1986,18 @@ DEFAULT_CONFIG = {
         # ``agent:main:`` prefix (e.g. "telegram:dm:12345"). Session ``/model``
         # overrides take precedence. Values: {model?, provider?, api_key?, ...}.
         "model_overrides": {},
+        # Scale-to-zero (HP-406): idle self-stop + systemd socket-activation
+        # wake. Disabled by default — when off, the gateway behaves exactly as
+        # before. Only valid for webhook-mode deployments; persistent/long-poll
+        # platforms are rejected at startup validation (HP-406c).
+        "scale_to_zero": {
+            "enabled": False,
+            "idle_timeout_minutes": 30,
+            "min_uptime_seconds": 120,
+            # Dedicated port for /cron/run-due; bound only when
+            # cron.provider="chronos". Listed in the systemd .socket unit.
+            "cron_trigger_port": 8722,
+        },
     },
 
     # Pluggable storage / cache / event backends.
