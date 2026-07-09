@@ -6,6 +6,7 @@
   "tests/agent/test_moa_loop.py": 1.04,
   "tests/agent/test_redact.py": 0.957,
   "tests/agent/test_secret_scope.py": 0.37,
+  "tests/agent/test_sessiondb_merge_queue.py": 0.52,
   "tests/cron/test_blueprint_catalog.py": 0.983,
   "tests/cron/test_cron_profile.py": 1.351,
   "tests/gateway/test_background_delegation.py": 1.791,
