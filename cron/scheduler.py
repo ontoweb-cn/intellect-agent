@@ -1868,20 +1868,32 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
             logger.debug("Job '%s': failed to reap stale auxiliary clients: %s", job_id, e)
 
 
-def tick(verbose: bool = True, adapters=None, loop=None) -> int:
+def run_due(
+    verbose: bool = True,
+    adapters=None,
+    loop=None,
+    catch_up: bool = False,
+) -> int:
     """
-    Check and run all due jobs.
-    
-    Uses a file lock so only one tick runs at a time, even if the gateway's
-    in-process ticker and a standalone daemon or manual tick overlap.
-    
+    Check and run all due jobs (cadence-agnostic core of the scheduler).
+
+    Uses a file lock so only one run executes at a time, even if the gateway's
+    in-process ticker and a standalone daemon, manual tick, or external
+    ``cron.provider="chronos"`` trigger overlap.  The lock lives here (not in
+    ``tick()``) so every entry path — builtin ticker and external trigger —
+    shares the same at-most-once guarantee.
+
     Args:
         verbose: Whether to print status messages
         adapters: Optional dict mapping Platform → live adapter (from gateway)
         loop: Optional asyncio event loop (from gateway) for live adapter sends
-    
+        catch_up: When True, past-due recurring jobs fire once instead of being
+            fast-forwarded (used by the external-trigger chronos provider, where
+            the gateway is stopped between triggers).  Exactly-once is preserved
+            by the ``advance_next_run`` pass below.
+
     Returns:
-        Number of jobs executed (0 if another tick is already running)
+        Number of jobs executed (0 if another run is already in progress)
     """
     lock_dir, lock_file = _get_lock_paths()
     lock_dir.mkdir(parents=True, exist_ok=True)
@@ -1901,7 +1913,10 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
         return 0
 
     try:
-        due_jobs = get_due_jobs()
+        # Preserve the historical no-arg call for the default (builtin) path so
+        # existing call sites and monkeypatched get_due_jobs stubs are unaffected;
+        # only pass the kwarg when catching up.
+        due_jobs = get_due_jobs(catch_up=True) if catch_up else get_due_jobs()
 
         if verbose and not due_jobs:
             logger.info("%s - No jobs due", _intellect_now().strftime('%H:%M:%S'))
@@ -2047,6 +2062,17 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
             except (OSError, IOError):
                 pass
         lock_fd.close()
+
+
+def tick(verbose: bool = True, adapters=None, loop=None) -> int:
+    """Builtin-provider entry point: run due jobs with fast-forward semantics.
+
+    Thin wrapper over :func:`run_due` preserving the historical signature and
+    behaviour (``catch_up=False``).  The gateway's 60s ticker and standalone
+    daemons call this; the external chronos trigger calls
+    ``run_due(catch_up=True)``.
+    """
+    return run_due(verbose=verbose, adapters=adapters, loop=loop, catch_up=False)
 
 
 if __name__ == "__main__":

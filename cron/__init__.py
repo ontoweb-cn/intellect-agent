@@ -26,11 +26,11 @@ from cron.jobs import (
     trigger_job,
     JOBS_FILE,
 )
-from cron.scheduler import tick
+from cron.scheduler import tick, run_due
 
 __all__ = [
     "create_job",
-    "get_job", 
+    "get_job",
     "list_jobs",
     "remove_job",
     "update_job",
@@ -38,5 +38,6 @@ __all__ = [
     "resume_job",
     "trigger_job",
     "tick",
+    "run_due",
     "JOBS_FILE",
 ]

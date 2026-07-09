@@ -998,19 +998,28 @@ def advance_next_run(job_id: str) -> bool:
         return False
 
 
-def get_due_jobs() -> List[Dict[str, Any]]:
+def get_due_jobs(catch_up: bool = False) -> List[Dict[str, Any]]:
     """Get all jobs that are due to run now.
 
     For recurring jobs (cron/interval), if the scheduled time is stale
     (more than one period in the past, e.g. because the gateway was down),
     the job is fast-forwarded to the next future run instead of firing
     immediately.  This prevents a burst of missed jobs on gateway restart.
+
+    ``catch_up=True`` disables that fast-forward so each past-due recurring
+    job fires once regardless of how late it is.  This is used by the
+    external-trigger cron provider (``cron.provider="chronos"``), where the
+    gateway is deliberately stopped between triggers so "stale" is the normal
+    case and fast-forwarding would silently drop the job.  Exactly-once is
+    still preserved: ``tick()``/``run_due()`` calls ``advance_next_run()`` for
+    every returned job before executing it, moving ``next_run_at`` to the next
+    future occurrence.
     """
     with _jobs_file_lock:
-        return _get_due_jobs_locked()
+        return _get_due_jobs_locked(catch_up=catch_up)
 
 
-def _get_due_jobs_locked() -> List[Dict[str, Any]]:
+def _get_due_jobs_locked(catch_up: bool = False) -> List[Dict[str, Any]]:
     """Inner implementation of get_due_jobs(); must be called with _jobs_file_lock held."""
     now = _intellect_now()
     raw_jobs = load_jobs()
@@ -1071,7 +1080,7 @@ def _get_due_jobs_locked() -> List[Dict[str, Any]]:
             # (gateway was down and missed the window). Fast-forward to
             # the next future occurrence instead of firing a stale run.
             grace = _compute_grace_seconds(schedule)
-            if kind in {"cron", "interval"} and (now - next_run_dt).total_seconds() > grace:
+            if not catch_up and kind in {"cron", "interval"} and (now - next_run_dt).total_seconds() > grace:
                 # Job is past its catch-up grace window — this is a stale missed run.
                 # Grace scales with schedule period: daily=2h, hourly=30m, 10min=5m.
                 new_next = compute_next_run(schedule, now.isoformat())
