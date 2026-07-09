@@ -3,7 +3,7 @@
 > 文档日期：2026-07-09
 > 上游：`2026-07-08-hermes-v0.16-v0.18-port-todo.md`（HP-406 / HP-408）、`…-port-design.md` §5.9.2
 > 触发决议：Q4 scale-to-zero 已确认需求（2026-07-09）；Chronos 由"不移植"改为"移植"
-> 状态：🔄 已三方评审（approve-with-revisions，§十）；**B2 socket 拓扑已定案 (b) 全平台 fd 继承**；开工前须解 B1、B3–B8（均有明确修法）
+> 状态：🔄 二轮评审（approve-with-revisions，§十/§十一）；B2 定案 (b)；HP-406e 真正 aiohttp 直改=7（slack/whatsapp_cloud 不可 activation，telegram 单列）；开工前须解 B1、B3–B8 + 十一.5
 
 ---
 
@@ -48,17 +48,16 @@ HP-408a provider 抽象 ──┴─► HP-408b chronos 插件 ─► HP-408c ru
 
 - **硬门禁**：HP-406b（socket 单元）→ HP-406e（adapter fd 继承）→ 才有 webhook 唤醒；HP-406b 也先于 HP-408c（run-due 靠 socket 激活）。
 - HP-406a / HP-406c / HP-408a 可并行开工（互不依赖）。
-- 建议一个 PR：HP-406 全量（含 406e ~10 adapter）；HP-408 单独 PR（依赖 406 merge）。
+- 建议一个 PR：HP-406 全量（含 406e：7 个 aiohttp adapter 直改 + telegram 单列，见 §4.5/§十一）；HP-408 单独 PR（依赖 406 merge）。
 
 ---
 
 ## 四、HP-406 scale-to-zero 细化
 
 ### 4.1 HP-406a — 进程级 idle 自停（1–2d）
-- 新增 gateway 后台协程 `_scale_to_zero_watcher`：周期检查"全局最近活跃时间戳"，无活跃会话且超 `idle_timeout_minutes` → 触发优雅 drain（复用 `_draining` + `_shutdown_event`）→ 进程退出码 0。
-- 活跃判定复用 session 层 `updated_at` 的**全局最大值**；drain 期间禁止再自停（幂等 guard）。
-- **下限保护**：进程启动后至少存活 `min_uptime_seconds`（默认 120）才允许自停，防"拉起即停"抖动（定案 §8.2）。
-- **拒绝条件**：存在 in-flight 委派（HP-202 background children）或未 drain 的回合 → 推迟自停。
+- 新增 gateway 后台协程 `_scale_to_zero_watcher`：满足**自停主门禁（AND，B8）**时触发优雅 drain（复用 `_draining` + `_shutdown_event`）→ 退出码 0。
+- **自停主门禁（AND，5 项 + 时间）**：`_running_agents` 无活代理（含 pending sentinel，覆盖 streaming）**且** `process_registry.count_running()==0` **且** `async_delegation.count_running_delegations()==0`（HP-202 委派，`tools/async_delegation.py:80`；第二轮评审补）**且** 无 in-flight `run_due`（覆盖 `_deliver_result`）**且** 全局 `updated_at` 空闲超 `idle_timeout_minutes`。任一不满足 → 推迟自停。
+- **下限保护**：进程启动后至少存活 `min_uptime_seconds`（默认 120）才允许自停，防"拉起即停"抖动（定案 §8.2）；drain 期间禁止再自停。
 - 配置：`gateway.scale_to_zero.idle_timeout_minutes`（默认 30）、`min_uptime_seconds`（默认 120）。
 
 ### 4.2 HP-406b — systemd socket activation（评审后 2d；配合 406e fd 继承，见 B2 定案 (b)）
@@ -71,9 +70,9 @@ HP-408a provider 抽象 ──┴─► HP-408b chronos 插件 ─► HP-408c ru
 
 ### 4.3 HP-406c — wake_class 门控（评审后 0.5–1d，依赖 PlatformEntry 承载）
 - 平台 manifest 新增能力字段 **`wake_class: webhook | persistent | dual`**（改名避开与 `Platform.transport` 冲突，B6；缺省 `persistent` = 安全默认，不可 scale-to-zero）。首批标注：
-  - `webhook`：`api_server`、`webhook`、`msgraph_webhook`、`whatsapp_cloud`、`line`、`teams`、`sms`、`bluebubbles`、`slack`
-  - `dual`（校验时从 `TELEGRAM_WEBHOOK_URL` 重导模式，F4）：`telegram`（webhook 放行、polling 拒绝）
-  - `persistent`：`discord`、`irc`、`signal`、`simplex`、`matrix`、`feishu`、`homeassistant`、`mattermost`、`wecom`、`email`
+  - `webhook`：`api_server`、`webhook`、`msgraph_webhook`、`line`、`teams`、`sms`、`bluebubbles`
+  - `dual`（校验时从 `TELEGRAM_WEBHOOK_URL` 重导，F4；webhook 模式走 tornado fd，见 §4.5）：`telegram`
+  - `persistent`：`discord`、`irc`、`signal`、`simplex`、`matrix`、`feishu`、`homeassistant`、`mattermost`、`wecom`、`email`、**`slack`**（Socket Mode 出站 WS、无入站端口，二轮评审重分类）、**`whatsapp_cloud`**（自身无入站 server；webhook 若需唤醒须经 generic `webhook` 平台端口）
 - 接线（F2）：`PluginManifest` 解析 `wake_class`（`plugins.py:1267`）→ 承载到 `PlatformEntry`（`platform_registry.py:39`）→ `_validate_gateway_config()` 查表；**须先核对 registry 在 validation 时已填充**。
 - 校验：`scale_to_zero.enabled=true` 且任一活跃平台 `persistent`（或 `dual` 平台处 polling）→ **拒绝启动**，可读错误列冲突平台。
 
@@ -83,11 +82,13 @@ HP-408a provider 抽象 ──┴─► HP-408b chronos 插件 ─► HP-408c ru
 - 时序测试：`TimeoutStopSec < drain` → 告警命中。
 - webhook 唤醒测试：停机 → 入站 webhook 打平台端口 → socket-activate 拉起 → 正常处理（验证 406e fd 继承生效）。
 
-### 4.5 HP-406e — webhook adapter fd 继承（SockSite 改造，B2 定案 (b)，3–5d）
-- 新增共享 helper `get_activation_socket(port) -> socket|None`：读 systemd `LISTEN_FDS`/`LISTEN_PID`（`sd_listen_fds` 等价），按 `getsockname()` 端口匹配返回继承 socket。
-- 每个 `wake_class=webhook` 平台的 aiohttp 起站处：有继承 socket → `web.SockSite(runner, sock)`；否则回退 `web.TCPSite(host, port)`（非 socket-activation 部署**零行为变化**）。
-- 覆盖 ~10 adapter：`api_server`、`webhook`、`msgraph_webhook`、`whatsapp_cloud`、`line`、`teams`、`sms`、`bluebubbles`、`slack`、`telegram`(webhook 模式)。
-- 风险：adapter 数量是工期主摆动项；逐个改需保持各自 host/port 配置语义不变。
+### 4.5 HP-406e — webhook adapter fd 继承（SockSite 改造，B2 定案 (b)，评审后 ~4.5–6.5d）
+- 共享 helper `get_activation_socket(port) -> socket|None`：读 systemd `LISTEN_FDS`/`LISTEN_PID`，校验 `LISTEN_PID==os.getpid()`，按 `getsockname()` 端口匹配、**每 fd 单次消费**，返回继承 socket。
+- **原生 aiohttp 直改（7 个，EASY）**：`api_server`、`webhook`、`msgraph_webhook`、`line`、`teams`、`sms`、`bluebubbles` —— 起站处有继承 socket → `web.SockSite(runner, sock)`；否则回退 `web.TCPSite`（非 activation 部署**零回归**）。
+- **telegram 单列（HARD，二轮评审）**：webhook 模式走 PTB `Updater.start_webhook(unix=<socket>)` → tornado `add_socket`，**非** `SockSite`；须验证 TCP socket 被接受 + `UNIX_AVAILABLE`。
+- **api_server guard**：其预检端口 `connect()`（`adapter.py:4285-4292`）在 activation 下会误判"端口占用"而拒启动 → 有继承 socket 时绕过。
+- **descope**：`slack`（Socket Mode 无入站端口）与 `whatsapp_cloud`（无入站 server）**不可 socket-activation**，已重分类出 webhook 集（§4.3）。
+- 不变量：activation 下配置 host/port 变 advisory，须与 `.socket` 的 `ListenStream` 端口锁定（加测试）。
 
 **HP-406 验收**：默认 false 零回归；webhook 部署可自停 + **任意入站 webhook 唤醒**；persistent 平台配置层拒绝；drain 不被 SIGKILL 截断；非 activation 部署 `TCPSite` 回退零回归。
 
@@ -97,7 +98,7 @@ HP-408a provider 抽象 ──┴─► HP-408b chronos 插件 ─► HP-408c ru
 
 ### 5.1 HP-408a — cron provider 抽象（1d）
 - `cron/scheduler.py` 抽出 `run_due()`（= 现 `tick()` 的到期执行主体，去掉"每 60s 被调用"的假设）。
-- **`run_due(catch_up=False)`**：默认 builtin 路径行为不变；**外部触发传 `catch_up=True`**，绕过 `get_due_jobs()` 的快进丢弃（B1），逐条补跑过期周期任务（幂等仍由 `advance_next_run` 保护）。
+- **`run_due(catch_up=False)`**：默认 builtin 路径行为不变；**外部触发传 `catch_up=True`**，绕过 `get_due_jobs()` 的快进丢弃（B1，编辑落点 `cron/jobs.py get_due_jobs`），逐条补跑过期周期任务，每任务**恰好一次**（`advance_next_run` 跳下一未来点）。催群受 `cron.max_parallel_jobs`（默认无上界）约束，chronos 下建议设上限。
 - 引入 `cron.provider`：
   - `builtin`（默认）：gateway 每 60s 调 `run_due()`（现状）。
   - `chronos`：gateway **不**自 tick；外部触发调 `run_due(catch_up=True)`。**但 `_start_cron_ticker` 搭载的维护任务（频道刷新/缓存清理/paste/curator）须迁到 cadence-independent keepalive，勿随 ticker 一起停（B7）**。
@@ -214,7 +215,7 @@ cron:
 | **B5** | 安全 | socket 激活唤醒发生在**应用层鉴权之前**：裸 TCP connect 即唤醒 gateway → 无鉴权冷启动 DoS/thrash | `Accept=no` 语义 | run-due 端口仅 `provider=chronos` 时进 `ListenStream`；L3/L4（防火墙/CIDR）门禁；token 只能是唤醒后的第二层 |
 | **B6** | 正确性 | 新字段 `transport` 与既有 `Platform.transport`（消息流模式 `edit\|draft\|plain`）**同名冲突** | `gateway/config.py:381` | 新能力字段改名 **`wake_class`**（本文已改） |
 | **B7** | 正确性 | chronos 下若关内置 ticker，则 `_start_cron_ticker` 搭载的维护任务（频道刷新/5、缓存清理/60、paste 清扫/60、curator/60）**静默停摆** | `gateway/run.py:9175-9296` | HP-408a 明确 chronos 下这些维护迁到 cadence-independent keepalive 或折进 `run_due` |
-| **B8** | 正确性 | idle 信号（session `updated_at` 全局 max）过弱：长回合/HP-202 后台子代理/in-flight `run_due` 均可能 `updated_at` 陈旧却仍在跑 → 停机截断 | `session.py:879,961` | 自停主门禁改 AND：`_running_agents` 无活代理 **且** `process_registry.count_running()==0`（`tools/process_registry.py:1254`）**且** 无 in-flight `run_due` **且** 过 `min_uptime_seconds` |
+| **B8** | 正确性 | idle 信号（session `updated_at` 全局 max）过弱：长回合/HP-202 后台子代理/in-flight `run_due` 均可能 `updated_at` 陈旧却仍在跑 → 停机截断 | `session.py:879,961` | 自停主门禁改 **5 项 AND**：`_running_agents` 空 **且** `process_registry.count_running()==0` **且** `async_delegation.count_running_delegations()==0`（HP-202，二轮评审补）**且** 无 in-flight `run_due` **且** 过 `min_uptime`（§4.1） |
 
 ### 事实定位错误（本文档已修订 F1–F4）
 
@@ -249,3 +250,38 @@ cron:
 - **落地**：新增 **HP-406e**——~10 个 `wake_class=webhook` adapter 改 `web.SockSite` 继承 systemd fd（`get_activation_socket()` 共享 helper）；非 activation 部署回退 `TCPSite` 零回归。详见 §4.5。
 - **工期影响**：HP-406 由评审 6–9d 上调至 **~8–11d**（adapter 数量为主摆动项）。
 - 未选 (a)（仅 run-due 唤醒）：会把停机期用户消息搁置到下次 Chronos ping，不适合交互式主用法。
+
+---
+
+## 十一、第二轮评审（2026-07-09，B2 决议后针对新增 HP-406e + B1/B7/B8 修法）
+
+**触发**：B2 定案 (b) 新增 HP-406e（首轮评审未覆盖）。双视角核查其可行性与 B1/B7/B8 修法。
+**结论**：仍 **approve-with-revisions**；HP-406e"~10 adapter 统一 SockSite"前提**对 3/10 不成立**，B8 AND-gate 漏一类在途工作。
+
+### 十一.1 HP-406e 可行性：真正可 SockSite 直改的只有 7/10
+| adapter | 入站机制 | 可行性 | 证据 |
+|---------|---------|--------|------|
+| api_server / webhook / msgraph_webhook / line / sms / bluebubbles / teams | 原生 aiohttp `TCPSite` | **EASY** | 各 `adapter.py` `TCPSite` 行；teams 经 `_AiohttpBridgeAdapter` 仍 aiohttp（`teams/adapter.py:697-700`） |
+| **slack** | slack-bolt **Socket Mode 出站 WS，无入站端口** | **BLOCKED** | `slack/adapter.py:666-668` |
+| **whatsapp_cloud** | **无入站 server**（仅 send + `parse_webhook_event`） | **BLOCKED** | `whatsapp_cloud/adapter.py:66-79` |
+| **telegram**(webhook) | PTB **tornado** `HTTPServer`，非 aiohttp | **HARD**（PTB `unix=<socket>`→tornado `add_socket`，非 `SockSite`） | `telegram/adapter.py:1622`、PTB `webhookhandler.py:80-91` |
+
+**必改**：slack 重分类 `persistent`；whatsapp_cloud 移出 webhook 集；telegram 单列（tornado 路径）；api_server 预检端口 guard（`adapter.py:4285-4292`）在 activation 下须绕过；`get_activation_socket()` 校验 `LISTEN_PID==os.getpid()` + 每 fd 单次消费 + host/port 变 advisory。**真正 aiohttp 直改 = 7，非 ~10**；406e 3–5d → **~4.5–6.5d**（前提 slack+whatsapp descope）。
+
+### 十一.2 B1/B7/B8 修法
+- **B1（catch_up）✅ 健全**：`advance_next_run` 用 `compute_next_run(schedule, now)` 跳到**下一未来点**（非逐周期回放）→ 停机后每周期任务**恰好补跑一次**。补充：编辑落点在 `cron/jobs.py get_due_jobs`（非 scheduler.py）；催群受 `cron.max_parallel_jobs`（**默认无上界**）约束，chronos 下建议设上限（写入 §7）。
+- **B7（维护迁移）⚠️ 被低估**：cache 清理 + paste 清扫**无内部时间门**（仅 `tick_count%60`），迁移须**新增持久化 wall-clock last-run 戳**；curator 已自门控（`interval_hours`）；频道刷新依赖 live adapters。升为 HP-408a 显式子项，+0.5d。
+- **B8（idle AND-gate）⚠️ 漏 HP-202 委派**：后台委派子代理由 `tools/async_delegation.py:80 count_running_delegations()` 跟踪，**既不在 `_running_agents` 也不在 `process_registry`**，且存活于父回合之后 → 现 gate 会 SIGTERM 截断。**须加第 5 项 `count_running_delegations()==0`**（§4.1 本已列此拒停条件，B8 形式化时漏了）。"无 in-flight run_due"是 greenfield 标志，须覆盖整个 tick 含 `_deliver_result`。
+
+### 十一.3 工期再修订
+- HP-406e：3–5d → **~4.5–6.5d**；**HP-406 合计 ~9–12d**（含 descope、telegram 单列、api_server guard、B8 第 5 项）；HP-408 +0.5d（B7 wall-clock 门）
+
+### 十一.4 正向确认
+- B1 恰好一次补跑；one-shot 不受影响；7 个 aiohttp adapter SockSite 为干净直改；teams 底层 aiohttp；B8 信号 `_running_agents`（含 pending sentinel，覆盖 streaming）+ `process_registry.count_running()` 语义正确、保守
+
+### 十一.5 必改清单（开工前）
+1. slack → persistent；whatsapp_cloud 移出 webhook 集（§4.3/§4.5 已改）
+2. telegram fd 继承单列（tornado 路径，§4.5 已改）
+3. B8 加 `count_running_delegations()==0` 第 5 项（§4.1 已补）
+4. api_server 端口 guard 在 activation 下绕过
+5. B1 catch_up 落点 `jobs.py` + `max_parallel_jobs` 上限；B7 wall-clock 门
