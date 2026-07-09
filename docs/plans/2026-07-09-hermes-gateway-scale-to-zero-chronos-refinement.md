@@ -3,7 +3,7 @@
 > 文档日期：2026-07-09
 > 上游：`2026-07-08-hermes-v0.16-v0.18-port-todo.md`（HP-406 / HP-408）、`…-port-design.md` §5.9.2
 > 触发决议：Q4 scale-to-zero 已确认需求（2026-07-09）；Chronos 由"不移植"改为"移植"
-> 状态：⬜ 待评审签字后开工
+> 状态：🔄 已三方评审（approve-with-revisions，§十）；开工前须解 B1–B8，其中 **B2 socket 拓扑待用户定案**
 
 ---
 
@@ -25,8 +25,8 @@
 | 事实 | 位置 | 对设计的影响 |
 |------|------|-------------|
 | gateway 已有优雅 drain：`_draining` / `_shutdown_event` / `_restart_drain_timeout` | `gateway/run.py:995,1295,1271` | HP-406a 复用 drain，不新造 |
-| gateway 已有 systemd 定时对齐检查 `check_systemd_timing_alignment` + `intellect gateway service install --replace` | `gateway/run.py:1890`、`gateway/shutdown_forensics.py` | HP-406b **扩展**现有 unit 生成器，非从零 |
-| 存在 `ServiceManager` 抽象（systemd/launchd/windows/s6） | `intellect_cli/service_manager.py:194` | socket 单元加在 `SystemdServiceManager` |
+| gateway 已有 systemd 定时对齐检查 `check_systemd_timing_alignment` + unit 生成器 | `gateway/run.py:1890`、`gateway/shutdown_forensics.py`、**生成器在 `intellect_cli/gateway.py:2193 generate_systemd_unit()`（F1 修订）** | HP-406b **扩展** `gateway.py` 生成器 + staleness/refresh/scope helpers，非从零 |
+| 存在 `ServiceManager` 抽象（systemd/launchd/windows/s6） | `intellect_cli/service_manager.py:194`（仅 systemctl 包装，**不生成 unit 文本**） | socket 单元加在 `gateway.py` 生成器，**非** `service_manager.py` |
 | session idle 是**会话级**自动重置（`policy.idle_minutes`、`mode∈{idle,daily,both}`、Rust `_rust_check_expiry_batch`） | `gateway/session.py:879,933` | HP-406a 需**进程级**"全局无活跃会话 X 分钟"，是新逻辑但可复用 idle 时间戳 |
 | cron 为进程内 tick：`tick()` + 文件锁 `~/.intellect/cron/.tick.lock` + `get_due_jobs/mark_job_run/advance_next_run/run_job` | `cron/scheduler.py`、`cron/__init__.py:14` | HP-408 的 provider 抽象包住 `tick()`；文件锁天然给幂等 |
 | gateway 配置直读 `load_gateway_config()` + `_validate_gateway_config()` | `gateway/config.py:710,1194` | 新键的校验挂这里 |
@@ -57,21 +57,25 @@ HP-408a provider 抽象 ──┴─► HP-408b chronos 插件 ─► HP-408c ru
 ### 4.1 HP-406a — 进程级 idle 自停（1–2d）
 - 新增 gateway 后台协程 `_scale_to_zero_watcher`：周期检查"全局最近活跃时间戳"，无活跃会话且超 `idle_timeout_minutes` → 触发优雅 drain（复用 `_draining` + `_shutdown_event`）→ 进程退出码 0。
 - 活跃判定复用 session 层 `updated_at` 的**全局最大值**；drain 期间禁止再自停（幂等 guard）。
+- **下限保护**：进程启动后至少存活 `min_uptime_seconds`（默认 120）才允许自停，防"拉起即停"抖动（定案 §8.2）。
 - **拒绝条件**：存在 in-flight 委派（HP-202 background children）或未 drain 的回合 → 推迟自停。
-- 配置：`gateway.scale_to_zero.idle_timeout_minutes`（默认 30）。
+- 配置：`gateway.scale_to_zero.idle_timeout_minutes`（默认 30）、`min_uptime_seconds`（默认 120）。
 
-### 4.2 HP-406b — systemd socket activation（1–2d）
-- 扩展 `SystemdServiceManager`：新增 `intellect gateway service install --socket-activation`，生成一对单元：
-  - `intellect-gateway.socket`：`ListenStream=` 列出所有 webhook 平台端口 + WebUI 端口 + run-due 端点端口；`Accept=no`。
-  - `intellect-gateway.service`：改为 socket-activated（`Requires=…socket`，去掉 `WantedBy=multi-user.target` 的 auto-start）。
-- 复用 `check_systemd_timing_alignment`：`TimeoutStopSec` ≥ drain timeout（否则 SIGKILL 打断 drain）。
-- launchd/windows/s6：本轮**仅 systemd**；其余管理器 `--socket-activation` 报"未支持"清晰错误。
+### 4.2 HP-406b — systemd socket activation（评审后 2d｜若走全平台 fd 继承 +数天，见 B2）
+- 扩展 **`intellect_cli/gateway.py` 的 `generate_systemd_unit()` + `systemd_install()` + staleness helpers**（F1）：新增 `intellect gateway service install --socket-activation`，生成一对单元：
+  - `intellect-gateway.socket`：`ListenStream=` 列出端口（拓扑见 B2 定案）；`Accept=no`。
+  - `intellect-gateway.service`：改为 socket-activated（`Requires=…socket`，去掉 `WantedBy` auto-start）。
+- 复用 `check_systemd_timing_alignment`：`TimeoutStopSec` ≥ drain timeout（drain 默认 180s → ≥ 210s）。
+- **socket-handoff 不变量**：自停时进程**不得**提前关闭 systemd 传入的监听 fd，入站连接排入 `.socket` backlog 由重激活实例服务（防 drain 窗口丢消息）。
+- launchd/windows/s6：本轮**仅 systemd**；其余管理器 `--socket-activation` 报清晰"未支持"。
 
-### 4.3 HP-406c — transport 门控（0.5d）
-- 平台 manifest 新增能力字段 `transport: webhook | persistent`（缺省 `persistent` = 安全默认，不可 scale-to-zero）。首批标注：
-  - `webhook`：`api_server`、`webhook`、`msgraph_webhook`、`whatsapp_cloud`、`line`、`teams`、`sms`、`bluebubbles`、`slack`、`telegram`(webhook 模式)
-  - `persistent`：`discord`、`irc`、`signal`、`simplex`、`matrix`、`feishu`、`homeassistant`、`mattermost`、`wecom`、`email`、`telegram`(polling 模式)
-- `_validate_gateway_config()`：`scale_to_zero.enabled=true` 且任一活跃平台 `transport=persistent`（或 telegram polling 模式）→ **拒绝启动**，可读错误列出冲突平台。
+### 4.3 HP-406c — wake_class 门控（评审后 0.5–1d，依赖 PlatformEntry 承载）
+- 平台 manifest 新增能力字段 **`wake_class: webhook | persistent | dual`**（改名避开与 `Platform.transport` 冲突，B6；缺省 `persistent` = 安全默认，不可 scale-to-zero）。首批标注：
+  - `webhook`：`api_server`、`webhook`、`msgraph_webhook`、`whatsapp_cloud`、`line`、`teams`、`sms`、`bluebubbles`、`slack`
+  - `dual`（校验时从 `TELEGRAM_WEBHOOK_URL` 重导模式，F4）：`telegram`（webhook 放行、polling 拒绝）
+  - `persistent`：`discord`、`irc`、`signal`、`simplex`、`matrix`、`feishu`、`homeassistant`、`mattermost`、`wecom`、`email`
+- 接线（F2）：`PluginManifest` 解析 `wake_class`（`plugins.py:1267`）→ 承载到 `PlatformEntry`（`platform_registry.py:39`）→ `_validate_gateway_config()` 查表；**须先核对 registry 在 validation 时已填充**。
+- 校验：`scale_to_zero.enabled=true` 且任一活跃平台 `persistent`（或 `dual` 平台处 polling）→ **拒绝启动**，可读错误列冲突平台。
 
 ### 4.4 HP-406d — 集成测试（1d）
 - E2E：idle → 自停 → 模拟 webhook 入站 → socket-activate 拉起 → drain → 消息不丢。
@@ -86,9 +90,10 @@ HP-408a provider 抽象 ──┴─► HP-408b chronos 插件 ─► HP-408c ru
 
 ### 5.1 HP-408a — cron provider 抽象（1d）
 - `cron/scheduler.py` 抽出 `run_due()`（= 现 `tick()` 的到期执行主体，去掉"每 60s 被调用"的假设）。
+- **`run_due(catch_up=False)`**：默认 builtin 路径行为不变；**外部触发传 `catch_up=True`**，绕过 `get_due_jobs()` 的快进丢弃（B1），逐条补跑过期周期任务（幂等仍由 `advance_next_run` 保护）。
 - 引入 `cron.provider`：
   - `builtin`（默认）：gateway 每 60s 调 `run_due()`（现状）。
-  - `chronos`：gateway **不**自 tick；由外部触发调 `run_due()`。
+  - `chronos`：gateway **不**自 tick；外部触发调 `run_due(catch_up=True)`。**但 `_start_cron_ticker` 搭载的维护任务（频道刷新/缓存清理/paste/curator）须迁到 cadence-independent keepalive，勿随 ticker 一起停（B7）**。
 - 保持文件锁 `~/.intellect/cron/.tick.lock` 不变（两 provider 共用，天然防并发）。
 
 ### 5.2 HP-408b — chronos provider 插件（1d）
@@ -96,9 +101,9 @@ HP-408a provider 抽象 ──┴─► HP-408b chronos 插件 ─► HP-408c ru
 - 配置键覆盖三条 loader（`load_cli_config` / `load_config` / gateway 直读）：`cron.provider`、`cron.chronos.{trigger_token, allowed_source_cidr?}`。
 
 ### 5.3 HP-408c — 鉴权 run-due 端点（1d）
-- gateway HTTP 面新增 `POST /cron/run-due`（随 webhook 服务器同端口/独立端口，进 socket 的 `ListenStream`）。
+- gateway 起**专用极小 aiohttp app**（仅 `POST /cron/run-due` + `GET /healthz`），独立端口 `gateway.scale_to_zero.cron_trigger_port`（默认 8722），仅 `cron.provider=chronos` 时绑定，端口进 socket 的 `ListenStream`（定案 §8.1）。
 - 鉴权：`cron.chronos.trigger_token`（bearer / HMAC）；可选源 IP CIDR 白名单。
-- 行为：验证 → 调 `run_due()` → 返回执行摘要（跑了几条、下次到期）。外部 Chronos/systemd timer/云 scheduler 按时 ping 此端点。
+- 行为：验证 → 调 `run_due()` → 返回执行摘要（跑了几条、下次到期）。外部 Chronos / systemd timer / 云 scheduler 按时 ping 此端点。
 
 ### 5.4 HP-408d — 幂等/去重（0.5d）
 - 复用文件锁 + `mark_job_run`/`advance_next_run` 的 `last_run_at` 比对：重复 ping 同一分钟不重复 fire。
@@ -123,6 +128,8 @@ gateway:
   scale_to_zero:
     enabled: false            # 默认 false，零回归
     idle_timeout_minutes: 30  # 无活跃会话多久后自停
+    min_uptime_seconds: 120   # 拉起后最少存活，防"拉起即停"抖动
+    cron_trigger_port: 8722   # run-due 专用端口，仅 provider=chronos 时绑定
 cron:
   provider: builtin           # builtin | chronos
   chronos:
@@ -149,12 +156,28 @@ cron:
 
 ---
 
-## 八、未决问题（开工前签字）
+## 八、开工前定案（已细化，2026-07-09）
 
-1. **run-due 端口拓扑**：run-due 与 webhook 平台**共端口**（同一 aiohttp app 加路由）还是**独立端口**？建议共端口（少一个 ListenStream，少一处鉴权面）。
-2. **idle 自停默认值**：30min 是否合适？serverless 场景可能要更短（5–10min）。
-3. **transport 字段落地形式**：manifest 静态字段 vs 运行时 adapter 能力查询？建议 manifest 静态 + telegram 运行时覆盖。
-4. **Chronos 客户端范围**：只做"被动 run-due 端点"（外部任意调度器可用）还是也提供一个 `intellect cron chronos-ping` 客户端/systemd timer 模板？建议后者作为 HP-408f 文档附带的 `.timer` 样例，不单列任务。
+> 4 项均已定案；**#1 由原倾向「共端口」修正为「专用端口」**（依据：webhook 平台各占独立端口，无共享 HTTP server）。
+
+### 8.1 run-due 端口拓扑 → **专用 run-due 端口**（修正）
+- 代码事实：webhook 平台各自起独立 aiohttp server、各占独立端口（Teams `:3978`、LINE `:8646`），`gateway/platform_handlers.py` 逐个拉起，**无共享 gateway HTTP server**。
+- 定案：gateway 起一个极小 aiohttp app，仅 `POST /cron/run-due` + `GET /healthz`，**独立端口** `gateway.scale_to_zero.cron_trigger_port`（默认 `8722`），仅在 `cron.provider=chronos` 时绑定。
+- 理由：与平台解耦（不依赖某平台被启用）、独立鉴权与生命周期；socket unit 本就列所有端口，多一个成本近零。
+
+### 8.2 idle 自停默认值 → **30 min + min_uptime 下限**
+- 定案：`idle_timeout_minutes` 默认 **30**；新增下限 `min_uptime_seconds` 默认 **120**（刚拉起至少活 2 分钟，防「拉起即停」抖动）。均可配。
+- 画像指引（写入 HP-408f 文档）：serverless / 成本敏感 5–10 min；高频 webhook 60 min 或关闭。
+- 理由：冷启动数秒量级，30 min 摊薄抖动；下限防边界抖动。
+
+### 8.3 wake_class 落地形式 → **manifest 静态 + dual 从 env 重导**
+- 代码事实：`plugin.yaml` 已有顶层 `kind:` 标量可平行加字段；telegram 运行时双模，但**校验期无 adapter 实例**，须从 `TELEGRAM_WEBHOOK_URL`（env/config）重导模式（F4），抽共享 helper 防漂移。
+- 定案：manifest 加 **`wake_class: webhook | persistent | dual`**（改名避 `Platform.transport` 冲突，B6），缺省 `persistent`（安全默认）。仅 `dual`（telegram）校验时按 `TELEGRAM_WEBHOOK_URL` 判：有=webhook 放行、无=polling 拒绝。
+- 接线须落到 `PlatformEntry`（F2），首批分类见 §4.3。
+
+### 8.4 Chronos 客户端范围 → **被动端点 + .timer 样例 + curl 文档，无常驻 client**
+- 认知：scale-to-zero 下不能有常驻客户端（违背自停）。
+- 定案：① 被动 `/cron/run-due` 端点（契约）；② systemd `.timer` + `.service` 样例由 HP-406b 的 `service install` 生成器产出；③ 云 scheduler / k8s CronJob 的 curl 契约 + token 轮换写入 HP-408f 文档。**不做**常驻 Chronos client daemon。
 
 ---
 
@@ -165,3 +188,56 @@ cron:
 - [ ] 新键三 loader 全覆盖 + `_validate_gateway_config` 三类校验
 - [ ] `scripts/run_tests.sh` 全绿；涉及 Rust（如无）不改 schema
 - [ ] design §5.9.2 与本细化一致（已对齐）；port-todo HP-406/408 标记随实现推进
+
+---
+
+## 十、评审记录（2026-07-09，三方独立评审）
+
+**评审方式**：三个独立子代理，分别按 **架构/正确性**、**安全**、**代码可行性** 视角对照真实代码核查。
+**综合结论**：三方一致 **approve-with-revisions**。方向成立、复用点大体属实，但有 **1 个会证伪核心承诺的正确性缺陷**、多处安全必修、4 处事实定位错误、1 个 socket 拓扑架构缺口。**下列 B1–B8 为开工前必修**；本文档 §二/§4/§6/§8 已按 F1–F4 修订。
+
+### 阻塞级（开工前必解）
+
+| ID | 视角 | 问题 | 证据 | 处置 |
+|----|------|------|------|------|
+| **B1** | 正确性 | `get_due_jobs()` 对**周期任务**有快进丢弃：scheduled 时间早于 grace（½ 周期，clamp[120s,7200s]）即被 `continue` 跳过。scale-to-zero 蓄意停机 → 触发间隔常 > grace → **周期 cron 默认静默丢**，直接证伪"定时任务不丢" | `cron/jobs.py:1070-1093,344-373` | HP-408a 增 `run_due(catch_up=True)`：外部触发时绕过快进，逐条补跑过期周期任务（幂等仍由 `advance_next_run` 保护）。one-shot(kind=once) 不受影响 |
+| **B2** | 可行性 | **socket 拓扑冲突**：§4.2 让 `.socket` 列出所有平台端口（`Accept=no`），但现有 ~9 个 webhook adapter 各自 `web.TCPSite` 新 `bind()` 同端口 → `EADDRINUSE`。二选一：(a) 仅 socket-activate run-due 端口（简单，但平台 webhook **不能**唤醒停机 gateway，只有 Chronos ping 能）(b) 教所有 webhook adapter 继承 systemd fd（`SockSite`，大工作量） | `teams/adapter.py:697-700`、`line/adapter.py:786-790`、`gateway/run.py` 无共享 server | **需用户定案**（见文末）。影响能力与工期 |
+| **B3** | 安全 | 空 token + `provider=chronos` = 网络端口上的**无鉴权任务执行触发** | schema 默认 `trigger_token:""` | `_validate_gateway_config()` 硬拒：`provider=chronos` 且 `has_usable_secret(token)` 假 且 网络 bind → 拒启动（loopback 例外）。复用 `intellect_cli/auth.py:587` `has_usable_secret` |
+| **B4** | 安全 | 静态 bearer 是本仓库标准的倒退（可重放，重放即重复触发任务/LLM 花费） | 仓库标准 = Svix HMAC `webhook/adapter.py:692-740` | 改 HMAC-SHA256 over `timestamp+body` + replay 窗口 + `hmac.compare_digest` |
+| **B5** | 安全 | socket 激活唤醒发生在**应用层鉴权之前**：裸 TCP connect 即唤醒 gateway → 无鉴权冷启动 DoS/thrash | `Accept=no` 语义 | run-due 端口仅 `provider=chronos` 时进 `ListenStream`；L3/L4（防火墙/CIDR）门禁；token 只能是唤醒后的第二层 |
+| **B6** | 正确性 | 新字段 `transport` 与既有 `Platform.transport`（消息流模式 `edit\|draft\|plain`）**同名冲突** | `gateway/config.py:381` | 新能力字段改名 **`wake_class`**（本文已改） |
+| **B7** | 正确性 | chronos 下若关内置 ticker，则 `_start_cron_ticker` 搭载的维护任务（频道刷新/5、缓存清理/60、paste 清扫/60、curator/60）**静默停摆** | `gateway/run.py:9175-9296` | HP-408a 明确 chronos 下这些维护迁到 cadence-independent keepalive 或折进 `run_due` |
+| **B8** | 正确性 | idle 信号（session `updated_at` 全局 max）过弱：长回合/HP-202 后台子代理/in-flight `run_due` 均可能 `updated_at` 陈旧却仍在跑 → 停机截断 | `session.py:879,961` | 自停主门禁改 AND：`_running_agents` 无活代理 **且** `process_registry.count_running()==0`（`tools/process_registry.py:1254`）**且** 无 in-flight `run_due` **且** 过 `min_uptime_seconds` |
+
+### 事实定位错误（本文档已修订 F1–F4）
+
+| ID | 原文 | 实况 |
+|----|------|------|
+| **F1** | systemd 生成器在 `service_manager.py`（`SystemdServiceManager`） | 实为 `intellect_cli/gateway.py:2193 generate_systemd_unit()` + `systemd_install():2494` + staleness helpers（`SystemdServiceManager` 仅 systemctl 包装）。**socket 单元须改 `gateway.py` 生成器，并教会 staleness/refresh/scope 认识第二种单元** |
+| **F2** | transport「已接入 `_validate_gateway_config`」 | 未接入：需 `PluginManifest` 解析（`plugins.py:1267`）+ 承载到 `PlatformEntry`（`platform_registry.py:39`）+ validator 查表；**须核对 registry 在 validation 时已填充**（`config.py:1189` 时序） |
+| **F3** | 「键落 3 loader」，`load_cli_config` 在 config.py | `load_cli_config` 在 `cli.py:348`（自带 defaults）。gateway 键须加 `GatewayConfig` dataclass（`config.py:466`）+ `from_dict`（:617）+ `load_gateway_config` 显式映射；仅加 `DEFAULT_CONFIG` **不**驱动 gateway 行为 |
+| **F4** | 校验时读 telegram 运行时 `_webhook_mode` | validation 期无 adapter 实例，读不到。须从 `TELEGRAM_WEBHOOK_URL`（env/config）重导，抽共享 helper 防漂移（`telegram/adapter.py:355,1590-1631`） |
+
+### 应修（建议同 PR）
+- run-due 加 per-source 限流 + body 上限 + 鉴权先于读 body（仿 `webhook/adapter.py:136-143`）
+- `trigger_token`/`cron_trigger_token` 纳入 `agent/redact.py` `_SENSITIVE_BODY_KEYS`（当前**不覆盖**，会明文入日志/摘要）
+- token 支持 env/secret store 来源 + 多 token 轮换窗口；落盘 `0600`
+- CIDR 只信 socket peer（`request.remote`），不信 XFF；network bind fail-closed；确认 `Accept=no` 下 `request.remote` 非 `127.0.0.1`
+- 端点忽略 body 选择任务（无 `job_id`/`force`），返回 HTTP 200（并发第二 ping 拿不到锁返回 0，勿当错误重试）
+
+### 工期修订
+- **HP-406：4–6d → 6–9d**（若走 B2 拓扑 b）；6b 仅 run-due 端口 ~2d，全平台 fd 继承则 +数天
+- HP-406c：0.5d 边界（依赖 `PlatformEntry` 承载 + 注册时序核对）
+- HP-408：~5d 基本成立（端点/插件/幂等均 greenfield，可干净继承 fd）
+
+### 正向确认（无需改）
+- one-shot(kind=once) 不受快进影响，照常补跑（`cron/jobs.py:1074`）
+- 注入扫描器 + at-most-once 幂等 在外部触发下**正确保留**（`scheduler.py:1206,1378-1401,1913-1916`）
+- `builtin` 零回归成立（前提：`run_due()` 为纯抽取，`tick()=lock+run_due()`）
+- 每平台独立端口 / 无共享 HTTP server 属实 → §8.1「专用 run-due 端口」正确
+- `check_systemd_timing_alignment` 可复用；drain 默认 180s → 单元 `TimeoutStopSec ≥ 210s`（`shutdown_forensics.py:322-406`、`config.py:696`）
+
+### 待用户定案（B2 socket 拓扑）
+- **(a) 仅唤醒 run-due 端口**：改动小（~2d），adapter 零改；代价——停机期间**用户经 webhook 平台发来的消息不唤醒 gateway**，仅 Chronos 定时 ping 唤醒（交互式场景消息会被搁置到下次 ping）。
+- **(b) 全平台 fd 继承**：任意入站 webhook 唤醒，完整 scale-to-zero；代价——~9 个 adapter 改 `SockSite` 继承 fd，HP-406 增至 6–9d。
+- 决策依赖主用法：偏**定时/批处理** → (a) 够用；偏**交互式消息** → 需 (b)。
