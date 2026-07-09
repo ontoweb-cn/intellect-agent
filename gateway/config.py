@@ -421,6 +421,74 @@ class StreamingConfig:
         )
 
 
+# Scale-to-zero defaults (HP-406). Conservative so the default-off path never
+# thrashes: 30-min idle window amortizes cold starts; 120s min-uptime floor
+# prevents "wake then immediately self-stop" churn.
+DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES: int = 30
+DEFAULT_SCALE_TO_ZERO_MIN_UPTIME_SECONDS: int = 120
+DEFAULT_CRON_TRIGGER_PORT: int = 8722
+
+
+@dataclass
+class ScaleToZeroConfig:
+    """Gateway idle self-stop + socket-activation wake (HP-406).
+
+    Disabled by default; when off, the gateway behaves exactly as before.
+    Only meaningful for webhook-mode deployments — persistent/long-poll
+    platforms cannot be woken by an inbound socket and will be rejected at
+    startup validation (added in HP-406c; not yet wired). ``from_dict``
+    enforces per-field bounds (positive idle window, non-negative uptime
+    floor, valid TCP port); the cross-cutting consumer wiring lands with
+    HP-406/HP-408, so until then these fields are inert config.
+    """
+    enabled: bool = False
+    # Stop the gateway after this many minutes with no active work.
+    idle_timeout_minutes: int = DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES
+    # Minimum lifetime after (re)start before self-stop is allowed; guards
+    # against wake→immediately-idle→stop churn.
+    min_uptime_seconds: int = DEFAULT_SCALE_TO_ZERO_MIN_UPTIME_SECONDS
+    # Dedicated port for the authed /cron/run-due endpoint (bound only when
+    # cron.provider="chronos"); listed in the systemd .socket ListenStream.
+    cron_trigger_port: int = DEFAULT_CRON_TRIGGER_PORT
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "idle_timeout_minutes": self.idle_timeout_minutes,
+            "min_uptime_seconds": self.min_uptime_seconds,
+            "cron_trigger_port": self.cron_trigger_port,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ScaleToZeroConfig":
+        if not data:
+            return cls()
+        # A non-positive idle window means "stop the moment idle", which
+        # thrashes wake<->stop; fall back to the default rather than accept it.
+        idle = _coerce_int(
+            data.get("idle_timeout_minutes"), DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES,
+        )
+        if idle < 1:
+            idle = DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES
+        # 0 = no floor is valid; a negative floor is meaningless — clamp to 0.
+        min_uptime = _coerce_int(
+            data.get("min_uptime_seconds"), DEFAULT_SCALE_TO_ZERO_MIN_UPTIME_SECONDS,
+        )
+        if min_uptime < 0:
+            min_uptime = 0
+        # An out-of-range port would bind to an OS-ephemeral port while the
+        # .socket unit targets the configured one — wakes would never arrive.
+        port = _coerce_int(data.get("cron_trigger_port"), DEFAULT_CRON_TRIGGER_PORT)
+        if not (1 <= port <= 65535):
+            port = DEFAULT_CRON_TRIGGER_PORT
+        return cls(
+            enabled=_coerce_bool(data.get("enabled"), False),
+            idle_timeout_minutes=idle,
+            min_uptime_seconds=min_uptime,
+            cron_trigger_port=port,
+        )
+
+
 # -----------------------------------------------------------------------------
 # Built-in platform connection checkers
 # -----------------------------------------------------------------------------
@@ -515,6 +583,9 @@ class GatewayConfig:
     # months.  Pruning is invisible to users — if they resume, they get a
     # fresh session exactly as if the reset policy had fired.  0 = disabled.
     session_store_max_age_days: int = 90
+
+    # Gateway scale-to-zero (HP-406): idle self-stop + socket-activation wake.
+    scale_to_zero: ScaleToZeroConfig = field(default_factory=ScaleToZeroConfig)
 
     def get_connected_platforms(self) -> List[Platform]:
         """Return list of platforms that are enabled and configured."""
@@ -611,6 +682,7 @@ class GatewayConfig:
             "unauthorized_dm_behavior": self.unauthorized_dm_behavior,
             "streaming": self.streaming.to_dict(),
             "session_store_max_age_days": self.session_store_max_age_days,
+            "scale_to_zero": self.scale_to_zero.to_dict(),
         }
     
     @classmethod
@@ -682,6 +754,7 @@ class GatewayConfig:
             unauthorized_dm_behavior=unauthorized_dm_behavior,
             streaming=StreamingConfig.from_dict(data.get("streaming", {})),
             session_store_max_age_days=session_store_max_age_days,
+            scale_to_zero=ScaleToZeroConfig.from_dict(data.get("scale_to_zero", {})),
         )
 
     def get_unauthorized_dm_behavior(self, platform: Optional[Platform] = None) -> str:
@@ -769,13 +842,29 @@ def load_gateway_config() -> GatewayConfig:
             if "thread_sessions_per_user" in yaml_cfg:
                 gw_data["thread_sessions_per_user"] = yaml_cfg["thread_sessions_per_user"]
 
-            streaming_cfg = yaml_cfg.get("streaming")
-            if not isinstance(streaming_cfg, dict):
-                # Fall back to nested gateway.streaming written by
-                # ``intellect config set gateway.streaming.*``
-                streaming_cfg = yaml_cfg.get("gateway", {}).get("streaming")
-            if isinstance(streaming_cfg, dict):
+            def _yaml_section(name: str):
+                # Resolve a gateway sub-config from top-level ``name`` or nested
+                # ``gateway.<name>``; return None if neither resolves to a dict.
+                # Guards a present-but-null ``gateway:`` key (yaml_cfg.get("gateway")
+                # -> None), which would otherwise AttributeError on ``.get(name)``
+                # and get swallowed by the outer except, silently dropping the
+                # whole config.yaml.
+                sec = yaml_cfg.get(name)
+                if isinstance(sec, dict):
+                    return sec
+                gw = yaml_cfg.get("gateway")
+                nested = gw.get(name) if isinstance(gw, dict) else None
+                return nested if isinstance(nested, dict) else None
+
+            # Fall back to nested gateway.streaming / gateway.scale_to_zero written
+            # by ``intellect config set gateway.<section>.*``.
+            streaming_cfg = _yaml_section("streaming")
+            if streaming_cfg is not None:
                 gw_data["streaming"] = streaming_cfg
+
+            scale_to_zero_cfg = _yaml_section("scale_to_zero")  # HP-406
+            if scale_to_zero_cfg is not None:
+                gw_data["scale_to_zero"] = scale_to_zero_cfg
 
             if "reset_triggers" in yaml_cfg:
                 gw_data["reset_triggers"] = yaml_cfg["reset_triggers"]

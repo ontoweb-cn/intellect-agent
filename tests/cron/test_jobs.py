@@ -704,6 +704,49 @@ class TestGetDueJobs:
         next_dt = _ensure_aware(datetime.fromisoformat(updated["next_run_at"]))
         assert next_dt > _intellect_now()
 
+    def test_stale_past_due_returned_with_catch_up(self, tmp_cron_dir):
+        """catch_up=True fires past-due recurring jobs instead of fast-forwarding.
+
+        Under cron.provider=chronos the gateway is stopped between triggers, so a
+        stale recurring job must fire once (not be silently dropped).  B1 fix.
+        """
+        job = create_job(prompt="Stale but catch-up", schedule="every 1h")
+        # 35 min late — beyond the 30-min grace; fast-forwarded without catch_up.
+        jobs = load_jobs()
+        stale_next = (datetime.now() - timedelta(minutes=35)).isoformat()
+        jobs[0]["next_run_at"] = stale_next
+        save_jobs(jobs)
+
+        due = get_due_jobs(catch_up=True)
+        assert [j["id"] for j in due] == [job["id"]]
+        # catch_up must NOT mutate next_run_at itself (no fast-forward); the
+        # exactly-once advance is done by run_due()/tick() via advance_next_run.
+        assert get_job(job["id"])["next_run_at"] == stale_next
+
+    def test_catch_up_default_false_still_fast_forwards(self, tmp_cron_dir):
+        """Default get_due_jobs() (builtin path) keeps fast-forwarding stale jobs."""
+        create_job(prompt="Stale default", schedule="every 1h")
+        jobs = load_jobs()
+        jobs[0]["next_run_at"] = (datetime.now() - timedelta(minutes=35)).isoformat()
+        save_jobs(jobs)
+        assert get_due_jobs() == []
+
+    def test_catch_up_is_exactly_once_after_advance(self, tmp_cron_dir):
+        """catch_up + advance_next_run = fire once, then not due (exactly-once/downtime).
+
+        Even 12h late (many missed periods) the job appears once, then advancing
+        to the next future occurrence makes it not-due — no per-period replay.
+        """
+        job = create_job(prompt="Once", schedule="every 1h")
+        jobs = load_jobs()
+        jobs[0]["next_run_at"] = (datetime.now() - timedelta(hours=12)).isoformat()
+        save_jobs(jobs)
+
+        due = get_due_jobs(catch_up=True)
+        assert len(due) == 1
+        advance_next_run(job["id"])  # what run_due() does before executing
+        assert get_due_jobs(catch_up=True) == []
+
     def test_future_not_returned(self, tmp_cron_dir):
         create_job(prompt="Not yet", schedule="every 1h")
         due = get_due_jobs()

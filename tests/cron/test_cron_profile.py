@@ -498,7 +498,8 @@ class TestTickProfilePartition:
         profile_job = {"id": "a", "name": "A", "profile": "default"}
         parallel_job = {"id": "b", "name": "B", "profile": None}
 
-        monkeypatch.setattr(sched, "get_due_jobs", lambda: [profile_job, parallel_job])
+        # Accept *a/**kw so the stub tolerates run_due()'s catch_up= kwarg.
+        monkeypatch.setattr(sched, "get_due_jobs", lambda *_a, **_kw: [profile_job, parallel_job])
         monkeypatch.setattr(sched, "advance_next_run", lambda *_a, **_kw: None)
 
         calls: list[tuple[str, str]] = []

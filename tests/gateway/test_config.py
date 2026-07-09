@@ -8,11 +8,102 @@ from gateway.config import (
     HomeChannel,
     Platform,
     PlatformConfig,
+    ScaleToZeroConfig,
     SessionResetPolicy,
     StreamingConfig,
     _apply_env_overrides,
     load_gateway_config,
 )
+
+
+class TestScaleToZeroConfig:
+    def test_default_off(self):
+        gc = GatewayConfig()
+        assert gc.scale_to_zero.enabled is False
+        assert gc.scale_to_zero.idle_timeout_minutes == 30
+        assert gc.scale_to_zero.min_uptime_seconds == 120
+        assert gc.scale_to_zero.cron_trigger_port == 8722
+
+    def test_to_dict_from_dict_roundtrip(self):
+        gc = GatewayConfig(
+            scale_to_zero=ScaleToZeroConfig(
+                enabled=True, idle_timeout_minutes=5, min_uptime_seconds=90,
+                cron_trigger_port=9001,
+            )
+        )
+        restored = GatewayConfig.from_dict(gc.to_dict())
+        assert restored.scale_to_zero.enabled is True
+        assert restored.scale_to_zero.idle_timeout_minutes == 5
+        assert restored.scale_to_zero.min_uptime_seconds == 90
+        assert restored.scale_to_zero.cron_trigger_port == 9001
+
+    def test_from_dict_partial_fills_defaults(self):
+        stz = ScaleToZeroConfig.from_dict({"enabled": True})
+        assert stz.enabled is True
+        assert stz.idle_timeout_minutes == 30
+        assert stz.min_uptime_seconds == 120
+        assert stz.cron_trigger_port == 8722
+
+    def test_from_dict_empty_is_default(self):
+        assert ScaleToZeroConfig.from_dict({}) == ScaleToZeroConfig()
+
+    def test_from_dict_rejects_out_of_range_values(self):
+        # Non-positive idle window -> default (a 0/negative window thrashes).
+        assert ScaleToZeroConfig.from_dict(
+            {"idle_timeout_minutes": 0}
+        ).idle_timeout_minutes == 30
+        assert ScaleToZeroConfig.from_dict(
+            {"idle_timeout_minutes": -5}
+        ).idle_timeout_minutes == 30
+        # Negative uptime floor clamps to 0 (0 = no floor is valid).
+        assert ScaleToZeroConfig.from_dict(
+            {"min_uptime_seconds": -1}
+        ).min_uptime_seconds == 0
+        assert ScaleToZeroConfig.from_dict(
+            {"min_uptime_seconds": 0}
+        ).min_uptime_seconds == 0
+        # Out-of-range port -> default (an ephemeral bind would miss the socket).
+        assert ScaleToZeroConfig.from_dict(
+            {"cron_trigger_port": 0}
+        ).cron_trigger_port == 8722
+        assert ScaleToZeroConfig.from_dict(
+            {"cron_trigger_port": 70000}
+        ).cron_trigger_port == 8722
+        # Valid in-range values are preserved.
+        assert ScaleToZeroConfig.from_dict(
+            {"idle_timeout_minutes": 5, "min_uptime_seconds": 30, "cron_trigger_port": 9001}
+        ) == ScaleToZeroConfig(
+            idle_timeout_minutes=5, min_uptime_seconds=30, cron_trigger_port=9001
+        )
+
+
+class TestNullGatewayKeyDoesNotDiscardConfig:
+    """Regression: a present-but-null ``gateway:`` key must not crash the
+    streaming/scale_to_zero fallback and silently discard the whole config.yaml.
+    """
+
+    def test_null_gateway_key_with_top_level_streaming(self, monkeypatch, tmp_path):
+        from gateway.config import load_gateway_config
+
+        intellect_home = tmp_path / ".intellect"
+        intellect_home.mkdir()
+        # Top-level streaming dict (so the streaming fallback is skipped) plus a
+        # bare `gateway:` key that parses to None — the exact shape that made
+        # the scale_to_zero fallback do None.get(...) and discard the config.
+        (intellect_home / "config.yaml").write_text(
+            "streaming:\n"
+            "  enabled: true\n"
+            "gateway:\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("INTELLECT_HOME", str(intellect_home))
+
+        cfg = load_gateway_config()
+
+        # config.yaml was honored (not swallowed): streaming.enabled came through.
+        assert cfg.streaming.enabled is True
+        # scale_to_zero stays at defaults (no nested value present).
+        assert cfg.scale_to_zero.enabled is False
 
 
 class TestHomeChannelRoundtrip:
