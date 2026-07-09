@@ -1913,10 +1913,7 @@ def run_due(
         return 0
 
     try:
-        # Preserve the historical no-arg call for the default (builtin) path so
-        # existing call sites and monkeypatched get_due_jobs stubs are unaffected;
-        # only pass the kwarg when catching up.
-        due_jobs = get_due_jobs(catch_up=True) if catch_up else get_due_jobs()
+        due_jobs = get_due_jobs(catch_up=catch_up)
 
         if verbose and not due_jobs:
             logger.info("%s - No jobs due", _intellect_now().strftime('%H:%M:%S'))

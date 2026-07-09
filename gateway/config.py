@@ -436,9 +436,10 @@ class ScaleToZeroConfig:
     Disabled by default; when off, the gateway behaves exactly as before.
     Only meaningful for webhook-mode deployments — persistent/long-poll
     platforms cannot be woken by an inbound socket and will be rejected at
-    startup validation (added in HP-406c; not yet wired). Range/consumer
-    wiring for these fields also lands with HP-406/HP-408; until then they
-    are inert config.
+    startup validation (added in HP-406c; not yet wired). ``from_dict``
+    enforces per-field bounds (positive idle window, non-negative uptime
+    floor, valid TCP port); the cross-cutting consumer wiring lands with
+    HP-406/HP-408, so until then these fields are inert config.
     """
     enabled: bool = False
     # Stop the gateway after this many minutes with no active work.
@@ -462,17 +463,29 @@ class ScaleToZeroConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "ScaleToZeroConfig":
         if not data:
             return cls()
+        # A non-positive idle window means "stop the moment idle", which
+        # thrashes wake<->stop; fall back to the default rather than accept it.
+        idle = _coerce_int(
+            data.get("idle_timeout_minutes"), DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES,
+        )
+        if idle < 1:
+            idle = DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES
+        # 0 = no floor is valid; a negative floor is meaningless — clamp to 0.
+        min_uptime = _coerce_int(
+            data.get("min_uptime_seconds"), DEFAULT_SCALE_TO_ZERO_MIN_UPTIME_SECONDS,
+        )
+        if min_uptime < 0:
+            min_uptime = 0
+        # An out-of-range port would bind to an OS-ephemeral port while the
+        # .socket unit targets the configured one — wakes would never arrive.
+        port = _coerce_int(data.get("cron_trigger_port"), DEFAULT_CRON_TRIGGER_PORT)
+        if not (1 <= port <= 65535):
+            port = DEFAULT_CRON_TRIGGER_PORT
         return cls(
             enabled=_coerce_bool(data.get("enabled"), False),
-            idle_timeout_minutes=_coerce_int(
-                data.get("idle_timeout_minutes"), DEFAULT_SCALE_TO_ZERO_IDLE_MINUTES,
-            ),
-            min_uptime_seconds=_coerce_int(
-                data.get("min_uptime_seconds"), DEFAULT_SCALE_TO_ZERO_MIN_UPTIME_SECONDS,
-            ),
-            cron_trigger_port=_coerce_int(
-                data.get("cron_trigger_port"), DEFAULT_CRON_TRIGGER_PORT,
-            ),
+            idle_timeout_minutes=idle,
+            min_uptime_seconds=min_uptime,
+            cron_trigger_port=port,
         )
 
 

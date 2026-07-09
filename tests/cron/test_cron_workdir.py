@@ -211,7 +211,8 @@ class TestTickWorkdirPartition:
         workdir_job = {"id": "a", "name": "A", "workdir": str(tmp_path)}
         parallel_job = {"id": "b", "name": "B", "workdir": None}
 
-        monkeypatch.setattr(sched, "get_due_jobs", lambda: [workdir_job, parallel_job])
+        # Accept *a/**kw so the stub tolerates run_due()'s catch_up= kwarg.
+        monkeypatch.setattr(sched, "get_due_jobs", lambda *_a, **_kw: [workdir_job, parallel_job])
         monkeypatch.setattr(sched, "advance_next_run", lambda *_a, **_kw: None)
 
         # Record call order / thread context.

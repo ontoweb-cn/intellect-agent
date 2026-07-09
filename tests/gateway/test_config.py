@@ -47,6 +47,35 @@ class TestScaleToZeroConfig:
     def test_from_dict_empty_is_default(self):
         assert ScaleToZeroConfig.from_dict({}) == ScaleToZeroConfig()
 
+    def test_from_dict_rejects_out_of_range_values(self):
+        # Non-positive idle window -> default (a 0/negative window thrashes).
+        assert ScaleToZeroConfig.from_dict(
+            {"idle_timeout_minutes": 0}
+        ).idle_timeout_minutes == 30
+        assert ScaleToZeroConfig.from_dict(
+            {"idle_timeout_minutes": -5}
+        ).idle_timeout_minutes == 30
+        # Negative uptime floor clamps to 0 (0 = no floor is valid).
+        assert ScaleToZeroConfig.from_dict(
+            {"min_uptime_seconds": -1}
+        ).min_uptime_seconds == 0
+        assert ScaleToZeroConfig.from_dict(
+            {"min_uptime_seconds": 0}
+        ).min_uptime_seconds == 0
+        # Out-of-range port -> default (an ephemeral bind would miss the socket).
+        assert ScaleToZeroConfig.from_dict(
+            {"cron_trigger_port": 0}
+        ).cron_trigger_port == 8722
+        assert ScaleToZeroConfig.from_dict(
+            {"cron_trigger_port": 70000}
+        ).cron_trigger_port == 8722
+        # Valid in-range values are preserved.
+        assert ScaleToZeroConfig.from_dict(
+            {"idle_timeout_minutes": 5, "min_uptime_seconds": 30, "cron_trigger_port": 9001}
+        ) == ScaleToZeroConfig(
+            idle_timeout_minutes=5, min_uptime_seconds=30, cron_trigger_port=9001
+        )
+
 
 class TestNullGatewayKeyDoesNotDiscardConfig:
     """Regression: a present-but-null ``gateway:`` key must not crash the
