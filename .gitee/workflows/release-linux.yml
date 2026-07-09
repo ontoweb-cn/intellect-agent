@@ -140,6 +140,31 @@ stages:
               echo "Combined artifacts:"
               ls -la dist/combined/
 
+          # ── Smoke test (install built wheels → verify) ────────────────
+          - name: Smoke test — install and verify
+            run: |
+              set -euo pipefail
+              source $HOME/.cargo/env
+              echo "=== Smoke test: installing built wheels ==="
+              PY_WHL=$(ls dist/intellect_agent-*.whl 2>/dev/null | head -1) || PY_WHL=""
+              RS_WHL=$(ls rust-core/target/wheels-all/intellect_community_core-*.whl 2>/dev/null | head -1) || RS_WHL=""
+              if [ -z "$PY_WHL" ] || [ -z "$RS_WHL" ]; then
+                echo "ERROR: Missing wheels for smoke test"
+                echo "Python wheel: ${PY_WHL:-NOT FOUND}"
+                echo "Rust wheel: ${RS_WHL:-NOT FOUND}"
+                ls dist/ 2>/dev/null || true
+                ls rust-core/target/wheels-all/ 2>/dev/null || true
+                exit 1
+              fi
+              echo "Installing: $PY_WHL"
+              pip3 install "$PY_WHL" --no-deps -q 2>&1
+              echo "Installing: $RS_WHL"
+              pip3 install "$RS_WHL" --no-deps -q 2>&1
+              python3 -c "import intellect_community_core; print('Rust extension: OK')"
+              INSTALLED_VER=$(python3 -c "from intellect_cli import __version__; print(__version__)" 2>&1) || INSTALLED_VER="(unknown)"
+              echo "intellect-agent version: $INSTALLED_VER"
+              echo "=== Smoke test passed ==="
+
           # ── Generate SHA256SUMS ───────────────────────────────────────
           - name: Generate SHA256SUMS
             run: |

@@ -306,5 +306,86 @@ jobs:
           echo "Rust wheel: $RS_WHL"
           pip install "$PY_WHL" --no-deps 2>&1 || true
           pip install "$RS_WHL" --no-deps 2>&1 || true
-          python -c "import intellect_community_core; print('Rust extension OK')" 2>&1 || echo "Rust extension import skipped (non-fatal)"
+          python -c "import intellect_community_core; print('Rust extension OK')" 2>&1 || {
+            echo "ERROR: Rust extension import failed" >&2
+            exit 1
+          }
+          INSTALLED_VER=$(python -c "from intellect_cli import __version__; print(__version__)" 2>&1) || INSTALLED_VER=""
+          if [ -n "$INSTALLED_VER" ]; then
+            echo "intellect-agent version: $INSTALLED_VER"
+          else
+            echo "WARNING: Could not determine version (non-fatal on macOS/Windows)"
+          fi
           echo "Smoke test passed for ${{ matrix.platform }}"
+
+  smoke-test-release:
+    name: Smoke test from GitHub Release
+    needs: publish-github-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Download wheel from GitHub Release and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ env.RELEASE_TAG }}"
+
+          # Wait briefly for release assets to be available via download URL
+          echo "Waiting for GitHub Release download URLs to propagate..."
+          sleep 10
+
+          # Download the pure Python wheel from the release
+          mkdir -p /tmp/smoke-test
+          cd /tmp/smoke-test
+
+          # Get the release asset download URLs
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>&1) || {
+            echo "ERROR: Cannot list release assets for $TAG"
+            exit 1
+          }
+          echo "Release assets:"
+          echo "$ASSETS"
+
+          # Download Python wheel and Rust wheel (x86_64 Linux)
+          PY_WHL=$(echo "$ASSETS" | grep 'intellect_agent-.*-py3-none-any\.whl' | head -1) || PY_WHL=""
+          RS_WHL=$(echo "$ASSETS" | grep -E 'intellect_community_core-.*(x86_64|amd64).*(linux|manylinux)' | head -1) || RS_WHL=""
+
+          if [ -z "$PY_WHL" ] || [ -z "$RS_WHL" ]; then
+            echo "ERROR: Could not find wheels in release assets"
+            exit 1
+          fi
+
+          echo "Downloading: $PY_WHL"
+          gh release download "$TAG" --pattern "$PY_WHL" --dir /tmp/smoke-test
+          echo "Downloading: $RS_WHL"
+          gh release download "$TAG" --pattern "$RS_WHL" --dir /tmp/smoke-test
+
+          # Download SHA256SUMS for integrity verification
+          echo "Downloading SHA256SUMS"
+          gh release download "$TAG" --pattern 'SHA256SUMS' --dir /tmp/smoke-test 2>/dev/null || echo "No SHA256SUMS (non-fatal)"
+
+          # Verify checksums
+          if [ -f /tmp/smoke-test/SHA256SUMS ]; then
+            echo "Verifying SHA256SUMS..."
+            (cd /tmp/smoke-test && sha256sum -c SHA256SUMS --ignore-missing 2>&1 || echo "Some checksums skipped")
+          fi
+
+          # Install and verify
+          echo "Installing wheels..."
+          pip install "/tmp/smoke-test/$PY_WHL" --no-deps -q
+          pip install "/tmp/smoke-test/$RS_WHL" --no-deps -q
+
+          echo "Verifying installation..."
+          python -c "import intellect_community_core; print('Rust extension: OK')" || {
+            echo "ERROR: Rust extension import failed"
+            exit 1
+          }
+          INSTALLED_VER=$(python -c "from intellect_cli import __version__; print(__version__)")
+          echo "intellect-agent version: $INSTALLED_VER"
+          echo "=== Post-release smoke test PASSED ==="

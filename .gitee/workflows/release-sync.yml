@@ -52,40 +52,95 @@ stages:
               sudo apt-get install -y -qq python3 python3-pip
               python3 -m pip install --upgrade pip -q
 
-          - name: Sync macOS + Windows wheels + SHA256SUMS (with retry)
+          - name: Sync macOS + Windows wheels (dual-path: Artifacts → Release)
             env:
               GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
               RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
             run: |
               set -euo pipefail
-              MAX_RETRIES=3
-              RETRY_DELAY=60
-              for attempt in $(seq 1 $MAX_RETRIES); do
-                echo "=== Attempt $attempt/$MAX_RETRIES ==="
-                # Clean dist dir on retry
-                rm -rf dist/combined 2>/dev/null || true
-                mkdir -p dist/combined
-                # Download from GitHub (900s poll timeout)
-                if python3 packaging/scripts/download-github-release.py \
-                    --tag "$RELEASE_TAG" \
-                    --dist-dir dist/combined \
-                    --max-wait 900; then
-                  # Verify SHA256SUMS if present (integrity check before publish)
-                  if [ -f dist/combined/SHA256SUMS ]; then
-                    echo "Verifying SHA256SUMS..."
-                    (cd dist/combined && sha256sum -c SHA256SUMS 2>&1 | tail -5 || echo "Some checksums skipped (non-fatal)")
+              SUCCESS=false
+
+              # ═══════════════════════════════════════════════════════════
+              # Phase 1: Fast path — download artifacts directly from
+              # GitHub Actions (avoids waiting for publish-github-release
+              # to create the intermediate GitHub Release).
+              # ═══════════════════════════════════════════════════════════
+              echo "════ Phase 1: Trying Artifacts API (fast path) ════"
+              rm -rf dist/combined 2>/dev/null || true
+              mkdir -p dist/combined
+              if python3 packaging/scripts/download-github-artifacts.py \
+                  --tag "$RELEASE_TAG" \
+                  --dist-dir dist/combined \
+                  --platforms darwin,windows \
+                  --max-wait 1800; then
+                echo "✓ Artifacts API download succeeded"
+                SUCCESS=true
+              else
+                echo "✗ Artifacts API path failed (will fall back to Release API)"
+              fi
+
+              # ═══════════════════════════════════════════════════════════
+              # Phase 2: Fallback — download from GitHub Release
+              # (current behavior, with retry).
+              # ═══════════════════════════════════════════════════════════
+              if [ "$SUCCESS" = false ]; then
+                echo "════ Phase 2: Falling back to Release API ════"
+                MAX_RETRIES=3
+                RETRY_DELAY=60
+                for attempt in $(seq 1 $MAX_RETRIES); do
+                  echo "=== Release API attempt $attempt/$MAX_RETRIES ==="
+                  rm -rf dist/combined 2>/dev/null || true
+                  mkdir -p dist/combined
+                  if python3 packaging/scripts/download-github-release.py \
+                      --tag "$RELEASE_TAG" \
+                      --dist-dir dist/combined \
+                      --max-wait 900; then
+                    echo "✓ Release API download succeeded on attempt $attempt"
+                    SUCCESS=true
+                    break
                   fi
-                  # Publish to Gitee (includes SHA256SUMS if present)
-                  python3 packaging/scripts/publish-gitee-from-ci.py \
-                    --tag "$RELEASE_TAG" \
-                    --dist-dir dist/combined
-                  echo "Sync succeeded on attempt $attempt"
-                  exit 0
+                  if [ "$attempt" -lt "$MAX_RETRIES" ]; then
+                    echo "Attempt $attempt failed, retrying in ${RETRY_DELAY}s..."
+                    sleep "$RETRY_DELAY"
+                  fi
+                done
+              fi
+
+              if [ "$SUCCESS" = false ]; then
+                echo "All download paths failed — macOS/Windows wheels not synced (non-fatal)"
+                exit 0
+              fi
+
+              # ═══════════════════════════════════════════════════════════
+              # Post-download: verify, smoke test, publish.
+              # ═══════════════════════════════════════════════════════════
+
+              # Verify SHA256SUMS if present (integrity check before publish)
+              if [ -f dist/combined/SHA256SUMS ]; then
+                echo "Verifying SHA256SUMS..."
+                if ! (cd dist/combined && sha256sum -c SHA256SUMS 2>&1 | tail -5); then
+                  echo "ERROR: SHA256SUMS verification failed — files may be corrupted" >&2
+                  exit 1
                 fi
-                if [ "$attempt" -lt "$MAX_RETRIES" ]; then
-                  echo "Attempt $attempt failed, retrying in ${RETRY_DELAY}s..."
-                  sleep "$RETRY_DELAY"
-                fi
-              done
-              echo "All $MAX_RETRIES attempts failed — macOS/Windows wheels not synced (non-fatal)"
-              exit 0  # non-fatal: Linux wheels still published by release-linux.yml
+              fi
+
+              # Smoke test: install a wheel and verify it works
+              echo "=== Smoke test: verifying downloaded wheels ==="
+              PY_WHL=$(ls dist/combined/intellect_agent-*.whl 2>/dev/null | head -1) || PY_WHL=""
+              RS_WHL=$(ls dist/combined/intellect_community_core-*.whl 2>/dev/null | head -1) || RS_WHL=""
+              if [ -n "$PY_WHL" ] && [ -n "$RS_WHL" ]; then
+                pip3 install "$PY_WHL" --no-deps -q 2>&1 || echo "Python wheel install skipped (non-fatal)"
+                pip3 install "$RS_WHL" --no-deps -q 2>&1 || echo "Rust wheel install skipped (non-fatal)"
+                python3 -c "import intellect_community_core; print('Rust extension: OK')" 2>&1 || echo "Rust import skipped (expected: macOS/Windows .whl cannot load on Linux runner)"
+                INSTALLED_VER=$(python3 -c "from intellect_cli import __version__; print(__version__)" 2>&1) || INSTALLED_VER="(unknown)"
+                echo "intellect-agent version: $INSTALLED_VER"
+              else
+                echo "WARNING: No wheels found for smoke test (non-fatal)"
+              fi
+              echo "=== Smoke test done ==="
+
+              # Publish to Gitee (includes SHA256SUMS if present)
+              python3 packaging/scripts/publish-gitee-from-ci.py \
+                --tag "$RELEASE_TAG" \
+                --dist-dir dist/combined
+              echo "Sync succeeded — published to Gitee Release"

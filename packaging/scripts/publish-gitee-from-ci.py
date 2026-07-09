@@ -38,6 +38,50 @@ def _read_semver() -> str:
     return str(data["project"]["version"])
 
 
+def verify_sha256sums(dist_dir: Path) -> tuple[bool, str]:
+    """Verify files in *dist_dir* against the existing SHA256SUMS.
+
+    Returns (ok, message).
+    """
+    sums_file = dist_dir / "SHA256SUMS"
+    if not sums_file.exists():
+        return False, "SHA256SUMS not found"
+    ok_count = 0
+    fail_count = 0
+    skip_count = 0
+    for line in sums_file.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        # Handle both text mode ("hash  filename") and binary mode ("hash *filename")
+        line = line.strip()
+        if "  " in line:
+            digest, _, filename = line.partition("  ")
+        elif " *" in line:
+            digest, _, filename = line.partition(" *")
+        else:
+            # Fallback: split on first whitespace
+            parts = line.split(None, 1)
+            if len(parts) != 2:
+                fail_count += 1
+                print(f"  MALFORMED line: {line[:80]}")
+                continue
+            digest, filename = parts
+        filename = filename.strip()
+        filepath = dist_dir / filename
+        if not filepath.exists():
+            skip_count += 1
+            continue
+        actual = hashlib.sha256(filepath.read_bytes()).hexdigest()
+        if actual != digest:
+            fail_count += 1
+            print(f"  MISMATCH: {filename}")
+        else:
+            ok_count += 1
+    if fail_count:
+        return False, f"{fail_count} mismatch(es), {ok_count} OK, {skip_count} skipped"
+    return True, f"{ok_count} OK, {skip_count} skipped"
+
+
 def write_sha256sums(dist_dir: Path) -> Path:
     lines: list[str] = []
     for path in sorted(dist_dir.iterdir()):
@@ -87,7 +131,26 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: no files in {dist_dir}", file=sys.stderr)
         return 1
 
-    write_sha256sums(dist_dir)
+    # If SHA256SUMS already exists (e.g. synced from GitHub Release), verify it
+    # instead of regenerating — regeneration would invalidate the GPG signature
+    # (SHA256SUMS.asc) that was shipped alongside it. If verification fails,
+    # refuse to publish: the downloaded files may be corrupted.
+    existing_sums = dist_dir / "SHA256SUMS"
+    if existing_sums.exists():
+        print("SHA256SUMS already present — verifying instead of regenerating")
+        ok, msg = verify_sha256sums(dist_dir)
+        if ok:
+            print(f"SHA256SUMS verification: {msg}")
+        else:
+            print(f"ERROR: SHA256SUMS verification failed: {msg}", file=sys.stderr)
+            print(
+                "Refusing to publish — downloaded files may be corrupted. "
+                "Re-run the sync workflow to re-download from GitHub.",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        write_sha256sums(dist_dir)
     artifacts = sorted(p for p in dist_dir.iterdir() if p.is_file())
 
     semver = _read_semver()

@@ -155,9 +155,9 @@
 
 | 优先级 | 改进 | 投入 | 状态 |
 |:--:|------|:--:|:--:|
-| 🔴 | 发布后冒烟测试 (下载→安装→`--version`) | 低 | ⬜ |
-| 🔴 | Gitee SHA256SUMS 同步 | 低 | ⬜ |
-| 🟡 | 从 GitHub Artifacts 直接下载 (替代 Release API) | 中 | ⬜ |
+| 🔴 | 发布后冒烟测试 (下载→安装→`--version`) | 低 | ✅ 已实施 |
+| 🔴 | Gitee SHA256SUMS 同步 | 低 | ✅ 已修复 |
+| 🟡 | 从 GitHub Artifacts 直接下载 (替代 Release API) | 中 | ✅ 已实施 |
 | 🟡 | 自动化 changelog (conventional commits) | 中 | ✅ `scripts/changelog.py` |
 | 🟡 | GPG 签名 SHA256SUMS | 中 | ✅ 代码就绪, 待配置 Secrets |
 | 🟢 | 国内 PyPI 镜像 (阿里云/清华) | 中 | ✅ 被动同步, 已文档化 |
@@ -167,6 +167,152 @@
 **不适合改进**:
 - ❌ Gitee macOS/Windows 独立构建 — Gitee Go 无对应 runner
 - ❌ 二进制 delta 更新 — 工具链复杂，收益有限
+
+### 📋 细化: 从 GitHub Artifacts 直接下载
+
+**当前链路 (Release API 中转)**:
+
+```
+GitHub Actions 构建                     Gitee CI
+─────────────────────                  ────────
+build-python (5min)
+  └─ upload-artifact: python-dist
+build-platform ×4 (15-25min)
+  └─ upload-artifact: platform-{os}-{arch}
+build-installers ×4 (5-10min)
+  └─ upload-artifact: installer-{os}-{arch}
+publish-github-release (3-5min)        release-sync.yml (start)
+  ├─ download-artifact (all)             ├─ poll Release API ←←← 瓶颈
+  ├─ combine + filter                    │   (15s interval × 120-180 次)
+  ├─ generate SHA256SUMS                 │   等待 publish-github-release 完成
+  ├─ GPG sign                            │   ≈ 30-45 min 轮询
+  └─ gh release create ←────────────────┼─ download-github-release.py
+                                         │   ↓ download ALL assets
+                                         └─ publish-gitee-from-ci.py
+                                            └─ Gitee Release
+```
+
+**核心问题**:
+
+| 问题 | 详情 |
+|------|------|
+| 轮询开销 | Gitee CI 每 15s 查询一次 Release API, 30-45 min = 120-180 次 API 调用, 每次返回 404 直到 Release 创建完成 |
+| 串行瓶颈 | Gitee CI 必须等 `publish-github-release` 全部完成 (下载所有 artifact + 合并 + SHA256 + GPG + `gh release create`) 才能开始下载 |
+| 多层中转 | Artifact → 下载 → 合并 → Release 上传 → Release 下载 → Gitee 上传, 数据经过 3 次序列化/反序列化 |
+| 单点依赖 | 如果 `publish-github-release` 失败但矩阵构建成功, Gitee 无法获取产物 |
+
+**目标架构 (Artifacts API 直连)**:
+
+```
+GitHub Actions 构建                     Gitee CI
+─────────────────────                  ────────
+build-python (5min)                    release-sync.yml (start)
+  └─ upload-artifact: python-dist        ├─ 1. Resolve tag → commit SHA
+build-platform ×4 (15-25min)             ├─ 2. Find workflow run by head_sha
+  └─ upload-artifact: platform-*         ├─ 3. Poll run status (not Release API)
+build-installers ×4 (5-10min)            │     → completed + success
+  └─ upload-artifact: installer-*        ├─ 4. List artifacts for run
+                                         ├─ 5. Download only needed artifacts
+publish-github-release (3-5min)          │     (macOS + Windows platform-*)
+  (still runs for GitHub Release)        ├─ 6. Extract zips + combine
+                                         ├─ 7. Generate SHA256SUMS
+                                         └─ 8. Publish to Gitee Release
+```
+
+**GitHub Artifacts API 关键约束**:
+
+| 端点 | 认证 | 说明 |
+|------|:--:|------|
+| `GET /repos/{o}/{r}/actions/runs?head_sha=<sha>&event=push` | Bearer token (`repo` scope) | 通过 commit SHA 查找 workflow run |
+| `GET /repos/{o}/{r}/actions/runs/{id}/artifacts` | Bearer token (公开仓库可无认证) | 列出 run 的所有 artifact |
+| `GET /repos/{o}/{r}/actions/artifacts/{id}/zip` | **必须** Bearer token | 下载 artifact (zip 格式, 公开仓库也需认证) |
+| Tag → SHA | `git rev-list -n1 <tag>` 或 `GET /repos/{o}/{r}/git/refs/tags/{tag}` | 无 tag 直接过滤参数 |
+
+**实现方案**:
+
+新增脚本 `packaging/scripts/download-github-artifacts.py`, 与现有 `download-github-release.py` 形成双路径:
+
+```
+download-github-artifacts.py (新)        download-github-release.py (现有)
+───────────────────────────────         ──────────────────────────────
+输入: --tag, --dist-dir                 输入: --tag, --dist-dir
+1. Resolve tag → SHA                    1. Poll Release API
+2. Find workflow run                    2. Download all assets
+3. Wait for run completion              3. Verify SHA256SUMS
+4. Download platform artifacts
+5. Extract zips → dist-dir
+6. Verify artifacts (count/size)
+```
+
+**调用策略 (release-sync.yml 改造)**:
+
+```bash
+# 方案 A: 两阶段尝试 (推荐)
+# Phase 1 — 尝试 Artifacts 直连 (快速路径)
+if python3 packaging/scripts/download-github-artifacts.py \
+    --tag "$RELEASE_TAG" --dist-dir dist/combined --max-wait 1800; then
+    echo "Downloaded via Artifacts API (fast path)"
+else
+    echo "Artifacts unavailable, falling back to Release API"
+    # Phase 2 — 回退到 Release API (兜底路径)
+    python3 packaging/scripts/download-github-release.py \
+        --tag "$RELEASE_TAG" --dist-dir dist/combined --max-wait 900
+fi
+```
+
+**对比分析**:
+
+| 维度 | Release API (现状) | Artifacts API (方案) |
+|------|:--:|:--:|
+| 发现延迟 | Release 创建后才能发现 (30-45min) | 矩阵 job 完成即可发现 (20-30min) |
+| 时间节省 | — | ~10-15 min |
+| API 调用数 | 120-180 次 (轮询 Release) | ~10-20 次 (轮询 run status + 下载) |
+| 认证要求 | 公开仓库无需认证 | 下载必须 Bearer token |
+| 文件格式 | 原始文件 (直接可用) | Zip 压缩包 (需解压) |
+| 完整性校验 | SHA256SUMS (GPG 可选) | 自行验证 (文件数/大小) |
+| SHA256SUMS | 从 Release 继承 (含 GPG 签名) | 本地重新生成 (无 GPG 签名) |
+| 容错性 | 单点 (Release 创建失败 = 全部失败) | 部分 artifact 可单独重试 |
+| 复杂度 | 低 (1 个脚本, 2 个 API 调用) | 中 (新增脚本 ~200行, 5+ API 调用) |
+
+**待决策**:
+
+| 决策点 | 选项 | 建议 |
+|--------|------|------|
+| 策略 | A) 替换 Release API | **B) 双路径: Artifacts 优先, Release 兜底** |
+| GPG 签名 | 放弃 (本地重新生成) | 接受 — GitHub Release 保留签名版本 |
+| artifact 选择 | 全量下载 | 仅下载 macOS + Windows (Linux 由 release-linux.yml 原生构建) |
+| run 查找方式 | `head_sha` 过滤 | 备选: 按 workflow 文件名 + branch 过滤 |
+
+**实施步骤**:
+
+1. **创建 `download-github-artifacts.py`**: 实现 tag→SHA→run→artifacts→download→extract 链路
+2. **改造 `release-sync.yml`**: 双路径调用, Artifacts 优先 + Release 兜底
+3. **添加 artifact 完整性验证**: 按预期文件列表检查完整性 (count + name pattern matching)
+4. **本地生成 SHA256SUMS**: 在 `publish-gitee-from-ci.py` 中处理 (已就绪)
+5. **文档化**: 在 `docs/packaging/gitee-releases.md` 补充双路径说明
+
+**风险评估**:
+
+| 风险 | 概率 | 影响 | 缓解措施 |
+|------|:--:|:--:|------|
+| Artifact 过期 (7天 retention) | 低 | 中 | Fallback 到 Release API |
+| workflow run 重跑导致多个 run | 低 | 中 | 取最新 `completed` + `success` 的 run |
+| 矩阵 job 部分失败, 缺 artifact | 低 | 高 | 检查预期 artifact 列表; 缺一个即回退 |
+| GitHub API rate limit | 中 | 低 | Token 认证可获 5000 req/h, 足够用 |
+| Artifact zip 解压后文件结构不一致 | 低 | 中 | 使用 `find` 递归搜索 + pattern match |
+| `head_sha` 匹配不到 workflow run (tag 在本地但未推送) | 极低 | 高 | 回退到 Release API 路径 |
+
+**投入估算**:
+
+| 项目 | 工作量 |
+|------|:--:|
+| `download-github-artifacts.py` 脚本 | ~200 行 Python |
+| `release-sync.yml` 改造 | ~30 行 YAML |
+| 测试 (dry-run 模式 + 单元测试) | ~80 行 Python |
+| 文档更新 | ~20 行 Markdown |
+| **总计** | **~2-3 小时** |
+
+---
 
 ---
 
@@ -212,6 +358,9 @@ run_conversation() — 4,546 行
 - ✅ **WebUI 进程组终止**: POSIX os.killpg, 防止孤儿进程
 - ✅ **T1-T4 Rust 迁移技术债务**: 死代码移除 ~112 行, CI parity 测试 17→49, 文档修正
 - ✅ **AST 双层防御 (TODO-007)**: 7 类检测 + auto-deny, 18 payloads 渗透 0 bypasses
+- ✅ **发布后冒烟测试 (TODO-011a)**: GitHub 侧 post-release 下载→安装→--version, Gitee 侧 release-linux + release-sync 双工作流冒烟测试
+- ✅ **Gitee SHA256SUMS 同步修复 (TODO-011b)**: publish-gitee-from-ci.py 不再覆盖已存在的 SHA256SUMS，保留 GPG 签名
+- ✅ **GitHub Artifacts 直连 (TODO-011c)**: 新增 download-github-artifacts.py (~280行), release-sync.yml 双路径 (Artifacts 优先 + Release 兜底), 省 10-15 min 等待时间
 - ✅ **v0.6.2 本地 bug 修复**: sandbox python -c 正则 + gateway 测试数据
 - ✅ **Rust 扩展构建**: maturin develop --release 在 Python 3.12 venv 中成功
 - ✅ **Rust 测试**: 84/84 pass（新增 2 个回归测试）
@@ -286,7 +435,7 @@ run_conversation() — 4,546 行
 
 ---
 
-最后更新: 2026-06-22 (A1 完成, TODO-003, TB1-TB7, P5, webui fix, Rust 迁移分析)
+最后更新: 2026-07-09 (发布后冒烟测试 + Gitee SHA256SUMS 同步 + Artifacts 直连实施)
 
 ---
 
