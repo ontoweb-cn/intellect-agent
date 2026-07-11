@@ -5982,6 +5982,7 @@ function _appearancePayloadFromUi(){
     session_jump_buttons: !!($('settingsSessionJumpButtons')||{}).checked,
     session_endless_scroll: !!($('settingsSessionEndlessScroll')||{}).checked,
     transcript_virtual_window: !!($('settingsTranscriptVirtualWindow')||{}).checked,
+    deferred_activity_worklog: !!($('settingsDeferredActivityWorklog')||{}).checked,
   };
 }
 
@@ -6243,6 +6244,20 @@ async function loadSettingsPanel(){
         try{
           const virtQ=new URLSearchParams(location.search||'').get('virt');
           if(virtQ==='1'||virtQ==='true') window._transcriptVirtualWindowEnabled=true;
+        }catch(_){}
+        if(typeof renderMessages==='function') renderMessages({preserveScroll:true});
+        _scheduleAppearanceAutosave();
+      };
+    }
+    const deferCb=$('settingsDeferredActivityWorklog');
+    if(deferCb){
+      deferCb.checked=!!settings.deferred_activity_worklog;
+      window._deferredActivityWorklogEnabled=deferCb.checked||window._deferredActivityWorklogEnabled;
+      deferCb.onchange=function(){
+        window._deferredActivityWorklogEnabled=this.checked;
+        try{
+          const wq=new URLSearchParams(location.search||'').get('worklog_defer');
+          if(wq==='1'||wq==='true') window._deferredActivityWorklogEnabled=true;
         }catch(_){}
         if(typeof renderMessages==='function') renderMessages({preserveScroll:true});
         _scheduleAppearanceAutosave();
@@ -7353,6 +7368,11 @@ function _applySavedSettingsUi(saved, body, opts){
     const virtQ=new URLSearchParams(location.search||'').get('virt');
     if(virtQ==='1'||virtQ==='true') window._transcriptVirtualWindowEnabled=true;
   }catch(_){}
+  window._deferredActivityWorklogEnabled=!!body.deferred_activity_worklog;
+  try{
+    const wq=new URLSearchParams(location.search||'').get('worklog_defer');
+    if(wq==='1'||wq==='true') window._deferredActivityWorklogEnabled=true;
+  }catch(_){}
   if(typeof _applySessionNavigationPrefs==='function') _applySessionNavigationPrefs();
   window._sidebarDensity=sidebarDensity==='detailed'?'detailed':'compact';
   window._busyInputMode=body.busy_input_mode||'queue';
@@ -7671,6 +7691,7 @@ async function saveSettings(andClose){
   body.session_jump_buttons=!!($('settingsSessionJumpButtons')||{}).checked;
   body.session_endless_scroll=!!($('settingsSessionEndlessScroll')||{}).checked;
   body.transcript_virtual_window=!!($('settingsTranscriptVirtualWindow')||{}).checked;
+  body.deferred_activity_worklog=!!($('settingsDeferredActivityWorklog')||{}).checked;
   body.language=language;
   body.show_token_usage=showTokenUsage;
   body.show_quota_chip=showQuotaChip===true;
