@@ -4386,12 +4386,130 @@ class StreamChannel:
     subscriber still receives the stream tail that arrived during the gap.
     Once one or more subscribers are attached, new events are broadcast to all
     of them instead of being consumed destructively by a single queue reader.
+
+    Offline buffer bounds (Session SSE RFC S9 / W1 B1):
+    - ``max_events`` (default 500) and ``max_bytes`` (default ~2 MiB)
+    - drop-oldest when either limit is exceeded
+    - single events larger than ``max_bytes`` are **rejected** (not retained);
+      durable continuity remains via ``run_journal`` (B2 gap / snapshot)
+    - ``dropped_offline_events`` counter (no ``session_snapshot`` in B1)
     """
 
-    def __init__(self):
+    # Provisional S9 constants — may be promoted to config in B2+.
+    DEFAULT_MAX_EVENTS = 500
+    DEFAULT_MAX_BYTES = 2 * 1024 * 1024
+
+    def __init__(
+        self,
+        *,
+        max_events: int | None = None,
+        max_bytes: int | None = None,
+    ):
         self._lock = threading.Lock()
         self._subscribers: list[queue.Queue] = []
+        # Parallel lists kept in lock-step: (event, data), accounted bytes, seq hint.
         self._offline_buffer: list[tuple[str, object]] = []
+        self._offline_sizes: list[int] = []
+        self._offline_seqs: list[int | None] = []
+        self._offline_bytes = 0
+        self._dropped_offline_events = 0
+        self._max_events = (
+            self.DEFAULT_MAX_EVENTS if max_events is None else max(1, int(max_events))
+        )
+        self._max_bytes = (
+            self.DEFAULT_MAX_BYTES if max_bytes is None else max(1, int(max_bytes))
+        )
+
+    @staticmethod
+    def _payload_content_floor(obj: object, depth: int = 0) -> int:
+        """Sum lengths of nested str/bytes without full JSON serialization."""
+        if depth > 8:
+            return 0
+        if isinstance(obj, (bytes, bytearray, memoryview)):
+            return len(obj)
+        if isinstance(obj, str):
+            return len(obj.encode("utf-8"))
+        if isinstance(obj, dict):
+            total = 0
+            for value in obj.values():
+                total += StreamChannel._payload_content_floor(value, depth + 1)
+            return total
+        if isinstance(obj, (list, tuple)):
+            total = 0
+            for value in obj:
+                total += StreamChannel._payload_content_floor(value, depth + 1)
+            return total
+        return 0
+
+    @staticmethod
+    def _estimate_item_bytes(item: tuple[str, object], *, max_bytes: int) -> int:
+        """Account offline-buffer bytes conservatively.
+
+        - Prefer strict JSON size (no ``default=str``) so large objects cannot
+          collapse to a tiny ``str`` representation.
+        - Floor with nested str/bytes lengths.
+        - On serialization failure (cycles, non-JSON types): **fail closed** as
+          ``max_bytes + 1`` so the item is treated as oversize / rejected.
+        """
+        event, data = item
+        floor = 64 + StreamChannel._payload_content_floor(event) + StreamChannel._payload_content_floor(data)
+        try:
+            # Strict dumps: TypeError/ValueError on non-JSON or circular refs.
+            raw = json.dumps((event, data), ensure_ascii=False, separators=(",", ":"))
+            measured = len(raw.encode("utf-8"))
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            return int(max_bytes) + 1
+        except Exception:
+            return int(max_bytes) + 1
+        return max(1, floor, measured)
+
+    @staticmethod
+    def _extract_seq_hint(item: tuple[str, object]) -> int | None:
+        """Optional seq for ``lowest_retained_seq`` diagnostics (best-effort)."""
+        _event, data = item
+        if not isinstance(data, dict):
+            return None
+        for key in ("seq", "after_seq"):
+            raw = data.get(key)
+            if isinstance(raw, bool):
+                continue
+            if isinstance(raw, int):
+                return raw
+            if isinstance(raw, float) and raw == int(raw):
+                return int(raw)
+            if isinstance(raw, str) and raw.strip().isdigit():
+                return int(raw.strip())
+        event_id = data.get("event_id")
+        if isinstance(event_id, str) and ":" in event_id:
+            suffix = event_id.rsplit(":", 1)[-1].strip()
+            if suffix.isdigit():
+                return int(suffix)
+        return None
+
+    def _drop_oldest_locked(self) -> None:
+        if not self._offline_buffer:
+            return
+        self._offline_buffer.pop(0)
+        size = self._offline_sizes.pop(0) if self._offline_sizes else 0
+        if self._offline_seqs:
+            self._offline_seqs.pop(0)
+        self._offline_bytes = max(0, self._offline_bytes - int(size or 0))
+        self._dropped_offline_events += 1
+
+    def _enforce_offline_bounds_locked(self) -> None:
+        # Drop-oldest until within both caps. Oversize singles are rejected at
+        # append time, so we never need to "keep one oversize" event.
+        while self._offline_buffer and (
+            len(self._offline_buffer) > self._max_events
+            or self._offline_bytes > self._max_bytes
+        ):
+            self._drop_oldest_locked()
+
+    def _clear_offline_locked(self) -> None:
+        self._offline_buffer.clear()
+        self._offline_sizes.clear()
+        self._offline_seqs.clear()
+        self._offline_bytes = 0
 
     def subscribe(self) -> queue.Queue:
         q: queue.Queue = queue.Queue()
@@ -4414,21 +4532,47 @@ class StreamChannel:
                 pass
 
     def put_nowait(self, item: tuple[str, object]) -> None:
+        # Size / seq accounting outside the lock so large JSON dumps do not
+        # stall subscribe / unsubscribe / competing puts (review Important #3).
+        max_bytes = self._max_bytes
+        size = self._estimate_item_bytes(item, max_bytes=max_bytes)
+        seq_hint = self._extract_seq_hint(item)
+
         with self._lock:
             subscribers = list(self._subscribers)
             if not subscribers:
+                if size > self._max_bytes:
+                    # Hard ceiling: do not pin multi-MiB payloads in RAM while
+                    # disconnected. Journal remains SoT for B2 resume.
+                    self._dropped_offline_events += 1
+                    return
                 self._offline_buffer.append(item)
+                self._offline_sizes.append(size)
+                self._offline_seqs.append(seq_hint)
+                self._offline_bytes += size
+                self._enforce_offline_bounds_locked()
                 return
-            self._offline_buffer.clear()
+            self._clear_offline_locked()
         for q in subscribers:
             q.put_nowait(item)
 
-    def diagnostic_snapshot(self) -> dict[str, int]:
+    def diagnostic_snapshot(self) -> dict[str, int | None]:
         """Return non-sensitive stream observation counters for health checks."""
         with self._lock:
+            lowest: int | None = None
+            for seq in self._offline_seqs:
+                if seq is None:
+                    continue
+                if lowest is None or seq < lowest:
+                    lowest = seq
             return {
                 "subscriber_count": len(self._subscribers),
                 "offline_buffered_events": len(self._offline_buffer),
+                "offline_buffered_bytes": self._offline_bytes,
+                "dropped_offline_events": self._dropped_offline_events,
+                "lowest_retained_seq": lowest,
+                "offline_max_events": self._max_events,
+                "offline_max_bytes": self._max_bytes,
             }
 
 

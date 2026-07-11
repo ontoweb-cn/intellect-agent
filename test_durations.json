@@ -1,9 +1,10 @@
 {
   "tests/agent/test_learn_command.py": 0.863,
-  "tests/agent/test_learning_api_profile.py": 1.243,
-  "tests/agent/test_learning_graph.py": 0.623,
-  "tests/agent/test_learning_graph_render.py": 0.6,
-  "tests/agent/test_learning_mutations.py": 0.91,
+  "tests/agent/test_learning_api_profile.py": 2.42,
+  "tests/agent/test_learning_e2e.py": 1.543,
+  "tests/agent/test_learning_graph.py": 1.364,
+  "tests/agent/test_learning_graph_render.py": 1.482,
+  "tests/agent/test_learning_mutations.py": 2.049,
   "tests/agent/test_moa_loop.py": 1.04,
   "tests/agent/test_redact.py": 0.957,
   "tests/agent/test_secret_scope.py": 0.37,
@@ -27,5 +28,6 @@
   "tests/test_intellect_rust_delegation.py": 0.695,
   "tests/tools/test_async_delegation.py": 1.367,
   "tests/tools/test_image_edit.py": 0.581,
-  "tests/tools/test_memory_tool.py": 1.142
+  "tests/tools/test_memory_tool.py": 1.142,
+  "tests/webui/test_stream_channel_bounds.py": 2.812
 }

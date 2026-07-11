@@ -5112,6 +5112,7 @@ def _stream_runtime_diagnostics() -> dict:
     streams = []
     total_subscribers = 0
     total_offline_buffered_events = 0
+    total_dropped_offline_events = 0
     with STREAMS_LOCK:
         items = list(STREAMS.items())
     for stream_id, stream in items:
@@ -5126,18 +5127,27 @@ def _stream_runtime_diagnostics() -> dict:
                 snapshot = {}
         subscriber_count = int(snapshot.get("subscriber_count") or 0)
         offline_buffered_events = int(snapshot.get("offline_buffered_events") or 0)
+        dropped_offline_events = int(snapshot.get("dropped_offline_events") or 0)
         total_subscribers += subscriber_count
         total_offline_buffered_events += offline_buffered_events
-        streams.append({
+        total_dropped_offline_events += dropped_offline_events
+        entry = {
             "stream_id": str(stream_id),
             "subscriber_count": subscriber_count,
             "offline_buffered_events": offline_buffered_events,
-        })
+            "dropped_offline_events": dropped_offline_events,
+        }
+        if "offline_buffered_bytes" in snapshot:
+            entry["offline_buffered_bytes"] = int(snapshot.get("offline_buffered_bytes") or 0)
+        # Do not expose lowest_retained_seq on unauthenticated deep health —
+        # progress hints belong in authenticated diagnostics only.
+        streams.append(entry)
     streams.sort(key=lambda item: item["stream_id"])
     return {
         "active_streams": len(streams),
         "total_subscribers": total_subscribers,
         "total_offline_buffered_events": total_offline_buffered_events,
+        "total_dropped_offline_events": total_dropped_offline_events,
         "streams": streams,
     }
 

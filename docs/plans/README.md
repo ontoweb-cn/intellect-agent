@@ -19,7 +19,8 @@ See also: [WebUI Documentation](../webui/) — user guide and architecture overv
 | ✅ | 2026-07-08 | `2026-07-08-hermes-phase2-refinement-review.md` | Hermes Phase 2 任务细化 + 评审（HP-201…204） |
 | 🔄 | 2026-07-08 | `2026-07-08-hermes-v0.16-v0.18-port-todo.md` | Hermes 移植正式 TODO 分解（HP-001…HP-406） |
 | ✅ | 2026-07-11 | `2026-07-11-webui-hermes-parity-analysis.md` | WebUI↔Hermes 差距分析（评审定稿） |
-| ✅ | 2026-07-11 | `2026-07-11-p1-journey-and-webui-parity-refinement.md` | 双轨 P1 细化 + 技术评审 + 排期（Journey + Parity UX） |
+| ✅ | 2026-07-11 | `2026-07-11-p1-journey-and-webui-parity-refinement.md` | 双轨 P1 细化 + 技术评审 + 排期（Journey + Parity UX）；W0 已合入 |
+| ✅ | 2026-07-12 | `2026-07-12-w1-journey-e2e-and-session-sse.md` | W1：P1-4 E2E + Session SSE RFC（**REVIEWED / Approve**；E2E 待 commit） |
 | 🔄 | 2026-06-12 | `2026-06-12-cli-refactoring-plan.md` | cli.py 重构（进行中） |
 | 📋 | 2026-06-02 | `2026-06-02-multi-database-cache-mq-design.md` | 多数据库/缓存/MQ 架构（P1–P4 已完成，P5 TBD） |
 | 📋 | 2026-06-02 | `2026-06-02-model-registry-agent-implementation.md` | Agent-side 模型注册表设计 |

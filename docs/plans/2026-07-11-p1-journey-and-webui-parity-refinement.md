@@ -256,15 +256,28 @@ P1-B MVP 硬化 ───────────────────► 可
 
 **总评**：两套 P1 均可开干；建议 **本周并行：Journey P1-2/P1-1 + Parity P1-C**，同时起草 Turn Anchors RFC 与（若未开始）Session SSE P0。
 
-### W0 落地进度（2026-07-11，已确认开干）
+### W0 落地进度（已合入 `d2cefe4`）
 
 | 项 | 状态 | 产出 |
 |----|------|------|
 | Journey P1-2 hub | ✅ MVP | `learning_mutations` hub detail/uninstall；图节点 `source`；Journey UI 文案 |
 | Journey P1-1 stale | ✅ MVP | `code: stale` + HTTP 409；前端自动 refresh |
-| Parity P1-C | ✅ MVP | `_applyPendingSessionModelForSession`；session provider 优先；resolve 护栏 |
+| Parity P1-C | ✅ MVP | `_applyPendingSessionModelForSession`；session provider 优先；resolve 护栏；load 期禁 persist |
 | Turn Anchors RFC | ✅ DRAFT | `docs/webui/rfcs/stable-assistant-turn-anchors.md` |
-| Journey P1-4 E2E | ⏳ 下一拍 | 依赖 P1-2（已就绪） |
+| Journey P1-4 E2E | ➡️ **W1** | 见下 |
+
+### W1 排期（2026-07-12，方案 3 已确认）
+
+**主轴**：Journey P1-4 E2E ∥ Session SSE RFC 启动。  
+**细化 + 评审稿**：[`2026-07-12-w1-journey-e2e-and-session-sse.md`](./2026-07-12-w1-journey-e2e-and-session-sse.md)。
+
+| 项 | 状态 | 备注 |
+|----|------|------|
+| Journey P1-4 E2E | ✅ code review Approve | `tests/agent/test_learning_e2e.py` E1–E4 |
+| Session SSE RFC | ✅ **REVIEWED** | `docs/webui/rfcs/session-sse-contract-v1.md` |
+| StreamChannel 有界 buffer | ✅ B1 | S9：500 / 2MiB / drop-oldest / `dropped_offline_events` |
+| SSE 客户端 + 端点 | 📋 W1 尾 / W2 | **禁止**只做服务端 |
+| P1-3 / P1-B / P1-A 全量 | 延后 | 旁路 Opt-C/D 可选 |
 
 ---
 
@@ -274,14 +287,15 @@ P1-B MVP 硬化 ───────────────────► 可
 |------|------|
 | `docs/plans/2026-07-08-hermes-v0.16-v0.18-port-todo.md` §HP-401 P1 | Journey 条目源 |
 | `docs/plans/2026-07-11-webui-hermes-parity-analysis.md` | Parity 差距权威摘要 |
-| **本文件** | 双轨细化 + 评审 + 排期 |
-| 待产：`docs/webui/rfcs/session-sse-contract-v1.md` | P0 |
-| 待产：`docs/webui/rfcs/stable-assistant-turn-anchors.md` | P1-A |
+| **本文件** | 双轨 P1 细化 + W0 排期 |
+| [`2026-07-12-w1-journey-e2e-and-session-sse.md`](./2026-07-12-w1-journey-e2e-and-session-sse.md) | **W1 细化 + 评审** |
+| [`docs/webui/rfcs/session-sse-contract-v1.md`](../webui/rfcs/session-sse-contract-v1.md) | P0 SSE 契约（**REVIEWED / Approve**） |
+| `docs/webui/rfcs/stable-assistant-turn-anchors.md` | P1-A DRAFT |
 
 ---
 
-## 6. 下一步（需你确认）
+## 6. 下一步
 
-1. 是否按 **W0：P1-2 + P1-1 + P1-C** 开实施？  
-2. Session SSE P0 是否已有人或需另开 `writing-plans`？  
-3. Journey P1-3 是否挂到 profile-management 恢复里程碑？
+1. ~~是否按 W0 开实施？~~ ✅ 已合入。  
+2. **评审并批准 W1 稿**（上表链接）→ 实施 P1-4 + 起草 Session SSE RFC。  
+3. Journey P1-3 仍挂 profile-management 恢复里程碑。
