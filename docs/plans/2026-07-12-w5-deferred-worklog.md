@@ -1,7 +1,7 @@
 # W5 细化稿 — P1-A Idle-deferred Worklog（N≥8）
 
 > **日期**：2026-07-12  
-> **状态**：**EXECUTED (in progress)** — 2026-07-12 Approve；实现见 `feat/w5-deferred-worklog`  
+> **状态**：**EXECUTED** — 2026-07-12 Approve；PR [#43](https://github.com/ontoweb-cn/intellect-agent/pull/43) (`feat/w5-deferred-worklog` @ `43d1fdf`)  
 > **策略**：先技术评审，再按 **0→2** 串行  
 > **前置**：W2–W4 已合入 main（SSE、Turn Anchors scene、transcript virt @ `357fca1`）  
 > **契约**：[`docs/webui/rfcs/stable-assistant-turn-anchors.md`](../webui/rfcs/stable-assistant-turn-anchors.md) **A5**（N≥8）  
