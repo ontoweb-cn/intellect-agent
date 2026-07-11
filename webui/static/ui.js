@@ -5879,9 +5879,143 @@ function _onLiveActivityToggle(group){
   if(group.getAttribute('data-live-tool-call-group')!=='1') return;
   _liveActivityUserExpanded = !group.classList.contains('tool-call-group-collapsed');
 }
+
+// ── W5 deferred Activity worklog (A5 / DW*) ─────────────────────────────────
+const DEFERRED_WORKLOG_N=8;
+const DEFERRED_WORKLOG_IDLE_MS=2000;
+const _worklogTurnState=new Map(); // turnKey -> {status:'pending'|'done', cards, thinkingText, idleHandle}
+function _isDeferredActivityWorklogEnabled(){
+  if(window._deferredActivityWorklogEnabled===true) return true;
+  try{
+    const wq=new URLSearchParams(location.search||'').get('worklog_defer');
+    return wq==='1'||wq==='true';
+  }catch(_){ return false; }
+}
+function _shouldDeferActivityWorklog(toolCount){
+  if(!_isDeferredActivityWorklogEnabled()) return false;
+  if(!isSimplifiedToolCalling()) return false; // DW6: compact_worklog only
+  return (Number(toolCount)||0)>=DEFERRED_WORKLOG_N;
+}
+function _worklogShellLabel(cards){
+  const names=(cards||[]).map(tc=>String(tc&&tc.name||'tool').trim()).filter(Boolean);
+  const n=Math.max((cards||[]).length, names.length);
+  if(!names.length) return n+' tools — expand for details';
+  const shown=names.slice(0,6);
+  const extra=n-shown.length;
+  const joined=shown.join(', ');
+  return extra>0?(n+' tools: '+joined+'… (+'+extra+')'):(n+' tools: '+joined);
+}
+function _cancelDeferredWorklogIdle(turnKey){
+  const st=_worklogTurnState.get(turnKey);
+  if(!st||!st.idleHandle) return;
+  try{
+    if(typeof cancelIdleCallback==='function'&&st.idleKind==='ric') cancelIdleCallback(st.idleHandle);
+    else clearTimeout(st.idleHandle);
+  }catch(_){}
+  st.idleHandle=null;
+  st.idleKind=null;
+}
+function _scheduleDeferredWorklog(group, turnKey){
+  _cancelDeferredWorklogIdle(turnKey);
+  const st=_worklogTurnState.get(turnKey)||{};
+  const run=()=>{
+    st.idleHandle=null;
+    st.idleKind=null;
+    if(!group||!group.isConnected) return; // C2: detached → no-op
+    if(st.status==='done') return;
+    _materializeDeferredWorklog(group, turnKey);
+  };
+  if(typeof requestIdleCallback==='function'){
+    st.idleKind='ric';
+    st.idleHandle=requestIdleCallback(run,{timeout:DEFERRED_WORKLOG_IDLE_MS});
+  }else{
+    st.idleKind='timeout';
+    st.idleHandle=setTimeout(run, DEFERRED_WORKLOG_IDLE_MS);
+  }
+  _worklogTurnState.set(turnKey, st);
+}
+function _fillActivityWorklogBody(body, cards, thinkingText){
+  if(!body) return;
+  body.innerHTML='';
+  if(thinkingText) body.appendChild(_thinkingActivityNode(thinkingText, false));
+  for(const tc of (cards||[])) body.appendChild(buildToolCard(tc));
+}
+function _materializeDeferredWorklog(group, turnKey){
+  if(!group) return false;
+  const key=turnKey||group.getAttribute('data-activity-disclosure-key')||'';
+  const st=_worklogTurnState.get(key)||{};
+  if(st.status==='done'&&!group.getAttribute('data-worklog-deferred')) return true;
+  _cancelDeferredWorklogIdle(key);
+  const body=group.querySelector('.tool-call-group-body');
+  if(!body) return false;
+  try{
+    _fillActivityWorklogBody(body, st.cards||[], st.thinkingText||'');
+    group.removeAttribute('data-worklog-deferred');
+    const placeholder=body.querySelector('.worklog-deferred-shell');
+    if(placeholder) placeholder.remove();
+    _syncToolCallGroupSummary(group);
+    st.status='done';
+    st.cards=st.cards||[];
+    _worklogTurnState.set(key, st);
+    // Cache + height (C2)
+    try{
+      if(S.session&&S.session.session_id&&typeof _sessionHtmlCache!=='undefined'&&_sessionHtmlCache){
+        _sessionHtmlCache.delete(S.session.session_id);
+      }
+    }catch(_){}
+    if(typeof _bumpMessageHeightGeneration==='function') _bumpMessageHeightGeneration();
+    return true;
+  }catch(e){
+    console.warn('deferred worklog materialize failed', e);
+    return false;
+  }
+}
+function _installDeferredWorklogShell(group, cards, thinkingText, turnKey){
+  if(!group) return;
+  const body=group.querySelector('.tool-call-group-body');
+  if(!body) return;
+  body.innerHTML='';
+  if(thinkingText) body.appendChild(_thinkingActivityNode(thinkingText, false));
+  const shell=document.createElement('div');
+  shell.className='worklog-deferred-shell';
+  shell.setAttribute('data-worklog-shell','1');
+  shell.style.cssText='padding:8px 10px;font-size:12px;color:var(--muted);line-height:1.4';
+  shell.textContent=_worklogShellLabel(cards);
+  body.appendChild(shell);
+  group.setAttribute('data-worklog-deferred','1');
+  _worklogTurnState.set(turnKey,{
+    status:'pending',
+    cards:cards||[],
+    thinkingText:thinkingText||'',
+    idleHandle:null,
+  });
+  const label=group.querySelector('.tool-call-group-label');
+  if(label){
+    const n=(cards||[]).length;
+    label.textContent=n?`Activity: ${n} tools`:'Activity';
+  }
+  _scheduleDeferredWorklog(group, turnKey);
+}
 function _toggleActivityGroup(summary){
   const group=summary&&summary.closest?summary.closest('.tool-call-group'):null;
   if(!group) return;
+  // I4: deferred pending → cancel idle, sync materialize, then expand.
+  if(group.getAttribute('data-worklog-deferred')==='1'){
+    const key=group.getAttribute('data-activity-disclosure-key')||'';
+    _cancelDeferredWorklogIdle(key);
+    const ok=_materializeDeferredWorklog(group, key);
+    if(!ok){
+      // Keep collapsed with shell; allow retry on next click.
+      group.classList.add('tool-call-group-collapsed');
+      summary.setAttribute('aria-expanded','false');
+      return;
+    }
+    group.classList.remove('tool-call-group-collapsed');
+    summary.setAttribute('aria-expanded','true');
+    _writeActivityDisclosureState(key, true);
+    if(typeof _onLiveActivityToggle==='function') _onLiveActivityToggle(group);
+    return;
+  }
   const collapsed=group.classList.toggle('tool-call-group-collapsed');
   summary.setAttribute('aria-expanded',String(!collapsed));
   _writeActivityDisclosureState(group.getAttribute('data-activity-disclosure-key'), !collapsed);
@@ -7384,11 +7518,24 @@ function renderMessages(options){
         const body=group&&group.querySelector('.tool-call-group-body');
         if(!body) continue;
         const thinkingText=assistantThinking.get(aIdx);
-        if(thinkingText){
-          body.appendChild(_thinkingActivityNode(thinkingText, false));
-        }
-        for(const tc of cards){
-          body.appendChild(buildToolCard(tc));
+        const turnKey=`assistant:${aIdx}`;
+        const prior=_worklogTurnState.get(turnKey);
+        // Remount: if previously materialize done, fill full; if pending, shell + reschedule.
+        if(prior&&prior.status==='done'&&prior.cards&&prior.cards.length){
+          _fillActivityWorklogBody(body, prior.cards, prior.thinkingText||thinkingText);
+          group.removeAttribute('data-worklog-deferred');
+        }else if(_shouldDeferActivityWorklog(cards.length)&&( !prior || prior.status==='pending')){
+          _installDeferredWorklogShell(group, cards, thinkingText, turnKey);
+        }else{
+          if(thinkingText){
+            body.appendChild(_thinkingActivityNode(thinkingText, false));
+          }
+          for(const tc of cards){
+            body.appendChild(buildToolCard(tc));
+          }
+          if(cards.length){
+            _worklogTurnState.set(turnKey,{status:'done',cards:cards,thinkingText:thinkingText||''});
+          }
         }
         _syncToolCallGroupSummary(group);
         if(anchorRow) anchorInsertAfter.set(anchorRow, group);
@@ -7704,7 +7851,12 @@ function buildToolCard(tc){
 function _syncToolCallGroupSummary(group){
   if(!group) return;
   const cards=Array.from(group.querySelectorAll('.tool-card-row .tool-card'));
-  const toolCount=cards.length;
+  let toolCount=cards.length;
+  if(!toolCount&&group.getAttribute('data-worklog-deferred')==='1'){
+    const key=group.getAttribute('data-activity-disclosure-key')||'';
+    const st=_worklogTurnState.get(key);
+    if(st&&st.cards) toolCount=st.cards.length;
+  }
   const label=group.querySelector('.tool-call-group-label');
   const durationEl=group.querySelector('.tool-call-group-duration');
   if(label){

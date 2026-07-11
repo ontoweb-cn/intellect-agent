@@ -517,6 +517,8 @@ const LOCALES = {
   settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
   settings_label_transcript_virtual_window: 'Virtualize long transcripts',
   settings_desc_transcript_virtual_window: 'Experimental: keep only nearby messages in the DOM for very long chats (default off). Also ?virt=1.',
+  settings_label_deferred_activity_worklog: 'Defer long Activity worklogs',
+  settings_desc_deferred_activity_worklog: 'Experimental: for 8+ tools, fill Activity details after idle or expand (default off). Also ?worklog_defer=1.',
 
   settings_label_session_endless_scroll: 'Load older messages while scrolling up',
 
@@ -3226,6 +3228,8 @@ path_copied: '\u6587\u4ef6\u8def\u5f84\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f
   settings_desc_session_jump_buttons: '阅读较长会话历史时显示悬浮的开头和结尾按钮。',
   settings_label_transcript_virtual_window: '长会话虚拟化',
   settings_desc_transcript_virtual_window: '实验：超长会话只保留附近消息在 DOM（默认关）。也可用 ?virt=1。',
+  settings_label_deferred_activity_worklog: '延迟长 Activity 明细',
+  settings_desc_deferred_activity_worklog: '实验：8+ 工具时 idle/展开后再填 Activity 明细（默认关）。也可用 ?worklog_defer=1。',
 
   settings_label_session_endless_scroll: '向上滚动时加载更早的消息',
 

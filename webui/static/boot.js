@@ -1589,6 +1589,12 @@ function applyBotName(){
     }catch(_){
       window._transcriptVirtualWindowEnabled=!!s.transcript_virtual_window;
     }
+    try{
+      const wq=new URLSearchParams(location.search||'').get('worklog_defer');
+      window._deferredActivityWorklogEnabled=!!s.deferred_activity_worklog||wq==='1'||wq==='true';
+    }catch(_){
+      window._deferredActivityWorklogEnabled=!!s.deferred_activity_worklog;
+    }
     window._botName=s.bot_name||'Intellect';
     // Reconcile appearance: prefer localStorage (what the user last saw) over
     // the server.  If they diverge (e.g. a previous autosave POST failed),
@@ -1651,6 +1657,7 @@ function applyBotName(){
     window._sessionJumpButtonsEnabled=false;
     window._sessionEndlessScrollEnabled=false;
     window._transcriptVirtualWindowEnabled=false;
+    window._deferredActivityWorklogEnabled=false;
     window._sidebarDensity='compact';
     window._busyInputMode='queue';
     window._sessionEndlessScrollEnabled=false;

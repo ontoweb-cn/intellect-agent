@@ -4768,6 +4768,8 @@ _SETTINGS_DEFAULTS = {
     "session_endless_scroll": False,  # auto-load older transcript pages while scrolling upward
     # W4 / P1-B: variable-height #msgInner virtual window (default off — canary).
     "transcript_virtual_window": False,
+    # W5 / P1-A: idle-deferred settled Activity worklog for N>=8 tools (default off).
+    "deferred_activity_worklog": False,
     "language": "en",  # UI locale code; must match a key in static/i18n.js LOCALES
     "bot_name": os.getenv(
         "INTELLECT_WEBUI_BOT_NAME", "Intellect"
@@ -4948,6 +4950,7 @@ _SETTINGS_BOOL_KEYS = {
     "session_jump_buttons",
     "session_endless_scroll",
     "transcript_virtual_window",
+    "deferred_activity_worklog",
     "members_local_requires_approval",
 }
 # Language codes are validated as short alphanumeric BCP-47-like tags (e.g. 'en', 'zh', 'fr')
