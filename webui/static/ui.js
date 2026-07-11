@@ -4296,11 +4296,18 @@ function _compactInflightState(state){
   const limits=_getInflightStateLimits();
   const messages=Array.isArray(state.messages)?state.messages.slice(-limits.messages):[];
   const toolCalls=Array.isArray(state.toolCalls)?state.toolCalls.slice(-limits.toolCalls):[];
+  let scene=state.scene&&typeof state.scene==='object'?state.scene:null;
+  if(scene&&typeof compactActivityScene==='function'){
+    scene=compactActivityScene(scene);
+  }else if(scene){
+    scene=_truncateInflightValue(scene, limits.stringChars);
+  }
   return _truncateInflightValue({
     streamId:state.streamId||null,
     messages,
     uploaded:Array.isArray(state.uploaded)?state.uploaded.slice(-20):[],
     toolCalls,
+    scene,
   }, limits.stringChars);
 }
 function _writeInflightStateMap(all){
@@ -5355,6 +5362,290 @@ function _thinkingCardHtml(text, open){
 function isSimplifiedToolCalling(){
   return window._simplifiedToolCalling!==false;
 }
+
+// ── activity_scene_v1 (P1-A MVP) ─────────────────────────────────────────────
+// Wire shape matches docs/webui/rfcs/stable-assistant-turn-anchors.md §3 (A3).
+// Cap algorithm mirrors webui/api/activity_scene.py::compact_activity_scene_v1
+// (drop-oldest tool/thinking; keep newest text). Keep in sync for W3 #3 reuse.
+const ACTIVITY_SCENE_MAX_SEGMENTS=40;
+const _sceneAppliedForStream=Object.create(null);
+
+function chatActivityDisplayMode(){
+  const mode=window._chatActivityDisplayMode;
+  if(mode==='transparent_stream'||mode==='compact_worklog') return mode;
+  return isSimplifiedToolCalling()?'compact_worklog':'transparent_stream';
+}
+
+function setChatActivityDisplayMode(mode, opts){
+  opts=opts||{};
+  const next=(mode==='transparent_stream')?'transparent_stream':'compact_worklog';
+  window._chatActivityDisplayMode=next;
+  window._simplifiedToolCalling=next==='compact_worklog';
+  const cb=$('settingsSimplifiedToolCalling');
+  if(cb) cb.checked=window._simplifiedToolCalling;
+  if(opts.skipRender) return;
+  if(typeof applyActivityDisplayModeRefresh==='function') applyActivityDisplayModeRefresh();
+}
+
+/** A-M5: refresh live + settled Activity without full page reload. */
+function applyActivityDisplayModeRefresh(){
+  if(typeof clearMessageRenderCache==='function') clearMessageRenderCache();
+  const preserve=true;
+  if(typeof renderMessages==='function') renderMessages({preserveScroll:preserve});
+  // Live turn is wiped by renderMessages; rebuild from inflight scene / toolCalls.
+  if(!S.busy||!S.session) return;
+  const sid=S.session.session_id;
+  const inflight=INFLIGHT[sid];
+  if(!inflight) return;
+  const scene=inflight.scene;
+  if(scene&&typeof applyActivityScene==='function'){
+    applyActivityScene(scene,{source:'display_toggle',force:true});
+    return;
+  }
+  if(typeof placeLiveToolCardsHost==='function') placeLiveToolCardsHost();
+  clearLiveToolCards();
+  for(const tc of (inflight.toolCalls||S.toolCalls||[])){
+    if(tc&&tc.name&&typeof appendLiveToolCard==='function') appendLiveToolCard(tc);
+  }
+}
+
+function compactActivityScene(scene, maxSegments){
+  const limit=Math.max(1, maxSegments==null?ACTIVITY_SCENE_MAX_SEGMENTS:Number(maxSegments)||ACTIVITY_SCENE_MAX_SEGMENTS);
+  if(!scene||typeof scene!=='object') return {v:1,segments:[]};
+  const out=Object.assign({}, scene);
+  const raw=Array.isArray(scene.segments)?scene.segments:[];
+  const segs=raw.filter(s=>s&&typeof s==='object').map(s=>Object.assign({}, s));
+  while(segs.length>limit){
+    let dropIdx=-1;
+    for(let i=0;i<segs.length;i++){
+      const kind=segs[i].kind;
+      if(kind==='tool'||kind==='thinking'){dropIdx=i;break;}
+    }
+    if(dropIdx<0) segs.shift();
+    else segs.splice(dropIdx,1);
+  }
+  out.v=out.v||1;
+  out.segments=segs;
+  return out;
+}
+
+function _sceneThinkingFromMessages(messages){
+  if(!Array.isArray(messages)) return '';
+  for(let i=messages.length-1;i>=0;i--){
+    const m=messages[i];
+    if(!m||m.role!=='assistant') continue;
+    const t=m.reasoning||m.reasoning_content||m.thinking||'';
+    if(String(t).trim()) return String(t);
+  }
+  return '';
+}
+
+function _sceneTextAnchorsFromLiveDom(turn){
+  const anchors=[];
+  if(!turn) return anchors;
+  const blocks=_assistantTurnBlocks(turn)||turn;
+  blocks.querySelectorAll('[data-live-assistant="1"]').forEach((el, idx)=>{
+    const body=el.querySelector('.msg-body');
+    const text=String((body&&body.textContent)||el.textContent||'').trim();
+    if(text) anchors.push({kind:'text',anchor:`live-seg-${idx}`});
+  });
+  return anchors;
+}
+
+function _buildSegmentsFromLiveDom(turn){
+  const segments=[];
+  if(!turn) return segments;
+  const group=turn.querySelector('.tool-call-group[data-live-tool-call-group="1"]')
+    ||turn.querySelector('.tool-call-group[data-agent-activity-group="1"]');
+  const root=group?(group.querySelector('.tool-call-group-body')||group):(_assistantTurnBlocks(turn)||turn);
+  Array.from(root.children||[]).forEach(el=>{
+    if(el.classList&&el.classList.contains('agent-activity-thinking')){
+      const pre=el.querySelector('.thinking-card-body pre');
+      const text=String((pre&&pre.textContent)||'').trim();
+      if(text) segments.push({kind:'thinking',text:text.slice(0,4000)});
+      return;
+    }
+    if(el.classList&&el.classList.contains('thinking-card-row')){
+      const pre=el.querySelector('.thinking-card-body pre');
+      const text=String((pre&&pre.textContent)||'').trim();
+      if(text) segments.push({kind:'thinking',text:text.slice(0,4000)});
+      return;
+    }
+    const toolRow=el.classList&&el.classList.contains('tool-card-row')?el:null;
+    if(toolRow){
+      const card=toolRow.querySelector('.tool-card')||toolRow;
+      const nameEl=card.querySelector('.tool-card-name');
+      const previewEl=card.querySelector('.tool-card-preview');
+      const tid=toolRow.getAttribute('data-live-tid')||'';
+      const name=String((nameEl&&nameEl.textContent)||'tool').trim();
+      const done=!card.classList.contains('tool-card-running');
+      const isErr=card.classList.contains('tool-card-error')||card.getAttribute('data-error')==='1';
+      segments.push({
+        kind:'tool',
+        tid,
+        name,
+        status:done?(isErr?'error':'done'):'waiting',
+        summary:String((previewEl&&previewEl.textContent)||'').trim().slice(0,500),
+      });
+      return;
+    }
+    if(el.matches&&el.matches('[data-live-assistant="1"]')){
+      const body=el.querySelector('.msg-body');
+      const text=String((body&&body.textContent)||'').trim();
+      if(text) segments.push({kind:'text',anchor:`live-${segments.length}`});
+    }
+  });
+  return segments;
+}
+
+function _buildSegmentsFromToolCalls(toolCalls, thinkingText){
+  const segments=[];
+  const think=String(thinkingText||'').trim();
+  if(think&&think!=='Thinking…') segments.push({kind:'thinking',text:think.slice(0,4000)});
+  (Array.isArray(toolCalls)?toolCalls:[]).forEach(tc=>{
+    if(!tc||!tc.name) return;
+    segments.push({
+      kind:'tool',
+      tid:tc.tid||'',
+      name:String(tc.name),
+      status:tc.done===false?'waiting':(tc.is_error?'error':'done'),
+      summary:String(tc.preview||tc.snippet||'').slice(0,500),
+    });
+  });
+  return segments;
+}
+
+/**
+ * Build activity_scene_v1 from live DOM / in-progress toolCalls + thinking.
+ * Used by inflight localStorage (MVP) and later by journal writers (#3).
+ */
+function buildActivitySceneFromLive(opts){
+  opts=opts||{};
+  const streamId=opts.streamId||S.activeStreamId||null;
+  const sessionId=opts.sessionId||(S.session&&S.session.session_id)||null;
+  const toolCalls=opts.toolCalls!=null?opts.toolCalls:(sessionId&&INFLIGHT[sessionId]?INFLIGHT[sessionId].toolCalls:S.toolCalls)||[];
+  const messages=opts.messages!=null?opts.messages:(sessionId&&INFLIGHT[sessionId]?INFLIGHT[sessionId].messages:S.messages)||[];
+  let thinkingText=opts.thinkingText;
+  if(thinkingText==null) thinkingText=_sceneThinkingFromMessages(messages);
+  const turn=$('liveAssistantTurn');
+  let segments=_buildSegmentsFromLiveDom(turn);
+  if(!segments.length){
+    segments=_buildSegmentsFromToolCalls(toolCalls, thinkingText);
+    const textAnchors=_sceneTextAnchorsFromLiveDom(turn);
+    if(textAnchors.length) segments=segments.concat(textAnchors);
+  }
+  const activityKey=streamId?('live:'+streamId):null;
+  let expanded=false;
+  if(activityKey&&typeof _readActivityDisclosureState==='function'){
+    expanded=_readActivityDisclosureState(activityKey)==='open';
+  }else if(_liveActivityUserExpanded===true){
+    expanded=true;
+  }
+  const group=turn&&turn.querySelector('.tool-call-group[data-live-tool-call-group="1"]');
+  let elapsedMs=0;
+  if(group&&group.getAttribute('data-activity-started-at')){
+    const started=Number(group.getAttribute('data-activity-started-at'));
+    if(Number.isFinite(started)&&started>0) elapsedMs=Math.max(0, Date.now()-started);
+  }
+  const scene={
+    v:1,
+    turn_id:streamId?('live:'+streamId):'',
+    stream_id:streamId||'',
+    session_id:sessionId||'',
+    mode:opts.mode||'inflight',
+    display:chatActivityDisplayMode(),
+    disclosure:{expanded:!!expanded,user_intent:null},
+    segments,
+    elapsed_ms:elapsedMs,
+  };
+  return compactActivityScene(scene);
+}
+
+/**
+ * Rebuild Activity from an activity_scene_v1 object.
+ * @param {object} scene
+ * @param {{source?:string,force?:boolean}} opts
+ *   source: 'inflight'|'replay'|'display_toggle'|…
+ *   force: bypass per-stream latch (display toggle / replace-in-place)
+ */
+function applyActivityScene(scene, opts){
+  opts=opts||{};
+  if(!scene||typeof scene!=='object') return false;
+  const streamId=scene.stream_id||S.activeStreamId||'';
+  if(streamId&&_sceneAppliedForStream[streamId]&&!opts.force){
+    return true; // idempotent latch (§4.3.4) — #3 replay reuse
+  }
+  if(!S.session) return false;
+  if(scene.session_id&&S.session.session_id&&scene.session_id!==S.session.session_id){
+    return false; // A-M2: never cross-session
+  }
+  try{
+    if(scene.display==='transparent_stream'||scene.display==='compact_worklog'){
+      // Do not mutate global preference from scene restore; only honor for this apply.
+    }
+    if(typeof placeLiveToolCardsHost==='function') placeLiveToolCardsHost();
+    if(typeof clearLiveToolCards==='function') clearLiveToolCards();
+    const segs=Array.isArray(scene.segments)?scene.segments:[];
+    let sawToolOrThink=false;
+    for(const seg of segs){
+      if(!seg||typeof seg!=='object') continue;
+      if(seg.kind==='thinking'){
+        sawToolOrThink=true;
+        if(window._showThinking!==false&&typeof appendThinking==='function'){
+          appendThinking(String(seg.text||''));
+          if(typeof finalizeThinkingCard==='function') finalizeThinkingCard();
+        }
+      }else if(seg.kind==='tool'){
+        sawToolOrThink=true;
+        const tc={
+          name:seg.name||'tool',
+          tid:seg.tid||'',
+          preview:seg.summary||'',
+          snippet:seg.summary||'',
+          done:seg.status!=='waiting',
+          is_error:seg.status==='error',
+        };
+        if(typeof appendLiveToolCard==='function') appendLiveToolCard(tc);
+      }
+      // text anchors: live text comes back via messages / SSE; no DOM force here
+    }
+    if(!sawToolOrThink&&typeof appendThinking==='function'){
+      appendThinking('',{pending:true});
+    }
+    const activityKey=streamId?('live:'+streamId):(scene.turn_id||null);
+    if(scene.disclosure&&typeof scene.disclosure.expanded==='boolean'&&activityKey){
+      if(typeof _writeActivityDisclosureState==='function'){
+        _writeActivityDisclosureState(activityKey, !!scene.disclosure.expanded);
+      }
+      const turn=$('liveAssistantTurn');
+      const group=turn&&turn.querySelector('.tool-call-group');
+      if(group){
+        if(scene.disclosure.expanded){
+          group.classList.remove('tool-call-group-collapsed');
+          const summary=group.querySelector('.tool-call-group-summary');
+          if(summary) summary.setAttribute('aria-expanded','true');
+          _liveActivityUserExpanded=true;
+        }else{
+          group.classList.add('tool-call-group-collapsed');
+          const summary=group.querySelector('.tool-call-group-summary');
+          if(summary) summary.setAttribute('aria-expanded','false');
+        }
+      }
+    }
+    if(streamId) _sceneAppliedForStream[streamId]=true;
+    return true;
+  }catch(_){
+    return false;
+  }
+}
+
+function clearActivitySceneLatch(streamId){
+  if(streamId) delete _sceneAppliedForStream[streamId];
+  else{
+    for(const k of Object.keys(_sceneAppliedForStream)) delete _sceneAppliedForStream[k];
+  }
+}
+
 function _thinkingActivityNode(text, open){
   const row=document.createElement('div');
   row.className='agent-activity-thinking';
