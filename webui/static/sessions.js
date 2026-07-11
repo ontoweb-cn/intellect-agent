@@ -1587,7 +1587,16 @@ async function _loadOlderMessages() {
       const hasTu=Array.isArray(m.content)&&m.content.some(p=>p&&p.type==='tool_use');
       return !!(msgContent(m)||m._statusCard||m.attachments?.length||(m.role==='assistant'&&(hasTc||hasTu||(typeof _messageHasReasoningPayload==='function'&&_messageHasReasoningPayload(m)))));
     }).length;
-    _messageRenderWindowSize=_currentMessageRenderWindowSize()+Math.max(addedRenderable, MESSAGE_RENDER_WINDOW_DEFAULT);
+    // W4 C4: under virt, do not expand the legacy tail window — data is in
+    // memory and the variable-height window will pan to include new rows.
+    if(typeof _isTranscriptVirtualWindowEnabled==='function'&&_isTranscriptVirtualWindowEnabled()){
+      if(typeof _messageVirtForceStart!=='undefined'){
+        // Keep showing from near the previous top of the in-memory transcript.
+        _messageVirtForceStart=0;
+      }
+    }else{
+      _messageRenderWindowSize=_currentMessageRenderWindowSize()+Math.max(addedRenderable, MESSAGE_RENDER_WINDOW_DEFAULT);
+    }
     _messagesTruncated = !!responseSession._messages_truncated;
     _oldestIdx = responseSession._messages_offset || 0;
     renderMessages({ preserveScroll: true });

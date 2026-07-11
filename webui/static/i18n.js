@@ -515,6 +515,8 @@ const LOCALES = {
   settings_desc_workspace_panel_open: 'When enabled, the workspace / file browser panel opens automatically with each new session. You can still close it manually at any time.',
   settings_label_session_jump_buttons: 'Show session jump buttons',
   settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+  settings_label_transcript_virtual_window: 'Virtualize long transcripts',
+  settings_desc_transcript_virtual_window: 'Experimental: keep only nearby messages in the DOM for very long chats (default off). Also ?virt=1.',
 
   settings_label_session_endless_scroll: 'Load older messages while scrolling up',
 
@@ -3222,6 +3224,8 @@ path_copied: '\u6587\u4ef6\u8def\u5f84\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f
   settings_desc_workspace_panel_open: '启用后，工作区/文件浏览器面板会在每次新会话时自动打开。您仍可随时手动关闭。',
   settings_label_session_jump_buttons: '显示会话跳转按钮',
   settings_desc_session_jump_buttons: '阅读较长会话历史时显示悬浮的开头和结尾按钮。',
+  settings_label_transcript_virtual_window: '长会话虚拟化',
+  settings_desc_transcript_virtual_window: '实验：超长会话只保留附近消息在 DOM（默认关）。也可用 ?virt=1。',
 
   settings_label_session_endless_scroll: '向上滚动时加载更早的消息',
 
