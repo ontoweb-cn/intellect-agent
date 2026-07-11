@@ -7357,6 +7357,10 @@ function _applySavedSettingsUi(saved, body, opts){
   if(body.default_model) window._defaultModel=body.default_model;
   if(typeof clearMessageRenderCache==='function') clearMessageRenderCache();
   renderMessages();
+  // A-M5: full Save Settings path also refreshes live/settled Activity display.
+  if(body.simplified_tool_calling!==undefined||body.chat_activity_display_mode!==undefined){
+    if(typeof applyActivityDisplayModeRefresh==='function') applyActivityDisplayModeRefresh();
+  }
   if(typeof syncTopbar==='function') syncTopbar();
   if(typeof renderSessionList==='function') renderSessionList();
 }

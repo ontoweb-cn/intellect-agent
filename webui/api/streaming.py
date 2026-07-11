@@ -3650,10 +3650,12 @@ def _run_agent_streaming(
     _metering_thread = threading.Thread(target=_metering_ticker, daemon=True)
     _metering_thread.start()
 
-    def put(event, data):
-        # If cancelled, drop all further events except the cancel event itself
-        if cancel_event.is_set() and event not in ('cancel', 'error'):
-            return
+    # P1-A / W3 #3: exactly one activity_scene before the first terminal put.
+    _activity_scene_emitted = [False]
+    _stream_started_at = time.time()
+
+    def _put_raw(event, data):
+        """Journal + channel + offline buffer — no scene injection."""
         if run_journal is not None:
             try:
                 journaled = run_journal.append_sse_event(event, data)
@@ -3688,6 +3690,79 @@ def _run_agent_streaming(
             q.put_nowait((event, data))
         except Exception:
             logger.debug("Failed to put event to queue")
+
+    def _build_and_put_activity_scene(terminal_event, terminal_data):
+        """Emit one activity_scene via the same put path (A1–A3a / C3)."""
+        if _activity_scene_emitted[0]:
+            return
+        try:
+            from api.activity_scene import (
+                bound_activity_scene_for_wire,
+                build_activity_scene_for_stream,
+                resolve_chat_activity_display_mode,
+                scene_mode_for_terminal,
+            )
+
+            journal_events = None
+            if run_journal is not None:
+                try:
+                    from api.run_journal import read_run_events
+
+                    journal_events = (
+                        read_run_events(session_id, stream_id).get("events") or []
+                    )
+                except Exception:
+                    logger.debug(
+                        "Failed to read journal for activity_scene on stream %s",
+                        stream_id,
+                        exc_info=True,
+                    )
+                    journal_events = None
+            try:
+                display = resolve_chat_activity_display_mode(load_settings())
+            except Exception:
+                display = None
+            elapsed_ms = int(max(0, (time.time() - _stream_started_at) * 1000))
+            scene = build_activity_scene_for_stream(
+                stream_id=stream_id,
+                session_id=session_id,
+                mode=scene_mode_for_terminal(terminal_event, terminal_data),
+                display=display,
+                journal_events=journal_events,
+                tool_calls=list(STREAM_LIVE_TOOL_CALLS.get(stream_id) or []),
+                reasoning_text=str(STREAM_REASONING_TEXT.get(stream_id) or ""),
+                partial_text=str(STREAM_PARTIAL_TEXT.get(stream_id) or ""),
+                elapsed_ms=elapsed_ms,
+            )
+            scene = bound_activity_scene_for_wire(scene)
+            _put_raw("activity_scene", scene)
+            _activity_scene_emitted[0] = True
+        except Exception:
+            logger.debug(
+                "Failed to emit activity_scene before %s for stream %s",
+                terminal_event,
+                stream_id,
+                exc_info=True,
+            )
+
+    def put(event, data):
+        # If cancelled, drop all further events except cancel/error and the
+        # required pre-terminal activity_scene (W3 A2 / I8).
+        if cancel_event.is_set() and event not in ('cancel', 'error', 'activity_scene'):
+            return
+        try:
+            from api.activity_scene import should_emit_activity_scene_before
+
+            if should_emit_activity_scene_before(event, _activity_scene_emitted[0]):
+                _build_and_put_activity_scene(event, data)
+        except Exception:
+            logger.debug(
+                "activity_scene gate failed for %s on stream %s",
+                event,
+                stream_id,
+                exc_info=True,
+            )
+        _put_raw(event, data)
 
     def _agent_status_callback(kind, message):
         """Bridge Agent lifecycle status into WebUI SSE.

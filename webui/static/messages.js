@@ -1638,6 +1638,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       liveReasoningText += d.text || '';
       syncInflightAssistantMessage();
       if(!S.session||S.session.session_id!==activeSid) return;
+      // §4.3.4: after journal activity_scene, ignore flat thinking for Activity tree.
+      if(typeof isActivitySceneApplied==='function'&&isActivitySceneApplied(streamId)) return;
       // Render thinking card synchronously — not via rAF — so the DOM is
       // up-to-date before a 'tool' event in the same microtask batch calls
       // finalizeThinkingCard(). The old rAF-only path caused a race where
@@ -1647,6 +1649,18 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         else appendThinking(_liveThinkingText());
       }
       _scheduleRender();
+    });
+
+    source.addEventListener('activity_scene',e=>{
+      // Wire: event activity_scene, data = scene object at root (W3 §4.0).
+      // Ignore if already finalized (late scene should not happen when order is correct).
+      if(_streamFinalized||_terminalStateReached) return;
+      let scene=null;
+      try{scene=JSON.parse(e.data);}catch(_){return;}
+      if(!scene||typeof scene!=='object') return;
+      if(typeof applyActivityScene==='function'){
+        applyActivityScene(scene,{source:'sse'});
+      }
     });
 
     source.addEventListener('tool',e=>{
@@ -1665,6 +1679,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
 
       if(S.session&&S.session.session_id===activeSid&&typeof scheduleRenderSessionArtifacts==='function') scheduleRenderSessionArtifacts();
       if(!S.session||S.session.session_id!==activeSid) return;
+      // §4.3.4: after activity_scene latch, do not rebuild Activity from flat tools.
+      if(typeof isActivitySceneApplied==='function'&&isActivitySceneApplied(streamId)) return;
       // NOTE: don't removeThinking() here — keep the thinking card visible
       // above the tool card so the turn reads top-to-bottom as:
       // user → thinking → tool cards → response. Removing it caused the card
@@ -1712,6 +1728,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       persistInflightState();
       if(S.session&&S.session.session_id===activeSid&&typeof scheduleRenderSessionArtifacts==='function') scheduleRenderSessionArtifacts();
       if(!S.session||S.session.session_id!==activeSid) return;
+      if(typeof isActivitySceneApplied==='function'&&isActivitySceneApplied(streamId)) return;
       appendLiveToolCard(tc);
       snapshotLiveTurn();
       scrollIfPinned();
@@ -2329,7 +2346,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       _setActivePaneIdleIfOwner();
     });
 
-    for(const _runJournalEventName of ['token','interim_assistant','reasoning','tool','tool_complete','approval','clarify','title','title_status','context_status','goal','goal_continue','done','stream_end','pending_steer_leftover','compressing','compressed','metering','apperror','warning','error','cancel','session_snapshot']){
+    for(const _runJournalEventName of ['token','interim_assistant','reasoning','tool','tool_complete','activity_scene','approval','clarify','title','title_status','context_status','goal','goal_continue','done','stream_end','pending_steer_leftover','compressing','compressed','metering','apperror','warning','error','cancel','session_snapshot']){
       source.addEventListener(_runJournalEventName,_rememberRunJournalCursor);
     }
   }

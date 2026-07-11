@@ -149,6 +149,10 @@ def test_config_save_dual_write(tmp_path, monkeypatch):
     """Integration: save_settings dual-writes alias ↔ simplified (I7)."""
     import importlib
 
+    # config import discovers DEFAULT_WORKSPACE at module load — pin a writable path.
+    monkeypatch.setenv("INTELLECT_WEBUI_DEFAULT_WORKSPACE", str(tmp_path / "ws"))
+    (tmp_path / "ws").mkdir(parents=True, exist_ok=True)
+
     import api.config as config
 
     settings_file = tmp_path / "settings.json"

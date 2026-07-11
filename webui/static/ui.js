@@ -4331,7 +4331,19 @@ function _writeInflightStateMap(all){
 }
 function saveInflightState(sid, state){
   if(!sid||!state) return;
-  const entry={..._compactInflightState(state),updated_at:Date.now()};
+  // Prefer keeping an existing scene when callers omit/null it mid-stream
+  // (optimistic send / upload paths) so disclosure skeleton survives.
+  let scene=state.scene;
+  if(scene==null){
+    try{
+      const prev=(_readInflightStateMap()[sid]||{}).scene;
+      if(prev&&typeof prev==='object') scene=prev;
+    }catch(_){}
+    if(scene==null&&INFLIGHT[sid]&&INFLIGHT[sid].scene&&typeof INFLIGHT[sid].scene==='object'){
+      scene=INFLIGHT[sid].scene;
+    }
+  }
+  const entry={..._compactInflightState({...state,scene}),updated_at:Date.now()};
   try{
     const all=_readInflightStateMap();
     all[sid]=entry;
@@ -5644,6 +5656,11 @@ function clearActivitySceneLatch(streamId){
   else{
     for(const k of Object.keys(_sceneAppliedForStream)) delete _sceneAppliedForStream[k];
   }
+}
+
+/** §4.3.4: when latch is set, ignore flat tool/thinking for Activity tree. */
+function isActivitySceneApplied(streamId){
+  return !!(streamId&&_sceneAppliedForStream[streamId]);
 }
 
 function _thinkingActivityNode(text, open){
