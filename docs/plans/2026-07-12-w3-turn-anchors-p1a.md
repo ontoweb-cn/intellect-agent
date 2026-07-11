@@ -1,7 +1,7 @@
 # W3 细化稿 — Turn Anchors P1-A（RFC 定稿 → MVP 收口 → journal scene 首切片）
 
 > **日期**：2026-07-12  
-> **状态**：**APPROVED** — 2026-07-12 用户 Approve；按 0→3 执行中（**#1 RFC REVIEWED 已完成**）  
+> **状态**：**EXECUTED** — 2026-07-12；PR [#39](https://github.com/ontoweb-cn/intellect-agent/pull/39)；W2 已合入 [#38](https://github.com/ontoweb-cn/intellect-agent/pull/38)（**#1 RFC REVIEWED 已完成**）  
 > **策略**：先技术评审，再按 **0→3** 串行（项 0 为合入门槛，非功能特性）  
 > **前置**：W2 功能已落地（B2+B3 / P1-B MVP / Opt-C / Opt-D / B4），**工作树仍未合入** — 见 §0  
 > **父文档**：[`2026-07-12-w2-session-sse-and-parity-backlog.md`](./2026-07-12-w2-session-sse-and-parity-backlog.md)、[`2026-07-11-p1-journey-and-webui-parity-refinement.md`](./2026-07-11-p1-journey-and-webui-parity-refinement.md)、[`2026-07-11-webui-hermes-parity-analysis.md`](./2026-07-11-webui-hermes-parity-analysis.md)  
