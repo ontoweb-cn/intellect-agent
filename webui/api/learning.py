@@ -48,7 +48,10 @@ def handle_learning_node_get(handler, parsed) -> bool:
     with _active_profile_context():
         res = node_detail(node_id)
     if not res.get("ok"):
-        return bad(handler, res.get("message", "not found"), status=404)
+        code = res.get("code")
+        status = 409 if code in ("stale", "ambiguous") else 404
+        j(handler, {"error": res.get("message", "not found"), "code": code}, status=status)
+        return True
     j(handler, res)
     return True
 
@@ -65,7 +68,10 @@ def handle_learning_node_delete(handler, body: dict[str, Any]) -> bool:
     with _active_profile_context():
         res = delete_node(node_id)
     if not res.get("ok"):
-        return bad(handler, res.get("message", "delete failed"), status=400)
+        code = res.get("code")
+        status = 409 if code in ("stale", "ambiguous") else 400
+        j(handler, {"error": res.get("message", "delete failed"), "code": code}, status=status)
+        return True
     j(handler, res)
     return True
 
@@ -85,7 +91,10 @@ def handle_learning_node_put(handler, body: dict[str, Any]) -> bool:
     with _active_profile_context():
         res = edit_node(node_id, str(content))
     if not res.get("ok"):
-        return bad(handler, res.get("message", "edit failed"), status=400)
+        code = res.get("code")
+        status = 409 if code in ("stale", "ambiguous") else 400
+        j(handler, {"error": res.get("message", "edit failed"), "code": code}, status=status)
+        return True
     j(handler, res)
     return True
 

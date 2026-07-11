@@ -279,6 +279,7 @@ def build_learning_graph() -> dict[str, Any]:
             "id": n.name,
             "label": n.name,
             "kind": "skill",
+            "source": n.source,
             "timestamp": n.timestamp,
             "category": n.category,
             "useCount": n.use_count,

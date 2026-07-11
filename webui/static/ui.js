@@ -775,9 +775,32 @@ function _modelStateForSelect(sel, modelId){
   if(!value) return {model:'',model_provider:null};
   const explicitProvider=_providerFromModelValue(value);
   if(explicitProvider) return {model:value,model_provider:explicitProvider};
+  // Prefer the loaded session's provider over whatever option is currently
+  // selected — selectedOptions can be stale during dropdown rebuilds (P1-C).
+  if(typeof S!=='undefined'&&S&&S.session){
+    const sessionModel=String(S.session.model||'').trim();
+    if(sessionModel&&sessionModel===value&&S.session.model_provider){
+      return {model:value,model_provider:String(S.session.model_provider)};
+    }
+  }
   const opt=sel&&sel.selectedOptions&&sel.selectedOptions[0];
   const provider=String(_getOptionProviderId(opt)||'').trim();
   return {model:value,model_provider:(provider&&provider!=='default')?provider:null};
+}
+function _applyPendingSessionModelForSession(sid){
+  // Apply one-shot profile-switch model to the session that just finished loading.
+  // Guard against rapid A→B switches so a stale pending model cannot paint B.
+  if(!sid||typeof S==='undefined'||!S) return;
+  const model=S._pendingProfileModel;
+  if(!model) return;
+  if(typeof _loadingSessionId!=='undefined'&&_loadingSessionId&&_loadingSessionId!==sid) return;
+  if(!S.session||S.session.session_id!==sid) return;
+  const provider=S._pendingProfileModelProvider||null;
+  S._pendingProfileModel=null;
+  S._pendingProfileModelProvider=null;
+  _applyModelToDropdown(model,$('modelSelect'),provider);
+  S.session.model=model;
+  if(provider) S.session.model_provider=provider;
 }
 function _captureModelDropdownSelection(sel){
   if(!sel||!sel.value) return null;
@@ -927,6 +950,9 @@ function _modelStateFromAppliedDropdown(sel, modelValue){
 }
 function _persistSessionModelCorrection(model, provider, opts){
   if(!S.session) return;
+  // Hard ban while any session load is in flight (P1-C) — avoids writing a
+  // fallback/correction to the wrong or still-resolving session.
+  if(typeof _loadingSessionId!=='undefined' && _loadingSessionId) return;
   const request=fetch(new URL('api/session/update',document.baseURI||location.href).href,{
     method:'POST',credentials:'include',
     headers:{'Content-Type':'application/json'},

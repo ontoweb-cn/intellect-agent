@@ -1336,6 +1336,9 @@ function _resolveSessionModelForDisplaySoon(sid){
       const model=data&&data.session&&data.session.model;
       const provider=data&&data.session&&data.session.model_provider;
       if(!model||!S.session||S.session.session_id!==sid) return;
+      // Drop stale resolve if a newer loadSession started (P1-C).
+      if(typeof _loadingSessionId!=='undefined'&&_loadingSessionId&&_loadingSessionId!==sid) return;
+      if(typeof _isSessionCurrentPane==='function'&&!_isSessionCurrentPane(sid)) return;
       S.session.model=model;
       S.session.model_provider=provider||null;
       S.session.context_length=data.session.context_length||0;

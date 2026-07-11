@@ -69,6 +69,7 @@ async function _journeySaveEdit() {
     await journeySelectNode(nodeId, true);
   } catch (err) {
     if (loadGen !== _journeyLoadGen) return;
+    if (await _journeyHandleStale(err, false)) return;
     _journeyShowEditError(err.message || String(err));
   } finally {
     if (saveBtn && loadGen === _journeyLoadGen) saveBtn.disabled = false;
@@ -223,20 +224,58 @@ function _journeyRenderDetail(detail) {
   }
   box.hidden = false;
   const isSkill = detail.kind === 'skill';
+  const isHub = isSkill && detail.source === 'hub';
+  const deleteLabel = isHub
+    ? _journeyT('journey_uninstall', 'Uninstall')
+    : _journeyT('journey_delete', 'Delete');
+  const hint = !isSkill
+    ? ''
+    : isHub
+      ? `<p class="journey-detail-hint">${_journeyEsc(_journeyT('journey_uninstall_hub_hint', 'Hub skills are uninstalled (not archived). Reinstall from the Skills panel.'))}</p>`
+      : `<p class="journey-detail-hint">${_journeyEsc(_journeyT('journey_delete_skill_hint', 'Deleting a skill archives it — restore with intellect curator restore.'))}</p>`;
   box.innerHTML =
     `<div class="journey-detail-head">` +
     `<div class="journey-detail-title">${_journeyEsc(detail.label || detail.id)}</div>` +
     `<div class="journey-detail-actions">` +
     `<button type="button" class="sm-btn" data-journey-action="edit">${_journeyEsc(_journeyT('journey_edit', 'Edit'))}</button>` +
-    `<button type="button" class="sm-btn danger" data-journey-action="delete">${_journeyEsc(_journeyT('journey_delete', 'Delete'))}</button>` +
+    `<button type="button" class="sm-btn danger" data-journey-action="delete">${_journeyEsc(deleteLabel)}</button>` +
     (isSkill
       ? `<button type="button" class="sm-btn" data-journey-action="skills">${_journeyEsc(_journeyT('journey_open_skills', 'Skills panel'))}</button>`
       : `<button type="button" class="sm-btn" data-journey-action="memory">${_journeyEsc(_journeyT('journey_open_memory', 'Memory panel'))}</button>`) +
     `</div></div>` +
     `<pre class="journey-detail-body">${_journeyEsc((detail.content || '').slice(0, 4000))}</pre>` +
-    (isSkill
-      ? `<p class="journey-detail-hint">${_journeyEsc(_journeyT('journey_delete_skill_hint', 'Deleting a skill archives it — restore with intellect curator restore.'))}</p>`
-      : '');
+    hint;
+}
+
+function _journeyErrorCode(err) {
+  if (!err) return '';
+  if (err.code) return String(err.code);
+  try {
+    const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body;
+    if (body && body.code) return String(body.code);
+  } catch (_) {}
+  return '';
+}
+
+function _journeyIsStaleError(err) {
+  if (!err) return false;
+  const code = _journeyErrorCode(err);
+  if (code === 'stale') return true;
+  if (code && code !== 'stale') return false;
+  // Legacy: some paths only put "stale" in the message (no code field).
+  const msg = String(err.message || '').toLowerCase();
+  return msg.includes('stale');
+}
+
+async function _journeyHandleStale(err, silent) {
+  if (!_journeyIsStaleError(err)) return false;
+  if (!silent && typeof toast === 'function') {
+    toast(_journeyT('journey_stale_refresh', 'Graph changed — refreshing…'));
+  }
+  _journeySelectedId = null;
+  _journeyCloseEditModal();
+  await loadJourney(true);
+  return true;
 }
 
 function _journeyRenderTimelineGrid(framesData) {
@@ -362,6 +401,7 @@ async function journeySelectNode(nodeId, silent) {
     if (!silent && typeof toast === 'function') toast(_journeyT('journey_loaded', 'Node loaded'));
   } catch (err) {
     if (loadGen !== _journeyLoadGen || _journeySelectedId !== nodeId) return;
+    if (await _journeyHandleStale(err, silent)) return;
     _journeyRenderDetail(null);
     if (typeof toast === 'function') toast(err.message || String(err));
   }
@@ -391,6 +431,7 @@ async function journeyOpenEdit() {
     }
   } catch (err) {
     if (loadGen !== _journeyLoadGen || _journeyEditNodeId !== nodeId) return;
+    if (await _journeyHandleStale(err, false)) return;
     _journeyShowEditError(err.message || String(err));
   } finally {
     if (loadGen === _journeyLoadGen && _journeyEditNodeId === nodeId) {
@@ -404,23 +445,38 @@ async function journeyConfirmDelete() {
   if (!_journeySelectedId) return;
   const nodeId = _journeySelectedId;
   const loadGen = _journeyLoadGen;
-  const detail = await api('/api/learning/node?id=' + encodeURIComponent(nodeId));
+  let detail;
+  try {
+    detail = await api('/api/learning/node?id=' + encodeURIComponent(nodeId));
+  } catch (err) {
+    if (loadGen !== _journeyLoadGen || _journeySelectedId !== nodeId) return;
+    if (await _journeyHandleStale(err, false)) return;
+    if (typeof toast === 'function') toast(err.message || String(err));
+    return;
+  }
   if (loadGen !== _journeyLoadGen || _journeySelectedId !== nodeId) return;
   const label = detail && detail.label ? detail.label : nodeId;
-  const hint =
-    detail && detail.kind === 'skill'
-      ? _journeyT('journey_delete_skill_confirm', 'Archive this skill? Restore via intellect curator restore.')
-      : _journeyT('journey_delete_memory_confirm', 'Delete this memory chunk?');
+  const isHub = detail && detail.kind === 'skill' && (detail.source === 'hub' || detail.deleteMode === 'uninstall');
+  const hint = !(detail && detail.kind === 'skill')
+    ? _journeyT('journey_delete_memory_confirm', 'Delete this memory chunk?')
+    : isHub
+      ? _journeyT('journey_uninstall_hub_confirm', 'Uninstall this hub skill? It is not archived — reinstall from Skills.')
+      : _journeyT('journey_delete_skill_confirm', 'Archive this skill? Restore via intellect curator restore.');
   if (!window.confirm(`${hint}\n\n${label}`)) return;
   if (loadGen !== _journeyLoadGen || _journeySelectedId !== nodeId) return;
   try {
     await api('/api/learning/node', { method: 'DELETE', body: JSON.stringify({ id: nodeId }) });
     if (loadGen !== _journeyLoadGen) return;
-    if (typeof toast === 'function') toast(_journeyT('journey_deleted', 'Deleted'));
+    if (typeof toast === 'function') {
+      toast(isHub
+        ? _journeyT('journey_uninstalled', 'Uninstalled')
+        : _journeyT('journey_deleted', 'Deleted'));
+    }
     _journeyResetSelection();
     await loadJourney(true);
   } catch (err) {
     if (loadGen !== _journeyLoadGen) return;
+    if (await _journeyHandleStale(err, false)) return;
     if (typeof toast === 'function') toast(err.message || String(err));
   }
 }

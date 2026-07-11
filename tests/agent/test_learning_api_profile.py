@@ -155,3 +155,172 @@ def test_learning_module_has_no_client_profile_helpers(learning_api_module):
     # Old client-override helper name (not a substring of _active_profile_context).
     assert re.search(r"\bdef _profile_context\b", src) is None
     assert "_active_profile_context" in src
+
+
+def test_learning_node_get_stale_returns_409(learning_api_module, tmp_path, monkeypatch):
+    active = tmp_path / "active"
+    active.mkdir()
+    monkeypatch.setattr("api.profiles.get_active_intellect_home", lambda: active)
+    monkeypatch.setattr("api.profiles.cron_profile_context_for_home", lambda _h: _nullcontext())
+
+    recorded: list[tuple[dict, int]] = []
+
+    def _capture_j(handler, payload, status=200, extra_headers=None):
+        recorded.append((payload, status))
+
+    handler = MagicMock()
+    parsed = urlparse("/api/learning/node?id=memory%3Amemory%3A9")
+
+    with (
+        patch("api.helpers.j", side_effect=_capture_j),
+        patch(
+            "agent.learning_mutations.node_detail",
+            return_value={"ok": False, "code": "stale", "message": "stale index"},
+        ),
+    ):
+        learning_api_module.handle_learning_node_get(handler, parsed)
+
+    assert recorded == [({"error": "stale index", "code": "stale"}, 409)]
+
+
+def test_learning_node_delete_stale_returns_409(learning_api_module, tmp_path, monkeypatch):
+    active = tmp_path / "active"
+    active.mkdir()
+    monkeypatch.setattr("api.profiles.get_active_intellect_home", lambda: active)
+    monkeypatch.setattr("api.profiles.cron_profile_context_for_home", lambda _h: _nullcontext())
+
+    recorded: list[tuple[dict, int]] = []
+
+    def _capture_j(handler, payload, status=200, extra_headers=None):
+        recorded.append((payload, status))
+
+    handler = MagicMock()
+    with (
+        patch("api.helpers.j", side_effect=_capture_j),
+        patch(
+            "agent.learning_mutations.delete_node",
+            return_value={"ok": False, "code": "stale", "message": "stale index"},
+        ),
+    ):
+        learning_api_module.handle_learning_node_delete(handler, {"id": "memory:memory:9"})
+
+    assert recorded == [({"error": "stale index", "code": "stale"}, 409)]
+
+
+def test_learning_node_put_stale_returns_409(learning_api_module, tmp_path, monkeypatch):
+    active = tmp_path / "active"
+    active.mkdir()
+    monkeypatch.setattr("api.profiles.get_active_intellect_home", lambda: active)
+    monkeypatch.setattr("api.profiles.cron_profile_context_for_home", lambda _h: _nullcontext())
+
+    recorded: list[tuple[dict, int]] = []
+
+    def _capture_j(handler, payload, status=200, extra_headers=None):
+        recorded.append((payload, status))
+
+    handler = MagicMock()
+    with (
+        patch("api.helpers.j", side_effect=_capture_j),
+        patch(
+            "agent.learning_mutations.edit_node",
+            return_value={"ok": False, "code": "stale", "message": "stale index"},
+        ),
+    ):
+        learning_api_module.handle_learning_node_put(
+            handler, {"id": "memory:memory:9", "content": "x"}
+        )
+
+    assert recorded == [({"error": "stale index", "code": "stale"}, 409)]
+
+
+def test_learning_node_get_ambiguous_returns_409(learning_api_module, tmp_path, monkeypatch):
+    active = tmp_path / "active"
+    active.mkdir()
+    monkeypatch.setattr("api.profiles.get_active_intellect_home", lambda: active)
+    monkeypatch.setattr("api.profiles.cron_profile_context_for_home", lambda _h: _nullcontext())
+
+    recorded: list[tuple[dict, int]] = []
+
+    def _capture_j(handler, payload, status=200, extra_headers=None):
+        recorded.append((payload, status))
+
+    handler = MagicMock()
+    parsed = urlparse("/api/learning/node?id=my-skill")
+    with (
+        patch("api.helpers.j", side_effect=_capture_j),
+        patch(
+            "agent.learning_mutations.node_detail",
+            return_value={
+                "ok": False,
+                "code": "ambiguous",
+                "message": "exists both as profile and hub",
+            },
+        ),
+    ):
+        learning_api_module.handle_learning_node_get(handler, parsed)
+
+    assert recorded == [
+        ({"error": "exists both as profile and hub", "code": "ambiguous"}, 409)
+    ]
+
+
+def test_learning_node_delete_ambiguous_returns_409(learning_api_module, tmp_path, monkeypatch):
+    active = tmp_path / "active"
+    active.mkdir()
+    monkeypatch.setattr("api.profiles.get_active_intellect_home", lambda: active)
+    monkeypatch.setattr("api.profiles.cron_profile_context_for_home", lambda _h: _nullcontext())
+
+    recorded: list[tuple[dict, int]] = []
+
+    def _capture_j(handler, payload, status=200, extra_headers=None):
+        recorded.append((payload, status))
+
+    handler = MagicMock()
+    with (
+        patch("api.helpers.j", side_effect=_capture_j),
+        patch(
+            "agent.learning_mutations.delete_node",
+            return_value={
+                "ok": False,
+                "code": "ambiguous",
+                "message": "exists both as profile and hub",
+            },
+        ),
+    ):
+        learning_api_module.handle_learning_node_delete(handler, {"id": "my-skill"})
+
+    assert recorded == [
+        ({"error": "exists both as profile and hub", "code": "ambiguous"}, 409)
+    ]
+
+
+def test_learning_node_put_ambiguous_returns_409(learning_api_module, tmp_path, monkeypatch):
+    active = tmp_path / "active"
+    active.mkdir()
+    monkeypatch.setattr("api.profiles.get_active_intellect_home", lambda: active)
+    monkeypatch.setattr("api.profiles.cron_profile_context_for_home", lambda _h: _nullcontext())
+
+    recorded: list[tuple[dict, int]] = []
+
+    def _capture_j(handler, payload, status=200, extra_headers=None):
+        recorded.append((payload, status))
+
+    handler = MagicMock()
+    with (
+        patch("api.helpers.j", side_effect=_capture_j),
+        patch(
+            "agent.learning_mutations.edit_node",
+            return_value={
+                "ok": False,
+                "code": "ambiguous",
+                "message": "exists both as profile and hub",
+            },
+        ),
+    ):
+        learning_api_module.handle_learning_node_put(
+            handler, {"id": "my-skill", "content": "x"}
+        )
+
+    assert recorded == [
+        ({"error": "exists both as profile and hub", "code": "ambiguous"}, 409)
+    ]

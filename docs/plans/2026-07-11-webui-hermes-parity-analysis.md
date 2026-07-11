@@ -116,6 +116,8 @@
 
 **验收**：长会话滚动稳定；刷新/重连后 turn 结构与 live 一致；快速切会话无串台。
 
+> **P1 细化 + 技术评审（2026-07-11）**：见 [`2026-07-11-p1-journey-and-webui-parity-refinement.md`](./2026-07-11-p1-journey-and-webui-parity-refinement.md) §2（轨 B）。决议：P1-C 立即；P1-A RFC 可与 Session SSE P0 并行；P1-A/B 全量跟 P0 客户端之后。
+
 ### P2 — 安全与同机运维
 
 6. **Gateway lifecycle（同机，见 §4）**

@@ -4,13 +4,15 @@ Node ids:
 - **skills** → skill name (e.g. ``"debugging-desktop"``)
 - **memories** → ``memory:<source>:<index>`` (``memory`` = MEMORY.md, ``profile`` = USER.md)
 
-Deleting a skill archives it (``intellect curator restore``); deleting a memory rewrites its file.
+Deleting an agent-created / profile skill archives it (``intellect curator restore``).
+Deleting a hub-installed skill uninstalls it (``intellect skills uninstall``) — not curator.
+Deleting a memory rewrites its file.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 _MEMORY_FILES = {"memory": "MEMORY.md", "profile": "USER.md"}
 
@@ -40,7 +42,7 @@ def _memory_local_index(source: str, global_index: int) -> int:
 
     cards = _memory_cards()
     if not 0 <= global_index < len(cards):
-        raise IndexError(f"memory index {global_index} out of range")
+        raise ValueError("memory node id is stale — refresh the graph")
     if cards[global_index].get("source") != source:
         raise ValueError("memory node id is stale — refresh the graph")
     if source == "memory":
@@ -61,11 +63,83 @@ def _locate_memory(source: str, gidx: int) -> tuple[Path, list[str], int]:
     return path, chunks, local
 
 
+def _stale_error(message: str) -> dict[str, Any]:
+    return {"ok": False, "code": "stale", "message": str(message)}
+
+
+def _is_stale_message(message: str) -> bool:
+    return "stale" in (message or "").lower()
+
+
 def node_detail(node_id: str) -> dict[str, Any]:
     try:
         return _node_detail(node_id)
     except (ValueError, IndexError) as exc:
-        return {"ok": False, "message": str(exc)}
+        msg = str(exc)
+        if _is_stale_message(msg):
+            return _stale_error(msg)
+        return {"ok": False, "message": msg}
+
+
+def _hub_skill_dir(name: str) -> Optional[Path]:
+    from intellect_constants import get_intellect_home
+
+    hub_root = get_intellect_home() / "skills" / ".hub"
+    if not hub_root.is_dir():
+        return None
+    for skill_md in hub_root.rglob("SKILL.md"):
+        if skill_md.parent.name == name:
+            return skill_md.parent
+    return None
+
+
+def _hub_lock_has(name: str) -> bool:
+    try:
+        from intellect_constants import get_intellect_home
+        from tools.skills_hub import HubLockFile
+
+        lock = HubLockFile(get_intellect_home() / "skills" / ".hub" / "lock.json")
+        return bool(lock.get_installed(name))
+    except Exception:
+        return False
+
+
+def _resolve_journey_skill(name: str) -> Optional[dict[str, Any]]:
+    """Single provenance for Journey detail / edit / delete.
+
+    Returns ``{path, source, deleteMode}`` or ``None`` if missing.
+    If the same name exists as both a profile skill and a hub install, returns
+    ``{ambiguous: True, message: ...}`` so callers refuse instead of picking a side.
+    """
+    from tools.skill_manager_tool import _find_skill
+
+    profile = _find_skill(name)
+    hub_dir = _hub_skill_dir(name)
+    lock_has = _hub_lock_has(name)
+    has_profile = profile is not None
+    has_hub = hub_dir is not None or lock_has
+
+    if has_profile and has_hub:
+        return {
+            "ambiguous": True,
+            "message": (
+                f"skill '{name}' exists both as a profile skill and a hub install — "
+                "remove one copy before editing or deleting from Journey"
+            ),
+        }
+    if has_hub:
+        return {
+            "path": hub_dir,
+            "source": "hub",
+            "deleteMode": "uninstall",
+        }
+    if has_profile:
+        return {
+            "path": profile["path"],
+            "source": "profile",
+            "deleteMode": "archive",
+        }
+    return None
 
 
 def _node_detail(node_id: str) -> dict[str, Any]:
@@ -81,21 +155,26 @@ def _node_detail(node_id: str) -> dict[str, Any]:
             "content": body,
         }
 
-    from tools.skill_manager_tool import _find_skill
-
-    found = _find_skill(node_id)
+    found = _resolve_journey_skill(node_id)
     if not found:
+        return {"ok": False, "message": f"skill '{node_id}' not found"}
+    if found.get("ambiguous"):
+        return {"ok": False, "code": "ambiguous", "message": found["message"]}
+    if found.get("path") is None:
         return {"ok": False, "message": f"skill '{node_id}' not found"}
     skill_md = Path(found["path"]) / "SKILL.md"
     if not skill_md.exists():
         return {"ok": False, "message": f"SKILL.md missing for '{node_id}'"}
 
+    source = found.get("source") or "profile"
     return {
         "ok": True,
         "kind": "skill",
         "id": node_id,
         "label": node_id,
         "content": skill_md.read_text(encoding="utf-8"),
+        "source": source,
+        "deleteMode": found.get("deleteMode") or ("uninstall" if source == "hub" else "archive"),
     }
 
 
@@ -103,7 +182,59 @@ def delete_node(node_id: str) -> dict[str, Any]:
     try:
         return _delete_memory(node_id) if parse_node_kind(node_id) == "memory" else _delete_skill(node_id)
     except (ValueError, IndexError) as exc:
-        return {"ok": False, "message": str(exc)}
+        msg = str(exc)
+        if _is_stale_message(msg):
+            return _stale_error(msg)
+        return {"ok": False, "message": msg}
+
+
+def _uninstall_hub_skill(name: str) -> tuple[bool, str]:
+    """Uninstall a hub skill under the active INTELLECT_HOME (profile-safe)."""
+    import shutil
+
+    from intellect_constants import get_intellect_home
+    from tools import skills_hub as hub
+
+    home = get_intellect_home()
+    skills_dir = home / "skills"
+    hub_dir = skills_dir / ".hub"
+    lock = hub.HubLockFile(hub_dir / "lock.json")
+    entry = lock.get_installed(name)
+    if not entry:
+        return False, f"'{name}' is not a hub-installed skill (may be a builtin)"
+
+    # Module-level hub paths are import-time snapshots of the default home.
+    # Swap them for the active profile so path resolution + audit stay in-scope.
+    old_skills_dir = hub.SKILLS_DIR
+    old_hub_dir = hub.HUB_DIR
+    old_audit_log = hub.AUDIT_LOG
+    try:
+        hub.SKILLS_DIR = skills_dir
+        hub.HUB_DIR = hub_dir
+        hub.AUDIT_LOG = hub_dir / "audit.log"
+        try:
+            install_path = hub._resolve_lock_install_path(entry.get("install_path", ""), name)
+        except ValueError as exc:
+            return False, f"Refusing to uninstall '{name}': {exc}"
+        if install_path.exists():
+            shutil.rmtree(install_path)
+        lock.record_uninstall(name)
+        try:
+            hub.append_audit_log(
+                "UNINSTALL",
+                name,
+                entry.get("source", "hub"),
+                entry.get("trust_level", "n/a"),
+                "n/a",
+                "journey_delete",
+            )
+        except Exception:
+            pass
+        return True, f"Uninstalled '{name}' from {entry.get('install_path', '')}"
+    finally:
+        hub.SKILLS_DIR = old_skills_dir
+        hub.HUB_DIR = old_hub_dir
+        hub.AUDIT_LOG = old_audit_log
 
 
 def _delete_skill(name: str) -> dict[str, Any]:
@@ -115,6 +246,26 @@ def _delete_skill(name: str) -> dict[str, Any]:
             "message": f"'{name}' is pinned — unpin it first (intellect curator unpin {name})",
         }
 
+    resolved = _resolve_journey_skill(name)
+    if not resolved:
+        return {"ok": False, "message": f"skill '{name}' not found"}
+    if resolved.get("ambiguous"):
+        return {"ok": False, "code": "ambiguous", "message": resolved["message"]}
+
+    if resolved.get("source") == "hub":
+        ok, message = _uninstall_hub_skill(name)
+        if ok:
+            _clear_skill_cache()
+        return {
+            "ok": ok,
+            "message": (
+                f"uninstalled hub skill '{name}' — reinstall via Skills panel / intellect skills"
+                if ok
+                else message
+            ),
+            "deleteMode": "uninstall",
+        }
+
     ok, message = skill_usage.archive_skill(name)
     if ok:
         _clear_skill_cache()
@@ -122,6 +273,7 @@ def _delete_skill(name: str) -> dict[str, Any]:
     return {
         "ok": ok,
         "message": f"archived '{name}' — restore with: intellect curator restore {name}" if ok else message,
+        "deleteMode": "archive",
     }
 
 
@@ -139,11 +291,59 @@ def edit_node(node_id: str, content: str) -> dict[str, Any]:
     try:
         return _edit_memory(node_id, content) if parse_node_kind(node_id) == "memory" else _edit_skill(node_id, content)
     except (ValueError, IndexError) as exc:
-        return {"ok": False, "message": str(exc)}
+        msg = str(exc)
+        if _is_stale_message(msg):
+            return _stale_error(msg)
+        return {"ok": False, "message": msg}
 
 
 def _edit_skill(name: str, content: str) -> dict[str, Any]:
-    from tools.skill_manager_tool import _edit_skill as _do_edit
+    found = _resolve_journey_skill(name)
+    if not found:
+        return {"ok": False, "message": f"skill '{name}' not found"}
+    if found.get("ambiguous"):
+        return {"ok": False, "code": "ambiguous", "message": found["message"]}
+    if found.get("path") is None:
+        return {"ok": False, "message": f"skill '{name}' not found"}
+
+    from tools.skill_manager_tool import (
+        _atomic_write_text,
+        _edit_skill as _do_edit,
+        _security_scan_skill,
+        _validate_content_size,
+        _validate_frontmatter,
+    )
+
+    # Hub skills live under .hub/; skill_manager's finder skips them.
+    if found.get("source") == "hub":
+        from intellect_constants import get_intellect_home
+
+        hub_root = (get_intellect_home() / "skills" / ".hub").resolve()
+        skill_dir = Path(found["path"]).resolve()
+        try:
+            skill_dir.relative_to(hub_root)
+        except ValueError:
+            return {"ok": False, "message": f"refusing to edit '{name}': path escapes hub root"}
+        err = _validate_frontmatter(content)
+        if err:
+            return {"ok": False, "message": err}
+        err = _validate_content_size(content)
+        if err:
+            return {"ok": False, "message": err}
+        skill_md = (skill_dir / "SKILL.md").resolve()
+        try:
+            skill_md.relative_to(hub_root)
+        except ValueError:
+            return {"ok": False, "message": f"refusing to edit '{name}': SKILL.md escapes hub root"}
+        original = skill_md.read_text(encoding="utf-8") if skill_md.exists() else None
+        _atomic_write_text(skill_md, content)
+        scan_error = _security_scan_skill(skill_dir)
+        if scan_error:
+            if original is not None:
+                _atomic_write_text(skill_md, original)
+            return {"ok": False, "message": scan_error}
+        _clear_skill_cache()
+        return {"ok": True, "message": f"updated '{name}'"}
 
     result = _do_edit(name, content)
     if result.get("success"):
