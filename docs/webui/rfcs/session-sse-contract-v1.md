@@ -5,7 +5,7 @@
 > **Track**: WebUI Hermes parity P0 (W1 Track B0)  
 > **Parent plan**: [`docs/plans/2026-07-12-w1-journey-e2e-and-session-sse.md`](../../plans/2026-07-12-w1-journey-e2e-and-session-sse.md) §3  
 > **Parity**: [`docs/plans/2026-07-11-webui-hermes-parity-analysis.md`](../../plans/2026-07-11-webui-hermes-parity-analysis.md) §3 P0 + §8 DECIDED #2  
-> **Companion**: [`stable-assistant-turn-anchors.md`](./stable-assistant-turn-anchors.md) (P1-A; does **not** require scene dual-write here)  
+> **Companion**: [`stable-assistant-turn-anchors.md`](./stable-assistant-turn-anchors.md) (P1-A **REVIEWED**; Session SSE does **not** force per-frame scene dual-write — Turn Anchors may **later** append optional `activity_scene` rows on the same `run_journal`, which is **not** an S5 violation)  
 > **Non-goals (W1)**: Claiming P0 complete; wakeup gate (B4); shipping B2+B3 without a same-milestone client
 
 ---
@@ -18,7 +18,7 @@
 | **S2** | Disconnect | Bounded offline buffer; resume **journal-fills first**; `session_snapshot` only when continuity cannot be proven. |
 | **S3** | Cursor lock | Lock resume cursor + journal baseline **before** response headers (TOCTOU-safe). |
 | **S4** | Client | Same milestone as server (B2+B3). Pattern: `kanban_bridge` `Last-Event-ID`. |
-| **S5** | Turn Anchors | This RFC does **not** require `activity_scene_v1` dual-write into the journal. |
+| **S5** | Turn Anchors | This RFC does **not** require per-frame `activity_scene_v1` dual-write. **Later optional** scene rows on the same `run_journal` (Turn Anchors A1/A2) are allowed and are **not** an S5 violation — see §4.4. |
 | **S6** | Endpoint | Evolve `GET /api/chat/stream` (+ optional later alias). **Do not** claim `GET /api/sessions/{id}/events` without disambiguating list SSE. |
 | **S7** | Cursor identity | `event_id = {run_id}:{seq}` (today’s shape). Session resume = active run only; no silent multi-journal stitch. |
 | **S8** | `session_snapshot` | Triggers + minimal fields defined below. |
@@ -48,7 +48,7 @@ Without this contract, mid-stream refresh, tab sleep, and proxy drops continue t
 | B1 bounded `StreamChannel` buffer (optional same-wave PR using S9 caps only) | Claiming **P0 complete** |
 | B2 endpoint hardening + journal-first resume + B3 client (after REVIEWED) | Wakeup / `process_wakeup_paused` (B4) |
 | Formalizing today’s journal event types | Parallel `SessionChannel` or second event log |
-| Optional path alias after chat/stream facade | P1-A scene dual-write (S5) |
+| Optional path alias after chat/stream facade | Forcing per-frame P1-A scene dual-write as part of *this* contract (S5); later optional rows are Turn Anchors' job |
 | Journal **replay** byte/event caps (parity P0 “有界回放”) | Deferred to **B2** — B1 only bounds the **memory** offline buffer |
 | | P1-B transcript virtualization |
 | | Gateway restart / Journey P1-3 |
@@ -145,7 +145,7 @@ Terminal names already special-cased in journal / stream loops include: `done`, 
 
 ### 4.4 Mapping today’s payloads
 
-No rename wave in v1. Existing chat SSE event names continue to flow through the journal. Turn Anchors / scene snapshots (P1-A) may **later** append optional payload fields or rows into the **same** journal — out of scope here (S5).
+No rename wave in v1. Existing chat SSE event names continue to flow through the journal. Turn Anchors / scene snapshots (P1-A) may **later** append optional `activity_scene` rows into the **same** journal (terminal-path once; see Turn Anchors A1/A2/A8). That later path is **out of scope for Session SSE** and does **not** violate S5 — S5 only forbids making scene dual-write a requirement of *this* contract or forcing it on every frame.
 
 ---
 
@@ -339,7 +339,7 @@ on connect / reconnect:
 2. **B1:** Land bounded buffer behind existing StreamChannel; constants from S9; metrics first, behavior compatible for clients that already tolerate reconnect.
 3. **B2+B3:** Feature flag optional (e.g. `webui.session_sse_v1`) if dual-path risk is high; default path should still be the evolved `chat/stream` once stable. Alias path only after facade is proven.
 4. **Deprecations:** none for list SSE. Do not repurpose `/api/sessions/events`.
-5. **Turn Anchors:** may consume the same cursor later; no migration step in this RFC (S5).
+5. **Turn Anchors:** may later append optional `activity_scene` rows on the same journal/cursor (companion RFC); no migration step in this RFC (S5).
 
 ---
 
@@ -360,3 +360,4 @@ on connect / reconnect:
 | 2026-07-12 | Review Request changes → journal-first gap; S9/B1 split (caps only); cursor alias; malformed≠0; replay bounds → B2 |
 | 2026-07-12 | **REVIEWED / Approve** — S1–S9 locked; B1 may proceed under §6.1 |
 | 2026-07-12 | B1 hardening: oversize reject; fail-closed size estimate; estimate off-lock; health omits `lowest_retained_seq` |
+| 2026-07-12 | S5 / §4.4 companion clarify: later optional Turn Anchors `activity_scene` rows on same journal ≠ S5 violation |

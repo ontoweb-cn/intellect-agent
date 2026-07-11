@@ -6065,7 +6065,11 @@ function _preferencesPayloadFromUi(){
   const fadeTextCb=$('settingsFadeTextEffect');
   if(fadeTextCb) payload.fade_text_effect=fadeTextCb.checked;
   const simplifiedToolCb=$('settingsSimplifiedToolCalling');
-  if(simplifiedToolCb) payload.simplified_tool_calling=simplifiedToolCb.checked;
+  if(simplifiedToolCb){
+    payload.simplified_tool_calling=simplifiedToolCb.checked;
+    // A6 / I7: dual-write display alias for one release.
+    payload.chat_activity_display_mode=simplifiedToolCb.checked?'compact_worklog':'transparent_stream';
+  }
   const apiRedactCb=$('settingsApiRedact');
   if(apiRedactCb) payload.api_redact_enabled=apiRedactCb.checked;
   const showCliCb=$('settingsShowCliSessions');
@@ -6137,10 +6141,21 @@ function _schedulePreferencesAutosave(){
 async function _autosavePreferencesSettings(payload){
   try{
     const saved=await api('/api/settings',{method:'POST',body:JSON.stringify(payload)});
-    if(payload&&payload.simplified_tool_calling!==undefined){
-      window._simplifiedToolCalling=(saved&&saved.simplified_tool_calling!==false);
-      if(typeof clearMessageRenderCache==='function') clearMessageRenderCache();
-      if(typeof renderMessages==='function') renderMessages();
+    if(payload&&(payload.simplified_tool_calling!==undefined||payload.chat_activity_display_mode!==undefined)){
+      // A6 read: prefer chat_activity_display_mode from saved response.
+      if(saved&&(saved.chat_activity_display_mode==='transparent_stream'||saved.chat_activity_display_mode==='compact_worklog')){
+        window._chatActivityDisplayMode=saved.chat_activity_display_mode;
+        window._simplifiedToolCalling=saved.chat_activity_display_mode==='compact_worklog';
+      }else{
+        window._simplifiedToolCalling=(saved&&saved.simplified_tool_calling!==false);
+        window._chatActivityDisplayMode=window._simplifiedToolCalling?'compact_worklog':'transparent_stream';
+      }
+      // A-M5: live + settled Activity refresh without full page reload.
+      if(typeof applyActivityDisplayModeRefresh==='function') applyActivityDisplayModeRefresh();
+      else{
+        if(typeof clearMessageRenderCache==='function') clearMessageRenderCache();
+        if(typeof renderMessages==='function') renderMessages({preserveScroll:true});
+      }
     }
     if(payload&&Object.prototype.hasOwnProperty.call(payload,'fade_text_effect')) window._fadeTextEffect=!!payload.fade_text_effect;
     if(saved&&Object.prototype.hasOwnProperty.call(saved,'pinned_sessions_limit')) window._pinnedSessionsLimit=parseInt(saved.pinned_sessions_limit,10)||3;
@@ -6344,7 +6359,15 @@ async function loadSettingsPanel(){
     const fadeTextCb=$('settingsFadeTextEffect');
     if(fadeTextCb){fadeTextCb.checked=!!settings.fade_text_effect;window._fadeTextEffect=fadeTextCb.checked;fadeTextCb.addEventListener('change',_schedulePreferencesAutosave,{once:false});}
     const simplifiedToolCb=$('settingsSimplifiedToolCalling');
-    if(simplifiedToolCb){simplifiedToolCb.checked=settings.simplified_tool_calling!==false;simplifiedToolCb.addEventListener('change',_schedulePreferencesAutosave,{once:false});}
+    if(simplifiedToolCb){
+      const displayMode=settings.chat_activity_display_mode;
+      if(displayMode==='transparent_stream'||displayMode==='compact_worklog'){
+        simplifiedToolCb.checked=displayMode==='compact_worklog';
+      }else{
+        simplifiedToolCb.checked=settings.simplified_tool_calling!==false;
+      }
+      simplifiedToolCb.addEventListener('change',_schedulePreferencesAutosave,{once:false});
+    }
     const apiRedactCb=$('settingsApiRedact');
     if(apiRedactCb){apiRedactCb.checked=settings.api_redact_enabled!==false;apiRedactCb.addEventListener('change',_schedulePreferencesAutosave,{once:false});}
     const showCliCb=$('settingsShowCliSessions');
@@ -7302,6 +7325,12 @@ function _applySavedSettingsUi(saved, body, opts){
   window._whatsNewSummaryEnabled=!!body.whats_new_summary_enabled;
   window._showThinking=body.show_thinking!==false;
   window._simplifiedToolCalling=body.simplified_tool_calling!==false;
+  if(body.chat_activity_display_mode==='transparent_stream'||body.chat_activity_display_mode==='compact_worklog'){
+    window._chatActivityDisplayMode=body.chat_activity_display_mode;
+    window._simplifiedToolCalling=body.chat_activity_display_mode==='compact_worklog';
+  }else{
+    window._chatActivityDisplayMode=window._simplifiedToolCalling?'compact_worklog':'transparent_stream';
+  }
   window._sessionJumpButtonsEnabled=!!body.session_jump_buttons;
   if(typeof _applySessionNavigationPrefs==='function') _applySessionNavigationPrefs();
   window._sidebarDensity=sidebarDensity==='detailed'?'detailed':'compact';
@@ -7328,6 +7357,10 @@ function _applySavedSettingsUi(saved, body, opts){
   if(body.default_model) window._defaultModel=body.default_model;
   if(typeof clearMessageRenderCache==='function') clearMessageRenderCache();
   renderMessages();
+  // A-M5: full Save Settings path also refreshes live/settled Activity display.
+  if(body.simplified_tool_calling!==undefined||body.chat_activity_display_mode!==undefined){
+    if(typeof applyActivityDisplayModeRefresh==='function') applyActivityDisplayModeRefresh();
+  }
   if(typeof syncTopbar==='function') syncTopbar();
   if(typeof renderSessionList==='function') renderSessionList();
 }
@@ -7622,6 +7655,8 @@ async function saveSettings(andClose){
   body.show_tps=showTps;
   body.fade_text_effect=fadeTextEffect;
   body.simplified_tool_calling=!!($('settingsSimplifiedToolCalling')||{}).checked;
+  // A6 / I7: dual-write display alias for one release.
+  body.chat_activity_display_mode=body.simplified_tool_calling?'compact_worklog':'transparent_stream';
   body.api_redact_enabled=!!($('settingsApiRedact')||{}).checked;
   body.show_cli_sessions=showCliSessions;
   body.show_previous_messaging_sessions=!!($('settingsShowPreviousMessagingSessions')||{}).checked;

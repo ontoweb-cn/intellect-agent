@@ -4778,6 +4778,8 @@ _SETTINGS_DEFAULTS = {
     "notifications_enabled": False,  # browser notification when tab is in background
     "show_thinking": True,  # show/hide thinking/reasoning blocks in chat view
     "simplified_tool_calling": True,  # render tools/thinking as compact inline timeline activity
+    # A6 alias for simplified_tool_calling (P1-A). Read prefers this key; write dual-writes both (I7).
+    "chat_activity_display_mode": "compact_worklog",  # compact_worklog | transparent_stream
     "api_redact_enabled": True,  # redact sensitive data (API keys, secrets) from API responses
     "sidebar_density": "compact",  # compact | detailed
     "auto_title_refresh_every": "0",  # adaptive title refresh: 0=off, 5/10/20=every N exchanges
@@ -4889,6 +4891,16 @@ def load_settings() -> dict:
             settings["default_model_provider"] = str(model_cfg.get("provider"))
     except Exception:
         logger.debug("Failed to resolve default model provider for settings")
+    # A6: prefer chat_activity_display_mode when present on disk; else derive
+    # from simplified_tool_calling (defaults alone must not override legacy).
+    try:
+        from api.activity_scene import sync_display_mode_alias_from_stored
+
+        sync_display_mode_alias_from_stored(
+            settings, stored if isinstance(stored, dict) else None
+        )
+    except Exception:
+        logger.debug("Failed to sync chat_activity_display_mode alias", exc_info=True)
     return settings
 
 
@@ -4902,6 +4914,7 @@ _SETTINGS_ENUM_VALUES = {
     "font_size": {"small", "default", "large", "xlarge"},
     "auto_title_refresh_every": {"0", "5", "10", "20"},
     "busy_input_mode": {"queue", "interrupt", "steer"},
+    "chat_activity_display_mode": {"compact_worklog", "transparent_stream"},
 }
 _SETTINGS_INT_RANGES = {
     "pinned_sessions_limit": (1, 99),
@@ -5003,6 +5016,13 @@ def save_settings(settings: dict) -> dict:
             if k in _SETTINGS_BOOL_KEYS:
                 v = bool(v)
             current[k] = v
+    # A6 / I7: dual-write chat_activity_display_mode ↔ simplified_tool_calling.
+    try:
+        from api.activity_scene import apply_display_mode_alias_on_write
+
+        apply_display_mode_alias_on_write(settings, current)
+    except Exception:
+        logger.debug("Failed to dual-write display mode alias", exc_info=True)
     theme_value = pending_theme
     skin_value = pending_skin
     if theme_was_explicit and not skin_was_explicit:

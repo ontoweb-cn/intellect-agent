@@ -738,11 +738,26 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   function persistInflightState(){
     const inflight=INFLIGHT[activeSid];
     if(!inflight||typeof saveInflightState!=='function') return;
+    let scene=null;
+    if(typeof buildActivitySceneFromLive==='function'){
+      try{
+        scene=buildActivitySceneFromLive({
+          streamId,
+          sessionId:activeSid,
+          toolCalls:inflight.toolCalls||[],
+          messages:inflight.messages||[],
+          thinkingText:liveReasoningText||undefined,
+          mode:'inflight',
+        });
+      }catch(_){scene=null;}
+    }
+    inflight.scene=scene;
     saveInflightState(activeSid,{
       streamId,
       messages:inflight.messages||[],
       uploaded:inflight.uploaded||[...uploaded],
       toolCalls:inflight.toolCalls||[],
+      scene,
     });
   }
   function snapshotLiveTurn(){
@@ -1623,6 +1638,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       liveReasoningText += d.text || '';
       syncInflightAssistantMessage();
       if(!S.session||S.session.session_id!==activeSid) return;
+      // §4.3.4: after journal activity_scene, ignore flat thinking for Activity tree.
+      if(typeof isActivitySceneApplied==='function'&&isActivitySceneApplied(streamId)) return;
       // Render thinking card synchronously — not via rAF — so the DOM is
       // up-to-date before a 'tool' event in the same microtask batch calls
       // finalizeThinkingCard(). The old rAF-only path caused a race where
@@ -1632,6 +1649,32 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         else appendThinking(_liveThinkingText());
       }
       _scheduleRender();
+    });
+
+    source.addEventListener('activity_scene',e=>{
+      // Wire: event activity_scene, data = scene object at root (W3 §4.0).
+      // Ignore if already finalized (late scene should not happen when order is correct).
+      if(_streamFinalized||_terminalStateReached) return;
+      let scene=null;
+      try{scene=JSON.parse(e.data);}catch(_){return;}
+      if(!scene||typeof scene!=='object') return;
+      const sceneStreamId=scene.stream_id||streamId;
+      // Live path: Activity DOM already built from tool SSE — latch only.
+      // Full apply would clearLiveToolCards + write server default disclosure
+      // (expanded:false), violating A3a and wiping user expand before done.
+      const liveTurn=$('liveAssistantTurn');
+      const hasLiveActivity=!!(liveTurn&&liveTurn.querySelector('.tool-call-group'));
+      if(hasLiveActivity){
+        if(typeof markActivitySceneApplied==='function') markActivitySceneApplied(sceneStreamId);
+        else if(typeof applyActivityScene==='function'){
+          // Fallback: force latch without rebuild if helper missing.
+          applyActivityScene(scene,{source:'sse',latchOnly:true});
+        }
+        return;
+      }
+      if(typeof applyActivityScene==='function'){
+        applyActivityScene(scene,{source:'sse'});
+      }
     });
 
     source.addEventListener('tool',e=>{
@@ -1650,6 +1693,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
 
       if(S.session&&S.session.session_id===activeSid&&typeof scheduleRenderSessionArtifacts==='function') scheduleRenderSessionArtifacts();
       if(!S.session||S.session.session_id!==activeSid) return;
+      // §4.3.4: after activity_scene latch, do not rebuild Activity from flat tools.
+      if(typeof isActivitySceneApplied==='function'&&isActivitySceneApplied(streamId)) return;
       // NOTE: don't removeThinking() here — keep the thinking card visible
       // above the tool card so the turn reads top-to-bottom as:
       // user → thinking → tool cards → response. Removing it caused the card
@@ -1697,6 +1742,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       persistInflightState();
       if(S.session&&S.session.session_id===activeSid&&typeof scheduleRenderSessionArtifacts==='function') scheduleRenderSessionArtifacts();
       if(!S.session||S.session.session_id!==activeSid) return;
+      if(typeof isActivitySceneApplied==='function'&&isActivitySceneApplied(streamId)) return;
       appendLiveToolCard(tc);
       snapshotLiveTurn();
       scrollIfPinned();
@@ -1811,6 +1857,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       // S.messages with stale server data (issue #3195).
       _streamFinalized=true;
       _terminalStateReached=true;
+      if(typeof clearActivitySceneLatch==='function') clearActivitySceneLatch(streamId);
       if(_persistTimer){clearTimeout(_persistTimer);_persistTimer=null;}
       const _doneData=JSON.parse(e.data);
       const _finishDone=()=>{
@@ -2313,7 +2360,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       _setActivePaneIdleIfOwner();
     });
 
-    for(const _runJournalEventName of ['token','interim_assistant','reasoning','tool','tool_complete','approval','clarify','title','title_status','context_status','goal','goal_continue','done','stream_end','pending_steer_leftover','compressing','compressed','metering','apperror','warning','error','cancel','session_snapshot']){
+    for(const _runJournalEventName of ['token','interim_assistant','reasoning','tool','tool_complete','activity_scene','approval','clarify','title','title_status','context_status','goal','goal_continue','done','stream_end','pending_steer_leftover','compressing','compressed','metering','apperror','warning','error','cancel','session_snapshot']){
       source.addEventListener(_runJournalEventName,_rememberRunJournalCursor);
     }
   }
