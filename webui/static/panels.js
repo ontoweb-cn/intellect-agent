@@ -5981,6 +5981,7 @@ function _appearancePayloadFromUi(){
     font_size: ($('settingsFontSize')||{}).value || localStorage.getItem('intellect-font-size') || 'default',
     session_jump_buttons: !!($('settingsSessionJumpButtons')||{}).checked,
     session_endless_scroll: !!($('settingsSessionEndlessScroll')||{}).checked,
+    transcript_virtual_window: !!($('settingsTranscriptVirtualWindow')||{}).checked,
   };
 }
 
@@ -6230,6 +6231,20 @@ async function loadSettingsPanel(){
       jumpButtonsCb.onchange=function(){
         window._sessionJumpButtonsEnabled=this.checked;
         if(typeof _applySessionNavigationPrefs==='function') _applySessionNavigationPrefs();
+        _scheduleAppearanceAutosave();
+      };
+    }
+    const virtCb=$('settingsTranscriptVirtualWindow');
+    if(virtCb){
+      virtCb.checked=!!settings.transcript_virtual_window;
+      window._transcriptVirtualWindowEnabled=virtCb.checked||window._transcriptVirtualWindowEnabled;
+      virtCb.onchange=function(){
+        window._transcriptVirtualWindowEnabled=this.checked;
+        try{
+          const virtQ=new URLSearchParams(location.search||'').get('virt');
+          if(virtQ==='1'||virtQ==='true') window._transcriptVirtualWindowEnabled=true;
+        }catch(_){}
+        if(typeof renderMessages==='function') renderMessages({preserveScroll:true});
         _scheduleAppearanceAutosave();
       };
     }
@@ -7332,6 +7347,12 @@ function _applySavedSettingsUi(saved, body, opts){
     window._chatActivityDisplayMode=window._simplifiedToolCalling?'compact_worklog':'transparent_stream';
   }
   window._sessionJumpButtonsEnabled=!!body.session_jump_buttons;
+  window._sessionEndlessScrollEnabled=!!body.session_endless_scroll;
+  window._transcriptVirtualWindowEnabled=!!body.transcript_virtual_window;
+  try{
+    const virtQ=new URLSearchParams(location.search||'').get('virt');
+    if(virtQ==='1'||virtQ==='true') window._transcriptVirtualWindowEnabled=true;
+  }catch(_){}
   if(typeof _applySessionNavigationPrefs==='function') _applySessionNavigationPrefs();
   window._sidebarDensity=sidebarDensity==='detailed'?'detailed':'compact';
   window._busyInputMode=body.busy_input_mode||'queue';
@@ -7649,6 +7670,7 @@ async function saveSettings(andClose){
   body.font_size=fontSize;
   body.session_jump_buttons=!!($('settingsSessionJumpButtons')||{}).checked;
   body.session_endless_scroll=!!($('settingsSessionEndlessScroll')||{}).checked;
+  body.transcript_virtual_window=!!($('settingsTranscriptVirtualWindow')||{}).checked;
   body.language=language;
   body.show_token_usage=showTokenUsage;
   body.show_quota_chip=showQuotaChip===true;

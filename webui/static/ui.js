@@ -264,16 +264,26 @@ let _messageRenderWindowSize=MESSAGE_RENDER_WINDOW_DEFAULT;
 // Cached visWithIdx array — invalidated when S.messages.length changes.
 let _visWithIdxCache=null;
 let _visWithIdxCacheLen=0;
-// P1-B MVP: remember user-row heights to reduce jump on window expand / reload.
+// P1-B / W4: remember row heights to reduce jump on window expand / virt pan.
 const _userMessageHeightByKey=new Map();
-const _userMessageHeightMax=400;
+const _userMessageHeightMax=2000; // V7: raised from 400 to avoid virt thrash
 let _userMessageHeightObserver=null;
+let _messageHeightGeneration=0;
+// W4 virt state (only when transcript_virtual_window active + visCount>T)
+let _messageVirtState=null; // {start,end,total,topPad,bottomPad,heightGeneration}
+let _messageVirtPinIndex=null;
+let _messageVirtForceStart=null;
+let _messageVirtScrollRaf=0;
+let _messageVirtScrollWired=false;
 function _resetMessageRenderWindow(sid){
   _messageRenderWindowSid=sid||null;
   _messageRenderWindowSize=MESSAGE_RENDER_WINDOW_DEFAULT;
   _clearRenderCache();
   _visWithIdxCache=null;
   _visWithIdxCacheLen=0;
+  _messageVirtState=null;
+  _messageVirtPinIndex=null;
+  _messageVirtForceStart=null;
   // Drop height entries for other sessions; keep current sid keys.
   if(sid){
     for(const key of [..._userMessageHeightByKey.keys()]){
@@ -282,6 +292,64 @@ function _resetMessageRenderWindow(sid){
   }else{
     _userMessageHeightByKey.clear();
   }
+}
+
+function _isTranscriptVirtualWindowEnabled(){
+  if(window._transcriptVirtualWindowEnabled===true) return true;
+  try{
+    const virtQ=new URLSearchParams(location.search||'').get('virt');
+    return virtQ==='1'||virtQ==='true';
+  }catch(_){ return false; }
+}
+
+/** Flag on + visCount > T — else W2 tail window (bit-identical when flag off). */
+function _isTranscriptVirtualWindowActive(visCount){
+  if(!_isTranscriptVirtualWindowEnabled()) return false;
+  const T=(typeof MSG_VIRTUAL_THRESHOLD==='number')?MSG_VIRTUAL_THRESHOLD:80;
+  return (Number(visCount)||0)>T;
+}
+
+function _estimateVisRowHeight(m, rawIdx){
+  const cached=_userMessageHeightByKey.get(_userMessageHeightKey(rawIdx));
+  if(cached&&cached>0) return cached;
+  if(m&&m.role==='user'){
+    return (typeof DEFAULT_USER_ROW_HEIGHT==='number')?DEFAULT_USER_ROW_HEIGHT:72;
+  }
+  return (typeof DEFAULT_ASSISTANT_ROW_HEIGHT==='number')?DEFAULT_ASSISTANT_ROW_HEIGHT:120;
+}
+
+function _bumpMessageHeightGeneration(){
+  _messageHeightGeneration=(_messageHeightGeneration|0)+1;
+}
+
+function _wireMessageVirtualScroll(){
+  if(_messageVirtScrollWired) return;
+  const container=$('messages');
+  if(!container) return;
+  _messageVirtScrollWired=true;
+  container.addEventListener('scroll',()=>{
+    if(_programmaticScroll) return;
+    if(!_messageVirtState||!_messageVirtState.virtualized) return;
+    if(_messageVirtScrollRaf) return;
+    _messageVirtScrollRaf=requestAnimationFrame(()=>{
+      _messageVirtScrollRaf=0;
+      if(!_isTranscriptVirtualWindowEnabled()) return;
+      const visCount=_messageVirtState.total||0;
+      if(!_isTranscriptVirtualWindowActive(visCount)) return;
+      // Predict next window; skip rebuild if bounds unchanged.
+      if(typeof variableHeightVirtualWindow!=='function'||!_visWithIdxCache) return;
+      const heights=_visWithIdxCache.map(({m,rawIdx})=>_estimateVisRowHeight(m,rawIdx));
+      const viewport=container.clientHeight||600;
+      const next=variableHeightVirtualWindow(heights,{
+        scrollTop:container.scrollTop||0,
+        viewportHeight:viewport,
+        bufferPx:Math.round(viewport*1.5),
+        threshold:(typeof MSG_VIRTUAL_THRESHOLD==='number')?MSG_VIRTUAL_THRESHOLD:80,
+      });
+      if(next.start===_messageVirtState.start&&next.end===_messageVirtState.end) return;
+      renderMessages({preserveScroll:true, virtFromScroll:true});
+    });
+  },{passive:true});
 }
 
 function _userMessageHeightKey(rawIdx){
@@ -308,7 +376,18 @@ function _observeUserMessageHeight(row, rawIdx){
         const height=Math.round(el.getBoundingClientRect().height||0);
         if(height<=0) continue;
         const key=_userMessageHeightKey(idx);
+        const prev=_userMessageHeightByKey.get(key);
         _userMessageHeightByKey.set(key, height);
+        if(prev&&Math.abs(prev-height)>8){
+          _bumpMessageHeightGeneration();
+          // I4: resync virt pads after meaningful height learn (rAF coalesce).
+          if(_messageVirtState&&_messageVirtState.virtualized&&!_messageVirtScrollRaf){
+            _messageVirtScrollRaf=requestAnimationFrame(()=>{
+              _messageVirtScrollRaf=0;
+              if(_isTranscriptVirtualWindowEnabled()) renderMessages({preserveScroll:true});
+            });
+          }
+        }
         if(_userMessageHeightByKey.size>_userMessageHeightMax){
           _userMessageHeightByKey.delete(_userMessageHeightByKey.keys().next().value);
         }
@@ -379,10 +458,14 @@ function _messageRenderableMessageCount(){
   return count;
 }
 function _messageHiddenBeforeCount(){
+  if(_messageVirtState&&_messageVirtState.virtualized){
+    return Math.max(0, Number(_messageVirtState.start)||0);
+  }
   return Math.max(0,_messageRenderableMessageCount()-_currentMessageRenderWindowSize());
 }
 function _isSessionEndlessScrollEnabled(){
-  return window._sessionEndlessScrollEnabled===true;
+  // W4 N4: when virt is active, prefer virt pan semantics over endless-scroll window expands.
+  return window._sessionEndlessScrollEnabled===true&&!_isTranscriptVirtualWindowEnabled();
 }
 function _wireMessageWindowLoadEarlierButton(){
   const indicator=$('loadOlderIndicator');
@@ -396,6 +479,19 @@ function _showEarlierRenderedMessages(){
   const container=$('messages');
   const prevScrollH=container?container.scrollHeight:0;
   const prevScrollTop=container?container.scrollTop:0;
+  // W4 C4: virt-on → pan window (forceStart), do not expand render window size.
+  if(_isTranscriptVirtualWindowEnabled()&&_messageVirtState&&_messageVirtState.virtualized){
+    const step=40;
+    _messageVirtForceStart=Math.max(0,(Number(_messageVirtState.start)||0)-step);
+    renderMessages({preserveScroll:true});
+    if(container&&_messageVirtState){
+      // Keep visual position roughly stable after top pad shrinks.
+      const newTop=Number(_messageVirtState.topPad)||0;
+      container.scrollTop=Math.max(0, newTop+Math.min(prevScrollTop, 80));
+    }
+    _scrollPinned=false;
+    return;
+  }
   _messageRenderWindowSize=_currentMessageRenderWindowSize()+MESSAGE_RENDER_WINDOW_DEFAULT;
   renderMessages();
   if(container){
@@ -434,6 +530,18 @@ async function jumpToSessionStart(){
   _programmaticScroll=true;
   try{
     if(typeof _ensureAllMessagesLoaded==='function') await _ensureAllMessagesLoaded();
+    const visCount=(_visWithIdxCache&&_visWithIdxCache.length)||_messageRenderableMessageCount();
+    if(_isTranscriptVirtualWindowActive(visCount)){
+      // C4: start=0 window + scrollTop=0 — no full DOM expand.
+      _messageVirtForceStart=0;
+      renderMessages({ preserveScroll:true });
+      requestAnimationFrame(()=>{
+        container.scrollTop=0;
+        _updateSessionStartJumpButton();
+        requestAnimationFrame(()=>{ _programmaticScroll=false; });
+      });
+      return;
+    }
     _messageRenderWindowSize=Math.max(_currentMessageRenderWindowSize(),_messageRenderableMessageCount());
     renderMessages({ preserveScroll:true });
     requestAnimationFrame(()=>{
@@ -477,6 +585,42 @@ async function jumpToTurnQuestion(questionRawIdx){
     return true;
   };
   if(scrollToTarget()) return;
+  const visCount=(_visWithIdxCache&&_visWithIdxCache.length)||_messageRenderableMessageCount();
+  if(_isTranscriptVirtualWindowActive(visCount)){
+    // C4: pin vis index containing rawIdx — no full expand.
+    let pinVis=-1;
+    const cache=_visWithIdxCache;
+    if(cache&&cache.length){
+      for(let i=0;i<cache.length;i++){
+        if(cache[i]&&cache[i].idx===questionRawIdx){ pinVis=i; break; }
+        if(cache[i]&&cache[i].rawIdx===questionRawIdx){ pinVis=i; break; }
+      }
+    }
+    if(pinVis<0){
+      // Rebuild vis map once for pin lookup.
+      let ri=0, vi=0;
+      for(const m of (S.messages||[])){
+        if(!m||!m.role||m.role==='tool'){ri++;continue;}
+        if(typeof _isPreservedCompressionTaskListMessage==='function'&&_isPreservedCompressionTaskListMessage(m)){ri++;continue;}
+        const hasTc=Array.isArray(m.tool_calls)&&m.tool_calls.length>0;
+        const hasTu=Array.isArray(m.content)&&m.content.some(p=>p&&p.type==='tool_use');
+        const keep=m.role==='assistant'
+          ?(hasTc||hasTu||(typeof _messageHasReasoningPayload==='function'&&_messageHasReasoningPayload(m))||!!(typeof msgContent==='function'&&msgContent(m))||!!(m.attachments&&m.attachments.length)||!!m._statusCard)
+          :!!(typeof msgContent==='function'&&msgContent(m)||(m.attachments&&m.attachments.length)||m._statusCard);
+        if(keep){
+          if(ri===questionRawIdx){ pinVis=vi; break; }
+          vi++;
+        }
+        ri++;
+      }
+    }
+    if(pinVis>=0){
+      _messageVirtPinIndex=pinVis;
+      renderMessages({ preserveScroll:true });
+      requestAnimationFrame(scrollToTarget);
+    }
+    return;
+  }
   if(_messageHiddenBeforeCount()>0){
     _messageRenderWindowSize=Math.max(_currentMessageRenderWindowSize(),_messageRenderableMessageCount());
     renderMessages({ preserveScroll:true });
@@ -6624,12 +6768,16 @@ function renderMessages(options){
   // Also skip cache for transient transcript cards such as /compress and
   // cross-channel handoff summaries; otherwise the cached transcript returns
   // before those cards can be inserted.
-  // Cache key includes renderWindowSize + hiddenBeforeCount (P1-B MVP).
+  // Cache key includes renderWindowSize + hiddenBeforeCount (P1-B MVP)
+  // and virt bounds + heightGeneration (W4 I2).
   if(sid&&sid!==_sessionHtmlCacheSid&&!INFLIGHT[sid]&&!hasTransientTranscriptUi){
     const renderSignature=_messageRenderCacheSignature();
     cachedRenderSignature=renderSignature;
     const cached=_sessionHtmlCache.get(sid);
-    if(cached&&cached.msgCount===msgCount&&cached.renderWindowSize===renderWindowSize&&cached.hiddenBeforeCount===hiddenBeforeCount&&cached.signature===renderSignature){
+    const virtStart=_messageVirtState&&_messageVirtState.virtualized?_messageVirtState.start:null;
+    const virtEnd=_messageVirtState&&_messageVirtState.virtualized?_messageVirtState.end:null;
+    const heightGen=_messageHeightGeneration|0;
+    if(cached&&cached.msgCount===msgCount&&cached.renderWindowSize===renderWindowSize&&cached.hiddenBeforeCount===hiddenBeforeCount&&cached.signature===renderSignature&&cached.virtStart===virtStart&&cached.virtEnd===virtEnd&&cached.heightGeneration===heightGen){
       inner.innerHTML=cached.html;
       _sessionHtmlCacheSid=sid;
       _wireMessageWindowLoadEarlierButton();
@@ -6669,6 +6817,15 @@ function renderMessages(options){
   });
   $('emptyState').style.display=(vis.length||preservedCompressionTaskMessages.length)?'none':'';
   _disconnectUserMessageHeightObserver();
+  // W4 V4: preserve live turn DOM across virt rebuilds (do not remount empty).
+  let _preservedLiveTurn=null;
+  if(_isTranscriptVirtualWindowEnabled()){
+    const existingLive=$('liveAssistantTurn');
+    if(existingLive&&existingLive.parentNode){
+      _preservedLiveTurn=existingLive;
+      existingLive.remove();
+    }
+  }
   inner.innerHTML='';
   const compressionNode=compressionState?_compressionCardsNode(compressionState):null;
   const {message:referenceMessage, rawIdx:referenceMessageRawIdx}=_latestCompressionReferenceMessage(
@@ -6700,6 +6857,18 @@ function renderMessages(options){
     _visWithIdxCacheLen=S.messages.length;
   }
   const visWithIdx=_visWithIdxCache;
+  // W4 V4: peel trailing live messages out of the virt ledger/slice so
+  // #liveAssistantTurn stays a sibling after the bottom spacer.
+  let historyVisWithIdx=visWithIdx;
+  let liveTailVis=[];
+  if(_isTranscriptVirtualWindowEnabled()&&visWithIdx.length){
+    historyVisWithIdx=visWithIdx.slice();
+    while(historyVisWithIdx.length){
+      const last=historyVisWithIdx[historyVisWithIdx.length-1];
+      if(last&&last.m&&last.m._live) liveTailVis.unshift(historyVisWithIdx.pop());
+      else break;
+    }
+  }
   const preservedCompressionRawIdxs=[];
   let rawIdx=0;
   for(const m of S.messages){
@@ -6711,9 +6880,70 @@ function renderMessages(options){
   // memory (DOM windowing) or on the server (paginated session fetch).
   // Prefer expanding the local render window first so a fully loaded long
   // session can reduce DOM nodes without losing in-memory transcript data.
-  const windowStart=Math.max(0, visWithIdx.length-renderWindowSize);
-  const hiddenBeforeCount=windowStart;
-  const renderVisWithIdx=visWithIdx.slice(windowStart);
+  //
+  // W4: when transcript_virtual_window is on and visCount>T, use variable-height
+  // virt window (spacers). Flag off → W2 tail window bit-identical.
+  let windowStart;
+  let hiddenBeforeCount;
+  let renderVisWithIdx;
+  let virtMeta=null;
+  const virtActive=_isTranscriptVirtualWindowActive(historyVisWithIdx.length);
+  if(virtActive&&typeof variableHeightVirtualWindow==='function'){
+    _wireMessageVirtualScroll();
+    const heights=historyVisWithIdx.map(({m,rawIdx})=>_estimateVisRowHeight(m,rawIdx));
+    const roles=historyVisWithIdx.map(({m})=>(m&&m.role)||'');
+    const container=$('messages');
+    const scrollTop=container?container.scrollTop:0;
+    const viewport=container?(container.clientHeight||600):600;
+    const forceStart=_messageVirtForceStart;
+    const pinIndex=_messageVirtPinIndex;
+    _messageVirtForceStart=null;
+    _messageVirtPinIndex=null;
+    let win=variableHeightVirtualWindow(heights,{
+      scrollTop:scrollTop,
+      viewportHeight:viewport,
+      bufferPx:Math.round(viewport*1.5),
+      threshold:(typeof MSG_VIRTUAL_THRESHOLD==='number')?MSG_VIRTUAL_THRESHOLD:80,
+      forceStart:forceStart,
+      pinIndex:pinIndex,
+    });
+    if(typeof expandToTurnBoundaries==='function'){
+      const expanded=expandToTurnBoundaries(win.start, win.end, roles);
+      if(expanded&&(expanded.start!==win.start||expanded.end!==win.end)){
+        const prefix=(typeof buildPrefixSums==='function')?buildPrefixSums(heights):null;
+        win={
+          virtualized:true,
+          start:expanded.start,
+          end:expanded.end,
+          topPad:prefix?prefix[expanded.start]:win.topPad,
+          bottomPad:prefix?Math.max(0,prefix[prefix.length-1]-prefix[expanded.end]):win.bottomPad,
+          total:win.total,
+          totalHeight:win.totalHeight,
+        };
+      }
+    }
+    windowStart=win.start;
+    hiddenBeforeCount=win.start;
+    renderVisWithIdx=historyVisWithIdx.slice(win.start, win.end);
+    virtMeta=win;
+    _messageVirtState={
+      virtualized:!!win.virtualized,
+      start:win.start,
+      end:win.end,
+      total:historyVisWithIdx.length,
+      topPad:win.topPad||0,
+      bottomPad:win.bottomPad||0,
+      heightGeneration:_messageHeightGeneration,
+    };
+  }else{
+    _messageVirtState=null;
+    // W2 path: include live in the tail window (bit-identical).
+    const allVis=liveTailVis.length?historyVisWithIdx.concat(liveTailVis):historyVisWithIdx;
+    windowStart=Math.max(0, allVis.length-renderWindowSize);
+    hiddenBeforeCount=windowStart;
+    renderVisWithIdx=allVis.slice(windowStart);
+    liveTailVis=[]; // already included in renderVisWithIdx
+  }
   const firstRenderedRawIdx=renderVisWithIdx.length?renderVisWithIdx[0].rawIdx:Infinity;
   const hasServerOlder=!!(typeof _messagesTruncated!=='undefined' && _messagesTruncated && S.messages.length>0);
   if(typeof _applySessionNavigationPrefs==='function') _applySessionNavigationPrefs();
@@ -6731,6 +6961,9 @@ function renderMessages(options){
     };
     inner.appendChild(indicator);
     _wireMessageWindowLoadEarlierButton();
+  }
+  if(virtMeta&&virtMeta.virtualized&&(virtMeta.topPad||0)>0&&typeof messageVirtualSpacer==='function'){
+    inner.appendChild(messageVirtualSpacer(virtMeta.topPad,'top'));
   }
   let lastUserRawIdx=-1;
   for(let i=visWithIdx.length-1;i>=0;i--){
@@ -6915,7 +7148,10 @@ function renderMessages(options){
 
     if(!currentAssistantTurn){
       currentAssistantTurn=_createAssistantTurn(tsTitle, isTpsDisplayEnabled()?_formatTurnTps(m._turnTps):'');
+      currentAssistantTurn.dataset.msgIdx=rawIdx;
+      _applyCachedUserMessageHeight(currentAssistantTurn, rawIdx);
       inner.appendChild(currentAssistantTurn);
+      _observeUserMessageHeight(currentAssistantTurn, rawIdx);
     }
     const seg=document.createElement('div');
     seg.className='assistant-segment';
@@ -7269,6 +7505,25 @@ function renderMessages(options){
       }
     }
   }
+  // W4: bottom spacer after history slice (live turn stays a sibling after this).
+  if(virtMeta&&virtMeta.virtualized&&(virtMeta.bottomPad||0)>0&&typeof messageVirtualSpacer==='function'){
+    inner.appendChild(messageVirtualSpacer(virtMeta.bottomPad,'bottom'));
+  }
+  // V4: reattach preserved live turn after bottom spacer; never recreate empty
+  // when we already had a live DOM (stream state). Fall back to create only
+  // when streaming and nothing was preserved.
+  if(virtActive){
+    if(_preservedLiveTurn){
+      inner.appendChild(_preservedLiveTurn);
+    }else if(S.activeStreamId&&!$('liveAssistantTurn')&&typeof _createAssistantTurn==='function'){
+      try{
+        const liveTurn=_createAssistantTurn();
+        liveTurn.id='liveAssistantTurn';
+        liveTurn.setAttribute('data-live-virt-sibling','1');
+        inner.appendChild(liveTurn);
+      }catch(_){}
+    }
+  }
   // Only force-scroll when not actively streaming — mid-stream re-renders
   // (tool completion, session switch) must not override the user's scroll position.
   // scrollIfPinned() respects _scrollPinned, so it's a no-op if user scrolled up.
@@ -7293,7 +7548,16 @@ function renderMessages(options){
     // Only cache sessions with <300KB rendered HTML; evict oldest beyond 8 sessions.
     if(_html.length<300_000){
       const renderSignature=cachedRenderSignature===null?_messageRenderCacheSignature():cachedRenderSignature;
-      _sessionHtmlCache.set(sid,{html:_html,msgCount,renderWindowSize,hiddenBeforeCount,signature:renderSignature});
+      _sessionHtmlCache.set(sid,{
+        html:_html,
+        msgCount,
+        renderWindowSize,
+        hiddenBeforeCount,
+        signature:renderSignature,
+        virtStart:_messageVirtState&&_messageVirtState.virtualized?_messageVirtState.start:null,
+        virtEnd:_messageVirtState&&_messageVirtState.virtualized?_messageVirtState.end:null,
+        heightGeneration:_messageHeightGeneration|0,
+      });
       if(_sessionHtmlCache.size>8){_sessionHtmlCache.delete(_sessionHtmlCache.keys().next().value);}
     }
   }

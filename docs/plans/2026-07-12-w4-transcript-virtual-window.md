@@ -1,7 +1,7 @@
 # W4 细化稿 — P1-B Transcript 全量虚拟窗（spacer）
 
 > **日期**：2026-07-12  
-> **状态**：**REVISED** — 技术评审 Request changes 已吸收；**待 Approve 后执行**  
+> **状态**：**EXECUTED (in progress)** — 2026-07-12 Approve；实现见 `feat/w4-transcript-virtual-window`  
 > **策略**：先技术评审，再按 **0→2** 串行（#1+#2 同 train）  
 > **前置**：W2+W3 已合入 main（[#38](https://github.com/ontoweb-cn/intellect-agent/pull/38)、[#39](https://github.com/ontoweb-cn/intellect-agent/pull/39) @ `3b7558f`）  
 > **父文档**：[`2026-07-11-p1-journey-and-webui-parity-refinement.md`](./2026-07-11-p1-journey-and-webui-parity-refinement.md) §2.3 / §2.5（B4）、[`2026-07-12-w3-turn-anchors-p1a.md`](./2026-07-12-w3-turn-anchors-p1a.md)  

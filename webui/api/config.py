@@ -4766,6 +4766,8 @@ _SETTINGS_DEFAULTS = {
     "font_size": "default",  # small | default | large | xlarge
     "session_jump_buttons": False,  # show Start/End transcript jump pills
     "session_endless_scroll": False,  # auto-load older transcript pages while scrolling upward
+    # W4 / P1-B: variable-height #msgInner virtual window (default off — canary).
+    "transcript_virtual_window": False,
     "language": "en",  # UI locale code; must match a key in static/i18n.js LOCALES
     "bot_name": os.getenv(
         "INTELLECT_WEBUI_BOT_NAME", "Intellect"
@@ -4945,6 +4947,7 @@ _SETTINGS_BOOL_KEYS = {
     "api_redact_enabled",
     "session_jump_buttons",
     "session_endless_scroll",
+    "transcript_virtual_window",
     "members_local_requires_approval",
 }
 # Language codes are validated as short alphanumeric BCP-47-like tags (e.g. 'en', 'zh', 'fr')

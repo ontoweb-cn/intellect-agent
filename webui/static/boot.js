@@ -1581,11 +1581,15 @@ function applyBotName(){
     };
     window._busyInputMode=(s.busy_input_mode||'queue');
     window._sessionEndlessScrollEnabled=!!s.session_endless_scroll;
-    window._botName=s.bot_name||'Intellect';
-    window._dashboardTitle=s.dashboard_title||'Intellect Agent Harness';
-    if(typeof applyDashboardTitle==='function') applyDashboardTitle(window._dashboardTitle);
-    if(s.default_model) window._defaultModel=s.default_model;
     window._sessionJumpButtonsEnabled=!!s.session_jump_buttons;
+    // W4: settings OR ?virt=1 canary (plan V2).
+    try{
+      const virtQ=new URLSearchParams(location.search||'').get('virt');
+      window._transcriptVirtualWindowEnabled=!!s.transcript_virtual_window||virtQ==='1'||virtQ==='true';
+    }catch(_){
+      window._transcriptVirtualWindowEnabled=!!s.transcript_virtual_window;
+    }
+    window._botName=s.bot_name||'Intellect';
     // Reconcile appearance: prefer localStorage (what the user last saw) over
     // the server.  If they diverge (e.g. a previous autosave POST failed),
     // push the localStorage values back to the server so settings.json stays
@@ -1645,6 +1649,8 @@ function applyBotName(){
     window._simplifiedToolCalling=true;
     window._chatActivityDisplayMode='compact_worklog';
     window._sessionJumpButtonsEnabled=false;
+    window._sessionEndlessScrollEnabled=false;
+    window._transcriptVirtualWindowEnabled=false;
     window._sidebarDensity='compact';
     window._busyInputMode='queue';
     window._sessionEndlessScrollEnabled=false;
