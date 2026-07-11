@@ -738,11 +738,26 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   function persistInflightState(){
     const inflight=INFLIGHT[activeSid];
     if(!inflight||typeof saveInflightState!=='function') return;
+    let scene=null;
+    if(typeof buildActivitySceneFromLive==='function'){
+      try{
+        scene=buildActivitySceneFromLive({
+          streamId,
+          sessionId:activeSid,
+          toolCalls:inflight.toolCalls||[],
+          messages:inflight.messages||[],
+          thinkingText:liveReasoningText||undefined,
+          mode:'inflight',
+        });
+      }catch(_){scene=null;}
+    }
+    inflight.scene=scene;
     saveInflightState(activeSid,{
       streamId,
       messages:inflight.messages||[],
       uploaded:inflight.uploaded||[...uploaded],
       toolCalls:inflight.toolCalls||[],
+      scene,
     });
   }
   function snapshotLiveTurn(){
@@ -1811,6 +1826,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       // S.messages with stale server data (issue #3195).
       _streamFinalized=true;
       _terminalStateReached=true;
+      if(typeof clearActivitySceneLatch==='function') clearActivitySceneLatch(streamId);
       if(_persistTimer){clearTimeout(_persistTimer);_persistTimer=null;}
       const _doneData=JSON.parse(e.data);
       const _finishDone=()=>{

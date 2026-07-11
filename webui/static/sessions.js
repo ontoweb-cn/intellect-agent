@@ -771,6 +771,7 @@ async function loadSession(sid, options={}){
         messages:Array.isArray(stored.messages)&&stored.messages.length?stored.messages:[],
         uploaded:Array.isArray(stored.uploaded)?stored.uploaded:[],
         toolCalls:Array.isArray(stored.toolCalls)?stored.toolCalls:[],
+        scene:stored.scene&&typeof stored.scene==='object'?stored.scene:null,
         reattach:true,
       };
     }
@@ -799,11 +800,20 @@ async function loadSession(sid, options={}){
     syncTopbar();renderMessages();
     const restoredLiveTurn=typeof restoreLiveTurnHtmlForSession==='function'&&restoreLiveTurnHtmlForSession(sid);
     if(!restoredLiveTurn){
-      appendThinking();
-      clearLiveToolCards();
-      if(typeof placeLiveToolCardsHost==='function') placeLiveToolCardsHost();
-      for(const tc of (S.toolCalls||[])){
-        if(tc&&tc.name) appendLiveToolCard(tc);
+      // Prefer activity_scene_v1 rebuild (P1-A); fallback to today's toolCalls path.
+      const scene=INFLIGHT[sid].scene;
+      let sceneApplied=false;
+      if(scene&&typeof applyActivityScene==='function'){
+        if(typeof clearActivitySceneLatch==='function') clearActivitySceneLatch(activeStreamId);
+        sceneApplied=!!applyActivityScene(scene,{source:'inflight',force:true});
+      }
+      if(!sceneApplied){
+        appendThinking();
+        clearLiveToolCards();
+        if(typeof placeLiveToolCardsHost==='function') placeLiveToolCardsHost();
+        for(const tc of (S.toolCalls||[])){
+          if(tc&&tc.name) appendLiveToolCard(tc);
+        }
       }
     }
     loadDir('.');

@@ -1564,6 +1564,13 @@ function applyBotName(){
     window._whatsNewSummaryEnabled=!!s.whats_new_summary_enabled;
     window._showThinking=s.show_thinking!==false;
     window._simplifiedToolCalling=s.simplified_tool_calling!==false;
+    // A6: prefer chat_activity_display_mode; fall back to simplified_tool_calling.
+    if(s.chat_activity_display_mode==='transparent_stream'||s.chat_activity_display_mode==='compact_worklog'){
+      window._chatActivityDisplayMode=s.chat_activity_display_mode;
+      window._simplifiedToolCalling=s.chat_activity_display_mode==='compact_worklog';
+    }else{
+      window._chatActivityDisplayMode=window._simplifiedToolCalling?'compact_worklog':'transparent_stream';
+    }
     window._sidebarDensity=(s.sidebar_density==='detailed'?'detailed':'compact');
     window._inflightStateLimits={
       maxSessions:parseInt(s.inflight_state_max_sessions||8,10)||8,
@@ -1636,6 +1643,7 @@ function applyBotName(){
     window._whatsNewSummaryEnabled=false;
     window._showThinking=true;
     window._simplifiedToolCalling=true;
+    window._chatActivityDisplayMode='compact_worklog';
     window._sessionJumpButtonsEnabled=false;
     window._sidebarDensity='compact';
     window._busyInputMode='queue';
