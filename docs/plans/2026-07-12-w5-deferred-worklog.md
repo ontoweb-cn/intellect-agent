@@ -1,7 +1,7 @@
 # W5 细化稿 — P1-A Idle-deferred Worklog（N≥8）
 
 > **日期**：2026-07-12  
-> **状态**：**REVISED** — 技术评审 Request changes 已吸收；**待 Approve 后执行**  
+> **状态**：**APPROVED** — 2026-07-12 用户 Approve；按 0→1+2 执行中  
 > **策略**：先技术评审，再按 **0→2** 串行  
 > **前置**：W2–W4 已合入 main（SSE、Turn Anchors scene、transcript virt @ `357fca1`）  
 > **契约**：[`docs/webui/rfcs/stable-assistant-turn-anchors.md`](../webui/rfcs/stable-assistant-turn-anchors.md) **A5**（N≥8）  
