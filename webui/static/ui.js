@@ -5576,14 +5576,19 @@ function buildActivitySceneFromLive(opts){
 /**
  * Rebuild Activity from an activity_scene_v1 object.
  * @param {object} scene
- * @param {{source?:string,force?:boolean}} opts
- *   source: 'inflight'|'replay'|'display_toggle'|…
+ * @param {{source?:string,force?:boolean,latchOnly?:boolean}} opts
+ *   source: 'inflight'|'replay'|'sse'|'display_toggle'|…
  *   force: bypass per-stream latch (display toggle / replace-in-place)
+ *   latchOnly: set §4.3.4 latch without DOM rebuild / disclosure write (live SSE)
  */
 function applyActivityScene(scene, opts){
   opts=opts||{};
   if(!scene||typeof scene!=='object') return false;
   const streamId=scene.stream_id||S.activeStreamId||'';
+  if(opts.latchOnly){
+    if(streamId) _sceneAppliedForStream[streamId]=true;
+    return true;
+  }
   if(streamId&&_sceneAppliedForStream[streamId]&&!opts.force){
     return true; // idempotent latch (§4.3.4) — #3 replay reuse
   }
@@ -5625,18 +5630,28 @@ function applyActivityScene(scene, opts){
       appendThinking('',{pending:true});
     }
     const activityKey=streamId?('live:'+streamId):(scene.turn_id||null);
+    // A3a: server scene disclosure is always default {expanded:false}.
+    // Never overwrite an existing localStorage disclosure for sse/replay.
+    // Inflight scenes are client-authored and may carry real expand state.
+    const disclosureSrc=opts.source||'';
+    const skipServerDefaultDisclosure=(disclosureSrc==='sse'||disclosureSrc==='replay');
+    const priorDisclosure=activityKey&&typeof _readActivityDisclosureState==='function'
+      ?_readActivityDisclosureState(activityKey):null;
     if(scene.disclosure&&typeof scene.disclosure.expanded==='boolean'&&activityKey){
-      if(typeof _writeActivityDisclosureState==='function'){
+      const mayWriteDisclosure=!skipServerDefaultDisclosure||!priorDisclosure;
+      if(mayWriteDisclosure&&typeof _writeActivityDisclosureState==='function'){
         _writeActivityDisclosureState(activityKey, !!scene.disclosure.expanded);
       }
+      const effectiveExpanded=priorDisclosure==='open'?true
+        :(priorDisclosure==='closed'?false:!!scene.disclosure.expanded);
       const turn=$('liveAssistantTurn');
       const group=turn&&turn.querySelector('.tool-call-group');
       if(group){
-        if(scene.disclosure.expanded){
+        if(effectiveExpanded){
           group.classList.remove('tool-call-group-collapsed');
           const summary=group.querySelector('.tool-call-group-summary');
           if(summary) summary.setAttribute('aria-expanded','true');
-          _liveActivityUserExpanded=true;
+          if(priorDisclosure==='open') _liveActivityUserExpanded=true;
         }else{
           group.classList.add('tool-call-group-collapsed');
           const summary=group.querySelector('.tool-call-group-summary');
@@ -5649,6 +5664,11 @@ function applyActivityScene(scene, opts){
   }catch(_){
     return false;
   }
+}
+
+/** §4.3.4 / A3a: latch without rebuilding DOM or writing disclosure. */
+function markActivitySceneApplied(streamId){
+  if(streamId) _sceneAppliedForStream[streamId]=true;
 }
 
 function clearActivitySceneLatch(streamId){

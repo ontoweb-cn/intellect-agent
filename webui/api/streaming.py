@@ -3655,7 +3655,10 @@ def _run_agent_streaming(
     _stream_started_at = time.time()
 
     def _put_raw(event, data):
-        """Journal + channel + offline buffer — no scene injection."""
+        """Journal + channel + offline buffer — no scene injection.
+
+        Returns journal ``seq`` when the event was journaled, else ``None``.
+        """
         if run_journal is not None:
             try:
                 journaled = run_journal.append_sse_event(event, data)
@@ -3684,12 +3687,13 @@ def _run_agent_streaming(
             if journal_seq is not None and hasattr(q, 'put_nowait'):
                 try:
                     q.put_nowait((event, data), seq=int(journal_seq))
-                    return
+                    return journal_seq
                 except TypeError:
                     pass
             q.put_nowait((event, data))
         except Exception:
             logger.debug("Failed to put event to queue")
+        return journal_seq
 
     def _build_and_put_activity_scene(terminal_event, terminal_data):
         """Emit one activity_scene via the same put path (A1–A3a / C3)."""
@@ -3735,8 +3739,12 @@ def _run_agent_streaming(
                 elapsed_ms=elapsed_ms,
             )
             scene = bound_activity_scene_for_wire(scene)
-            _put_raw("activity_scene", scene)
-            _activity_scene_emitted[0] = True
+            journal_seq = _put_raw("activity_scene", scene)
+            # Only latch "emitted" after a durable journal write (or when no
+            # journal is configured). Failed append must allow retry on the
+            # next terminal so A-J1 still holds.
+            if run_journal is None or journal_seq is not None:
+                _activity_scene_emitted[0] = True
         except Exception:
             logger.debug(
                 "Failed to emit activity_scene before %s for stream %s",

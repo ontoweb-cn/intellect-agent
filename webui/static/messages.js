@@ -1658,6 +1658,20 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       let scene=null;
       try{scene=JSON.parse(e.data);}catch(_){return;}
       if(!scene||typeof scene!=='object') return;
+      const sceneStreamId=scene.stream_id||streamId;
+      // Live path: Activity DOM already built from tool SSE — latch only.
+      // Full apply would clearLiveToolCards + write server default disclosure
+      // (expanded:false), violating A3a and wiping user expand before done.
+      const liveTurn=$('liveAssistantTurn');
+      const hasLiveActivity=!!(liveTurn&&liveTurn.querySelector('.tool-call-group'));
+      if(hasLiveActivity){
+        if(typeof markActivitySceneApplied==='function') markActivitySceneApplied(sceneStreamId);
+        else if(typeof applyActivityScene==='function'){
+          // Fallback: force latch without rebuild if helper missing.
+          applyActivityScene(scene,{source:'sse',latchOnly:true});
+        }
+        return;
+      }
       if(typeof applyActivityScene==='function'){
         applyActivityScene(scene,{source:'sse'});
       }
