@@ -4,6 +4,7 @@ __pycache__/
 dist/
 build/
 .venv/
+node_modules/
 rust-core/target/
 intellect_community_core/*.so
 intellect_community_core/*.pyd
