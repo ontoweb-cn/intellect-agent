@@ -378,7 +378,16 @@ function _observeUserMessageHeight(row, rawIdx){
         const key=_userMessageHeightKey(idx);
         const prev=_userMessageHeightByKey.get(key);
         _userMessageHeightByKey.set(key, height);
-        if(prev&&Math.abs(prev-height)>8) _bumpMessageHeightGeneration();
+        if(prev&&Math.abs(prev-height)>8){
+          _bumpMessageHeightGeneration();
+          // I4: resync virt pads after meaningful height learn (rAF coalesce).
+          if(_messageVirtState&&_messageVirtState.virtualized&&!_messageVirtScrollRaf){
+            _messageVirtScrollRaf=requestAnimationFrame(()=>{
+              _messageVirtScrollRaf=0;
+              if(_isTranscriptVirtualWindowEnabled()) renderMessages({preserveScroll:true});
+            });
+          }
+        }
         if(_userMessageHeightByKey.size>_userMessageHeightMax){
           _userMessageHeightByKey.delete(_userMessageHeightByKey.keys().next().value);
         }
@@ -521,7 +530,8 @@ async function jumpToSessionStart(){
   _programmaticScroll=true;
   try{
     if(typeof _ensureAllMessagesLoaded==='function') await _ensureAllMessagesLoaded();
-    if(_isTranscriptVirtualWindowEnabled()){
+    const visCount=(_visWithIdxCache&&_visWithIdxCache.length)||_messageRenderableMessageCount();
+    if(_isTranscriptVirtualWindowActive(visCount)){
       // C4: start=0 window + scrollTop=0 — no full DOM expand.
       _messageVirtForceStart=0;
       renderMessages({ preserveScroll:true });
@@ -575,13 +585,15 @@ async function jumpToTurnQuestion(questionRawIdx){
     return true;
   };
   if(scrollToTarget()) return;
-  if(_isTranscriptVirtualWindowEnabled()){
+  const visCount=(_visWithIdxCache&&_visWithIdxCache.length)||_messageRenderableMessageCount();
+  if(_isTranscriptVirtualWindowActive(visCount)){
     // C4: pin vis index containing rawIdx — no full expand.
     let pinVis=-1;
     const cache=_visWithIdxCache;
     if(cache&&cache.length){
       for(let i=0;i<cache.length;i++){
         if(cache[i]&&cache[i].idx===questionRawIdx){ pinVis=i; break; }
+        if(cache[i]&&cache[i].rawIdx===questionRawIdx){ pinVis=i; break; }
       }
     }
     if(pinVis<0){
@@ -6805,6 +6817,15 @@ function renderMessages(options){
   });
   $('emptyState').style.display=(vis.length||preservedCompressionTaskMessages.length)?'none':'';
   _disconnectUserMessageHeightObserver();
+  // W4 V4: preserve live turn DOM across virt rebuilds (do not remount empty).
+  let _preservedLiveTurn=null;
+  if(_isTranscriptVirtualWindowEnabled()){
+    const existingLive=$('liveAssistantTurn');
+    if(existingLive&&existingLive.parentNode){
+      _preservedLiveTurn=existingLive;
+      existingLive.remove();
+    }
+  }
   inner.innerHTML='';
   const compressionNode=compressionState?_compressionCardsNode(compressionState):null;
   const {message:referenceMessage, rawIdx:referenceMessageRawIdx}=_latestCompressionReferenceMessage(
@@ -6836,6 +6857,18 @@ function renderMessages(options){
     _visWithIdxCacheLen=S.messages.length;
   }
   const visWithIdx=_visWithIdxCache;
+  // W4 V4: peel trailing live messages out of the virt ledger/slice so
+  // #liveAssistantTurn stays a sibling after the bottom spacer.
+  let historyVisWithIdx=visWithIdx;
+  let liveTailVis=[];
+  if(_isTranscriptVirtualWindowEnabled()&&visWithIdx.length){
+    historyVisWithIdx=visWithIdx.slice();
+    while(historyVisWithIdx.length){
+      const last=historyVisWithIdx[historyVisWithIdx.length-1];
+      if(last&&last.m&&last.m._live) liveTailVis.unshift(historyVisWithIdx.pop());
+      else break;
+    }
+  }
   const preservedCompressionRawIdxs=[];
   let rawIdx=0;
   for(const m of S.messages){
@@ -6854,11 +6887,11 @@ function renderMessages(options){
   let hiddenBeforeCount;
   let renderVisWithIdx;
   let virtMeta=null;
-  const virtActive=_isTranscriptVirtualWindowActive(visWithIdx.length);
+  const virtActive=_isTranscriptVirtualWindowActive(historyVisWithIdx.length);
   if(virtActive&&typeof variableHeightVirtualWindow==='function'){
     _wireMessageVirtualScroll();
-    const heights=visWithIdx.map(({m,rawIdx})=>_estimateVisRowHeight(m,rawIdx));
-    const roles=visWithIdx.map(({m})=>(m&&m.role)||'');
+    const heights=historyVisWithIdx.map(({m,rawIdx})=>_estimateVisRowHeight(m,rawIdx));
+    const roles=historyVisWithIdx.map(({m})=>(m&&m.role)||'');
     const container=$('messages');
     const scrollTop=container?container.scrollTop:0;
     const viewport=container?(container.clientHeight||600):600;
@@ -6877,7 +6910,6 @@ function renderMessages(options){
     if(typeof expandToTurnBoundaries==='function'){
       const expanded=expandToTurnBoundaries(win.start, win.end, roles);
       if(expanded&&(expanded.start!==win.start||expanded.end!==win.end)){
-        // Recompute pads for expanded bounds via prefix sums.
         const prefix=(typeof buildPrefixSums==='function')?buildPrefixSums(heights):null;
         win={
           virtualized:true,
@@ -6892,22 +6924,25 @@ function renderMessages(options){
     }
     windowStart=win.start;
     hiddenBeforeCount=win.start;
-    renderVisWithIdx=visWithIdx.slice(win.start, win.end);
+    renderVisWithIdx=historyVisWithIdx.slice(win.start, win.end);
     virtMeta=win;
     _messageVirtState={
       virtualized:!!win.virtualized,
       start:win.start,
       end:win.end,
-      total:visWithIdx.length,
+      total:historyVisWithIdx.length,
       topPad:win.topPad||0,
       bottomPad:win.bottomPad||0,
       heightGeneration:_messageHeightGeneration,
     };
   }else{
     _messageVirtState=null;
-    windowStart=Math.max(0, visWithIdx.length-renderWindowSize);
+    // W2 path: include live in the tail window (bit-identical).
+    const allVis=liveTailVis.length?historyVisWithIdx.concat(liveTailVis):historyVisWithIdx;
+    windowStart=Math.max(0, allVis.length-renderWindowSize);
     hiddenBeforeCount=windowStart;
-    renderVisWithIdx=visWithIdx.slice(windowStart);
+    renderVisWithIdx=allVis.slice(windowStart);
+    liveTailVis=[]; // already included in renderVisWithIdx
   }
   const firstRenderedRawIdx=renderVisWithIdx.length?renderVisWithIdx[0].rawIdx:Infinity;
   const hasServerOlder=!!(typeof _messagesTruncated!=='undefined' && _messagesTruncated && S.messages.length>0);
@@ -7113,7 +7148,10 @@ function renderMessages(options){
 
     if(!currentAssistantTurn){
       currentAssistantTurn=_createAssistantTurn(tsTitle, isTpsDisplayEnabled()?_formatTurnTps(m._turnTps):'');
+      currentAssistantTurn.dataset.msgIdx=rawIdx;
+      _applyCachedUserMessageHeight(currentAssistantTurn, rawIdx);
       inner.appendChild(currentAssistantTurn);
+      _observeUserMessageHeight(currentAssistantTurn, rawIdx);
     }
     const seg=document.createElement('div');
     seg.className='assistant-segment';
@@ -7471,15 +7509,20 @@ function renderMessages(options){
   if(virtMeta&&virtMeta.virtualized&&(virtMeta.bottomPad||0)>0&&typeof messageVirtualSpacer==='function'){
     inner.appendChild(messageVirtualSpacer(virtMeta.bottomPad,'bottom'));
   }
-  // V4: mid-stream history scroll may leave #liveAssistantTurn out of the slice —
-  // keep a live sibling mounted after the bottom spacer while a stream is active.
-  if(virtActive&&S.activeStreamId&&!$('liveAssistantTurn')&&typeof _createAssistantTurn==='function'){
-    try{
-      const liveTurn=_createAssistantTurn();
-      liveTurn.id='liveAssistantTurn';
-      liveTurn.setAttribute('data-live-virt-sibling','1');
-      inner.appendChild(liveTurn);
-    }catch(_){}
+  // V4: reattach preserved live turn after bottom spacer; never recreate empty
+  // when we already had a live DOM (stream state). Fall back to create only
+  // when streaming and nothing was preserved.
+  if(virtActive){
+    if(_preservedLiveTurn){
+      inner.appendChild(_preservedLiveTurn);
+    }else if(S.activeStreamId&&!$('liveAssistantTurn')&&typeof _createAssistantTurn==='function'){
+      try{
+        const liveTurn=_createAssistantTurn();
+        liveTurn.id='liveAssistantTurn';
+        liveTurn.setAttribute('data-live-virt-sibling','1');
+        inner.appendChild(liveTurn);
+      }catch(_){}
+    }
   }
   // Only force-scroll when not actively streaming — mid-stream re-renders
   // (tool completion, session switch) must not override the user's scroll position.
