@@ -118,7 +118,8 @@
 
 > **P1 细化 + 技术评审（2026-07-11）**：见 [`2026-07-11-p1-journey-and-webui-parity-refinement.md`](./2026-07-11-p1-journey-and-webui-parity-refinement.md) §2（轨 B）。决议：P1-C 立即；P1-A RFC 可与 Session SSE P0 并行；P1-A/B 全量跟 P0 客户端之后。  
 > **W1（2026-07-12）**：P1-C / Journey P1-1·2 已合入；下一拍见 [`2026-07-12-w1-journey-e2e-and-session-sse.md`](./2026-07-12-w1-journey-e2e-and-session-sse.md)（P1-4 E2E ∥ Session SSE RFC）。  
-> **W5（2026-07-12）**：deferred worklog 已合入 `d6a94d7`；下一拍见 [`2026-07-12-w6-transparent-stream.md`](./2026-07-12-w6-transparent-stream.md)。
+> **W5（2026-07-12）**：deferred worklog 已合入 `d6a94d7`；下一拍见 [`2026-07-12-w6-transparent-stream.md`](./2026-07-12-w6-transparent-stream.md)。  
+> **W6（2026-07-12）**：transparent stream 已合入 `609f705`；下一拍见 [`2026-07-12-w7-p2-security.md`](./2026-07-12-w7-p2-security.md)（P2 anchored I/O + trusted proxy）。
 
 ### P2 — 安全与同机运维
 
