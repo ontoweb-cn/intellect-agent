@@ -117,7 +117,8 @@
 **验收**：长会话滚动稳定；刷新/重连后 turn 结构与 live 一致；快速切会话无串台。
 
 > **P1 细化 + 技术评审（2026-07-11）**：见 [`2026-07-11-p1-journey-and-webui-parity-refinement.md`](./2026-07-11-p1-journey-and-webui-parity-refinement.md) §2（轨 B）。决议：P1-C 立即；P1-A RFC 可与 Session SSE P0 并行；P1-A/B 全量跟 P0 客户端之后。  
-> **W1（2026-07-12）**：P1-C / Journey P1-1·2 已合入；下一拍见 [`2026-07-12-w1-journey-e2e-and-session-sse.md`](./2026-07-12-w1-journey-e2e-and-session-sse.md)（P1-4 E2E ∥ Session SSE RFC）。
+> **W1（2026-07-12）**：P1-C / Journey P1-1·2 已合入；下一拍见 [`2026-07-12-w1-journey-e2e-and-session-sse.md`](./2026-07-12-w1-journey-e2e-and-session-sse.md)（P1-4 E2E ∥ Session SSE RFC）。  
+> **W5（2026-07-12）**：deferred worklog 已合入 `d6a94d7`；下一拍见 [`2026-07-12-w6-transparent-stream.md`](./2026-07-12-w6-transparent-stream.md)。
 
 ### P2 — 安全与同机运维
 
