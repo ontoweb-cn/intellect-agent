@@ -3666,11 +3666,25 @@ def _run_agent_streaming(
                 # advance during live streaming and prevents replay from
                 # double-rendering tokens after a mid-stream error→reconnect.
                 event_id = (journaled or {}).get('event_id') if isinstance(journaled, dict) else None
+                journal_seq = (journaled or {}).get('seq') if isinstance(journaled, dict) else None
                 if event_id:
                     STREAM_LAST_EVENT_ID[stream_id] = event_id
             except Exception:
                 logger.debug("Failed to append run journal event %s for stream %s", event, stream_id, exc_info=True)
+                event_id = None
+                journal_seq = None
+        else:
+            event_id = None
+            journal_seq = None
         try:
+            # Pass journal seq so StreamChannel.subscribe_after_seq can skip
+            # offline frames already journal-filled on resume (W2 Critical).
+            if journal_seq is not None and hasattr(q, 'put_nowait'):
+                try:
+                    q.put_nowait((event, data), seq=int(journal_seq))
+                    return
+                except TypeError:
+                    pass
             q.put_nowait((event, data))
         except Exception:
             logger.debug("Failed to put event to queue")
@@ -5131,6 +5145,20 @@ def _run_agent_streaming(
                             _err_hint,
                         )
                         put('apperror', _error_payload)
+                        # W2 B4: pause same-fingerprint auto-wakeup after quota/rate-limit.
+                        if _err_type in ('quota_exhausted', 'rate_limit'):
+                            try:
+                                from api.wakeup_pause import process_wakeup_paused_event, set_pause
+
+                                paused = set_pause(
+                                    reason=_err_type,
+                                    provider=resolved_provider or getattr(s, 'model_provider', None),
+                                    model=resolved_model or getattr(s, 'model', None),
+                                    detail=_err_str[:200] if _err_str else None,
+                                )
+                                put('process_wakeup_paused', process_wakeup_paused_event(paused))
+                            except Exception:
+                                logger.debug('wakeup pause set failed', exc_info=True)
                         # Clear stream/pending state so the session does not appear
                         # "agent_running" on reload after a silent failure.
                         # Persist the error so it survives page reload.
@@ -5793,6 +5821,15 @@ def _run_agent_streaming(
                 logger.debug("Goal continuation hook failed for session %s: %s", session_id, _goal_exc)
             raw_session = s.compact() | {'messages': s.messages, 'tool_calls': tool_calls}
             put('done', {'session': redact_session_data(raw_session), 'usage': usage})
+            try:
+                from api.wakeup_pause import clear_pause_for_fingerprint
+
+                clear_pause_for_fingerprint(
+                    resolved_provider if 'resolved_provider' in locals() else getattr(s, 'model_provider', None),
+                    resolved_model if 'resolved_model' in locals() else getattr(s, 'model', None),
+                )
+            except Exception:
+                logger.debug('wakeup pause clear on done failed', exc_info=True)
             # Emit one last metering packet for the live message-header TPS label.
             meter_stats = meter().get_stats()
             meter_stats['session_id'] = session_id
@@ -6058,6 +6095,18 @@ def _run_agent_streaming(
                     except Exception:
                         logger.debug("Failed to append interrupted turn journal event", exc_info=True)
         put('apperror', _error_payload)
+        if _exc_type in ('quota_exhausted', 'rate_limit'):
+            try:
+                from api.wakeup_pause import process_wakeup_paused_event, set_pause
+
+                paused = set_pause(
+                    reason=_exc_type,
+                    provider=resolved_provider if 'resolved_provider' in locals() else getattr(s, 'model_provider', None),
+                    model=resolved_model if 'resolved_model' in locals() else getattr(s, 'model', None),
+                )
+                put('process_wakeup_paused', process_wakeup_paused_event(paused))
+            except Exception:
+                logger.debug('wakeup pause set failed', exc_info=True)
     finally:
         # Stop the periodic checkpoint thread before the final recovery path.
         # The checkpoint thread also uses the per-session lock; joining it first

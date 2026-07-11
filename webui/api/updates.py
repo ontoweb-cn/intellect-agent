@@ -1084,6 +1084,25 @@ def apply_force_update(target: str) -> dict:
             _update_cache['checked_at'] = 0
 
         _try_rebuild_rust_extension()
+
+        # DECIDED #4: prove messaging gateway restart BEFORE WebUI self-restart
+        # (os.execv via _schedule_restart) so the prove call is not cut short.
+        if target in ('agent', 'intellect-agent'):
+            from api.gateway_lifecycle import ensure_gateway_restarted_for_agent_update
+
+            gw = ensure_gateway_restarted_for_agent_update()
+            if not gw.get('ok'):
+                return {
+                    'ok': False,
+                    'message': (
+                        'Agent update applied but messaging gateway restart was not proven: '
+                        + str(gw.get('message') or gw.get('status') or 'failed')
+                    ),
+                    'target': target,
+                    'restart_scheduled': False,
+                    'gateway_restart': gw,
+                }
+
         _schedule_restart()
 
         return {
@@ -1218,6 +1237,23 @@ def _apply_update_inner(target):
     # Rebuild the Rust extension so the compiled accelerator matches the
     # freshly-pulled Python code.  Best-effort — failure is non-fatal.
     _try_rebuild_rust_extension()
+
+    # DECIDED #4: prove messaging gateway restart BEFORE WebUI self-restart.
+    if target in ('agent', 'intellect-agent'):
+        from api.gateway_lifecycle import ensure_gateway_restarted_for_agent_update
+
+        gw = ensure_gateway_restarted_for_agent_update()
+        if not gw.get('ok'):
+            return {
+                'ok': False,
+                'message': (
+                    'Agent code updated but messaging gateway restart was not proven: '
+                    + str(gw.get('message') or gw.get('status') or 'failed')
+                ),
+                'target': target,
+                'restart_scheduled': False,
+                'gateway_restart': gw,
+            }
 
     # Schedule a self-restart so the updated code is loaded fresh.  A plain
     # git pull leaves stale Python modules in sys.modules — agent imports that

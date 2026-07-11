@@ -4512,15 +4512,29 @@ class StreamChannel:
         self._offline_bytes = 0
 
     def subscribe(self) -> queue.Queue:
+        return self.subscribe_after_seq(None)
+
+    def subscribe_after_seq(self, after_seq: int | None) -> queue.Queue:
+        """Subscribe, optionally skipping offline frames with ``seq <= after_seq``.
+
+        Used by B2 journal-first resume: journal already emitted through
+        ``after_seq`` / HWM, so replaying the same offline tail would
+        double-render. Frames without a seq hint are skipped when
+        ``after_seq`` is set (journal is SoT for durable events).
+        """
         q: queue.Queue = queue.Queue()
         with self._lock:
-            # Replay buffered events to the new subscriber INSIDE the lock so a
-            # concurrent put_nowait() can't broadcast a newer event before we
-            # finish replaying the older buffered tail. queue.Queue.put_nowait
-            # is non-blocking on an unbounded queue, so holding the lock here
-            # is safe. Per Opus advisor on stage-292.
-            for item in self._offline_buffer:
-                q.put_nowait(item)
+            if after_seq is None:
+                for item in self._offline_buffer:
+                    q.put_nowait(item)
+            else:
+                threshold = int(after_seq)
+                for item, seq in zip(self._offline_buffer, self._offline_seqs):
+                    if seq is None:
+                        continue
+                    if int(seq) <= threshold:
+                        continue
+                    q.put_nowait(item)
             self._subscribers.append(q)
         return q
 
@@ -4531,12 +4545,12 @@ class StreamChannel:
             except ValueError:
                 pass
 
-    def put_nowait(self, item: tuple[str, object]) -> None:
+    def put_nowait(self, item: tuple[str, object], *, seq: int | None = None) -> None:
         # Size / seq accounting outside the lock so large JSON dumps do not
         # stall subscribe / unsubscribe / competing puts (review Important #3).
         max_bytes = self._max_bytes
         size = self._estimate_item_bytes(item, max_bytes=max_bytes)
-        seq_hint = self._extract_seq_hint(item)
+        seq_hint = seq if seq is not None else self._extract_seq_hint(item)
 
         with self._lock:
             subscribers = list(self._subscribers)
@@ -4553,8 +4567,8 @@ class StreamChannel:
                 self._enforce_offline_bounds_locked()
                 return
             self._clear_offline_locked()
-        for q in subscribers:
-            q.put_nowait(item)
+        for sub in subscribers:
+            sub.put_nowait(item)
 
     def diagnostic_snapshot(self) -> dict[str, int | None]:
         """Return non-sensitive stream observation counters for health checks."""

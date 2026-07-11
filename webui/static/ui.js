@@ -264,12 +264,75 @@ let _messageRenderWindowSize=MESSAGE_RENDER_WINDOW_DEFAULT;
 // Cached visWithIdx array — invalidated when S.messages.length changes.
 let _visWithIdxCache=null;
 let _visWithIdxCacheLen=0;
+// P1-B MVP: remember user-row heights to reduce jump on window expand / reload.
+const _userMessageHeightByKey=new Map();
+const _userMessageHeightMax=400;
+let _userMessageHeightObserver=null;
 function _resetMessageRenderWindow(sid){
   _messageRenderWindowSid=sid||null;
   _messageRenderWindowSize=MESSAGE_RENDER_WINDOW_DEFAULT;
   _clearRenderCache();
   _visWithIdxCache=null;
   _visWithIdxCacheLen=0;
+  // Drop height entries for other sessions; keep current sid keys.
+  if(sid){
+    for(const key of [..._userMessageHeightByKey.keys()]){
+      if(!key.startsWith(sid+':')) _userMessageHeightByKey.delete(key);
+    }
+  }else{
+    _userMessageHeightByKey.clear();
+  }
+}
+
+function _userMessageHeightKey(rawIdx){
+  const sid=S.session?S.session.session_id:'';
+  return sid+':'+String(rawIdx);
+}
+
+function _applyCachedUserMessageHeight(row, rawIdx){
+  if(!row) return;
+  const h=_userMessageHeightByKey.get(_userMessageHeightKey(rawIdx));
+  if(h&&h>0) row.style.minHeight=h+'px';
+  else row.style.minHeight='';
+}
+
+function _observeUserMessageHeight(row, rawIdx){
+  if(!row||typeof ResizeObserver==='undefined') return;
+  if(!_userMessageHeightObserver){
+    _userMessageHeightObserver=new ResizeObserver(entries=>{
+      for(const entry of entries){
+        const el=entry&&entry.target;
+        if(!el||!el.dataset) continue;
+        const idx=el.dataset.msgIdx;
+        if(idx===undefined||idx==='') continue;
+        const height=Math.round(el.getBoundingClientRect().height||0);
+        if(height<=0) continue;
+        const key=_userMessageHeightKey(idx);
+        _userMessageHeightByKey.set(key, height);
+        if(_userMessageHeightByKey.size>_userMessageHeightMax){
+          _userMessageHeightByKey.delete(_userMessageHeightByKey.keys().next().value);
+        }
+      }
+    });
+  }
+  try{_userMessageHeightObserver.observe(row);}catch(_){}
+}
+
+function _disconnectUserMessageHeightObserver(){
+  if(!_userMessageHeightObserver) return;
+  try{_userMessageHeightObserver.disconnect();}catch(_){}
+  // Keep the Map; only release DOM observations across full rebuilds.
+}
+
+/** Shared follow-intent used by SSE done / session_snapshot / reconnect settles. */
+function renderMessagesWithFollowIntent(options){
+  const opts=Object.assign({}, options||{});
+  const follow=opts.followIntent!==undefined
+    ? !!opts.followIntent
+    : ((typeof _shouldFollowMessagesOnDomReplace==='function')&&_shouldFollowMessagesOnDomReplace());
+  // followIntent drives _scrollAfterMessageRender → scrollToBottom; avoid a
+  // second scrollToBottom here (review nit).
+  renderMessages(Object.assign({}, opts, {preserveScroll:true, followIntent:follow}));
 }
 
 // ── renderMd / _renderUserFencedBlocks cache ──────────────────────────────
@@ -4513,6 +4576,66 @@ function dismissAgentHealthAlert(){
   _setAgentHealthDismissed(true);
   _hideAgentHealthAlert();
 }
+async function restartAgentGatewayFromBanner(){
+  const btn=$('agentHealthRestart');
+  if(btn){btn.disabled=true;btn.textContent='Restarting…';}
+  try{
+    // Restarts the messaging gateway for the active profile / INTELLECT_HOME
+    // (not just this chat session).
+    const res=await api('/api/health/restart',{method:'POST',body:{}});
+    if(res&&(res.status==='completed'||res.status==='in_progress'||res.ok)){
+      if(typeof setComposerStatus==='function') setComposerStatus(res.message||'Gateway restart requested…');
+      // Poll briefly then re-check health.
+      for(let i=0;i<20;i++){
+        await new Promise(r=>setTimeout(r,500));
+        const st=await api('/api/health/restart/status');
+        if(st&&(st.status==='completed'||st.status==='failed')){
+          if(typeof setComposerStatus==='function') setComposerStatus(st.message||st.status);
+          break;
+        }
+      }
+      await pollAgentHealth();
+      return;
+    }
+    if(typeof setComposerStatus==='function') setComposerStatus((res&&res.message)||'Gateway restart failed');
+  }catch(err){
+    if(typeof setComposerStatus==='function') setComposerStatus((err&&err.message)||'Gateway restart failed');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Restart gateway';}
+  }
+}
+
+function _showWakeupPausedBanner(pause){
+  let banner=$('wakeupPausedBanner');
+  if(!banner){
+    banner=document.createElement('div');
+    banner.id='wakeupPausedBanner';
+    banner.className='agent-health-banner visible';
+    banner.setAttribute('role','status');
+    banner.innerHTML=`<div class="agent-health-copy"><strong>Wakeup paused</strong><span id="wakeupPausedDetails"></span></div><div class="agent-health-actions"><button type="button" class="agent-health-restart" id="wakeupResumeBtn">Resume</button><button type="button" class="agent-health-dismiss" id="wakeupDismissBtn">Dismiss</button></div>`;
+    const host=$('composerWrap')||document.body;
+    host.parentNode?host.parentNode.insertBefore(banner,host):document.body.appendChild(banner);
+    banner.querySelector('#wakeupResumeBtn').onclick=async()=>{
+      try{
+        await api('/api/wakeup/resume',{method:'POST',body:{}});
+        banner.remove();
+        if(typeof showToast==='function') showToast('Wakeup resumed',2200);
+      }catch(err){
+        if(typeof showToast==='function') showToast((err&&err.message)||'Resume failed',3200,'error');
+      }
+    };
+    banner.querySelector('#wakeupDismissBtn').onclick=()=>banner.remove();
+  }
+  const details=$('wakeupPausedDetails');
+  if(details){
+    const provider=(pause&&pause.provider)||'';
+    const model=(pause&&pause.model)||'';
+    const reason=(pause&&pause.reason)||'credential_exhausted';
+    details.textContent=`${reason}${provider||model?` · ${provider}${provider&&model?' / ':''}${model}`:''}. Change model/provider or resume to continue.`;
+  }
+  banner.hidden=false;
+  banner.classList.add('visible');
+}
 async function pollAgentHealth(){
   if(document.visibilityState !== 'visible') return;
   try{
@@ -5295,6 +5418,53 @@ function _toggleActivityGroup(summary){
 function _clearLiveActivityUserIntent(){
   _liveActivityUserExpanded = undefined;
 }
+
+/**
+ * Opt-C: remap live activity disclosure keys before transcript rebuild.
+ * Remaps disclosure key live:{streamId} → assistant:{idx}, strips live
+ * markers, and preserves user expand intent (#1298). Returns false on
+ * failure so callers can fall back to clearLiveToolCards().
+ *
+ * Scope note (W2 review): full flash reduction (C-A1) is deferred — callers
+ * still rebuild via renderMessages; this helper's job is honest disclosure
+ * remapping without inventing journal/scene fields.
+ */
+function _convertLiveActivityGroupToSettled(assistantIdx){
+  const turn=$('liveAssistantTurn');
+  if(!turn||!turn.isConnected) return false;
+  const group=turn.querySelector('.tool-call-group[data-live-tool-call-group="1"]');
+  if(!group) return false;
+  try{
+    const liveKey=group.getAttribute('data-activity-disclosure-key')||(typeof _activityKeyForLiveTurn==='function'?_activityKeyForLiveTurn():null);
+    const settledKey=(Number.isInteger(assistantIdx)&&assistantIdx>=0)?('assistant:'+assistantIdx):null;
+    if(settledKey&&liveKey&&typeof _copyActivityDisclosureState==='function'){
+      _copyActivityDisclosureState(liveKey, settledKey);
+    }
+    group.removeAttribute('data-live-tool-call-group');
+    group.removeAttribute('data-live-activity-current');
+    if(settledKey) group.setAttribute('data-activity-disclosure-key', settledKey);
+    // Honor explicit user expand; otherwise collapse for settled worklog.
+    if(_liveActivityUserExpanded===true){
+      group.classList.remove('tool-call-group-collapsed');
+      const summary=group.querySelector('.tool-call-group-summary');
+      if(summary) summary.setAttribute('aria-expanded','true');
+      if(settledKey) _writeActivityDisclosureState(settledKey, true);
+    }else{
+      group.classList.add('tool-call-group-collapsed');
+      const summary=group.querySelector('.tool-call-group-summary');
+      if(summary) summary.setAttribute('aria-expanded','false');
+      if(settledKey) _writeActivityDisclosureState(settledKey, false);
+    }
+    group.querySelectorAll('[data-live-tid]').forEach(el=>el.removeAttribute('data-live-tid'));
+    if(typeof _clearActivityElapsedTimer==='function') _clearActivityElapsedTimer();
+    if(typeof _syncToolCallGroupSummary==='function') _syncToolCallGroupSummary(group);
+    _clearLiveActivityUserIntent();
+    return true;
+  }catch(_){
+    return false;
+  }
+}
+
 function ensureActivityGroup(inner, opts){
   opts=opts||{};
   if(!inner) return null;
@@ -6078,14 +6248,18 @@ function _restoreMessageScrollSnapshot(snapshot){
   _lastScrollTop=el.scrollTop;
   requestAnimationFrame(()=>{ setTimeout(()=>{_programmaticScroll=false;},0); });
 }
-function _scrollAfterMessageRender(preserveScroll, scrollSnapshot){
+function _scrollAfterMessageRender(preserveScroll, scrollSnapshot, followIntent){
   // Terminal stream renders can happen after S.activeStreamId is cleared.
-  // In that case, preserveScroll asks the normal pin-state helper to decide:
-  // pinned users stay at bottom; users who manually scrolled up get their
-  // pre-render scrollTop restored after the DOM replacement.
+  // preserveScroll + followIntent (SSE done / snapshot): pin to bottom.
+  // preserveScroll alone (load-older): restore snapshot unless still pinned.
   if(preserveScroll){
-    if(_scrollPinned) scrollIfPinned();
-    else _restoreMessageScrollSnapshot(scrollSnapshot);
+    if(followIntent){
+      scrollToBottom();
+    }else if(_scrollPinned){
+      scrollIfPinned();
+    }else{
+      _restoreMessageScrollSnapshot(scrollSnapshot);
+    }
     return;
   }
   if(S.activeStreamId){
@@ -6097,6 +6271,7 @@ function _scrollAfterMessageRender(preserveScroll, scrollSnapshot){
 
 function renderMessages(options){
   const preserveScroll=!!(options&&options.preserveScroll);
+  const followIntent=!!(options&&options.followIntent);
   const scrollSnapshot=preserveScroll?_captureMessageScrollSnapshot():null;
   // Capture open tool-card state before DOM rebuild so expanded cards stay
   // open across renderMessages cycles (history scroll, stream settle, etc).
@@ -6106,6 +6281,7 @@ function renderMessages(options){
   const msgCount=S.messages.length;
   if(sid!==_messageRenderWindowSid) _resetMessageRenderWindow(sid);
   const renderWindowSize=_currentMessageRenderWindowSize();
+  const hiddenBeforeCount=_messageHiddenBeforeCount();
   let cachedRenderSignature=null;
   const hasTransientTranscriptUi=!!(
     (window._compressionUi&&(!window._compressionUi.sessionId||window._compressionUi.sessionId===sid)) ||
@@ -6120,16 +6296,17 @@ function renderMessages(options){
   // Also skip cache for transient transcript cards such as /compress and
   // cross-channel handoff summaries; otherwise the cached transcript returns
   // before those cards can be inserted.
+  // Cache key includes renderWindowSize + hiddenBeforeCount (P1-B MVP).
   if(sid&&sid!==_sessionHtmlCacheSid&&!INFLIGHT[sid]&&!hasTransientTranscriptUi){
     const renderSignature=_messageRenderCacheSignature();
     cachedRenderSignature=renderSignature;
     const cached=_sessionHtmlCache.get(sid);
-    if(cached&&cached.msgCount===msgCount&&cached.renderWindowSize===renderWindowSize&&cached.signature===renderSignature){
+    if(cached&&cached.msgCount===msgCount&&cached.renderWindowSize===renderWindowSize&&cached.hiddenBeforeCount===hiddenBeforeCount&&cached.signature===renderSignature){
       inner.innerHTML=cached.html;
       _sessionHtmlCacheSid=sid;
       _wireMessageWindowLoadEarlierButton();
       if(typeof _applySessionNavigationPrefs==='function') _applySessionNavigationPrefs();
-      _scrollAfterMessageRender(preserveScroll, scrollSnapshot);
+      _scrollAfterMessageRender(preserveScroll, scrollSnapshot, followIntent);
       requestAnimationFrame(()=>postProcessRenderedMessages(inner));
       if(typeof _initMediaPlaybackObserver==='function') _initMediaPlaybackObserver();
       if(typeof loadTodos==='function'&&document.getElementById('panelTodos')&&document.getElementById('panelTodos').classList.contains('active')){loadTodos();}
@@ -6163,6 +6340,7 @@ function renderMessages(options){
     return m._statusCard||msgContent(m)||m.attachments?.length;
   });
   $('emptyState').style.display=(vis.length||preservedCompressionTaskMessages.length)?'none':'';
+  _disconnectUserMessageHeightObserver();
   inner.innerHTML='';
   const compressionNode=compressionState?_compressionCardsNode(compressionState):null;
   const {message:referenceMessage, rawIdx:referenceMessageRawIdx}=_latestCompressionReferenceMessage(
@@ -6400,7 +6578,9 @@ function renderMessages(options){
       row.dataset.role='user';
       row.dataset.rawText=String(displayContent).trim();
       row.innerHTML=`${filesHtml}<div class="msg-body">${bodyHtml}</div>${footHtml}`;
+      _applyCachedUserMessageHeight(row, rawIdx);
       inner.appendChild(row);
+      _observeUserMessageHeight(row, rawIdx);
       userRows.set(rawIdx, row);
       continue;
     }
@@ -6764,7 +6944,7 @@ function renderMessages(options){
   // Only force-scroll when not actively streaming — mid-stream re-renders
   // (tool completion, session switch) must not override the user's scroll position.
   // scrollIfPinned() respects _scrollPinned, so it's a no-op if user scrolled up.
-  _scrollAfterMessageRender(preserveScroll, scrollSnapshot);
+  _scrollAfterMessageRender(preserveScroll, scrollSnapshot, followIntent);
   // Restore open tool-card state so cards expanded by the user stay open
   // across DOM rebuilds (history scroll, stream settle, etc).
   if(openToolCardSignatures && openToolCardSignatures.size > 0){
@@ -6785,7 +6965,7 @@ function renderMessages(options){
     // Only cache sessions with <300KB rendered HTML; evict oldest beyond 8 sessions.
     if(_html.length<300_000){
       const renderSignature=cachedRenderSignature===null?_messageRenderCacheSignature():cachedRenderSignature;
-      _sessionHtmlCache.set(sid,{html:_html,msgCount,renderWindowSize,signature:renderSignature});
+      _sessionHtmlCache.set(sid,{html:_html,msgCount,renderWindowSize,hiddenBeforeCount,signature:renderSignature});
       if(_sessionHtmlCache.size>8){_sessionHtmlCache.delete(_sessionHtmlCache.keys().next().value);}
     }
   }

@@ -568,6 +568,18 @@ async function send(){
     }
   }catch(e){
     const errMsg=String((e&&e.message)||'');
+    const wakeupPaused=(e&&(e.code==='wakeup_paused'||(e.payload&&e.payload.code==='wakeup_paused')))||/wakeup_paused/i.test(errMsg);
+    if(wakeupPaused){
+      delete INFLIGHT[activeSid];
+      if(typeof clearInflightState==='function') clearInflightState(activeSid);
+      S.busy=false;
+      if(typeof setBusy==='function') setBusy(false);
+      const human=errMsg&&errMsg!=='wakeup_paused'?errMsg:'Automatic wakeup is paused after credential exhaustion. Change model/provider or resume.';
+      if(typeof showToast==='function') showToast(human,5000,'error');
+      else if(typeof setComposerStatus==='function') setComposerStatus(human);
+      if(typeof _showWakeupPausedBanner==='function') _showWakeupPausedBanner(e.payload&&e.payload.pause);
+      return;
+    }
     const conflictActiveStream=/session already has an active stream/i.test(errMsg);
     if(conflictActiveStream){
       delete INFLIGHT[activeSid];
@@ -830,6 +842,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   let _reconnectAttempted=false;
   let _terminalStateReached=false;
   let _deferredStreamRecoveryBound=false;
+  // W2 B3 / RFC S8: after honest session_snapshot, do not EventSource-loop.
+  let _resumeReconnectSuppressed=false;
 
   function _pageHiddenForStreamError(){
     return (typeof document!=='undefined'&&document.visibilityState==='hidden')||
@@ -845,7 +859,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           const st=await api(`/api/chat/stream/status?stream_id=${encodeURIComponent(streamId)}`);
           if(st.active){
             setComposerStatus('Reconnected');
-            _wireSSE(new EventSource(new URL(`api/chat/stream?stream_id=${encodeURIComponent(streamId)}`,document.baseURI||location.href).href,{withCredentials:true}));
+            _wireSSE(new EventSource(new URL(`api/chat/stream?stream_id=${encodeURIComponent(streamId)}${_runJournalReplayParams()}`,document.baseURI||location.href).href,{withCredentials:true}));
             return;
           }
         }
@@ -1425,9 +1439,53 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
   }
   function _runJournalReplayParams(){
     // `replay=1` documents frontend intent. The server selects replay when the
-    // stream id no longer has a live worker; `after_seq` prevents duplicated
-    // journal events after this EventSource has already rendered part of a run.
-    return `&replay=1&after_seq=${encodeURIComponent(String(_runJournalReplayAfterSeq()))}`;
+    // stream id no longer has a live worker; `after_seq` / `cursor` prevent
+    // duplicated journal events after this EventSource has already rendered
+    // part of a run. Query wins over browser Last-Event-ID (RFC S6).
+    const seq=_runJournalReplayAfterSeq();
+    const cursor=streamId?`${streamId}:${seq}`:String(seq);
+    return `&replay=1&after_seq=${encodeURIComponent(String(seq))}&cursor=${encodeURIComponent(cursor)}`;
+  }
+  function _suppressResumeReconnect(){
+    _resumeReconnectSuppressed=true;
+    _terminalStateReached=true;
+    _reconnectAttempted=true;
+  }
+  async function _handleSessionSnapshot(rawData, es){
+    let d={};
+    try{d=typeof rawData==='string'?JSON.parse(rawData||'{}'):(rawData||{});}catch(_){d={};}
+    const reason=String(d.reason||'');
+    const terminalReasons=new Set(['no_active_run','journal_missing','gap','unknown_cursor','stale_run']);
+    if(terminalReasons.has(reason)){
+      _suppressResumeReconnect();
+      try{if(es) es.close();}catch(_){}
+      _closeSource(es);
+    }
+    if(d.messages_reload){
+      try{
+        const data=await api(`/api/session?session_id=${encodeURIComponent(activeSid)}`);
+        if(data&&data.session&&S.session&&S.session.session_id===activeSid){
+          S.session=data.session;
+          S.messages=(data.session.messages||[]).filter(m=>m&&m.role);
+          S.activeStreamId=data.session.active_stream_id||null;
+          clearLiveToolCards();
+          if(typeof finalizeThinkingCard==='function') finalizeThinkingCard();
+          _markSessionViewed(activeSid, data.session.message_count ?? S.messages.length);
+          if(typeof renderMessagesWithFollowIntent==='function') renderMessagesWithFollowIntent();
+          else renderMessages({preserveScroll:true});
+          // Do not auto re-attach after snapshot — avoids EventSource loops
+          // (W2 C1). User/next turn starts a fresh stream_id.
+        }
+      }catch(_){}
+    }
+    if(!d.active_stream_id||terminalReasons.has(reason)){
+      _streamFinalized=true;
+      if(S.session&&S.session.session_id===activeSid&&!d.active_stream_id){
+        S.activeStreamId=null;
+      }
+      _setActivePaneIdleIfOwner();
+      renderSessionList();
+    }
   }
 
   let _lastRenderMs=0;
@@ -1892,14 +1950,34 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
               _transient:true,
             });
           }
-          clearLiveToolCards();
+          // Opt-C: settle live activity DOM before wipe; fall back to clear.
+          try{
+            const _asstIdx=lastAsst?S.messages.indexOf(lastAsst):-1;
+            if(typeof _convertLiveActivityGroupToSettled!=='function'||!_convertLiveActivityGroupToSettled(_asstIdx)){
+              clearLiveToolCards();
+            }else{
+              // Converted group still lives under #liveAssistantTurn; clearLive
+              // would remove it — strip live turn id so renderMessages owns DOM.
+              const _liveTurn=$('liveAssistantTurn');
+              if(_liveTurn){
+                _liveTurn.removeAttribute('id');
+                _liveTurn.removeAttribute('data-live');
+              }
+              const _wait=$('toolRunningRow');if(_wait)_wait.remove();
+            }
+          }catch(_){clearLiveToolCards();}
           S.busy=false;
           // No-reply guard (#373): if agent returned nothing, show inline error
           if(!S.messages.some(m=>m.role==='assistant'&&String(m.content||'').trim())&&!assistantText){removeThinking();S.messages.push({role:'assistant',content:'**No response received.** Check your API key and model selection.'});}
           if(_markerOnlyAssistantError&&typeof showToast==='function') showToast('No response received after context compression. Please retry.',5000,'error');
           if(isSessionViewed) _markSessionViewed(completedSid, completedSession.message_count ?? S.messages.length);
-          syncTopbar();renderMessages({preserveScroll:true});
-          if(shouldFollowOnDone&&typeof scrollToBottom==='function') scrollToBottom();
+          syncTopbar();
+          if(typeof renderMessagesWithFollowIntent==='function'){
+            renderMessagesWithFollowIntent({followIntent:shouldFollowOnDone});
+          }else{
+            renderMessages({preserveScroll:true, followIntent:shouldFollowOnDone});
+            if(shouldFollowOnDone&&typeof scrollToBottom==='function') scrollToBottom();
+          }
           loadDir('.', { preservePreview: true });
           // TTS auto-read: speak the last assistant response if enabled (#499)
           if(typeof autoReadLastAssistant==='function') setTimeout(()=>autoReadLastAssistant(), 300);
@@ -2131,8 +2209,25 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       }catch(_){}
     });
 
+    source.addEventListener('session_snapshot',e=>{
+      _rememberRunJournalCursor(e);
+      void _handleSessionSnapshot(e.data, source);
+    });
+
+    source.addEventListener('process_wakeup_paused',e=>{
+      try{
+        const d=JSON.parse(e.data||'{}');
+        if(typeof _showWakeupPausedBanner==='function') _showWakeupPausedBanner(d);
+        const msg=d&&d.reason==='rate_limit'
+          ? 'Rate limit reached — automatic wakeup paused for this model.'
+          : 'Credentials exhausted — automatic wakeup paused for this model.';
+        if(typeof showToast==='function') showToast(msg,4500,'error');
+        else if(typeof setComposerStatus==='function') setComposerStatus(msg);
+      }catch(_){}
+    });
+
     source.addEventListener('error',async e=>{
-      if(_terminalStateReached || _streamFinalized){
+      if(_resumeReconnectSuppressed || _terminalStateReached || _streamFinalized){
         _closeSource(source);
         return;
       }
@@ -2142,15 +2237,17 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       if(_deferStreamErrorIfPageHidden()) return;
       _closeSource(source);
       // Attempt one reconnect if the stream is still active server-side
-      if(!_reconnectAttempted && streamId){
+      if(!_resumeReconnectSuppressed && !_reconnectAttempted && streamId){
         _reconnectAttempted=true;
         setComposerStatus('Reconnecting…');
         setTimeout(async()=>{
+          if(_resumeReconnectSuppressed || _terminalStateReached || _streamFinalized) return;
           try{
             const st=await api(`/api/chat/stream/status?stream_id=${encodeURIComponent(streamId)}`);
             if(st.active){
               setComposerStatus('Reconnected');
-              _wireSSE(new EventSource(new URL(`api/chat/stream?stream_id=${encodeURIComponent(streamId)}`,document.baseURI||location.href).href,{withCredentials:true}));
+              // Always send cursor on reconnect so server journal-fills (B2+B3).
+              _wireSSE(new EventSource(new URL(`api/chat/stream?stream_id=${encodeURIComponent(streamId)}${_runJournalReplayParams()}`,document.baseURI||location.href).href,{withCredentials:true}));
               return;
             }
             if(st.replay_available){
@@ -2216,7 +2313,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       _setActivePaneIdleIfOwner();
     });
 
-    for(const _runJournalEventName of ['token','interim_assistant','reasoning','tool','tool_complete','approval','clarify','title','title_status','context_status','goal','goal_continue','done','stream_end','pending_steer_leftover','compressing','compressed','metering','apperror','warning','error','cancel']){
+    for(const _runJournalEventName of ['token','interim_assistant','reasoning','tool','tool_complete','approval','clarify','title','title_status','context_status','goal','goal_continue','done','stream_end','pending_steer_leftover','compressing','compressed','metering','apperror','warning','error','cancel','session_snapshot']){
       source.addEventListener(_runJournalEventName,_rememberRunJournalCursor);
     }
   }

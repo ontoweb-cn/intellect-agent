@@ -2664,8 +2664,13 @@ from api.streaming import (
 )
 from api.run_journal import (
     find_run_summary,
-    read_run_events,
+    iter_run_events,
     stale_interrupted_event,
+)
+from api.session_sse import (
+    build_session_snapshot,
+    plan_journal_replay,
+    resolve_resume_cursor,
 )
 from api.providers import get_providers, get_provider_quota, get_provider_cost_history, set_provider_key, remove_provider_key
 from api.onboarding import (
@@ -5891,6 +5896,11 @@ def handle_get(handler, parsed) -> bool:
     if parsed.path == "/api/health/agent":
         return j(handler, build_agent_health_payload())
 
+    if parsed.path == "/api/health/restart/status":
+        from api.gateway_lifecycle import get_restart_status
+
+        return j(handler, get_restart_status())
+
     if parsed.path == "/api/system/health":
         j(handler, build_system_health_payload())
         return True
@@ -7856,6 +7866,22 @@ def handle_post(handler, parsed) -> bool:
     if parsed.path == "/api/chat/start":
         return _handle_chat_start(handler, body, diag=diag)
 
+    if parsed.path == "/api/health/restart":
+        from api.gateway_lifecycle import request_gateway_restart
+
+        wait = bool(body.get("wait"))
+        result = request_gateway_restart(wait=wait)
+        status_code = 200 if result.get("ok") or result.get("status") == "in_progress" else 409
+        if result.get("status") == "busy":
+            status_code = 409
+        return j(handler, result, status=status_code)
+
+    if parsed.path == "/api/wakeup/resume":
+        from api.wakeup_pause import clear_pause, read_pause
+
+        clear_pause()
+        return j(handler, {"ok": True, "paused": read_pause()})
+
     if parsed.path == "/api/chat":
         return _handle_chat_sync(handler, body)
 
@@ -9328,73 +9354,224 @@ def _sse_with_id(handler, event, data, event_id=None):
     _sse(handler, event, data)
 
 
-def _parse_run_journal_after_seq(qs: dict) -> int | None:
-    raw = qs.get("after_seq", [None])[0]
-    if raw in (None, ""):
-        return None
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 0
-
-
-def _replay_run_journal(handler, stream_id: str, after_seq: int | None) -> bool:
-    summary = find_run_summary(stream_id)
-    if not summary:
-        return False
-    journal = read_run_events(
-        str(summary.get("session_id") or ""),
-        stream_id,
-        after_seq=after_seq,
+def _emit_session_snapshot(
+    handler,
+    *,
+    session_id: str | None,
+    active_stream_id: str | None,
+    reason: str,
+    messages_reload: bool = True,
+    detail: str | None = None,
+):
+    """Control frame — not journaled; no SSE ``id:`` (RFC S8)."""
+    _sse(
+        handler,
+        "session_snapshot",
+        build_session_snapshot(
+            session_id=session_id,
+            active_stream_id=active_stream_id,
+            reason=reason,
+            messages_reload=messages_reload,
+            detail=detail,
+        ),
     )
-    for entry in journal.get("events") or []:
-        _sse_with_id(
-            handler,
-            entry.get("event") or entry.get("type") or "message",
-            entry.get("payload"),
-            entry.get("event_id"),
-        )
-    if not summary.get("terminal"):
-        stale = stale_interrupted_event(
-            str(summary.get("session_id") or ""),
-            stream_id,
-            after_seq=after_seq,
-        )
-        if stale:
-            _sse_with_id(handler, stale["event"], stale["payload"], stale["event_id"])
-    return True
 
 
-def _handle_sse_stream(handler, parsed):
-    qs = parse_qs(parsed.query)
-    stream_id = qs.get("stream_id", [""])[0]
-    stream = STREAMS.get(stream_id)
-    if stream is None:
-        try:
-            journal_available = bool(find_run_summary(stream_id)) if stream_id else False
-        except Exception:
-            journal_available = False
-        if not journal_available:
-            return j(handler, {"error": "stream not found"}, status=404)
-        handler.send_response(200)
-        handler.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        handler.send_header("Cache-Control", "no-cache")
-        handler.send_header("X-Accel-Buffering", "no")
-        handler.send_header("Connection", "close")
-        handler.end_headers()
-        try:
-            _replay_run_journal(handler, stream_id, _parse_run_journal_after_seq(qs))
-        except _CLIENT_DISCONNECT_ERRORS:
-            pass
-        return True
-    subscriber = stream.subscribe() if hasattr(stream, "subscribe") else stream
+def _parse_run_journal_after_seq(qs: dict) -> int | None:
+    """Legacy helper — prefer ``resolve_resume_cursor``. Malformed → raise."""
+    resume = resolve_resume_cursor(qs, None)
+    if resume.malformed:
+        raise ValueError("unknown_cursor")
+    if resume.stale_run:
+        raise ValueError("stale_run")
+    return resume.after_seq
+
+
+def _begin_sse_headers(handler) -> None:
     handler.send_response(200)
     handler.send_header("Content-Type", "text/event-stream; charset=utf-8")
     handler.send_header("Cache-Control", "no-cache")
     handler.send_header("X-Accel-Buffering", "no")
     handler.send_header("Connection", "close")
     handler.end_headers()
+
+
+def _replay_run_journal(
+    handler,
+    stream_id: str,
+    after_seq: int | None,
+    *,
+    emit_stale_interrupted: bool = True,
+) -> tuple[bool, str | None, int]:
+    """Journal-first replay with caps. Returns (found, gap_reason, last_seq_emitted)."""
+    summary = find_run_summary(stream_id)
+    if not summary:
+        return False, "journal_missing", 0
+    session_id = str(summary.get("session_id") or "")
+    # Stream rows after ``after_seq`` — do not load the full jsonl into RAM.
+    event_iter = iter_run_events(session_id, stream_id, after_seq=after_seq)
+    emit, gap_reason = plan_journal_replay(event_iter, after_seq=after_seq)
+    last_seq = int(after_seq or 0)
+    for entry in emit:
+        _sse_with_id(
+            handler,
+            entry.get("event") or entry.get("type") or "message",
+            entry.get("payload"),
+            entry.get("event_id"),
+        )
+        last_seq = max(last_seq, int(entry.get("seq") or 0))
+    if gap_reason:
+        return True, gap_reason, last_seq
+    if emit_stale_interrupted and not summary.get("terminal"):
+        stale = stale_interrupted_event(session_id, stream_id, after_seq=last_seq or after_seq)
+        if stale:
+            _sse_with_id(handler, stale["event"], stale["payload"], stale["event_id"])
+            last_seq = max(last_seq, int(stale.get("seq") or 0))
+    return True, None, last_seq
+
+
+def _handle_sse_stream(handler, parsed):
+    """GET /api/chat/stream — resumable run SSE (RFC S6–S8).
+
+    Resume cursor is frozen before ``end_headers()`` (S3). List SSE at
+    ``GET /api/sessions/events`` is a different channel — do not conflate.
+    """
+    qs = parse_qs(parsed.query)
+    stream_id = str(qs.get("stream_id", [""])[0] or "").strip()
+    session_id_q = str(qs.get("session_id", [""])[0] or "").strip()
+    session_id_resolved: str | None = session_id_q or None
+
+    # Optional session bootstrap when client only knows session_id (S6).
+    if not stream_id and session_id_q:
+        try:
+            from api.models import get_session as _get_session
+
+            sess = _get_session(session_id_q, metadata_only=True)
+            stream_id = str(getattr(sess, "active_stream_id", None) or "").strip()
+            session_id_resolved = str(getattr(sess, "session_id", None) or session_id_q)
+        except Exception:
+            stream_id = ""
+
+    # --- S3: freeze resume cursor + journal baseline before headers ---
+    resume = resolve_resume_cursor(qs, getattr(handler, "headers", None), expected_run_id=stream_id or None)
+    stream = STREAMS.get(stream_id) if stream_id else None
     try:
+        summary = find_run_summary(stream_id) if stream_id else None
+    except Exception:
+        summary = None
+    if summary and not session_id_resolved:
+        session_id_resolved = str(summary.get("session_id") or "") or None
+
+    # Snapshot decisions that do not need a live channel
+    if resume.malformed:
+        _begin_sse_headers(handler)
+        try:
+            _emit_session_snapshot(
+                handler,
+                session_id=session_id_resolved,
+                active_stream_id=stream_id or None,
+                reason="unknown_cursor",
+                detail="unparseable resume cursor",
+            )
+        except _CLIENT_DISCONNECT_ERRORS:
+            pass
+        return True
+    if resume.stale_run:
+        _begin_sse_headers(handler)
+        try:
+            _emit_session_snapshot(
+                handler,
+                session_id=session_id_resolved,
+                active_stream_id=stream_id or None,
+                reason="stale_run",
+                detail="cursor run_id disagrees with stream_id",
+            )
+        except _CLIENT_DISCONNECT_ERRORS:
+            pass
+        return True
+
+    if not stream_id:
+        # session_id bootstrap with nothing active, or bare connect
+        if session_id_q:
+            _begin_sse_headers(handler)
+            try:
+                _emit_session_snapshot(
+                    handler,
+                    session_id=session_id_resolved or session_id_q,
+                    active_stream_id=None,
+                    reason="no_active_run",
+                )
+            except _CLIENT_DISCONNECT_ERRORS:
+                pass
+            return True
+        return j(handler, {"error": "stream not found"}, status=404)
+
+    if stream is None and not summary:
+        return j(handler, {"error": "stream not found"}, status=404)
+
+    locked_after_seq = resume.after_seq  # may be None = no cursor
+
+    # Dead worker → journal replay (with or without cursor)
+    if stream is None:
+        _begin_sse_headers(handler)
+        try:
+            found, gap_reason, _last = _replay_run_journal(
+                handler,
+                stream_id,
+                locked_after_seq,
+                emit_stale_interrupted=True,
+            )
+            if not found:
+                _emit_session_snapshot(
+                    handler,
+                    session_id=session_id_resolved,
+                    active_stream_id=None,
+                    reason="journal_missing",
+                )
+            elif gap_reason:
+                _emit_session_snapshot(
+                    handler,
+                    session_id=session_id_resolved,
+                    active_stream_id=None,
+                    reason="gap",
+                    detail=gap_reason,
+                )
+        except _CLIENT_DISCONNECT_ERRORS:
+            pass
+        return True
+
+    # Live worker: journal-first when resumable client sent a cursor; else live-tail.
+    subscriber = None
+    _begin_sse_headers(handler)
+    try:
+        journal_hwm = int(locked_after_seq or 0) if locked_after_seq is not None else 0
+        if locked_after_seq is not None:
+            _found, gap_reason, journal_hwm = _replay_run_journal(
+                handler,
+                stream_id,
+                locked_after_seq,
+                emit_stale_interrupted=False,
+            )
+            if _found and gap_reason:
+                _emit_session_snapshot(
+                    handler,
+                    session_id=session_id_resolved,
+                    active_stream_id=stream_id,
+                    reason="gap",
+                    detail=gap_reason,
+                )
+                return True
+            if _found:
+                journal_hwm = max(journal_hwm, int(locked_after_seq or 0))
+            else:
+                # Live worker, journal not written yet — attach live; skip nothing.
+                journal_hwm = int(locked_after_seq or 0)
+        # Journal-first: attach live without replaying offline frames already
+        # covered by journal HWM (fixes global STREAM_LAST_EVENT_ID skip race).
+        if locked_after_seq is not None and hasattr(stream, "subscribe_after_seq"):
+            subscriber = stream.subscribe_after_seq(journal_hwm)
+        else:
+            subscriber = stream.subscribe() if hasattr(stream, "subscribe") else stream
         while True:
             try:
                 event, data = subscriber.get(timeout=_SSE_HEARTBEAT_INTERVAL_SECONDS)
@@ -9402,10 +9579,7 @@ def _handle_sse_stream(handler, parsed):
                 handler.wfile.write(b": heartbeat\n\n")
                 handler.wfile.flush()
                 continue
-            # Stage-364: emit `id:` from STREAM_LAST_EVENT_ID side-channel so
-            # the frontend's `_lastRunJournalSeq` cursor advances during live
-            # streaming. Without this, mid-stream error→replay would arrive
-            # with after_seq=0 and double-render every journaled event.
+            # Stage-364: emit `id:` from STREAM_LAST_EVENT_ID side-channel.
             event_id = STREAM_LAST_EVENT_ID.get(stream_id)
             if event_id:
                 _sse_with_id(handler, event, data, event_id)
@@ -9416,7 +9590,7 @@ def _handle_sse_stream(handler, parsed):
     except _CLIENT_DISCONNECT_ERRORS:
         pass
     finally:
-        if subscriber is not stream and hasattr(stream, "unsubscribe"):
+        if subscriber is not None and subscriber is not stream and hasattr(stream, "unsubscribe"):
             try:
                 stream.unsubscribe(subscriber)
             except Exception:
@@ -11983,6 +12157,24 @@ def _handle_chat_start(handler, body, diag=None):
             requested_model,
             requested_provider,
         )
+        # W2 B4: block empty wakeup loops for the same provider|model fingerprint.
+        try:
+            from api.wakeup_pause import is_blocked, process_wakeup_paused_event
+
+            paused = is_blocked(model_provider, model)
+            if paused:
+                return j(
+                    handler,
+                    {
+                        "error": "wakeup_paused",
+                        "code": "wakeup_paused",
+                        "message": "Automatic wakeup is paused after credential exhaustion. Change model/provider or resume.",
+                        "pause": process_wakeup_paused_event(paused),
+                    },
+                    status=409,
+                )
+        except Exception:
+            _log_non_critical("wakeup pause gate")
         from api.runtime_adapter import (
             LegacyJournalRuntimeAdapter,
             StartRunRequest,

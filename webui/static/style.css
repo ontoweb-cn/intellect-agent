@@ -986,6 +986,10 @@
   .agent-health-copy{display:flex;flex-direction:column;gap:3px;min-width:0;font-size:13px;line-height:1.35;}
   .agent-health-copy strong{color:var(--error);font-size:13px;}
   .agent-health-copy span{color:var(--muted);}
+  .agent-health-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .agent-health-restart{flex-shrink:0;padding:6px 12px;border-radius:8px;border:1px solid color-mix(in srgb,var(--accent) 45%,var(--surface));background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--text);font-size:12px;font-weight:600;cursor:pointer;}
+  .agent-health-restart:hover{background:color-mix(in srgb,var(--accent) 20%,var(--surface));}
+  .agent-health-restart:disabled{opacity:.6;cursor:wait;}
   .agent-health-dismiss{flex-shrink:0;padding:6px 12px;border-radius:8px;border:1px solid color-mix(in srgb,var(--error) 45%,var(--surface));background:color-mix(in srgb,var(--error) 10%,var(--surface));color:var(--error);font-size:12px;font-weight:600;cursor:pointer;}
   .agent-health-dismiss:hover{background:color-mix(in srgb,var(--error) 18%,var(--surface));}
   /* ── Update banner ── */
