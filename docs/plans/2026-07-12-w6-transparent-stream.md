@@ -1,12 +1,12 @@
 # W6 细化稿 — Transparent Stream 全 UI（chronological cockpit）
 
 > **日期**：2026-07-12  
-> **状态**：**REVISED** — 待签字（已吸收计划评审 Request changes）  
+> **状态**：**EXECUTED** — 2026-07-12；实现见 `feat/w6-transparent-stream`  
 > **策略**：先技术评审，再按 **0→2** 串行  
-> **前置**：W2–W5 已合入 main（SSE、scene、virt、deferred worklog @ `d6a94d7`）  
+> **前置**：W2–W5 已合入 main（SSE、scene、virt、deferred worklog @ `d6a94d7`）；计划合入 @ `9e7eab0`  
 > **契约**：[`docs/webui/rfcs/stable-assistant-turn-anchors.md`](../webui/rfcs/stable-assistant-turn-anchors.md) **A6**（alias 已落地）+ Hermes RFC 方向（`hermes-webui` `transparent-stream-activity-mode.md`）  
 > **探索**：[`explore`](0599696e-6d26-456d-8aa9-8a13c39b7f11)  
-> **计划评审**：[`code-reviewer`](42974198-bb9d-40e8-bc92-290dd46e9684) — Request changes → 本修订锁定 C1–C4 / I1 / I5
+> **计划评审**：[`code-reviewer`](42974198-bb9d-40e8-bc92-290dd46e9684) Request changes → REVISED；[`确认评审`](6024d818-839c-4db8-9b2b-5da8bec0620b) **Approve**
 
 ---
 

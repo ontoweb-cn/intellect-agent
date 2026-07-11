@@ -1997,10 +1997,32 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
               _transient:true,
             });
           }
-          // Opt-C: settle live activity DOM before wipe; fall back to clear.
+          // Opt-C / W6 TS6: settle live activity DOM before wipe.
           try{
             const _asstIdx=lastAsst?S.messages.indexOf(lastAsst):-1;
-            if(typeof _convertLiveActivityGroupToSettled!=='function'||!_convertLiveActivityGroupToSettled(_asstIdx)){
+            const _transparent=typeof isTransparentStream==='function'&&isTransparentStream();
+            if(_transparent){
+              // C1: stash scene for chronological settled rebuild
+              let _scene=null;
+              try{
+                if(typeof buildActivitySceneFromLive==='function'){
+                  _scene=buildActivitySceneFromLive({mode:'settled'});
+                }
+              }catch(__){}
+              if((!_scene||!_scene.segments||!_scene.segments.length)&&S.session&&INFLIGHT[S.session.session_id]){
+                _scene=INFLIGHT[S.session.session_id].scene||_scene;
+              }
+              if(_scene&&typeof stashTransparentSceneForSettle==='function'){
+                stashTransparentSceneForSettle(_asstIdx, _scene);
+              }
+              // TS6: skip Opt-C + skip clearLiveToolCards; strip live ids only
+              const _liveTurn=$('liveAssistantTurn');
+              if(_liveTurn){
+                _liveTurn.removeAttribute('id');
+                _liveTurn.removeAttribute('data-live');
+              }
+              const _wait=$('toolRunningRow');if(_wait)_wait.remove();
+            }else if(typeof _convertLiveActivityGroupToSettled!=='function'||!_convertLiveActivityGroupToSettled(_asstIdx)){
               clearLiveToolCards();
             }else{
               // Converted group still lives under #liveAssistantTurn; clearLive

@@ -5519,12 +5519,19 @@ function isSimplifiedToolCalling(){
   return window._simplifiedToolCalling!==false;
 }
 
+/** W6 TS5: preference-backed transparent cockpit mode (alias of !compact). */
+function isTransparentStream(){
+  return chatActivityDisplayMode()==='transparent_stream';
+}
+
 // ── activity_scene_v1 (P1-A MVP) ─────────────────────────────────────────────
 // Wire shape matches docs/webui/rfcs/stable-assistant-turn-anchors.md §3 (A3).
 // Cap algorithm mirrors webui/api/activity_scene.py::compact_activity_scene_v1
 // (drop-oldest tool/thinking; keep newest text). Keep in sync for W3 #3 reuse.
 const ACTIVITY_SCENE_MAX_SEGMENTS=40;
 const _sceneAppliedForStream=Object.create(null);
+// C1: same-session settle stash — turnKey / streamKey → activity_scene_v1
+const _transparentSceneByTurn=new Map();
 
 function chatActivityDisplayMode(){
   const mode=window._chatActivityDisplayMode;
@@ -5545,7 +5552,10 @@ function setChatActivityDisplayMode(mode, opts){
 
 /** A-M5: refresh live + settled Activity without full page reload. */
 function applyActivityDisplayModeRefresh(){
+  // TS8: wipe deferred-worklog state when flipping compact ↔ transparent
+  if(typeof _cancelAllDeferredWorklogIdle==='function') _cancelAllDeferredWorklogIdle();
   if(typeof clearMessageRenderCache==='function') clearMessageRenderCache();
+  if(typeof _bumpMessageHeightGeneration==='function') _bumpMessageHeightGeneration();
   const preserve=true;
   if(typeof renderMessages==='function') renderMessages({preserveScroll:preserve});
   // Live turn is wiped by renderMessages; rebuild from inflight scene / toolCalls.
@@ -5563,6 +5573,81 @@ function applyActivityDisplayModeRefresh(){
   for(const tc of (inflight.toolCalls||S.toolCalls||[])){
     if(tc&&tc.name&&typeof appendLiveToolCard==='function') appendLiveToolCard(tc);
   }
+}
+
+function stashTransparentSceneForSettle(assistantIdx, scene){
+  if(!scene||typeof scene!=='object') return;
+  const copy=typeof compactActivityScene==='function'?compactActivityScene(scene):scene;
+  if(Number.isInteger(assistantIdx)&&assistantIdx>=0){
+    _transparentSceneByTurn.set('assistant:'+assistantIdx, copy);
+    if(S.messages&&S.messages[assistantIdx]) S.messages[assistantIdx]._activityScene=copy;
+  }
+  if(copy.stream_id) _transparentSceneByTurn.set('stream:'+copy.stream_id, copy);
+}
+
+function lookupTransparentSceneForAssistant(assistantIdx){
+  if(Number.isInteger(assistantIdx)&&assistantIdx>=0){
+    const keyed=_transparentSceneByTurn.get('assistant:'+assistantIdx);
+    if(keyed) return keyed;
+    const m=S.messages&&S.messages[assistantIdx];
+    if(m&&m._activityScene&&typeof m._activityScene==='object') return m._activityScene;
+  }
+  return null;
+}
+
+/**
+ * Normalize scene segments to thinking|tool events (R3: skip text).
+ * @returns {{kind:string,text?:string,tc?:object}[]}
+ */
+function normalizeTransparentEvents(scene, toolCalls){
+  const out=[];
+  const segs=scene&&Array.isArray(scene.segments)?scene.segments:[];
+  const calls=Array.isArray(toolCalls)?toolCalls:(S.toolCalls||[]);
+  for(const seg of segs){
+    if(!seg||typeof seg!=='object') continue;
+    if(seg.kind==='thinking'){
+      out.push({kind:'thinking',text:String(seg.text||'')});
+    }else if(seg.kind==='tool'){
+      const tid=seg.tid||'';
+      const full=tid?calls.find(t=>t&&t.tid===tid):null;
+      out.push({
+        kind:'tool',
+        tc:full||{
+          name:seg.name||'tool',
+          tid:tid,
+          preview:seg.summary||'',
+          snippet:seg.summary||'',
+          done:seg.status!=='waiting',
+          is_error:seg.status==='error',
+        },
+      });
+    }
+    // text anchors: message body owns them (R3 / C4)
+  }
+  return out;
+}
+
+function _insertTransparentChronologicalEvents(anchorParent, insertAfterNode, scene){
+  if(!anchorParent||!insertAfterNode||!scene) return insertAfterNode;
+  let cursor=insertAfterNode;
+  const events=normalizeTransparentEvents(scene, S.toolCalls);
+  for(const ev of events){
+    if(!ev) continue;
+    if(ev.kind==='thinking'&&window._showThinking!==false){
+      const row=document.createElement('div');
+      row.className='assistant-segment thinking-card-row';
+      row.setAttribute('data-transparent-event','thinking');
+      row.innerHTML=_thinkingCardHtml(ev.text||'', false);
+      cursor.insertAdjacentElement('afterend', row);
+      cursor=row;
+    }else if(ev.kind==='tool'&&ev.tc){
+      const card=buildToolCard(ev.tc);
+      card.setAttribute('data-transparent-event','tool');
+      cursor.insertAdjacentElement('afterend', card);
+      cursor=card;
+    }
+  }
+  return cursor;
 }
 
 function compactActivityScene(scene, maxSegments){
@@ -5741,8 +5826,9 @@ function applyActivityScene(scene, opts){
     return false; // A-M2: never cross-session
   }
   try{
+    // C2 / TS7: preference always selects renderer; scene.display is metadata only.
     if(scene.display==='transparent_stream'||scene.display==='compact_worklog'){
-      // Do not mutate global preference from scene restore; only honor for this apply.
+      /* journal stamp — do not override chatActivityDisplayMode() */
     }
     if(typeof placeLiveToolCardsHost==='function') placeLiveToolCardsHost();
     if(typeof clearLiveToolCards==='function') clearLiveToolCards();
@@ -5768,7 +5854,7 @@ function applyActivityScene(scene, opts){
         };
         if(typeof appendLiveToolCard==='function') appendLiveToolCard(tc);
       }
-      // text anchors: live text comes back via messages / SSE; no DOM force here
+      // text anchors: live text comes back via messages / SSE; no DOM force here (R3)
     }
     if(!sawToolOrThink&&typeof appendThinking==='function'){
       appendThinking('',{pending:true});
@@ -5914,6 +6000,15 @@ function _cancelDeferredWorklogIdle(turnKey){
   }catch(_){}
   st.idleHandle=null;
   st.idleKind=null;
+}
+function _cancelAllDeferredWorklogIdle(){
+  for(const key of [..._worklogTurnState.keys()]){
+    _cancelDeferredWorklogIdle(key);
+  }
+  _worklogTurnState.clear();
+  try{
+    document.querySelectorAll('[data-worklog-deferred="1"]').forEach(el=>el.removeAttribute('data-worklog-deferred'));
+  }catch(_){}
 }
 function _scheduleDeferredWorklog(group, turnKey){
   _cancelDeferredWorklogIdle(turnKey);
@@ -7303,14 +7398,24 @@ function renderMessages(options){
     if(_ERR_MSG_RE.test(String(content||'').trim())) seg.dataset.error='1';
     if(thinkingText&&window._showThinking!==false){
       if(isSimplifiedToolCalling()) assistantThinking.set(rawIdx, thinkingText);
-      else if(window._showThinking!==false) seg.insertAdjacentHTML('beforeend', _thinkingCardHtml(thinkingText));
+      else if(isTransparentStream()){
+        // I1: with a scene, chronological settled path owns thinking rows.
+        // Without scene (T-M2b legacy), embed collapsed thinking in the segment.
+        const sceneForTurn=typeof lookupTransparentSceneForAssistant==='function'
+          ?lookupTransparentSceneForAssistant(rawIdx):null;
+        if(!(sceneForTurn&&Array.isArray(sceneForTurn.segments)&&sceneForTurn.segments.length)){
+          seg.insertAdjacentHTML('beforeend', _thinkingCardHtml(thinkingText, false));
+        }
+      }else if(window._showThinking!==false){
+        seg.insertAdjacentHTML('beforeend', _thinkingCardHtml(thinkingText));
+      }
     }
     const hasVisibleBody=!!(String(content||'').trim()||filesHtml||statusHtml);
     if(statusHtml){
       seg.insertAdjacentHTML('beforeend', statusHtml);
     }else if(hasVisibleBody){
       seg.insertAdjacentHTML('beforeend', `${filesHtml}<div class="msg-body">${bodyHtml}</div>${footHtml}`);
-    }else if(!(thinkingText&&window._showThinking!==false&&!isSimplifiedToolCalling())){
+    }else if(!(thinkingText&&window._showThinking!==false&&isTransparentStream())){
       seg.classList.add('assistant-segment-anchor');
     }
     _assistantTurnBlocks(currentAssistantTurn).appendChild(seg);
@@ -7539,6 +7644,62 @@ function renderMessages(options){
         }
         _syncToolCallGroupSummary(group);
         if(anchorRow) anchorInsertAfter.set(anchorRow, group);
+      }
+    }else if(isTransparentStream()){
+      // W6: chronological when scene available (C1); else legacy flat tools (T-M2b).
+      const handled=new Set();
+      for(const aIdx of assistantIdxs){
+        const scene=typeof lookupTransparentSceneForAssistant==='function'
+          ?lookupTransparentSceneForAssistant(aIdx):null;
+        if(!scene||!Array.isArray(scene.segments)||!scene.segments.length) continue;
+        let anchorRow=assistantSegments.get(aIdx)||null;
+        if(!anchorRow) continue;
+        const anchorParent=anchorRow.parentElement;
+        if(!anchorParent) continue;
+        let insertAfterNode=anchorInsertAfter.get(anchorRow)||anchorRow;
+        const last=_insertTransparentChronologicalEvents(anchorParent, insertAfterNode, scene);
+        if(last) anchorInsertAfter.set(anchorRow, last);
+        handled.add(aIdx);
+      }
+      if(S.toolCalls&&S.toolCalls.length){
+        for(const [key, cards] of Object.entries(byAssistant)){
+          const aIdx=parseInt(key);
+          if(handled.has(aIdx)) continue;
+          let anchorRow=assistantSegments.get(aIdx)||null;
+          if(!anchorRow&&assistantIdxs.length){
+            if(aIdx<assistantIdxs[0]) continue;
+            const fallbackIdx=[...assistantIdxs].reverse().find(idx=>idx<=aIdx);
+            anchorRow=fallbackIdx!==undefined?assistantSegments.get(fallbackIdx):assistantSegments.get(assistantIdxs[assistantIdxs.length-1]);
+          }
+          if(!anchorRow) continue;
+          const anchorParent=anchorRow.parentElement;
+          const frag=document.createDocumentFragment();
+          let lastInsertedNode=null;
+          for(const tc of cards){
+            const card=buildToolCard(tc);
+            frag.appendChild(card);
+            lastInsertedNode=card;
+          }
+          if(cards.length>=2){
+            const toggle=document.createElement('div');
+            toggle.className='tool-cards-toggle';
+            const cardEls=Array.from(frag.querySelectorAll('.tool-card'));
+            const expandBtn=document.createElement('button');
+            expandBtn.textContent=t('expand_all');
+            expandBtn.onclick=()=>cardEls.forEach(c=>c.classList.add('open'));
+            const collapseBtn=document.createElement('button');
+            collapseBtn.textContent=t('collapse_all');
+            collapseBtn.onclick=()=>cardEls.forEach(c=>c.classList.remove('open'));
+            toggle.appendChild(expandBtn);
+            toggle.appendChild(collapseBtn);
+            frag.insertBefore(toggle,frag.firstChild);
+          }
+          const insertAfterNode=anchorInsertAfter.get(anchorRow)||anchorRow;
+          const refNode=insertAfterNode?insertAfterNode.nextSibling:null;
+          if(refNode) anchorParent.insertBefore(frag,refNode);
+          else anchorParent.appendChild(frag);
+          if(anchorRow&&lastInsertedNode) anchorInsertAfter.set(anchorRow, lastInsertedNode);
+        }
       }
     }else if(S.toolCalls && S.toolCalls.length){
       for(const [key, cards] of Object.entries(byAssistant)){
@@ -7927,7 +8088,7 @@ function appendLiveToolCard(tc){
   const inner=_assistantTurnBlocks(turn);
   if(!inner) return;
   const tid=tc.tid||'';
-  if(!isSimplifiedToolCalling()){
+  if(isTransparentStream()){
     // Update existing card in place (tool_complete after tool_start)
     if(tid){
       const existing=inner.querySelector(`.tool-card-row[data-live-tid="${CSS.escape(tid)}"]`);
@@ -8706,7 +8867,9 @@ function renderKatexBlocks(container){
 
 function _thinkingMarkup(text=''){
   const clean=_sanitizeThinkingDisplayText(text);
-  const openClass=isSimplifiedToolCalling()?'':' open';
+  // W6 §4.2: transparent cockpit — thinking collapsed so running tool stays primary.
+  // Compact worklog uses _thinkingActivityNode / Activity path, not this markup.
+  const openClass='';
   return (clean&&String(clean).trim())
     ? `<div class="thinking-card${openClass}"><div class="thinking-card-header" onclick="this.parentElement.classList.toggle('open')"><span class="thinking-card-icon">${li('lightbulb',14)}</span><span class="thinking-card-label">${t('thinking')}</span><span class="thinking-card-toggle">${li('chevron-right',12)}</span></div><div class="thinking-card-body"><pre>${esc(String(clean).trim())}</pre></div></div>`
     : `<div class="thinking"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
@@ -8732,7 +8895,7 @@ function finalizeThinkingCard(){
   // stream that started it, not the session currently displayed.
   const _guardTurn = $('liveAssistantTurn');
   if(_guardTurn && S.session && _guardTurn.dataset.sessionId !== S.session.session_id) return;
-  if(!isSimplifiedToolCalling()){
+  if(isTransparentStream()){
     const row=$('thinkingRow');
     if(!row) return;
     // If the row is still just a spinner (no thinking content rendered),
@@ -8787,7 +8950,7 @@ function appendThinking(text='', options){
   }
   const blocks=_assistantTurnBlocks(turn);
   if(!blocks) return;
-  if(!isSimplifiedToolCalling()){
+  if(isTransparentStream()){
     let row=$('thinkingRow');
     if(!row){
       row=document.createElement('div');
@@ -8866,7 +9029,7 @@ function appendThinking(text='', options){
 }
 function updateThinking(text=''){appendThinking(text);}
 function removeThinking(){
-  if(!isSimplifiedToolCalling()){
+  if(isTransparentStream()){
     const el=$('thinkingRow');
     if(el) el.remove();
     const turn=$('liveAssistantTurn');
