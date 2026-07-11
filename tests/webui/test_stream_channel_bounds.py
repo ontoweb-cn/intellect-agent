@@ -158,3 +158,26 @@ def test_health_diagnostics_omit_lowest_retained_seq(stream_channel_cls, monkeyp
     assert row["offline_buffered_events"] == 1
     # Channel-local snapshot still exposes seq for authenticated/internal use.
     assert ch.diagnostic_snapshot()["lowest_retained_seq"] == 7
+
+
+def test_subscribe_after_seq_skips_journaled_offline_tail(stream_channel_cls):
+    """W2 Critical: journal-first resume must not double-play offline buffer."""
+    ch = stream_channel_cls(max_events=50, max_bytes=10_000_000)
+    for i in range(1, 6):
+        ch.put_nowait(("token", {"i": i}), seq=i)
+    q = ch.subscribe_after_seq(3)
+    items = []
+    while not q.empty():
+        items.append(q.get_nowait())
+    assert [d["i"] for _e, d in items] == [4, 5]
+
+
+def test_subscribe_after_seq_skips_unknown_seq_when_resuming(stream_channel_cls):
+    ch = stream_channel_cls(max_events=50, max_bytes=10_000_000)
+    ch.put_nowait(("token", {"i": 1}))  # no seq hint
+    ch.put_nowait(("token", {"i": 2}), seq=2)
+    q = ch.subscribe_after_seq(1)
+    items = []
+    while not q.empty():
+        items.append(q.get_nowait())
+    assert [d["i"] for _e, d in items] == [2]

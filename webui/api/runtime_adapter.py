@@ -54,6 +54,7 @@ class RunEventStream:
     events: list[dict[str, Any]] = field(default_factory=list)
     cursor: str | None = None
     last_event_id: str | None = None
+    error: str | None = None  # e.g. unknown_cursor / stale_run (RFC S7)
 
 
 @dataclass(frozen=True)
@@ -139,15 +140,10 @@ def build_runtime_adapter(
 
 
 def _cursor_to_after_seq(cursor: str | None) -> int | None:
-    if cursor in (None, ""):
-        return None
-    try:
-        text = str(cursor)
-        if ":" in text:
-            text = text.rsplit(":", 1)[-1]
-        return max(0, int(text))
-    except (TypeError, ValueError):
-        return 0
+    """Parse resume cursor seq. Malformed → ``ValueError`` (RFC S7; no coerce-to-0)."""
+    from api.session_sse import cursor_to_after_seq
+
+    return cursor_to_after_seq(cursor)
 
 
 def _active_control_result(value: Any) -> ControlResult:
@@ -354,10 +350,21 @@ class LegacyJournalRuntimeAdapter:
         summary = find_run_summary(run_id, session_dir=self._session_dir)
         if not summary:
             return RunEventStream(run_id=run_id, events=[], cursor=cursor, last_event_id=None)
+        try:
+            after_seq = _cursor_to_after_seq(cursor)
+        except ValueError as exc:
+            reason = str(exc) or "unknown_cursor"
+            return RunEventStream(
+                run_id=run_id,
+                events=[],
+                cursor=cursor,
+                last_event_id=None,
+                error=reason,
+            )
         journal = read_run_events(
             str(summary.get("session_id") or ""),
             run_id,
-            after_seq=_cursor_to_after_seq(cursor),
+            after_seq=after_seq,
             session_dir=self._session_dir,
         )
         events = list(journal.get("events") or [])

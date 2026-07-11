@@ -29,5 +29,7 @@
   "tests/tools/test_async_delegation.py": 1.367,
   "tests/tools/test_image_edit.py": 0.581,
   "tests/tools/test_memory_tool.py": 1.142,
-  "tests/webui/test_stream_channel_bounds.py": 2.812
+  "tests/webui/test_gateway_lifecycle_and_wakeup.py": 0.936,
+  "tests/webui/test_session_sse_resume.py": 2.658,
+  "tests/webui/test_stream_channel_bounds.py": 3.118
 }

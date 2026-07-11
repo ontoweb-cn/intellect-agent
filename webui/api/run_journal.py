@@ -75,6 +75,62 @@ def _read_jsonl(path: Path) -> tuple[list[dict], list[dict]]:
     return events, malformed
 
 
+def iter_run_events(
+    session_id: str,
+    run_id: str,
+    *,
+    after_seq: int | None = None,
+    session_dir: Path | None = None,
+):
+    """Stream journal rows in file order without loading the whole file.
+
+    Append-only journals are expected to be seq-monotonic. Rows with
+    ``seq <= after_seq`` are skipped. Yields ``dict`` events only.
+    """
+    path = _run_path(session_id, run_id, session_dir=session_dir)
+    try:
+        fh = path.open("r", encoding="utf-8")
+    except FileNotFoundError:
+        return
+    threshold = None if after_seq is None else int(after_seq)
+    try:
+        with fh:
+            for raw in fh:
+                if not raw.strip():
+                    continue
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(parsed, dict):
+                    continue
+                seq = int(parsed.get("seq") or 0)
+                if threshold is not None and seq <= threshold:
+                    continue
+                yield parsed
+    except OSError:
+        return
+
+
+def read_run_events(
+    session_id: str,
+    run_id: str,
+    *,
+    after_seq: int | None = None,
+    session_dir: Path | None = None,
+) -> dict:
+    path = _run_path(session_id, run_id, session_dir=session_dir)
+    events, malformed = _read_jsonl(path)
+    if after_seq is not None:
+        events = [event for event in events if int(event.get("seq") or 0) > int(after_seq)]
+    return {
+        "session_id": str(session_id),
+        "run_id": str(run_id),
+        "events": events,
+        "malformed": malformed,
+    }
+
+
 def _next_seq(path: Path) -> int:
     events, _malformed = _read_jsonl(path)
     seqs = [int(event.get("seq") or 0) for event in events if isinstance(event.get("seq"), int)]
