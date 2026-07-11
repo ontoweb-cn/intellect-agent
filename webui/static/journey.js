@@ -5,6 +5,10 @@ let _journeySelectedId = null;
 let _journeyViewMode = 'list';       // 'list' | 'timeline'
 let _journeyTimelineData = null;    // cached render_frames result
 let _journeyReveal = 1.0;           // 0..1 timeline scrubber
+let _journeyEventsBound = false;
+let _journeyEditNodeId = null;
+/** Bumped on reset / profile switch to drop stale in-flight loadJourney paints. */
+let _journeyLoadGen = 0;
 
 function _journeyT(key, fallback) {
   return typeof t === 'function' ? t(key) : fallback;
@@ -12,6 +16,108 @@ function _journeyT(key, fallback) {
 
 function _journeyEsc(s) {
   return typeof esc === 'function' ? esc(String(s ?? '')) : String(s ?? '');
+}
+
+function _journeyAttrEsc(s) {
+  // Match ui.js esc() so attribute values get the same defense-in-depth set.
+  return _journeyEsc(s);
+}
+
+function _journeyResetSelection() {
+  _journeyLoadGen += 1;
+  _journeySelectedId = null;
+  _journeyPayload = null;
+  _journeyTimelineData = null;
+  _journeyCloseEditModal();
+  _journeyRenderDetail(null);
+}
+
+function _journeyCloseEditModal() {
+  const modal = $('journeyEditModal');
+  if (modal) modal.hidden = true;
+  _journeyEditNodeId = null;
+  const err = $('journeyEditModalError');
+  if (err) err.textContent = '';
+  const saveBtn = $('journeyEditSave');
+  if (saveBtn) saveBtn.disabled = false;
+  const ta = $('journeyEditTextarea');
+  if (ta) ta.disabled = false;
+}
+
+function _journeyShowEditError(msg) {
+  const err = $('journeyEditModalError');
+  if (err) err.textContent = msg || '';
+}
+
+async function _journeySaveEdit() {
+  const nodeId = _journeyEditNodeId || _journeySelectedId;
+  if (!nodeId) return;
+  const ta = $('journeyEditTextarea');
+  const saveBtn = $('journeyEditSave');
+  const content = ta ? ta.value : '';
+  const loadGen = _journeyLoadGen;
+  _journeyShowEditError('');
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    await api('/api/learning/node', { method: 'PUT', body: JSON.stringify({ id: nodeId, content }) });
+    if (loadGen !== _journeyLoadGen) return;
+    _journeyCloseEditModal();
+    if (typeof toast === 'function') toast(_journeyT('journey_saved', 'Saved'));
+    _journeyPayload = null;
+    await loadJourney(true);
+    if (loadGen !== _journeyLoadGen) return;
+    await journeySelectNode(nodeId, true);
+  } catch (err) {
+    if (loadGen !== _journeyLoadGen) return;
+    _journeyShowEditError(err.message || String(err));
+  } finally {
+    if (saveBtn && loadGen === _journeyLoadGen) saveBtn.disabled = false;
+  }
+}
+
+function _journeyBindEvents() {
+  if (_journeyEventsBound) return;
+  _journeyEventsBound = true;
+
+  const main = $('journeyContent');
+  if (main) {
+    main.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-journey-action]');
+      if (!btn || !main.contains(btn)) return;
+      const action = btn.getAttribute('data-journey-action');
+      const id = btn.getAttribute('data-journey-id');
+      if (action === 'select' && id) journeySelectNode(id);
+    });
+    main.addEventListener('input', (ev) => {
+      if (ev.target.classList && ev.target.classList.contains('journey-reveal-slider')) {
+        journeySetReveal(parseFloat(ev.target.value));
+      }
+    });
+  }
+
+  const detail = $('journeyDetail');
+  if (detail) {
+    detail.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-journey-action]');
+      if (!btn || !detail.contains(btn)) return;
+      const action = btn.getAttribute('data-journey-action');
+      if (action === 'edit') journeyOpenEdit();
+      else if (action === 'delete') journeyConfirmDelete();
+      else if (action === 'skills') switchPanel('skills');
+      else if (action === 'memory') switchPanel('memory');
+    });
+  }
+
+  const editSave = $('journeyEditSave');
+  const editCancel = $('journeyEditCancel');
+  const editModal = $('journeyEditModal');
+  if (editSave) editSave.addEventListener('click', () => _journeySaveEdit());
+  if (editCancel) editCancel.addEventListener('click', () => _journeyCloseEditModal());
+  if (editModal) {
+    editModal.addEventListener('click', (ev) => {
+      if (ev.target === editModal) _journeyCloseEditModal();
+    });
+  }
 }
 
 function _journeyFormatDate(ts) {
@@ -92,7 +198,7 @@ function _journeyRenderList(payload) {
           const cls = node.kind === 'memory' ? 'memory' : 'skill';
           const selected = node.id === _journeySelectedId ? ' journey-row-selected' : '';
           return (
-            `<button type="button" class="journey-row${selected}" data-journey-id="${_journeyEsc(node.id)}" onclick="journeySelectNode('${_journeyEsc(node.id)}')">` +
+            `<button type="button" class="journey-row${selected}" data-journey-id="${_journeyAttrEsc(node.id)}" data-journey-action="select">` +
             `<span class="journey-glyph ${cls}">${glyph}</span>` +
             `<span class="journey-row-label">${_journeyEsc(node.label || node.id)}</span>` +
             `<span class="journey-row-meta">${_journeyEsc(_journeyFormatDate(node.timestamp))}</span>` +
@@ -121,11 +227,11 @@ function _journeyRenderDetail(detail) {
     `<div class="journey-detail-head">` +
     `<div class="journey-detail-title">${_journeyEsc(detail.label || detail.id)}</div>` +
     `<div class="journey-detail-actions">` +
-    `<button type="button" class="sm-btn" onclick="journeyOpenEdit()">${_journeyEsc(_journeyT('journey_edit', 'Edit'))}</button>` +
-    `<button type="button" class="sm-btn danger" onclick="journeyConfirmDelete()">${_journeyEsc(_journeyT('journey_delete', 'Delete'))}</button>` +
+    `<button type="button" class="sm-btn" data-journey-action="edit">${_journeyEsc(_journeyT('journey_edit', 'Edit'))}</button>` +
+    `<button type="button" class="sm-btn danger" data-journey-action="delete">${_journeyEsc(_journeyT('journey_delete', 'Delete'))}</button>` +
     (isSkill
-      ? `<button type="button" class="sm-btn" onclick="switchPanel('skills')">${_journeyEsc(_journeyT('journey_open_skills', 'Skills panel'))}</button>`
-      : `<button type="button" class="sm-btn" onclick="switchPanel('memory')">${_journeyEsc(_journeyT('journey_open_memory', 'Memory panel'))}</button>`) +
+      ? `<button type="button" class="sm-btn" data-journey-action="skills">${_journeyEsc(_journeyT('journey_open_skills', 'Skills panel'))}</button>`
+      : `<button type="button" class="sm-btn" data-journey-action="memory">${_journeyEsc(_journeyT('journey_open_memory', 'Memory panel'))}</button>`) +
     `</div></div>` +
     `<pre class="journey-detail-body">${_journeyEsc((detail.content || '').slice(0, 4000))}</pre>` +
     (isSkill
@@ -137,11 +243,9 @@ function _journeyRenderTimelineGrid(framesData) {
   if (!framesData || !framesData.frames || !framesData.frames.length) {
     return `<div class="journey-empty">${_journeyEsc(_journeyT('journey_empty_title', 'No timeline data'))}</div>`;
   }
-  // Pick the frame closest to _journeyReveal
   const total = framesData.frames.length;
   const idx = Math.min(total - 1, Math.max(0, Math.round(_journeyReveal * (total - 1))));
   const frame = framesData.frames[idx];
-  // Build a monospace <pre> from the text grid runs
   let text = '';
   (frame.grid || []).forEach(function(row) {
     (row || []).forEach(function(run) {
@@ -157,21 +261,23 @@ function _journeyRenderTimelineGrid(framesData) {
     `<div class="journey-timeline">` +
     `<pre class="journey-timeline-grid">${_journeyEsc(text)}</pre>` +
     `<div class="journey-timeline-controls">` +
-    `<input type="range" min="0" max="1" step="0.02" value="${_journeyReveal}" class="journey-reveal-slider" oninput="journeySetReveal(parseFloat(this.value))">` +
+    `<input type="range" min="0" max="1" step="0.02" value="${_journeyReveal}" class="journey-reveal-slider">` +
     `<span class="journey-reveal-label">${_journeyEsc(date)} · ${visible}/${total_nodes} revealed · ${pct}%</span>` +
     `</div></div>`
   );
 }
 
-async function _journeyLoadTimeline(force) {
+async function _journeyLoadTimeline(force, expectedGen) {
   if (!force && _journeyTimelineData) return _journeyTimelineData;
-  // Invalidate cache on forced reload (profile switch, manual refresh)
   if (force) _journeyTimelineData = null;
   const cols = Math.max(44, Math.floor((document.getElementById('journeyContent')?.clientWidth || 80) * 0.12));
   const rows = 20;
   const frames = 48;
+  const loadGen = expectedGen != null ? expectedGen : _journeyLoadGen;
   try {
-    _journeyTimelineData = await api('/api/learning/frames?cols=' + cols + '&rows=' + rows + '&frames=' + frames);
+    const data = await api('/api/learning/frames?cols=' + cols + '&rows=' + rows + '&frames=' + frames);
+    if (loadGen !== _journeyLoadGen) return null;
+    _journeyTimelineData = data;
     return _journeyTimelineData;
   } catch (_) {
     return null;
@@ -194,9 +300,11 @@ function journeyToggleView() {
 }
 
 async function loadJourney(force) {
+  _journeyBindEvents();
   const main = $('journeyContent');
   const sidebar = $('journeySidebar');
   if (!main) return;
+  const loadGen = _journeyLoadGen;
   if (force) { _journeyPayload = null; _journeyTimelineData = null; }
   if (!force && _journeyViewMode === 'list' && _journeyPayload) {
     main.innerHTML = _journeyRenderList(_journeyPayload);
@@ -208,7 +316,8 @@ async function loadJourney(force) {
   if (sidebar) sidebar.innerHTML = loading;
   try {
     if (_journeyViewMode === 'timeline') {
-      const td = await _journeyLoadTimeline(force);
+      const td = await _journeyLoadTimeline(force, loadGen);
+      if (loadGen !== _journeyLoadGen) return;
       main.innerHTML = _journeyRenderTimelineGrid(td);
       if (sidebar && td && td.legend && td.count) {
         const legendStats = {};
@@ -226,12 +335,15 @@ async function loadJourney(force) {
       }
     } else {
       const data = await api('/api/learning/graph');
+      if (loadGen !== _journeyLoadGen) return;
       _journeyPayload = data || { nodes: [], stats: {} };
       main.innerHTML = _journeyRenderList(_journeyPayload);
       if (sidebar) sidebar.innerHTML = _journeyRenderStats(_journeyPayload.stats);
     }
+    if (loadGen !== _journeyLoadGen) return;
     if (_journeySelectedId) await journeySelectNode(_journeySelectedId, true);
   } catch (err) {
+    if (loadGen !== _journeyLoadGen) return;
     const msg = err && err.message ? err.message : String(err);
     main.innerHTML = `<div class="insights-empty">${_journeyEsc(msg)}</div>`;
   }
@@ -239,14 +351,17 @@ async function loadJourney(force) {
 
 async function journeySelectNode(nodeId, silent) {
   _journeySelectedId = nodeId;
+  const loadGen = _journeyLoadGen;
   document.querySelectorAll('.journey-row').forEach((el) => {
     el.classList.toggle('journey-row-selected', el.dataset.journeyId === nodeId);
   });
   try {
     const detail = await api('/api/learning/node?id=' + encodeURIComponent(nodeId));
+    if (loadGen !== _journeyLoadGen || _journeySelectedId !== nodeId) return;
     _journeyRenderDetail(detail);
     if (!silent && typeof toast === 'function') toast(_journeyT('journey_loaded', 'Node loaded'));
   } catch (err) {
+    if (loadGen !== _journeyLoadGen || _journeySelectedId !== nodeId) return;
     _journeyRenderDetail(null);
     if (typeof toast === 'function') toast(err.message || String(err));
   }
@@ -254,38 +369,60 @@ async function journeySelectNode(nodeId, silent) {
 
 async function journeyOpenEdit() {
   if (!_journeySelectedId) return;
-  const detail = await api('/api/learning/node?id=' + encodeURIComponent(_journeySelectedId));
-  if (!detail || !detail.ok) return;
-  const next = window.prompt(_journeyT('journey_edit_prompt', 'Edit content:'), detail.content || '');
-  if (next === null) return;
+  const nodeId = _journeySelectedId;
+  const loadGen = _journeyLoadGen;
+  _journeyEditNodeId = nodeId;
+  const modal = $('journeyEditModal');
+  const ta = $('journeyEditTextarea');
+  const titleEl = $('journeyEditModalTitle');
+  if (!modal || !ta) return;
+  _journeyShowEditError('');
+  ta.value = '';
+  ta.disabled = true;
+  if (titleEl) titleEl.textContent = _journeyT('journey_edit', 'Edit');
+  modal.hidden = false;
   try {
-    await api('/api/learning/node', { method: 'PUT', body: JSON.stringify({ id: _journeySelectedId, content: next }) });
-    if (typeof toast === 'function') toast(_journeyT('journey_saved', 'Saved'));
-    _journeyPayload = null;
-    await loadJourney(true);
-    await journeySelectNode(_journeySelectedId, true);
+    const detail = await api('/api/learning/node?id=' + encodeURIComponent(nodeId));
+    if (loadGen !== _journeyLoadGen || _journeyEditNodeId !== nodeId) return;
+    if (!detail || !detail.ok) throw new Error(_journeyT('journey_not_found', 'Node not found'));
+    ta.value = detail.content || '';
+    if (titleEl && (detail.label || detail.id)) {
+      titleEl.textContent = _journeyT('journey_edit', 'Edit') + ': ' + (detail.label || detail.id);
+    }
   } catch (err) {
-    if (typeof toast === 'function') toast(err.message || String(err));
+    if (loadGen !== _journeyLoadGen || _journeyEditNodeId !== nodeId) return;
+    _journeyShowEditError(err.message || String(err));
+  } finally {
+    if (loadGen === _journeyLoadGen && _journeyEditNodeId === nodeId) {
+      ta.disabled = false;
+      ta.focus();
+    }
   }
 }
 
 async function journeyConfirmDelete() {
   if (!_journeySelectedId) return;
-  const detail = await api('/api/learning/node?id=' + encodeURIComponent(_journeySelectedId));
-  const label = detail && detail.label ? detail.label : _journeySelectedId;
+  const nodeId = _journeySelectedId;
+  const loadGen = _journeyLoadGen;
+  const detail = await api('/api/learning/node?id=' + encodeURIComponent(nodeId));
+  if (loadGen !== _journeyLoadGen || _journeySelectedId !== nodeId) return;
+  const label = detail && detail.label ? detail.label : nodeId;
   const hint =
     detail && detail.kind === 'skill'
       ? _journeyT('journey_delete_skill_confirm', 'Archive this skill? Restore via intellect curator restore.')
       : _journeyT('journey_delete_memory_confirm', 'Delete this memory chunk?');
   if (!window.confirm(`${hint}\n\n${label}`)) return;
+  if (loadGen !== _journeyLoadGen || _journeySelectedId !== nodeId) return;
   try {
-    await api('/api/learning/node', { method: 'DELETE', body: JSON.stringify({ id: _journeySelectedId }) });
+    await api('/api/learning/node', { method: 'DELETE', body: JSON.stringify({ id: nodeId }) });
+    if (loadGen !== _journeyLoadGen) return;
     if (typeof toast === 'function') toast(_journeyT('journey_deleted', 'Deleted'));
-    _journeySelectedId = null;
-    _journeyPayload = null;
-    _journeyRenderDetail(null);
+    _journeyResetSelection();
     await loadJourney(true);
   } catch (err) {
+    if (loadGen !== _journeyLoadGen) return;
     if (typeof toast === 'function') toast(err.message || String(err));
   }
 }
+
+window._journeyResetSelection = _journeyResetSelection;

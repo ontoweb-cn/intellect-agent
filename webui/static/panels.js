@@ -5127,6 +5127,12 @@ async function _profileSwitchPanelLoad(){
   if (_currentPanel === 'kanban') await loadKanban();
   if (_currentPanel === 'profiles') await loadProfilesPanel();
   if (_currentPanel === 'workspaces') await loadWorkspacesPanel();
+  // Always clear Journey client state so a later open cannot reattach stale
+  // node ids / edit modal content from the previous profile (P0-3 / M8).
+  if (typeof _journeyResetSelection === 'function') _journeyResetSelection();
+  if (_currentPanel === 'journey' && typeof loadJourney === 'function') {
+    await loadJourney(true);
+  }
 }
 
 function _refreshProfileSwitchBackground(gen){

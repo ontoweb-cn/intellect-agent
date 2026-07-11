@@ -1539,6 +1539,22 @@
 <script src="static/code-cell.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/boot.js?v=__WEBUI_VERSION__" defer></script>
 
+<!-- Journey: edit node modal (skill SKILL.md or memory chunk) -->
+<div class="kanban-modal-overlay" id="journeyEditModal" hidden>
+  <div class="kanban-modal journey-edit-modal" role="dialog" aria-modal="true" aria-labelledby="journeyEditModalTitle">
+    <h3 id="journeyEditModalTitle" data-i18n="journey_edit">Edit</h3>
+    <div class="kanban-modal-row">
+      <label for="journeyEditTextarea" data-i18n="journey_edit_content">Content</label>
+      <textarea id="journeyEditTextarea" class="journey-edit-textarea" spellcheck="false"></textarea>
+    </div>
+    <div class="kanban-modal-error" id="journeyEditModalError" aria-live="polite"></div>
+    <div class="kanban-modal-actions">
+      <button type="button" class="kanban-modal-btn" id="journeyEditCancel" data-i18n="cancel">Cancel</button>
+      <button type="button" class="kanban-modal-btn primary" id="journeyEditSave" data-i18n="journey_save">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Kanban: create/rename board modal — used for both flows. -->
 <div class="kanban-modal-overlay" id="kanbanBoardModal" hidden onclick="if(event.target===this)closeKanbanBoardModal()">
   <div class="kanban-modal" role="dialog" aria-modal="true" aria-labelledby="kanbanBoardModalTitle">

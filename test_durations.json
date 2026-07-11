@@ -1,8 +1,9 @@
 {
   "tests/agent/test_learn_command.py": 0.863,
-  "tests/agent/test_learning_graph.py": 0.887,
-  "tests/agent/test_learning_graph_render.py": 0.735,
-  "tests/agent/test_learning_mutations.py": 1.022,
+  "tests/agent/test_learning_api_profile.py": 1.055,
+  "tests/agent/test_learning_graph.py": 0.684,
+  "tests/agent/test_learning_graph_render.py": 0.6,
+  "tests/agent/test_learning_mutations.py": 0.816,
   "tests/agent/test_moa_loop.py": 1.04,
   "tests/agent/test_redact.py": 0.957,
   "tests/agent/test_secret_scope.py": 0.37,
