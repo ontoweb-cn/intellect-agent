@@ -90,7 +90,7 @@ P0 Session SSE (契约+客户端) ──► P1-A 全量 / P1-B 全量 virt
 | **A3** | Payload | 见 §4.0 wire；最小集：`v,turn_id,stream_id,session_id,mode,display,disclosure,segments[],elapsed_ms` |
 | **A3a** | 作者（C2） | **服务端**从 journal 已写 tool/thinking/text 组 segments；`disclosure` **默认** `{expanded:false,user_intent:null}`；客户端真实 disclosure **仍仅 localStorage**（W3 不上传） |
 | **A4** | Segment cap | provisional **max_segments=40**，drop-oldest tool/thinking（保留最新 text） |
-| **A5** | Deferred worklog | W3 **只文档** `N≥8`；实现 W4 |
+| **A5** | Deferred worklog | W3 **只文档** `N≥8`；实现 **W5**（W4 改为 P1-B virt） |
 | **A6** | Display alias | `chat_activity_display_mode`: `compact_worklog`\|`transparent_stream` → 映射 `simplified_tool_calling` |
 | **A7** | Opt-C 范围 | convert = **disclosure remap**（W2 已有）；**C-A1 闪烁**属 #2 可选，非 RFC / #3 阻塞 |
 | **A8** | Seq / 终端性（R4） | Scene **推进** journal/SSE `seq`；`terminal: false`；**不得**进 `_TERMINAL_SSE_EVENTS`；不得当 `latest_run_summary` 终端 |
@@ -291,7 +291,7 @@ on done | cancel | apperror:
 | R4b | 谁写服务端 scene？ | **服务端** segments；disclosure 默认 | ☐ |
 | R4c | 发射路径？ | **同 `put()`**（禁止 journal-only） | ☐ |
 | R5 | transparent_stream？ | W3 不做全 UI；仅 alias | ☐ |
-| R6 | Deferred worklog？ | W3 只锁 N≥8；实现 W4 | ☐ |
+| R6 | Deferred worklog？ | W3 只锁 N≥8；实现 **W5** | ☐ |
 | R7 | #0 / #3 门禁？ | #3 前 W2 **必须 merge**；#1 可文档先行 | ☐ |
 | R8 | #2 schema？ | 仅冻结 A3；与 #1 同 train 或等 REVIEWED | ☐ |
 

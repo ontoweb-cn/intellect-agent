@@ -18,7 +18,7 @@
 | **A3** | Payload | Wire envelope §4.0；最小集：`v,turn_id,stream_id,session_id,mode,display,disclosure,segments[],elapsed_ms` |
 | **A3a** | 作者 | **服务端**从 journal 已写 tool/thinking/text 组 segments；`disclosure` **默认** `{expanded:false,user_intent:null}`；真实 disclosure **仅 localStorage**（W3 不上传） |
 | **A4** | Segment cap | Provisional **max_segments=40**；drop-oldest tool/thinking（保留最新 text） |
-| **A5** | Deferred worklog | W3 **只文档** `N≥8`；实现延期（W4+） |
+| **A5** | Deferred worklog | W3 **只文档** `N≥8`；实现延期至 **W5**（W4 = P1-B transcript virt） |
 | **A6** | Display alias | `chat_activity_display_mode`: `compact_worklog` \| `transparent_stream` → 映射今日 `simplified_tool_calling` |
 | **A7** | Opt-C 范围 | convert = **disclosure remap**（W2 已有）；C-A1 闪烁属 MVP **可选**，非 RFC / journal 切片阻塞 |
 | **A8** | Seq / 终端性 | Scene **推进** journal/SSE `seq`；`terminal: false`；**不得**进 `_TERMINAL_SSE_EVENTS`；不得当 `latest_run_summary` 终端 |
