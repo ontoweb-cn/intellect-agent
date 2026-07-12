@@ -13,7 +13,7 @@ Hardening depth (Tier table — source of truth):
 | W7/W12c | resolve + leaf O_NOFOLLOW | read/write/open; unlink/rmtree/rename | not closed | done |
 | A | no bare Path.open/read_bytes on serve hot paths | _serve_file_bytes, HTML preview, read_file_content; open/create still path+O_NOFOLLOW | leaf-only | W13-O |
 | B | workspace dir-fd + unlinkat/renameat/mkdirat (last hop) | unlink, rename, mkdir | last-hop closed (POSIX); parent-chain residual | W13-O |
-| C | dir-fd scandir + openat(O_NOFOLLOW) within resolved start dir | list_dir, folder-zip walk, rmtree_under_root | POSIX: those three ops tree-walk closed after resolve of start; not「全仓 TOCTOU-closed」 | W14-A |
+| C | root→start 分量链 openat + dir-fd scandir/unlinkat（不跟随目录符号链接） | list_dir, folder-zip walk, rmtree_under_root | POSIX：三 ops 在 root→start 分量链 + 树内 walk 上 closed；非「全仓 TOCTOU-closed」 | W14-A done |
 
 Windows residual: when O_DIRECTORY / dir_fd / O_NOFOLLOW are unavailable, fall back
 to resolve + containment checks + Path/`os.walk`/`shutil.rmtree` (degraded).
@@ -73,16 +73,51 @@ def _open_parent_dir_fd(parent: Path) -> int:
     return os.open(str(parent), os.O_RDONLY | _O_DIRECTORY)
 
 
-def _open_dir_fd(path: Path) -> int:
-    """Open a directory fd on an already-resolved path (Tier C start)."""
-    flags = os.O_RDONLY | _O_DIRECTORY
-    if _OPEN_FLAGS_NOFOLLOW:
-        flags |= _OPEN_FLAGS_NOFOLLOW
+def open_root_dir_fd(root: Path) -> int:
+    """Open the workspace root directory fd (``O_DIRECTORY``)."""
+    root_r = Path(root).resolve()
+    return os.open(str(root_r), os.O_RDONLY | _O_DIRECTORY)
+
+
+def open_dir_fd_under_root(root: Path, requested: str) -> tuple[int, Path]:
+    """Open ``requested`` via component-chain ``openat`` from the workspace root.
+
+    Containment uses ``resolve_under_root`` (in-root symlink dirs allowed per W7 S3).
+    The open walk uses the *resolved* path components with ``O_NOFOLLOW`` so each
+    hop is pinned by directory fd (Tier C A1).
+
+    Returns ``(dir_fd, resolved_path)``. Caller must ``os.close(dir_fd)``.
+    """
+    if not _SUPPORTS_DIR_FD:
+        raise RuntimeError("dir-fd openat unavailable on this platform")
+    root_r = Path(root).resolve()
+    start = resolve_under_root(root, requested)
+    if not start.exists():
+        raise FileNotFoundError(f"File not found: {requested}")
+    if not start.is_dir():
+        raise ValueError(f"Not a directory: {requested}")
     try:
-        return os.open(str(path), flags)
-    except OSError as exc:
-        if path.is_symlink():
-            raise ValueError(f"Symlink open blocked: {path}") from exc
+        rel = start.relative_to(root_r)
+    except ValueError as exc:
+        raise ValueError(f"Path traversal blocked: {requested}") from exc
+    parts = () if str(rel) == "." else rel.parts
+
+    fd = open_root_dir_fd(root_r)
+    try:
+        for part in parts:
+            next_fd = os.open(
+                part,
+                os.O_RDONLY | _O_DIRECTORY | _OPEN_FLAGS_NOFOLLOW,
+                dir_fd=fd,
+            )
+            os.close(fd)
+            fd = next_fd
+        return fd, start
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
         raise
 
 
@@ -195,13 +230,10 @@ def collect_files_under_root(
     ``(filesystem_path, archive_name)``. Does not follow directory symlinks.
     File symlinks are included only when their resolved target stays under root.
     """
-    start = resolve_under_root(root, requested)
-    if not start.is_dir():
-        raise ValueError(f"Not a directory: {requested}")
     workspace_root = Path(root).resolve()
     files: list[tuple[Path, str]] = []
     if _SUPPORTS_DIR_FD:
-        dir_fd = _open_dir_fd(start)
+        dir_fd, start = open_dir_fd_under_root(root, requested)
         try:
             total, hit = _walk_files_via_dir_fd(
                 dir_fd,
@@ -218,6 +250,9 @@ def collect_files_under_root(
         return files, total, hit
 
     # Windows / degraded: Path walk with resolve containment (W13-era semantics).
+    start = resolve_under_root(root, requested)
+    if not start.is_dir():
+        raise ValueError(f"Not a directory: {requested}")
     total_bytes = 0
     for walk_root, _dirs, names in os.walk(start, followlinks=False):
         root_path = Path(walk_root)
@@ -252,17 +287,17 @@ def collect_files_under_root(
 
 
 def list_names_under_root(root: Path, requested: str) -> list[str]:
-    """List entry names under ``requested`` via dir-fd scandir when available."""
-    path = resolve_under_root(root, requested)
-    if not path.is_dir():
-        raise FileNotFoundError(f"Not a directory: {requested}")
+    """List entry names under ``requested`` via component-chain dir-fd scandir."""
     if _SUPPORTS_DIR_FD:
-        dir_fd = _open_dir_fd(path)
+        dir_fd, _start = open_dir_fd_under_root(root, requested)
         try:
             with os.scandir(dir_fd) as it:
                 return [entry.name for entry in it]
         finally:
             os.close(dir_fd)
+    path = resolve_under_root(root, requested)
+    if not path.is_dir():
+        raise FileNotFoundError(f"Not a directory: {requested}")
     return [p.name for p in path.iterdir()]
 
 
@@ -431,11 +466,10 @@ def unlink_under_root(root: Path, requested: str) -> Path:
 def rmtree_under_root(root: Path, requested: str) -> Path:
     """Recursively delete a directory under root (Tier C on POSIX).
 
-    Start path is resolved (in-root symlinks followed per W7 S3). Contents are
-    removed via dir-fd scandir + unlinkat/openat without following dir symlinks.
+    Start path is opened via component-chain openat from root (in-root symlink
+    dirs allowed per W7 S3 resolve). Contents are removed via dir-fd scandir +
+    unlinkat/openat without following dir symlinks.
     """
-    path = resolve_under_root(root, requested)
-    _reject_workspace_root(root, requested, path)
     path = resolve_under_root(root, requested)
     _reject_workspace_root(root, requested, path)
     if not path.exists():
@@ -447,12 +481,18 @@ def rmtree_under_root(root: Path, requested: str) -> Path:
     if not path.is_dir():
         raise ValueError(f"Not a directory: {requested}")
     if _SUPPORTS_DIR_FD:
-        dir_fd = _open_dir_fd(path)
+        dir_fd, path = open_dir_fd_under_root(root, requested)
         try:
             _rmtree_via_dir_fd(dir_fd)
         finally:
             os.close(dir_fd)
-        parent_fd = _open_parent_dir_fd(path.parent)
+        root_r = Path(root).resolve()
+        parent = path.parent
+        if parent == root_r:
+            parent_fd = open_root_dir_fd(root_r)
+        else:
+            parent_rel = str(parent.relative_to(root_r))
+            parent_fd, _ = open_dir_fd_under_root(root, parent_rel)
         try:
             os.rmdir(path.name, dir_fd=parent_fd)
         finally:

@@ -350,3 +350,71 @@ def test_list_names_under_root(tmp_path: Path):
     assert names == {"a.txt", "b"}
     entries = list_dir(root, ".")
     assert {e["name"] for e in entries} == {"a.txt", "b"}
+
+
+def test_open_dir_fd_component_chain_nested(tmp_path: Path):
+    import os
+
+    from api.workspace_io import _SUPPORTS_DIR_FD, list_names_under_root, open_dir_fd_under_root
+
+    if not _SUPPORTS_DIR_FD:
+        pytest.skip("dir-fd openat unavailable")
+    root = tmp_path / "ws"
+    nested = root / "a" / "b" / "c"
+    nested.mkdir(parents=True)
+    (nested / "x.txt").write_text("1", encoding="utf-8")
+    dir_fd, start = open_dir_fd_under_root(root, "a/b/c")
+    try:
+        assert start == nested.resolve()
+        with os.scandir(dir_fd) as it:
+            assert {e.name for e in it} == {"x.txt"}
+    finally:
+        os.close(dir_fd)
+    assert set(list_names_under_root(root, "a/b/c")) == {"x.txt"}
+
+
+def test_open_dir_fd_via_in_root_symlink_alias(tmp_path: Path):
+    import os
+
+    from api.workspace_io import _SUPPORTS_DIR_FD, list_names_under_root, open_dir_fd_under_root
+
+    if not _SUPPORTS_DIR_FD:
+        pytest.skip("dir-fd openat unavailable")
+    root = tmp_path / "ws"
+    root.mkdir()
+    real = root / "real_dir"
+    real.mkdir()
+    (real / "f.txt").write_text("ok", encoding="utf-8")
+    alias = root / "alias_dir"
+    try:
+        alias.symlink_to(real)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    # Request via alias; resolve lands on real_dir; openat walks real components.
+    dir_fd, start = open_dir_fd_under_root(root, "alias_dir")
+    try:
+        assert start == real.resolve()
+        with os.scandir(dir_fd) as it:
+            assert {e.name for e in it} == {"f.txt"}
+    finally:
+        os.close(dir_fd)
+    assert set(list_names_under_root(root, "alias_dir")) == {"f.txt"}
+
+
+def test_open_dir_fd_rejects_escape_symlink(tmp_path: Path):
+    from api.workspace_io import _SUPPORTS_DIR_FD, open_dir_fd_under_root
+
+    if not _SUPPORTS_DIR_FD:
+        pytest.skip("dir-fd openat unavailable")
+    root = tmp_path / "ws"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("x", encoding="utf-8")
+    link = root / "escape"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    with pytest.raises(ValueError, match="Path traversal blocked"):
+        open_dir_fd_under_root(root, "escape")

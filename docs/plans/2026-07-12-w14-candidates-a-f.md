@@ -68,11 +68,11 @@
 
 **DoD：**
 
-- [ ] A1 POSIX：`open_root_dir_fd` + 分量链 `openat(O_NOFOLLOW|O_DIRECTORY)`  
-- [ ] A2 改写三 ops；API 形状不变  
-- [ ] A3 Windows degraded 文档 + 测 skip/fallback  
-- [ ] A4 测：穿越/escape symlink；树删；zip 收集不含逃逸  
-- [ ] A5 模块头 Tier 表：Status=done（仅三 ops）；**Claim 列按 L4 改写**（禁止裸 "tree closed" / 全仓 closed）  
+- [x] A1 POSIX：`open_root_dir_fd` + 分量链 `openat(O_NOFOLLOW|O_DIRECTORY)`  
+- [x] A2 改写三 ops；API 形状不变  
+- [x] A3 Windows degraded 文档 + 测 skip/fallback  
+- [x] A4 测：穿越/escape symlink；树删；zip 收集不含逃逸  
+- [x] A5 模块头 Tier 表：Status=done（仅三 ops）；**Claim 列按 L4 改写**（禁止裸 "tree closed" / 全仓 closed）  
 
 **估时：** 3–5d。**非目标：** git discard（可另 tip 走 Tier B helper）。
 
