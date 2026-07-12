@@ -1349,7 +1349,7 @@ class SessionDB:
         """Get a session by ID.
 
         When *actor_member_id* is provided, visibility follows
-        ``agent.session_visibility`` (strict NULL by default).
+        ``webui/api/session_visibility`` (single-user: unrestricted).
 
         By default excludes ``system_prompt`` (can be 100K+) from the
         result. Pass ``include_system_prompt=True`` to load it.
