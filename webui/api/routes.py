@@ -8800,44 +8800,19 @@ def handle_post(handler, parsed) -> bool:
             verify_password,
             create_session,
             is_auth_enabled,
-            is_loopback_client,
             webui_auth_cookie_line,
         )
         from api.auth import _check_login_rate, _record_login_attempt
         from api.helpers import j_with_cookies
-        from api.members import (
-            agent_membership_available,
-            load_members_config,
-            member_session_cookie_lines,
-        )
-        from agent.membership import is_members_enabled
 
         member_id_raw = str(body.get("member_id") or "").strip()
         password = body.get("password", "")
 
-        if member_id_raw and not is_loopback_client(handler):
-            return bad(handler, "Local member login is only available on localhost", status=403)
+        # Local member login was removed with multi-user; reject if requested.
+        if member_id_raw:
+            return bad(handler, "Members feature is disabled", status=404)
 
         if not is_auth_enabled():
-            if member_id_raw and agent_membership_available() and is_members_enabled(load_members_config()):
-                if not is_loopback_client(handler):
-                    return bad(handler, "Local member login is only available on localhost", status=403)
-                display_name = member_id_raw  # field named "member_id" for backward compat
-                from api.members import _resolve_or_create_member, _store
-
-                store = _store()
-                try:
-                    mid = _resolve_or_create_member(store, display_name)
-                except ValueError as exc:
-                    return bad(handler, str(exc), 400)
-                finally:
-                    store.close()
-                j_with_cookies(
-                    handler,
-                    {"ok": True, "member_id": mid, "display_name": display_name},
-                    cookies=member_session_cookie_lines(mid),
-                )
-                return True
             return j(handler, {"ok": True, "message": "Auth not enabled"})
 
         client_ip = handler.client_address[0]
@@ -8852,28 +8827,7 @@ def handle_post(handler, parsed) -> bool:
             return bad(handler, "Invalid password", 401)
 
         cookies = [webui_auth_cookie_line(handler, create_session())]
-        payload: dict = {"ok": True}
-
-        if member_id_raw:
-            if not agent_membership_available() or not is_members_enabled(load_members_config()):
-                return bad(handler, "Members feature is disabled", status=404)
-            if not is_loopback_client(handler):
-                return bad(handler, "Local member login is only available on localhost", status=403)
-            display_name = member_id_raw  # field named "member_id" for backward compat
-            from api.members import _resolve_or_create_member, _store
-
-            store = _store()
-            try:
-                mid = _resolve_or_create_member(store, display_name)
-            except ValueError as exc:
-                return bad(handler, str(exc), 400)
-            finally:
-                store.close()
-            cookies.extend(member_session_cookie_lines(mid))
-            payload["member_id"] = mid
-            payload["display_name"] = display_name
-
-        j_with_cookies(handler, payload, cookies=cookies)
+        j_with_cookies(handler, {"ok": True}, cookies=cookies)
         return True
 
     if parsed.path == "/api/auth/logout":

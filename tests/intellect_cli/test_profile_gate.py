@@ -34,11 +34,20 @@ def test_load_config_without_profiles_key_is_disabled(tmp_path, monkeypatch):
     assert is_profile_management_enabled(cfg) is False
 
 
-def test_profile_management_enabled_when_config_true():
-    """G2: explicit true enables management."""
+def test_profile_management_enabled_when_config_true(tmp_path, monkeypatch):
+    """G2: explicit true in user yaml enables management via load_config()."""
+    home = tmp_path / ".intellect"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "profiles:\n  management_enabled: true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("INTELLECT_HOME", str(home))
+    from intellect_cli.config import load_config
     from intellect_cli.profile_gate import is_profile_management_enabled
 
     assert is_profile_management_enabled({"profiles": {"management_enabled": True}}) is True
+    assert is_profile_management_enabled(load_config()) is True
 
 
 def test_cmd_profile_create_blocked_when_disabled(monkeypatch, capsys):
