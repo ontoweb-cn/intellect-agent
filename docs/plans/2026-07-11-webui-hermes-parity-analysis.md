@@ -120,7 +120,8 @@
 > **W1（2026-07-12）**：P1-C / Journey P1-1·2 已合入；下一拍见 [`2026-07-12-w1-journey-e2e-and-session-sse.md`](./2026-07-12-w1-journey-e2e-and-session-sse.md)（P1-4 E2E ∥ Session SSE RFC）。  
 > **W5（2026-07-12）**：deferred worklog 已合入 `d6a94d7`；下一拍见 [`2026-07-12-w6-transparent-stream.md`](./2026-07-12-w6-transparent-stream.md)。  
 > **W6（2026-07-12）**：transparent stream 已合入 `609f705`；下一拍见 [`2026-07-12-w7-p2-security.md`](./2026-07-12-w7-p2-security.md)（P2 anchored I/O + trusted proxy）。  
-> **W7（2026-07-12）**：P2 I/O + trusted proxy 已合入 `e91d30c`；下一拍见 [`2026-07-12-w8-update-channel.md`](./2026-07-12-w8-update-channel.md)（P2 #9 update channel 收口）。
+> **W7（2026-07-12）**：P2 I/O + trusted proxy 已合入 `e91d30c`；下一拍见 [`2026-07-12-w8-update-channel.md`](./2026-07-12-w8-update-channel.md)（P2 #9 update channel 收口）。  
+> **W8（2026-07-12）**：update channel 已合入 `8e434b1`（#49）；下一拍见 [`2026-07-12-w9-compression-exhausted.md`](./2026-07-12-w9-compression-exhausted.md)（P3 #12 focused continuation）。
 
 ### P2 — 安全与同机运维
 
