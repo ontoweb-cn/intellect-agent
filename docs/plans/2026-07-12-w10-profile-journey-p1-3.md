@@ -1,9 +1,9 @@
 # W10 细化稿 — Profile 管理恢复（opt-in）+ Journey P1-3（Gateway scope）
 
 > **日期**：2026-07-12  
-> **状态**：**REVISED** — 待签字（已吸收计划评审 Request changes）  
+> **状态**：**APPROVED** — 执行中（1a→1b）；会员空壳清理已合入 (#53)  
 > **策略**：先技术评审，再按 **0→1a→1b** 串行  
-> **前置**：W0–W9 已合入 main（parity 主轴闭环 @ `e04cc95` / #51）  
+> **前置**：W0–W9 已合入 main（parity 主轴闭环 @ `e04cc95` / #51）；membership 空壳已删 (#53)  
 > **父文档**：[`2026-06-profile-management-disabled-restore.md`](./2026-06-profile-management-disabled-restore.md)、[`2026-07-11-p1-journey-and-webui-parity-refinement.md`](./2026-07-11-p1-journey-and-webui-parity-refinement.md) §1.4  
 > **探索**：[`explore`](e94251a8-5022-41d7-9577-a606b25b19ef)  
 > **产品决议**：`management_enabled` **出厂默认 false**（运维显式 `true` 恢复）— 用户选 1  
@@ -163,3 +163,4 @@
 |------|------|
 | 2026-07-12 | DRAFT v1 |
 | 2026-07-12 | REVISED — J6 禁 wrapper；J7 ContextVar；J13/R8 迁移+release note；R6/R9/R10 钉死 |
+| 2026-07-12 | APPROVED — 签字执行；#53 清 membership 空壳后开 1a |

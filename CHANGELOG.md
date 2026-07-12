@@ -4,6 +4,14 @@ All notable changes to Intellect Agent are documented in per-version release not
 (`RELEASE_vX.Y.Z.md`).  This file provides a high-level index and forward-looking
 roadmap.
 
+## Unreleased
+
+### Profiles management default (W10)
+
+- **`profiles.management_enabled` now defaults to `false`** in `DEFAULT_CONFIG` (aligned with the gate and user docs).
+- Installs that never set this key explicitly may see the Profiles UI / CLI create-switch-delete disappear until you set `profiles.management_enabled: true` in `config.yaml` and restart.
+- Existing explicit `true` / `false` in user yaml are unchanged; no automatic yaml rewrite and no `_config_version` bump.
+
 ## Recent Releases
 
 | Date | Highlights |

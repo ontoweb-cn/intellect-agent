@@ -12,13 +12,37 @@ def test_profile_management_disabled_by_default():
     assert is_profile_management_enabled({"profiles": {"management_enabled": False}}) is False
 
 
+def test_default_config_management_enabled_is_false():
+    """G1: DEFAULT_CONFIG + empty user yaml merge must stay disabled."""
+    from intellect_cli.config import DEFAULT_CONFIG
+    from intellect_cli.profile_gate import is_profile_management_enabled
+
+    assert DEFAULT_CONFIG["profiles"]["management_enabled"] is False
+    assert is_profile_management_enabled(DEFAULT_CONFIG) is False
+
+
+def test_load_config_without_profiles_key_is_disabled(tmp_path, monkeypatch):
+    """G1: minimal user config.yaml (no profiles key) → management off."""
+    home = tmp_path / ".intellect"
+    home.mkdir()
+    (home / "config.yaml").write_text("model: test-model\n", encoding="utf-8")
+    monkeypatch.setenv("INTELLECT_HOME", str(home))
+    from intellect_cli.config import load_config
+    from intellect_cli.profile_gate import is_profile_management_enabled
+
+    cfg = load_config()
+    assert is_profile_management_enabled(cfg) is False
+
+
 def test_profile_management_enabled_when_config_true():
+    """G2: explicit true enables management."""
     from intellect_cli.profile_gate import is_profile_management_enabled
 
     assert is_profile_management_enabled({"profiles": {"management_enabled": True}}) is True
 
 
 def test_cmd_profile_create_blocked_when_disabled(monkeypatch, capsys):
+    """G3: CLI create rejected while disabled."""
     from intellect_cli import main as main_mod
 
     monkeypatch.setattr(

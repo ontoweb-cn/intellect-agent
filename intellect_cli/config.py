@@ -1223,9 +1223,9 @@ DEFAULT_CONFIG = {
     # TEMPORARY: profile create / switch / delete gate (CLI + WebUI).
     # When management_enabled is false, mutating profile commands and WebUI
     # Profiles UI are blocked; ``intellect -p <existing>`` still works.
-    # Set to true to restore create, use, delete, and profile switching.
+    # Default false (opt-in restore). Set true in config.yaml to re-enable.
     "profiles": {
-        "management_enabled": True,
+        "management_enabled": False,
     },
 
     # Feature flags (P4-6) — centralized on/off toggles for new capabilities.
