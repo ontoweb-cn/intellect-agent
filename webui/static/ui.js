@@ -6249,8 +6249,55 @@ function setCompressionUi(state){
   else _clearCompressionElapsedTimer();
   renderCompressionUi();
 }
+function _exhaustionCompressionCardsHtml(state){
+  const focus=esc(state.focusTopic||state.suggestedFocus||'');
+  const hint=esc(state.hint||(typeof t==='function'?t('compression_exhausted_hint'):'Try a focused compress, or start a new session.'));
+  const title=esc(typeof t==='function'?t('compression_exhausted_label'):'Context compression exhausted');
+  const focusLabel=esc(typeof t==='function'?t('compression_exhausted_focus_label'):'Focus topic');
+  const compressLabel=esc(typeof t==='function'?t('compression_exhausted_cta_compress'):'Focused compress');
+  const newLabel=esc(typeof t==='function'?t('compression_exhausted_cta_new'):'New session');
+  return `
+    <div class="tool-card-row compression-card-row" data-compression-card="1" data-compression-exhausted="1">
+      <div class="tool-card tool-card-compress-error open">
+        <div class="tool-card-header">
+          <span class="tool-card-icon">${li('x',13)}</span>
+          <span class="tool-card-name">${title}</span>
+        </div>
+        <div class="tool-card-body" style="display:flex;flex-direction:column;gap:8px;padding:10px 12px">
+          <div style="font-size:12px;color:var(--muted);white-space:pre-wrap">${hint}</div>
+          <label style="font-size:11px;color:var(--muted)">${focusLabel}</label>
+          <input id="exhaustionFocusInput" type="text" value="${focus}" maxlength="500"
+            style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px;font-size:13px"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();submitExhaustionFocusedCompress();}" />
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="update-btn update-primary" onclick="submitExhaustionFocusedCompress()">${compressLabel}</button>
+            <button type="button" class="update-btn" onclick="startNewSessionFromExhaustion()">${newLabel}</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+async function submitExhaustionFocusedCompress(){
+  const input=$('exhaustionFocusInput');
+  const focus=((input&&input.value)||'').trim();
+  if(typeof clearCompressionUi==='function') clearCompressionUi();
+  if(typeof _runManualCompression==='function'){
+    await _runManualCompression(focus);
+  }else if(typeof showToast==='function'){
+    showToast('Compress is unavailable');
+  }
+}
+async function startNewSessionFromExhaustion(){
+  if(typeof clearCompressionUi==='function') clearCompressionUi();
+  if(typeof newSession==='function'){
+    await newSession();
+    if(typeof renderSessionList==='function') await renderSessionList();
+    const msg=$('msg'); if(msg) msg.focus();
+  }
+}
 function _compressionCardsHtml(state){
   if(!state) return '';
+  if(state.phase==='exhausted') return _exhaustionCompressionCardsHtml(state);
   if(state.automatic) return _autoCompressionCardsHtml(state);
   const cmdText=state.commandText||'/compress';
   const focusText=state.focusTopic?`${t('focus_label')}: ${state.focusTopic}`:'';

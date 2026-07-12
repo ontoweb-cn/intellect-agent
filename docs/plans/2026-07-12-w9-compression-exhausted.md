@@ -1,8 +1,9 @@
 # W9 细化稿 — P3 #12：`compression_exhausted` Focused Continuation
 
 > **日期**：2026-07-12  
-> **状态**：**REVISED** — 待签字（已吸收计划评审 Request changes）  
-> **策略**：先技术评审，再按 **0→1** 串行  
+> **状态**：**APPROVED** — 复审 Approve；功能实施于 `feat/w9-compression-exhausted`  
+> **策略**：先技术评审，再按 **0→1** 串行（本拍执行中）  
+> **复审**：[`code-reviewer`](35145a69-67b1-4924-9c23-78a28c535181) — Approve  
 > **前置**：W0–W8 已合入 main（parity UX + P2 安全 + update channel @ `8e434b1` / #49）  
 > **父文档**：[`2026-07-11-webui-hermes-parity-analysis.md`](./2026-07-11-webui-hermes-parity-analysis.md) §P3 #12  
 > **探索**：[`explore`](e5349f39-26d5-4889-9341-e2d6248d91aa)  
@@ -175,3 +176,4 @@ ui exhaustion card (C6a)
 |------|------|
 | 2026-07-12 | DRAFT v1 |
 | 2026-07-12 | REVISED — C4 钉死 apperror；C7a/C7b 发射与 migration；C2 次序；C6a/C10a；T5–T6；R8–R10 |
+| 2026-07-12 | APPROVED — 复审 Approve；功能 PR `feat/w9-compression-exhausted` |
