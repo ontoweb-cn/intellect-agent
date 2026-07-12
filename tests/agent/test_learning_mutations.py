@@ -75,6 +75,9 @@ def test_stale_memory_index_errors(home):
     res = lm.node_detail("memory:memory:9")
     assert not res["ok"]
     assert res.get("code") == "stale"
+    res = lm.node_detail("memory:profile:9")
+    assert not res["ok"]
+    assert res.get("code") == "stale"
 
 
 def test_profile_local_stable_after_memory_delete(home):
