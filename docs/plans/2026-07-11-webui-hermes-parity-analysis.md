@@ -54,7 +54,7 @@
 | Gateway 存活探测 | `agent_health.py` + `GET /api/gateway/status` |
 | CORS preflight `Content-Length: 0` | `routes.py` 已有 |
 | 侧栏会话虚拟化 | `sessions.js` `_sessionVirtualWindow` |
-| 健康告警 banner | `index.html` `#agentHealthBanner`（仅 Dismiss，**无 Restart**） |
+| 健康告警 banner | `index.html` `#agentHealthBanner`（Dismiss + Restart；W13 @ `feeba35`） |
 
 ---
 
@@ -68,12 +68,12 @@
 | 4 | Turn Anchors / Transparent Stream | 有 turn/activity DOM；无 scene 持久化与双模式 | **高** | P1 |
 | 5 | Transcript 消息虚拟化 | 仅侧栏虚拟化；消息区全量 DOM | **高** | P1 |
 | 6 | Provider / 会话加载竞态 | 部分 generation 注释；需审计 | **中** | P1 |
-| 7 | Gateway 重启（健康 + 更新挂钩） | 只读 status + 告警；无 restart API/按钮；updates 无挂钩 | **中→高（同机）** | P2 或并行小项 |
+| 7 | Gateway 重启（健康 + 更新挂钩） | **W13 DONE** @ `feeba35`：层 C `POST /api/gateway/{start,stop,restart}` + banner/Settings + updates 挂钩；L3(a′) `probe_scope` | **已收口** | — |
 | 8 | Trusted-proxy-first / 更新通道 | 部分 CORS/同源；无 stable/experimental 通道 | **中/低** | P2 |
-| 9 | Workspace anchored I/O | `safe_resolve_ws` 有；无 openat/O_NOFOLLOW | **中** | P2 |
+| 9 | Workspace anchored I/O | **W7/W12/W13 DONE**：resolve + leaf `O_NOFOLLOW`；Tier A/B dir-fd `openat`；Tier C（`list_dir`/zip/rmtree 树 walk）→ **W14-A** | **部分收口** | W14-A |
 | 10 | Office sidecar / CSV 预览下载 | MIME 有；无 OOXML 提取 sidecar | **低** | P3 / 按需 |
 | 11 | Outline / 三栏布局 | 无 outline.js | **低** | P3 |
-| 12 | compression_exhausted 恢复包 | 有 `compression_anchor`；无 exhausted continuation | **低** | P3 |
+| 12 | compression_exhausted 恢复包 | **W9 DONE** @ `e04cc95`：focused continuation + `compression_anchor` | **已收口** | — |
 | 13 | SessionChannel（Option X） | 无（不同于 run-journal） | **低** | P3 |
 | 14 | i18n pl/vi/cs | 已有 en/zh/…/tr 等 | **低** | 按需 |
 
@@ -126,7 +126,8 @@
 > **W10（2026-07-12）**：profile DEFAULT false + Journey 进程-home MVP 已合入 `c567744`（#54/#55）；W10.1 WONTFIX（永久单用户）；下一拍见 [`2026-07-12-w11-single-user-hygiene.md`](./2026-07-12-w11-single-user-hygiene.md)。  
 > **W11（2026-07-12）**：永久单用户卫生清扫已合入 `3fba844`（#58/#59）。
 > **W12（2026-07-12）**：DONE @ `348140e` — Journey 本地 memory id（#61）+ delete/rename `workspace_io` 集中（#62）；详见 [`2026-07-12-w12-journey-ideal-and-openat-narrow.md`](./2026-07-12-w12-journey-ideal-and-openat-narrow.md)。  
-> **W13（2026-07-12）**：进行中 — Gateway lifecycle RFC→层 C ∥ openat Tier A/B；详见 [`2026-07-12-w13-gateway-lifecycle-and-openat.md`](./2026-07-12-w13-gateway-lifecycle-and-openat.md) + [`gateway-lifecycle-same-host.md`](../webui/rfcs/gateway-lifecycle-same-host.md)。
+> **W13（2026-07-12）**：DONE @ `feeba35`（#64）— Gateway lifecycle RFC→层 C + openat Tier A/B；Tier C 跳过 → W14-A；详见 [`2026-07-12-w13-gateway-lifecycle-and-openat.md`](./2026-07-12-w13-gateway-lifecycle-and-openat.md) + [`gateway-lifecycle-same-host.md`](../webui/rfcs/gateway-lifecycle-same-host.md)。  
+> **W14（2026-07-12）**：**执行中 F+A** — 文档收口 + openat Tier C；详见 [`2026-07-12-w14-candidates-a-f.md`](./2026-07-12-w14-candidates-a-f.md)。
 
 ### P2 — 安全与同机运维
 

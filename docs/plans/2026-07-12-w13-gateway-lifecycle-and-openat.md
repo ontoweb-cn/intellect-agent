@@ -1,7 +1,7 @@
 # W13 细化稿 — Gateway lifecycle（RFC→层 C）∥ directory-fd openat（边界→Tier）
 
 > **日期**：2026-07-12  
-> **状态**：**REVISED → 执行中**（评审 [`code-reviewer`](7f393a33-bb4f-4876-a773-e1466e8b4c28) Request changes 已吸收；用户选组合 1 + 实施）  
+> **状态**：**DONE** @ `feeba35`（#64）  
 > **策略**：双轨可拆 PR — **轨 G** = RFC + profile 生命周期契约 + Gateway 层 C；**轨 O** = 硬化边界钉死 + openat Tier A/B（Tier C 可后拆）  
 > **前置**：W12 DONE @ `348140e`（#61/#62/#63）；W7 S3 / W12 L7–L8 / parity §4 DECIDED #1/#4  
 > **父文档**：[`2026-07-11-webui-hermes-parity-analysis.md`](./2026-07-11-webui-hermes-parity-analysis.md) §4；[`2026-07-12-w7-p2-security.md`](./2026-07-12-w7-p2-security.md)；[`2026-07-12-w12-journey-ideal-and-openat-narrow.md`](./2026-07-12-w12-journey-ideal-and-openat-narrow.md)  
@@ -151,53 +151,53 @@ W13-G 层 C API + 面板            （模块头 Tier 表 + 测）
 
 - [x] 0.1 本文件 **READY FOR REVIEW**  
 - [x] 0.2 code-reviewer 技术评审 → 吸收为 REVISED（L3(a′)、`operation`、Tier B UX）  
-- [ ] 0.3 parity 分析追加 W13 指针  
+- [x] 0.3 parity 分析追加 W13 指针  
 - [x] 0.4 用户确认组合 1 + 实施  
 
 ### Task 1 — RFC（轨 G 前置）
 
 **Files:** Create `docs/webui/rfcs/gateway-lifecycle-same-host.md`
 
-- [ ] 1.1 写 RFC：L1–L8、HTTP 表、CLI 映射、watcher 分离、同机诚实、DECIDED #1/#4  
-- [ ] 1.2 **钉死 L3(a′)**：active live → else root_fallback + `probe_scope`  
-- [ ] 1.3 banner = 层 C 薄包装；health restart 委托同一 helper  
+- [x] 1.1 写 RFC：L1–L8、HTTP 表、CLI 映射、watcher 分离、同机诚实、DECIDED #1/#4  
+- [x] 1.2 **钉死 L3(a′)**：active live → else root_fallback + `probe_scope`  
+- [x] 1.3 banner = 层 C 薄包装；health restart 委托同一 helper  
 
 ### Task 2 — Gateway 层 C
 
 **Files:** `webui/api/gateway_lifecycle.py`；`webui/api/routes.py`；`webui/api/agent_health.py`；`webui/static/panels.js`；`webui/static/ui.js`；`webui/static/index.html`；`tests/webui/test_gateway_lifecycle_and_wakeup.py`
 
-- [ ] 2.1 扩展 lifecycle：`request_gateway_start/stop/restart` 共享锁 + **`operation` 字段**  
-- [ ] 2.2 路由 `POST /api/gateway/{start,stop,restart}`；409 busy；wait 60s；**CSRF 非豁免**  
-- [ ] 2.3 L3(a′)：health/status 探针 + `probe_scope` 字段  
-- [ ] 2.4 Settings 按钮 + banner「当前 profile / scope」；in-gateway 拒 **start/stop/restart**  
-- [ ] 2.5 测：busy 409；profile argv；start when running / stop when stopped；**stop completed 不得让 updates prove 成功**；CSRF 403；L3 matrix（root-only + profile WebUI）  
-- [ ] 2.6 `scripts/run_tests.sh` 相关绿  
+- [x] 2.1 扩展 lifecycle：`request_gateway_start/stop/restart` 共享锁 + **`operation` 字段**  
+- [x] 2.2 路由 `POST /api/gateway/{start,stop,restart}`；409 busy；wait 60s；**CSRF 非豁免**  
+- [x] 2.3 L3(a′)：health/status 探针 + `probe_scope` 字段  
+- [x] 2.4 Settings 按钮 + banner「当前 profile / scope」；in-gateway 拒 **start/stop/restart**  
+- [x] 2.5 测：busy 409；profile argv；start when running / stop when stopped；**stop completed 不得让 updates prove 成功**；CSRF 403；L3 matrix（root-only + profile WebUI）  
+- [x] 2.6 `scripts/run_tests.sh` 相关绿  
 
 ### Task 3 — openat 边界注释 + Tier A
 
 **Files:** `workspace_io.py`；`routes.py` serve 路径；`workspace.py`；tests
 
-- [ ] 3.1 模块头写入 Tier 表 + Windows residual + keep-out `tools/`  
-- [ ] 3.2 `_serve_file_bytes` / inline HTML / 多余裸 open → `read_bytes_under_root` / `open_under_root`  
-- [ ] 3.3 测：穿越仍拒；in-root symlink 可读  
+- [x] 3.1 模块头写入 Tier 表 + Windows residual + keep-out `tools/`  
+- [x] 3.2 `_serve_file_bytes` / inline HTML / 多余裸 open → `read_bytes_under_root` / `open_under_root`  
+- [x] 3.3 测：穿越仍拒；in-root symlink 可读  
 
 ### Task 4 — openat Tier B
 
 **Files:** `workspace_io.py`；routes mkdir/delete/rename/create；tests
 
-- [ ] 4.1 `open_root_dir_fd(root)` + `openat`/`unlinkat`/`renameat`/`mkdirat` 封装（POSIX）  
-- [ ] 4.2 改 unlink/rename/mkdir/create：**多分量路径仍接受**；dir-fd 仅最后一跳；父链 residual 诚实  
-- [ ] 4.3 Windows：fallback 今日 containment；测 skip 或 degraded assert  
-- [ ] 4.4 测：多分量 `nested/a.txt` 不回归；symlink escape；契约测  
-- [ ] 4.5 **不**改 `list_dir`（留给 Tier C）；git discard **不进** merge gate  
+- [x] 4.1 `open_root_dir_fd(root)` + `openat`/`unlinkat`/`renameat`/`mkdirat` 封装（POSIX）  
+- [x] 4.2 改 unlink/rename/mkdir/create：**多分量路径仍接受**；dir-fd 仅最后一跳；父链 residual 诚实  
+- [x] 4.3 Windows：fallback 今日 containment；测 skip 或 degraded assert  
+- [x] 4.4 测：多分量 `nested/a.txt` 不回归；symlink escape；契约测  
+- [x] 4.5 **不**改 `list_dir`（留给 Tier C）；git discard **不进** merge gate  
 
 ### Task 5 — 合入
 
-- [ ] 5.1 W13-RFC merge  
-- [ ] 5.2 W13-G merge  
-- [ ] 5.3 W13-O merge  
-- [ ] 5.4 可选 W13-O-C  
-- [ ] 5.5 本文件勾选 + parity 索引  
+- [x] 5.1 W13-RFC merge  
+- [x] 5.2 W13-G merge  
+- [x] 5.3 W13-O merge  
+- [ ] 5.4 可选 W13-O-C — **跳过 → W14-A**（[`2026-07-12-w14-candidates-a-f.md`](./2026-07-12-w14-candidates-a-f.md)）  
+- [x] 5.5 本文件勾选 + parity 索引  
 
 ---
 
