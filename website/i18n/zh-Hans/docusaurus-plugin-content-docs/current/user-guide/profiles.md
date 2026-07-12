@@ -22,6 +22,15 @@ coder chat                        # 开始对话
 
 就这些。`coder` 现在是拥有独立配置、记忆和状态的 Intellect profile。
 
+:::caution 临时：默认关闭 profile 管理
+自 2026-06 起，**`profiles.management_enabled` 出厂默认为 `false`**。关闭时：
+
+- **CLI：** `intellect profile create|use|delete|rename|import|install|alias` 被拦截；**`intellect -p <已有名>`** 仍可用。
+- **WebUI：** Profiles 面板与切换/创建/删除隐藏；会话仅限 **default** profile。
+
+恢复管理：在 `config.yaml` 中设置 `profiles.management_enabled: true` 并重启 gateway/WebUI。
+:::
+
 ## 创建 profile
 
 ### 空白 profile
