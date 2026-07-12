@@ -2248,19 +2248,22 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           const isInterrupted=d.type==='interrupted';
           const isNoResponse=d.type==='no_response'||d.type==='silent_failure';
           const isCompressionExhausted=d.type==='compression_exhausted'||d.compression_exhausted===true;
-          // W9 C7b: adopt post-rotation session id before CTA compress.
+          // W9 C7b: adopt post-rotation session id only for exhaustion (not all apperrors).
           let effectiveSid=activeSid;
-          const contSid=d.continuation_session_id||d.new_session_id||d.session_id;
-          if(contSid&&S.session&&contSid!==S.session.session_id){
-            S.session.session_id=contSid;
-            effectiveSid=contSid;
-            try{if(typeof setSavedWebuiSessionId==='function')setSavedWebuiSessionId(contSid);else localStorage.setItem('intellect-webui-session',contSid);}catch(_){}
-            if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(contSid);
-          }
           if(isCompressionExhausted){
-            const suggested=(d.suggested_focus||'').trim();
+            const contSid=d.continuation_session_id||d.new_session_id||d.session_id;
+            if(contSid&&S.session&&contSid!==S.session.session_id){
+              S.session.session_id=contSid;
+              effectiveSid=contSid;
+              try{if(typeof setSavedWebuiSessionId==='function')setSavedWebuiSessionId(contSid);else localStorage.setItem('intellect-webui-session',contSid);}catch(_){}
+              if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(contSid);
+            }
+            const suggested=(d.suggested_focus||'').trim().slice(0,500);
             const label=(typeof t==='function'?t('compression_exhausted_label'):'Context compression exhausted');
-            const hint=d.hint||(typeof t==='function'?t('compression_exhausted_hint'):'Try a focused compress, or start a new session.');
+            // C11: prefer localized hint; server hint is English fallback only.
+            const hint=(typeof t==='function'?t('compression_exhausted_hint'):'')
+              ||d.hint
+              ||'Try a focused compress, or start a new session.';
             S.messages.push({
               role:'assistant',
               content:`**${label}:** ${d.message||label}\n\n*${hint}*`,

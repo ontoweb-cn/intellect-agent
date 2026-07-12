@@ -700,6 +700,45 @@ def _rotate_webui_session_if_agent_compressed(
     return origin_sid, new_sid, True
 
 
+def _compression_exhausted_terminal_after_result(
+    *,
+    result: dict,
+    agent,
+    s,
+    session_id: str,
+    agent_lock,
+    member_id=None,
+    resolved_profile_name: str | None = None,
+    msg_text: str = '',
+) -> tuple[dict | None, str, str, str | None, bool]:
+    """Rotate for C7b, then build exhaustion apperror payload when flagged (C7a).
+
+    Exhaustion emission does **not** depend on whether tokens were already
+    streamed — callers must invoke this before the silent-failure/`done` path.
+    Returns ``(payload_or_None, active_sid, origin_sid, continuation_sid, rotated)``.
+    """
+    origin, cont, rotated = _rotate_webui_session_if_agent_compressed(
+        s,
+        agent,
+        session_id,
+        agent_lock=agent_lock,
+        member_id=member_id,
+        resolved_profile_name=resolved_profile_name,
+    )
+    active_sid = str(getattr(s, 'session_id', None) or session_id)
+    if not bool((result or {}).get('compression_exhausted')):
+        return None, active_sid, origin, cont, rotated
+    err = str(getattr(agent, '_last_error', None) or (result or {}).get('error') or '')
+    payload = _compression_exhausted_apperror_payload(
+        msg_text=msg_text,
+        err_str=err,
+        session_id=active_sid,
+        old_session_id=origin if cont else None,
+        continuation_session_id=cont,
+    )
+    return payload, active_sid, origin, cont, rotated
+
+
 def _provider_error_payload(message: str, err_type: str, hint: str = '') -> dict:
     """Build a bounded, redacted apperror payload with provider details."""
     _message = str(message or '')
@@ -5200,57 +5239,43 @@ def _run_agent_streaming(
                 # post-compression session id. Emit exhaustion regardless of
                 # _token_sent / partial assistant text.
                 (
+                    _exhaustion_payload,
+                    session_id,
                     _compression_origin_session_id,
                     _compression_continuation_session_id,
                     _compressed,
-                ) = _rotate_webui_session_if_agent_compressed(
-                    s,
-                    agent,
-                    session_id,
+                ) = _compression_exhausted_terminal_after_result(
+                    result=result,
+                    agent=agent,
+                    s=s,
+                    session_id=session_id,
                     agent_lock=_agent_lock,
                     member_id=member_id,
                     resolved_profile_name=_resolved_profile_name,
+                    msg_text=msg_text,
                 )
-                if _compressed and _compression_continuation_session_id:
-                    session_id = _compression_continuation_session_id
-
-                _compression_exhausted = bool(result.get('compression_exhausted'))
-                if _compression_exhausted:
-                    _exh_err = str(
-                        getattr(agent, '_last_error', None) or result.get('error') or ''
-                    )
-                    _error_payload = _compression_exhausted_apperror_payload(
-                        msg_text=msg_text,
-                        err_str=_exh_err,
-                        session_id=s.session_id,
-                        old_session_id=(
-                            _compression_origin_session_id
-                            if _compression_continuation_session_id
-                            else None
-                        ),
-                        continuation_session_id=_compression_continuation_session_id,
-                    )
-                    put('apperror', _error_payload)
+                if _exhaustion_payload is not None:
+                    put('apperror', _exhaustion_payload)
                     _materialize_pending_user_turn_before_error(s)
                     s.active_stream_id = None
                     s.pending_user_message = None
                     s.pending_attachments = []
                     s.pending_started_at = None
                     _exh_label = 'Context compression exhausted'
-                    _exh_hint = _error_payload.get('hint') or ''
+                    _exh_hint = _exhaustion_payload.get('hint') or ''
                     _error_message = {
                         'role': 'assistant',
                         'content': (
                             f'**{_exh_label}:** '
-                            f'{_error_payload.get("message") or _exh_label}\n\n*{_exh_hint}*'
+                            f'{_exhaustion_payload.get("message") or _exh_label}\n\n*{_exh_hint}*'
                         ),
                         'timestamp': int(time.time()),
                         '_error': True,
                         'error_type': 'compression_exhausted',
-                        'suggested_focus': _error_payload.get('suggested_focus') or '',
+                        'suggested_focus': _exhaustion_payload.get('suggested_focus') or '',
                     }
-                    if _error_payload.get('details'):
-                        _error_message['provider_details'] = _error_payload['details']
+                    if _exhaustion_payload.get('details'):
+                        _error_message['provider_details'] = _exhaustion_payload['details']
                     s.messages.append(_error_message)
                     try:
                         s.save()
