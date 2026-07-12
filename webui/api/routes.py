@@ -7833,18 +7833,16 @@ def handle_post(handler, parsed) -> bool:
         return _handle_chat_start(handler, body, diag=diag)
 
     if parsed.path == "/api/health/restart":
-        from api.gateway_lifecycle import request_gateway_restart
+        from api.gateway_lifecycle import lifecycle_http_status, request_gateway_restart
 
         # Thin wrap of layer C restart (W13 G8).
         wait = bool(body.get("wait"))
         result = request_gateway_restart(wait=wait)
-        status_code = 200 if result.get("ok") or result.get("status") == "in_progress" else 409
-        if result.get("status") == "busy":
-            status_code = 409
-        return j(handler, result, status=status_code)
+        return j(handler, result, status=lifecycle_http_status(result))
 
     if parsed.path in ("/api/gateway/restart", "/api/gateway/start", "/api/gateway/stop"):
         from api.gateway_lifecycle import (
+            lifecycle_http_status,
             request_gateway_restart,
             request_gateway_start,
             request_gateway_stop,
@@ -7859,10 +7857,7 @@ def handle_post(handler, parsed) -> bool:
             "stop": request_gateway_stop,
         }[action]
         result = fn(wait=wait)
-        status_code = 200 if result.get("ok") or result.get("status") == "in_progress" else 409
-        if result.get("status") == "busy":
-            status_code = 409
-        return j(handler, result, status=status_code)
+        return j(handler, result, status=lifecycle_http_status(result))
 
     if parsed.path == "/api/wakeup/resume":
         from api.wakeup_pause import clear_pause, read_pause
@@ -9898,8 +9893,10 @@ def _serve_file_bytes(handler, target: Path, mime: str, disposition: str, cache_
                     remaining -= len(chunk)
         except PermissionError:
             return True
-        except ValueError:
-            return bad(handler, "Could not read file", 403)
+        except (ValueError, OSError) as exc:
+            # Headers already sent — never call bad() (double response).
+            logger.debug("serve_file_bytes body open failed after headers: %s", exc)
+            return True
     return True
 
 

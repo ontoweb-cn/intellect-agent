@@ -8400,15 +8400,20 @@ function loadGatewayStatus(){
           btn.disabled=true;
           try{
             const res=await api(`/api/gateway/${op}`,{method:'POST',body:JSON.stringify({wait:true})});
-            if(res&&res.status==='busy'){
-              showToast((res.message)||'Gateway busy','error');
-            }else if(res&&res.ok===false){
+            if(res&&res.ok===false){
               showToast((res.message)||`Gateway ${op} failed`,'error');
+            }else if(res&&res.timed_out){
+              showToast((res.message)||`Gateway ${op} still running…`);
             }else{
               showToast(`Gateway ${op} ok`);
             }
           }catch(e){
-            showToast(`Gateway ${op} failed`,'error');
+            const payload=e&&e.payload;
+            if((e&&e.status===409)||(payload&&payload.status==='busy')){
+              showToast((payload&&payload.message)||e.message||'Gateway busy','error');
+            }else{
+              showToast((payload&&payload.message)||(e&&e.message)||`Gateway ${op} failed`,'error');
+            }
           }
           loadGatewayStatus();
         };

@@ -11,9 +11,9 @@ Hardening depth (W13-O Tier table — source of truth):
 | Tier | Depth | Ops | TOCTOU claim | Status |
 |------|-------|-----|--------------|--------|
 | W7/W12c | resolve + leaf O_NOFOLLOW | read/write/open; unlink/rmtree/rename | not closed | done |
-| A | no bare Path.open/read_bytes on serve hot paths | _serve_file_bytes, HTML preview, read_file_content | leaf-only | W13-O |
-| B | workspace dir-fd + openat/unlinkat/renameat/mkdirat (last hop) | unlink, rename, mkdir, create/open | last-hop closed (POSIX); parent-chain residual | W13-O |
-| C | component-chain openat(O_NOFOLLOW) | list_dir, folder-zip walk, rmtree | tree closed | follow-up tip |
+| A | no bare Path.open/read_bytes on serve hot paths | _serve_file_bytes, HTML preview, read_file_content; open/create still path+O_NOFOLLOW | leaf-only | W13-O |
+| B | workspace dir-fd + unlinkat/renameat/mkdirat (last hop) | unlink, rename, mkdir | last-hop closed (POSIX); parent-chain residual | W13-O |
+| C | component-chain openat(O_NOFOLLOW) | list_dir, folder-zip walk, rmtree; optional last-hop openat for create | tree closed | follow-up tip |
 
 Windows residual: when O_DIRECTORY / dir_fd / O_NOFOLLOW are unavailable, fall back
 to resolve + containment checks + Path operations (degraded; same W7 semantics).

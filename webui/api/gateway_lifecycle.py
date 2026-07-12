@@ -42,20 +42,17 @@ def get_lifecycle_status() -> dict[str, Any]:
         return dict(_STATE)
 
 
+def lifecycle_http_status(result: dict[str, Any]) -> int:
+    """HTTP status for lifecycle JSON: 409 only when busy; terminal results are 200."""
+    if result.get("status") == "busy":
+        return 409
+    return 200
+
+
 def _set_state(**kwargs: Any) -> dict[str, Any]:
     with _LOCK:
         _STATE.update(kwargs)
         return dict(_STATE)
-
-
-def _reset_idle_fields() -> None:
-    _STATE.update(
-        status="idle",
-        operation=None,
-        message="",
-        started_at=None,
-        finished_at=None,
-    )
 
 
 def _resolve_intellect_cli() -> list[str]:
@@ -201,13 +198,19 @@ def _request_gateway_op(
         thread.join(timeout=max(0.1, deadline - time.time()))
         st = get_lifecycle_status()
         if st.get("status") == "in_progress":
+            # Honest: CLI may still be running (subprocess timeout 120s). Do not
+            # claim failed while _STATE remains in_progress.
             return {
-                "ok": False,
-                "status": "failed",
+                "ok": True,
+                "status": "in_progress",
+                "timed_out": True,
                 "operation": operation,
-                "message": f"Gateway {operation} did not finish within {int(cap)}s",
+                "message": (
+                    f"Gateway {operation} still running after {int(cap)}s — "
+                    "poll /api/health/restart/status"
+                ),
             }
-        return st | {"ok": st.get("status") == "completed"}
+        return st | {"ok": st.get("status") == "completed", "timed_out": False}
 
     threading.Thread(target=_worker, name=f"gateway-{operation}", daemon=True).start()
     time.sleep(0.05)

@@ -343,16 +343,17 @@ def build_agent_health_payload() -> dict[str, Any]:
     except Exception:
         runtime_status = None
 
-    # If active probe has no live PID/runtime but root does (cross-home),
-    # _select already chose root_fallback when root_pid live. For freshness-only
-    # root signals with dead PIDs, try root runtime when active is empty.
-    if runtime_status is None and probe_scope == "active_profile":
+    # If active probe is not live, prefer a fresh root runtime (G2 / L3(a′)).
+    # Stale active gateway_state.json must not block root_fallback.
+    if probe_scope == "active_profile" and active_pid is None:
         root_path = _gateway_root_pid_path()
         try:
             root_runtime = _read_gateway_runtime_status(gateway_status, root_path)
         except Exception:
             root_runtime = None
-        if _runtime_status_is_fresh(root_runtime):
+        if _runtime_status_is_fresh(root_runtime) and not _runtime_status_is_fresh(
+            runtime_status
+        ):
             runtime_status = root_runtime
             probe_scope = "root_fallback"
             gateway_pid_path = root_path
