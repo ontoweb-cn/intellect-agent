@@ -1,7 +1,7 @@
 # W12 细化稿 — Journey 理想层（主）+ openat 窄切片（旁路）
 
 > **日期**：2026-07-12  
-> **状态**：**APPROVED → 执行中**（用户 Approve 2026-07-12）  
+> **状态**：**DONE** @ `e778b99`（W12a #61 @ `f2f35a7` + W12c #62 @ `e778b99`；stretch 未做）  
 > **策略**：用户选组合 **4** — **A 为主** + **C 旁路小 PR**；**D Gateway 层 C 后置**  
 > **前置**：W0–W11 已合入 main（tip @ `3fba844` / #59）  
 > **计划评审**：[`code-reviewer`](2aafaafc-92ba-4f4c-9352-fdf574c715a4) — Request changes → 本修订钉死 L4/L8/L9 + Task 1.4 测改写  
@@ -109,22 +109,22 @@
 - [x] 0.1 本文件状态 **REVISED**（吸收评审）  
 - [x] 0.2 parity 分析追加 W12 指针  
 - [x] 0.3 W11 计划头标 **DONE @ 3fba844**  
-- [ ] 0.4 Docs PR（可选先合） / 用户 Approve 后开 12a  
+- [x] 0.4 Docs PR（可选先合） / 用户 Approve 后开 12a  
 
 ### Task 1 — P1-1 本地 memory id（12a）
 
 **Files:** `agent/learning_graph.py`；`agent/learning_mutations.py`；`tests/agent/test_learning_mutations.py`；（必要时）`test_learning_e2e.py` / `test_learning_api_profile.py`
 
-- [ ] 1.1 抽出 `memory_node_id(source, local) -> str`（或等价）；构图按 source 赋 local  
-- [ ] 1.2 `_memory_skill_edges` **禁止** `enumerate` 全局 idx；必须用同一 helper  
-- [ ] 1.3 `_locate_memory(source, local)` 直接索引 `chunks[local]`；**删除** `_memory_local_index`。说明：`MemoryStore._read_file` **已丢空块**，与 card 下标对齐，勿「修」非 bug  
-- [ ] 1.4 **测改写（钉死）**：  
+- [x] 1.1 抽出 `memory_node_id(source, local) -> str`（或等价）；构图按 source 赋 local  
+- [x] 1.2 `_memory_skill_edges` **禁止** `enumerate` 全局 idx；必须用同一 helper  
+- [x] 1.3 `_locate_memory(source, local)` 直接索引 `chunks[local]`；**删除** `_memory_local_index`。说明：`MemoryStore._read_file` **已丢空块**，与 card 下标对齐，勿「修」非 bug  
+- [x] 1.4 **测改写（钉死）**：  
   - 重命名 `test_memory_global_index_*` → `test_memory_local_index_per_source`  
   - 断言 `memory:memory:0/1` + `memory:profile:0`（不是 `:2`）  
   - **删除** `test_stale_memory_source_mismatch`（全局列表错源语义已消失）  
   - **替换为**：(a) 每源 local OOB → stale 409；(b) 删 `memory:memory:0` 后 `memory:profile:0` 仍解析到原 USER.md 正文  
   - 保留 `memory:memory:9` 类 OOB  
-- [ ] 1.5 `scripts/run_tests.sh` 相关文件绿  
+- [x] 1.5 `scripts/run_tests.sh` 相关文件绿  
 
 **伪代码：**
 
@@ -145,9 +145,9 @@ for card in memory_cards:
 
 **Files:** `agent/learning_mutations.py`；可选 `journey.js`；E2E
 
-- [ ] 2.1 轻量统一 `restore_hint` / `deleteMode` 字段（**不**从零造 provenance 表）  
-- [ ] 2.2 仅当证明 profile-safe 时才委托 `skills_hub.uninstall_skill`；否则保留 `_uninstall_hub_skill` 并只做 FE/hint 对齐  
-- [ ] 2.3 E3 绿；否则 **整 tip 丢弃**  
+- [ ] 2.1 轻量统一 `restore_hint` / `deleteMode` 字段（**不**从零造 provenance 表） — **未做（可丢 tip）**  
+- [ ] 2.2 仅当证明 profile-safe 时才委托 `skills_hub.uninstall_skill`；否则保留 `_uninstall_hub_skill` 并只做 FE/hint 对齐 — **未做**  
+- [ ] 2.3 E3 绿；否则 **整 tip 丢弃** — **整 tip 丢弃**  
 
 ### Task 3 — delete/rename helper 集中（12c）
 
@@ -155,11 +155,11 @@ for card in memory_cards:
 
 **Preamble（钉死）：** Helpers 统一 containment + 错误形态。**不**宣称 TOCTOU-closed。residual = W7 openat backlog（W13）。`rmtree` 前再检 containment 仅为 best-effort。
 
-- [ ] 3.1 `unlink_under_root(root, rel)`  
-- [ ] 3.2 `rmtree_under_root(root, rel)`  
-- [ ] 3.3 `rename_under_root(root, src_rel, dest_rel)`  
-- [ ] 3.4 路由改调用；错误仍 `_sanitize_error`  
-- [ ] 3.5 测：  
+- [x] 3.1 `unlink_under_root(root, rel)`  
+- [x] 3.2 `rmtree_under_root(root, rel)`  
+- [x] 3.3 `rename_under_root(root, src_rel, dest_rel)`  
+- [x] 3.4 路由改调用；错误仍 `_sanitize_error`  
+- [x] 3.5 测：  
   - `../` 穿越 → 400  
   - in-tree symlink→outside → 400  
   - 同目录文件 rename 成功  
@@ -171,10 +171,10 @@ for card in memory_cards:
 
 ### Task 4 — 合入
 
-- [ ] 4.1 W12a merge（Task 1）  
-- [ ] 4.2 W12c merge（Task 3）  
-- [ ] 4.3 可选 stretch tip  
-- [ ] 4.4 本文件勾选 + parity 索引  
+- [x] 4.1 W12a merge（Task 1） — #61 @ `f2f35a7`  
+- [x] 4.2 W12c merge（Task 3） — #62 @ `e778b99`  
+- [x] 4.3 可选 stretch tip — **跳过**  
+- [x] 4.4 本文件勾选 + parity 索引  
 
 ---
 

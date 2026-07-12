@@ -124,7 +124,8 @@
 > **W8（2026-07-12）**：update channel 已合入 `8e434b1`（#49）；下一拍见 [`2026-07-12-w9-compression-exhausted.md`](./2026-07-12-w9-compression-exhausted.md)（P3 #12 focused continuation）。  
 > **W9（2026-07-12）**：compression_exhausted 已合入 `e04cc95`（#51）；下一拍见 [`2026-07-12-w10-profile-journey-p1-3.md`](./2026-07-12-w10-profile-journey-p1-3.md)（profile 恢复 + Journey P1-3）。  
 > **W10（2026-07-12）**：profile DEFAULT false + Journey 进程-home MVP 已合入 `c567744`（#54/#55）；W10.1 WONTFIX（永久单用户）；下一拍见 [`2026-07-12-w11-single-user-hygiene.md`](./2026-07-12-w11-single-user-hygiene.md)。  
-> **W11（2026-07-12）**：永久单用户卫生清扫已合入 `3fba844`（#58/#59）；下一拍见 [`2026-07-12-w12-journey-ideal-and-openat-narrow.md`](./2026-07-12-w12-journey-ideal-and-openat-narrow.md)（Journey 本地 memory id + openat 窄切片）。  
+> **W11（2026-07-12）**：永久单用户卫生清扫已合入 `3fba844`（#58/#59）。
+> **W12（2026-07-12）**：DONE @ `e778b99` — Journey 本地 memory id（#61）+ delete/rename `workspace_io` 集中（#62）；详见 [`2026-07-12-w12-journey-ideal-and-openat-narrow.md`](./2026-07-12-w12-journey-ideal-and-openat-narrow.md)。P1-2 stretch / Gateway 层 C / 完整 openat → 后置。
 
 ### P2 — 安全与同机运维
 
