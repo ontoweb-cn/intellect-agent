@@ -13021,17 +13021,24 @@ def _handle_file_delete(handler, body):
     except KeyError:
         return bad(handler, "Session not found", 404)
     try:
-        target = safe_resolve(Path(s.workspace), body["path"])
+        from api.workspace_io import rmtree_under_root, unlink_under_root
+
+        ws = Path(s.workspace)
+        rel = body["path"]
+        # Probe kind via resolve; helpers re-check containment.
+        target = safe_resolve(ws, rel)
         if not target.exists():
             return bad(handler, "File not found", 404)
-        if target.is_dir():
+        if target.is_dir() and not target.is_symlink():
             if not body.get("recursive"):
                 return bad(handler, "Set recursive=true to delete directories")
-            shutil.rmtree(target)
+            rmtree_under_root(ws, rel)
         else:
-            target.unlink()
+            unlink_under_root(ws, rel)
         return j(handler, {"ok": True, "path": body["path"]})
-    except (ValueError, PermissionError) as e:
+    except FileNotFoundError as e:
+        return bad(handler, _sanitize_error(e), 404)
+    except (ValueError, PermissionError, OSError) as e:
         return bad(handler, _sanitize_error(e))
 
 
@@ -13098,21 +13105,20 @@ def _handle_file_rename(handler, body):
     except KeyError:
         return bad(handler, "Session not found", 404)
     try:
-        source = safe_resolve(Path(s.workspace), body["path"])
-        if not source.exists():
-            return bad(handler, "File not found", 404)
+        from api.workspace_io import rename_under_root
+
+        ws = Path(s.workspace)
         new_name = body["new_name"].strip()
         if not new_name or "/" in new_name or ".." in new_name:
             return bad(handler, "Invalid file name")
-        ws = Path(s.workspace).resolve()
-        parent_rel = str(source.parent.relative_to(ws))
+        source = safe_resolve(ws, body["path"])
+        parent_rel = str(source.parent.relative_to(ws.resolve()))
         dest_rel = f"{parent_rel}/{new_name}" if parent_rel not in (".", "") else new_name
-        dest = safe_resolve(ws, dest_rel)
-        if dest.exists():
-            return bad(handler, f'A file named "{new_name}" already exists')
-        source.rename(dest)
-        new_rel = str(dest.relative_to(ws))
+        dest = rename_under_root(ws, body["path"], dest_rel)
+        new_rel = str(dest.relative_to(ws.resolve()))
         return j(handler, {"ok": True, "old_path": body["path"], "new_path": new_rel})
+    except FileNotFoundError as e:
+        return bad(handler, _sanitize_error(e), 404)
     except (ValueError, PermissionError, OSError) as e:
         return bad(handler, _sanitize_error(e))
 

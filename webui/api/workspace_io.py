@@ -5,12 +5,14 @@ Policy:
 - In-root symlinks are allowed (resolve lands inside root).
 - Escape via in-tree symlink → outside target is REJECTED.
 - Open uses post-resolve path with O_NOFOLLOW as a leaf TOCTOU guard.
-- Not a full directory-fd openat walk (explicit W7 non-goal).
+- Delete/rename helpers centralize the same containment checks (W12c).
+- Not TOCTOU-closed; not a full directory-fd openat walk (residual → W13).
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 from typing import BinaryIO, TextIO, Union
 
@@ -133,3 +135,73 @@ def open_file_under_root(
             flags |= os.O_TRUNC
     fd = open_under_root(root, requested, flags)
     return os.fdopen(fd, mode)
+
+
+def _reject_workspace_root(root: Path, requested: str, resolved: Path) -> None:
+    """Refuse ops whose canonical target is the workspace root itself."""
+    root_r = Path(root).resolve()
+    if resolved == root_r or requested in ("", None, "."):
+        raise ValueError("Refusing to operate on workspace root")
+
+
+def unlink_under_root(root: Path, requested: str) -> Path:
+    """Unlink a non-directory leaf under root (in-root symlinks OK).
+
+    Raises ValueError on traversal / workspace-root / directory targets.
+    Raises FileNotFoundError if the path does not exist.
+    """
+    path = resolve_under_root(root, requested)
+    _reject_workspace_root(root, requested, path)
+    # Best-effort re-check after resolve (not TOCTOU-closed).
+    path = resolve_under_root(root, requested)
+    _reject_workspace_root(root, requested, path)
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {requested}")
+    if path.is_symlink():
+        # Unlink the link itself; never follow into the target tree.
+        path.unlink()
+        return path
+    if path.is_dir():
+        raise ValueError("Set recursive=true to delete directories")
+    path.unlink()
+    return path
+
+
+def rmtree_under_root(root: Path, requested: str) -> Path:
+    """Recursively delete a directory under root.
+
+    Re-resolves before ``shutil.rmtree`` as a best-effort containment check.
+    Not TOCTOU-closed.
+    """
+    path = resolve_under_root(root, requested)
+    _reject_workspace_root(root, requested, path)
+    path = resolve_under_root(root, requested)
+    _reject_workspace_root(root, requested, path)
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {requested}")
+    if not path.is_dir():
+        raise ValueError(f"Not a directory: {requested}")
+    shutil.rmtree(path)
+    return path
+
+
+def rename_under_root(root: Path, src_rel: str, dest_rel: str) -> Path:
+    """Rename ``src_rel`` to ``dest_rel`` under root (same containment rules).
+
+    Dest must not already exist. Refuses workspace-root src/dest.
+    """
+    source = resolve_under_root(root, src_rel)
+    _reject_workspace_root(root, src_rel, source)
+    dest = resolve_under_root(root, dest_rel)
+    _reject_workspace_root(root, dest_rel, dest)
+    # Best-effort re-resolve before rename.
+    source = resolve_under_root(root, src_rel)
+    dest = resolve_under_root(root, dest_rel)
+    _reject_workspace_root(root, src_rel, source)
+    _reject_workspace_root(root, dest_rel, dest)
+    if not source.exists():
+        raise FileNotFoundError(f"File not found: {src_rel}")
+    if dest.exists():
+        raise ValueError(f'A file named "{Path(dest_rel).name}" already exists')
+    source.rename(dest)
+    return dest
