@@ -1364,18 +1364,19 @@ def _check_csrf(handler) -> bool:
     if origin_value in _allowed_public_origins():
         origin_allowed = True
     if not origin_allowed:
-        # Allow same-origin: check Host, X-Forwarded-Host (reverse proxy), and
-        # X-Real-Host against the origin. Reverse proxies (Caddy, nginx) set
-        # X-Forwarded-Host to the client's original Host header.
-        allowed_hosts = [
-            h.strip()
+        # Allow same-origin: Host, and (only when peer is a trusted proxy)
+        # X-Forwarded-Host / X-Real-Host (W7 S7).
+        from api.trusted_proxy import is_trusted_proxy, request_host
+
+        allowed_hosts = [h.strip() for h in [host] if h and h.strip()]
+        if is_trusted_proxy(handler):
             for h in [
-                host,
                 handler.headers.get("X-Forwarded-Host", ""),
                 handler.headers.get("X-Real-Host", ""),
-            ]
-            if h.strip()
-        ]
+                request_host(handler),
+            ]:
+                if h and h.strip():
+                    allowed_hosts.append(h.strip())
         for allowed in allowed_hosts:
             allowed_name, allowed_port = _normalize_host_port(allowed)
             if origin_name == allowed_name and _ports_match(origin_scheme, origin_port, allowed_port):
@@ -8296,10 +8297,9 @@ def handle_post(handler, parsed) -> bool:
         if not is_auth_enabled() and not _os.getenv("INTELLECT_WEBUI_ONBOARDING_OPEN"):
             import ipaddress
             try:
-                _xff = handler.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-                _xri = handler.headers.get("X-Real-IP", "").strip()
-                _raw = handler.client_address[0]
-                addr = ipaddress.ip_address(_xff or _xri or _raw)
+                from api.trusted_proxy import client_ip
+
+                addr = ipaddress.ip_address(client_ip(handler) or handler.client_address[0])
                 is_local = addr.is_loopback or addr.is_private
             except ValueError:
                 is_local = False
@@ -13133,7 +13133,9 @@ def _handle_file_save(handler, body):
             return bad(handler, "File not found", 404)
         if target.is_dir():
             return bad(handler, "Cannot save: path is a directory")
-        target.write_text(body.get("content", ""), encoding="utf-8")
+        from api.workspace_io import write_text_under_root
+
+        write_text_under_root(Path(s.workspace), body["path"], body.get("content", ""))
         return j(
             handler, {"ok": True, "path": body["path"], "size": target.stat().st_size}
         )
@@ -13154,10 +13156,16 @@ def _handle_file_create(handler, body):
         target = safe_resolve(Path(s.workspace), body["path"])
         if target.exists():
             return bad(handler, "File already exists")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body.get("content", ""), encoding="utf-8")
+        from api.workspace_io import write_text_under_root
+
+        write_text_under_root(
+            Path(s.workspace),
+            body["path"],
+            body.get("content", ""),
+            create_parents=True,
+        )
         return j(
-            handler, {"ok": True, "path": str(target.relative_to(Path(s.workspace)))}
+            handler, {"ok": True, "path": str(target.relative_to(Path(s.workspace).resolve()))}
         )
     except (ValueError, PermissionError) as e:
         return bad(handler, _sanitize_error(e))
@@ -13179,11 +13187,14 @@ def _handle_file_rename(handler, body):
         new_name = body["new_name"].strip()
         if not new_name or "/" in new_name or ".." in new_name:
             return bad(handler, "Invalid file name")
-        dest = source.parent / new_name
+        ws = Path(s.workspace).resolve()
+        parent_rel = str(source.parent.relative_to(ws))
+        dest_rel = f"{parent_rel}/{new_name}" if parent_rel not in (".", "") else new_name
+        dest = safe_resolve(ws, dest_rel)
         if dest.exists():
             return bad(handler, f'A file named "{new_name}" already exists')
         source.rename(dest)
-        new_rel = str(dest.relative_to(Path(s.workspace)))
+        new_rel = str(dest.relative_to(ws))
         return j(handler, {"ok": True, "old_path": body["path"], "new_path": new_rel})
     except (ValueError, PermissionError, OSError) as e:
         return bad(handler, _sanitize_error(e))

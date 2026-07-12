@@ -694,8 +694,14 @@ def _is_secure_context(handler=None) -> bool:
     if handler is not None:
         if getattr(handler.request, 'getpeercert', None) is not None:
             return True
-        if handler.headers.get('X-Forwarded-Proto', '') == 'https':
-            return True
+        try:
+            from api.trusted_proxy import is_trusted_proxy, request_scheme
+
+            if is_trusted_proxy(handler) and request_scheme(handler) == 'https':
+                return True
+        except Exception:
+            # Fall through — never honor forged Proto from untrusted peers.
+            pass
     return False
 
 

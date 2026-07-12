@@ -140,15 +140,18 @@ def _host_without_port(host: str) -> str:
 
 
 def rp_context(handler) -> tuple[str, str]:
-    host = _host_without_port(handler.headers.get("Host", "localhost"))
-    proto = handler.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
+    from api.trusted_proxy import request_host, request_scheme
+
+    host_hdr = request_host(handler) or handler.headers.get("Host", "localhost")
+    host = _host_without_port(host_hdr)
+    proto = request_scheme(handler)
     if proto not in {"http", "https"}:
         try:
             from api.auth import _is_secure_context
             proto = "https" if _is_secure_context(handler) else "http"
         except AttributeError:
             proto = "http"
-    return host, f"{proto}://{handler.headers.get('Host', host)}"
+    return host, f"{proto}://{host_hdr}"
 
 
 def registration_options(handler) -> dict[str, Any]:

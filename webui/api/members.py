@@ -136,7 +136,13 @@ class _WebUIRequest:
         self.client = SimpleNamespace(host=(handler.client_address or ("127.0.0.1", 0))[0])
         self.app = SimpleNamespace(state=SimpleNamespace(url_prefix="", bound_host="127.0.0.1"))
         host = (handler.headers.get("Host") or "127.0.0.1:9119").split(",")[0].strip()
-        scheme = "https" if handler.headers.get("X-Forwarded-Proto", "").strip().lower() == "https" else "http"
+        try:
+            from api.trusted_proxy import request_host, request_scheme
+
+            host = request_host(handler) or host
+            scheme = request_scheme(handler)
+        except Exception:
+            scheme = "https" if handler.headers.get("X-Forwarded-Proto", "").strip().lower() == "https" else "http"
         self.url = SimpleNamespace(scheme=scheme, netloc=host)
 
     @property
@@ -282,14 +288,20 @@ def oauth_canonical_origin(config: dict[str, Any]) -> str | None:
 
 
 def _request_origin(handler) -> str:
-    host = (handler.headers.get("Host") or "").split(",")[0].strip()
+    try:
+        from api.trusted_proxy import request_host, request_scheme
+
+        host = (request_host(handler) or "").split(",")[0].strip()
+        scheme = request_scheme(handler)
+    except Exception:
+        host = (handler.headers.get("Host") or "").split(",")[0].strip()
+        scheme = (
+            "https"
+            if handler.headers.get("X-Forwarded-Proto", "").strip().lower() == "https"
+            else "http"
+        )
     if not host:
         return ""
-    scheme = (
-        "https"
-        if handler.headers.get("X-Forwarded-Proto", "").strip().lower() == "https"
-        else "http"
-    )
     return f"{scheme}://{host}"
 
 

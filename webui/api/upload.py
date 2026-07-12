@@ -188,7 +188,11 @@ def extract_archive(file_bytes: bytes, filename: str, workspace: Path):
                             f'Possible zip bomb.'
                         )
                     member_path.parent.mkdir(parents=True, exist_ok=True)
-                    with zf.open(member) as src, open(member_path, 'wb') as dst:
+                    from api.workspace_io import open_file_under_root, resolve_under_root
+
+                    rel = str(member_path.relative_to(workspace.resolve()))
+                    resolve_under_root(workspace, rel)  # strict containment
+                    with zf.open(member) as src, open_file_under_root(workspace, rel, "wb") as dst:
                         _chunk_size = 65536
                         while True:
                             chunk = src.read(_chunk_size)
@@ -223,7 +227,11 @@ def extract_archive(file_bytes: bytes, filename: str, workspace: Path):
                     member_path.parent.mkdir(parents=True, exist_ok=True)
                     src_obj = tf.extractfile(member)
                     if src_obj:
-                        with src_obj as src, open(member_path, 'wb') as dst:
+                        from api.workspace_io import open_file_under_root, resolve_under_root
+
+                        rel = str(member_path.relative_to(workspace.resolve()))
+                        resolve_under_root(workspace, rel)
+                        with src_obj as src, open_file_under_root(workspace, rel, "wb") as dst:
                             _chunk_size = 65536
                             while True:
                                 chunk = src.read(_chunk_size)
