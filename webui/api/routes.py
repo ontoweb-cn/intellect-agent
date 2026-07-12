@@ -6901,6 +6901,10 @@ def handle_get(handler, parsed) -> bool:
             "platforms": platforms,
             "last_active": last_active,
             "session_count": len(identity_map),
+            "probe_scope": (health.get("details") or {}).get("probe_scope"),
+            "active_profile_pid": (health.get("details") or {}).get("active_profile_pid"),
+            "root_pid": (health.get("details") or {}).get("root_pid"),
+            "health_details": health.get("details") or {},
         })
 
     # ── MCP Servers (GET) ──
@@ -7829,14 +7833,31 @@ def handle_post(handler, parsed) -> bool:
         return _handle_chat_start(handler, body, diag=diag)
 
     if parsed.path == "/api/health/restart":
-        from api.gateway_lifecycle import request_gateway_restart
+        from api.gateway_lifecycle import lifecycle_http_status, request_gateway_restart
 
+        # Thin wrap of layer C restart (W13 G8).
         wait = bool(body.get("wait"))
         result = request_gateway_restart(wait=wait)
-        status_code = 200 if result.get("ok") or result.get("status") == "in_progress" else 409
-        if result.get("status") == "busy":
-            status_code = 409
-        return j(handler, result, status=status_code)
+        return j(handler, result, status=lifecycle_http_status(result))
+
+    if parsed.path in ("/api/gateway/restart", "/api/gateway/start", "/api/gateway/stop"):
+        from api.gateway_lifecycle import (
+            lifecycle_http_status,
+            request_gateway_restart,
+            request_gateway_start,
+            request_gateway_stop,
+        )
+
+        action = parsed.path.rsplit("/", 1)[-1]
+        wait = body.get("wait", True)
+        wait = True if wait is None else bool(wait)
+        fn = {
+            "restart": request_gateway_restart,
+            "start": request_gateway_start,
+            "stop": request_gateway_stop,
+        }[action]
+        result = fn(wait=wait)
+        return j(handler, result, status=lifecycle_http_status(result))
 
     if parsed.path == "/api/wakeup/resume":
         from api.wakeup_pause import clear_pause, read_pause
@@ -9858,7 +9879,10 @@ def _serve_file_bytes(handler, target: Path, mime: str, disposition: str, cache_
 
     if content_length:
         try:
-            with target.open("rb") as f:
+            from api.workspace_io import open_resolved_nofollow
+
+            fd = open_resolved_nofollow(target, os.O_RDONLY)
+            with os.fdopen(fd, "rb") as f:
                 f.seek(start)
                 remaining = content_length
                 while remaining:
@@ -9868,6 +9892,10 @@ def _serve_file_bytes(handler, target: Path, mime: str, disposition: str, cache_
                     handler.wfile.write(chunk)
                     remaining -= len(chunk)
         except PermissionError:
+            return True
+        except (ValueError, OSError) as exc:
+            # Headers already sent — never call bad() (double response).
+            logger.debug("serve_file_bytes body open failed after headers: %s", exc)
             return True
     return True
 
@@ -9890,57 +9918,30 @@ def _html_preview_with_blank_base(raw: bytes) -> bytes:
     return text.encode("utf-8")
 
 
-def _serve_inline_html_preview(handler, target: Path, cache_control: str, *, csp: str):
+def _serve_inline_html_preview(
+    handler,
+    target: Path,
+    cache_control: str,
+    *,
+    csp: str,
+    ws_root: Path | None = None,
+    ws_rel: str | None = None,
+):
     """Serve sandboxed workspace HTML preview with links targeting a new tab."""
     try:
-        body = _html_preview_with_blank_base(target.read_bytes())
+        if ws_root is not None and ws_rel is not None:
+            from api.workspace_io import read_bytes_under_root
+
+            raw = read_bytes_under_root(ws_root, ws_rel)
+        else:
+            from api.workspace_io import read_bytes_resolved
+
+            raw = read_bytes_resolved(target)
+        body = _html_preview_with_blank_base(raw)
     except PermissionError:
         return bad(handler, "Permission denied", 403)
-    except Exception:
-        return bad(handler, "Could not read file", 500)
-
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/html; charset=utf-8")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.send_header("Accept-Ranges", "none")
-    handler.send_header("Cache-Control", cache_control)
-    handler.send_header("Content-Disposition", _content_disposition_value("inline", target.name))
-    handler.send_header("Content-Security-Policy", csp)
-    handler.send_header("X-Content-Type-Options", "nosniff")
-    handler.send_header("Referrer-Policy", "same-origin")
-    handler.send_header(
-        "Permissions-Policy",
-        "camera=(), microphone=(self), geolocation=(), clipboard-write=(self)",
-    )
-    handler.end_headers()
-    handler.wfile.write(body)
-    return True
-
-
-def _html_preview_with_blank_base(raw: bytes) -> bytes:
-    base = '<base target="_blank">'
-    text = raw.decode("utf-8", errors="replace")
-    if re.search(r"<head(?:\s[^>]*)?>", text, flags=re.IGNORECASE):
-        text = re.sub(r"(<head\b[^>]*>)", r"\1" + base, text, count=1, flags=re.IGNORECASE)
-    elif re.search(r"<!doctype[^>]*>", text, flags=re.IGNORECASE):
-        text = re.sub(
-            r"(<!doctype[^>]*>)",
-            r"\1<head>" + base + "</head>",
-            text,
-            count=1,
-            flags=re.IGNORECASE,
-        )
-    else:
-        text = "<head>" + base + "</head>" + text
-    return text.encode("utf-8")
-
-
-def _serve_inline_html_preview(handler, target: Path, cache_control: str, *, csp: str):
-    """Serve sandboxed workspace HTML preview with links targeting a new tab."""
-    try:
-        body = _html_preview_with_blank_base(target.read_bytes())
-    except PermissionError:
-        return bad(handler, "Permission denied", 403)
+    except ValueError:
+        return bad(handler, "Could not read file", 403)
     except Exception:
         return bad(handler, "Could not read file", 500)
 
@@ -10402,8 +10403,22 @@ def _handle_file_raw(handler, parsed):
     # cannot read WebUI cookies, localStorage, or postMessage to the parent.
     csp = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox" if html_inline_ok else None
     # _serve_file_bytes sends Content-Security-Policy when csp is set.
+    ws_root = Path(s.workspace)
+    ws_rel = rel
+    try:
+        ws_target = safe_resolve(ws_root, rel)
+        in_workspace = target == ws_target
+    except ValueError:
+        in_workspace = False
     if html_inline_ok:
-        return _serve_inline_html_preview(handler, target, "no-store", csp=csp)
+        return _serve_inline_html_preview(
+            handler,
+            target,
+            "no-store",
+            csp=csp,
+            ws_root=ws_root if in_workspace else None,
+            ws_rel=rel if in_workspace else None,
+        )
     return _serve_file_bytes(handler, target, mime, disposition, "no-store", csp=csp)
 
 
@@ -13133,13 +13148,15 @@ def _handle_create_dir(handler, body):
     except KeyError:
         return bad(handler, "Session not found", 404)
     try:
-        target = safe_resolve(Path(s.workspace), body["path"])
-        if target.exists():
-            return bad(handler, "Path already exists")
-        target.mkdir(parents=True)
+        from api.workspace_io import mkdir_under_root
+
+        ws_root = Path(s.workspace)
+        target = mkdir_under_root(ws_root, body["path"], parents=True)
         return j(
-            handler, {"ok": True, "path": str(target.relative_to(Path(s.workspace)))}
+            handler, {"ok": True, "path": str(target.relative_to(ws_root))}
         )
+    except FileExistsError:
+        return bad(handler, "Path already exists")
     except (ValueError, PermissionError, OSError) as e:
         return bad(handler, _sanitize_error(e))
 

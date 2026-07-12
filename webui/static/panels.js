@@ -8387,12 +8387,46 @@ function loadGatewayStatus(){
   if(!card) return;
   api('/api/gateway/status').then(r=>{
     if(!r) return;
+    const scope=r.probe_scope?`<span style="font-size:11px;color:var(--muted)">probe: ${esc(String(r.probe_scope))}</span>`:'';
+    const btns=`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button type="button" class="panel-head-btn" data-gw-op="start">Start</button>
+      <button type="button" class="panel-head-btn" data-gw-op="stop">Stop</button>
+      <button type="button" class="panel-head-btn" data-gw-op="restart">Restart</button>
+    </div>`;
+    const bind=()=>{
+      card.querySelectorAll('[data-gw-op]').forEach(btn=>{
+        btn.onclick=async()=>{
+          const op=btn.getAttribute('data-gw-op');
+          btn.disabled=true;
+          try{
+            const res=await api(`/api/gateway/${op}`,{method:'POST',body:JSON.stringify({wait:true})});
+            if(res&&res.ok===false){
+              showToast((res.message)||`Gateway ${op} failed`,'error');
+            }else if(res&&res.timed_out){
+              showToast((res.message)||`Gateway ${op} still running…`);
+            }else{
+              showToast(`Gateway ${op} ok`);
+            }
+          }catch(e){
+            const payload=e&&e.payload;
+            if((e&&e.status===409)||(payload&&payload.status==='busy')){
+              showToast((payload&&payload.message)||e.message||'Gateway busy','error');
+            }else{
+              showToast((payload&&payload.message)||(e&&e.message)||`Gateway ${op} failed`,'error');
+            }
+          }
+          loadGatewayStatus();
+        };
+      });
+    };
     if(!r.configured){
-      card.innerHTML=`<div style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>Gateway not configured</div>`;
+      card.innerHTML=`<div style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>Gateway not configured</div>${scope}${btns}`;
+      bind();
       return;
     }
     if(!r.running){
-      card.innerHTML=`<div style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block"></span>Gateway not running</div>`;
+      card.innerHTML=`<div style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block"></span>Gateway not running</div>${scope}${btns}`;
+      bind();
       return;
     }
     const platformIcons={telegram:'💬',discord:'🎮',slack:'📝',web:'🌐',api:'🔌'};
@@ -8405,7 +8439,8 @@ function loadGatewayStatus(){
     }
     const lastActive=r.last_active?`<span style="font-size:11px;color:var(--muted)">Last active: ${esc(new Date(r.last_active).toLocaleString())}</span>`:'';
     const sessionInfo=r.session_count?`<span style="font-size:11px;color:var(--muted)">${r.session_count} session${r.session_count!==1?'s':''}</span>`:'';
-    card.innerHTML=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block"></span><span style="font-size:13px;font-weight:500;color:#22c55e">Running</span></div>${badges?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${badges}</div>`:''}<div style="display:flex;gap:12px">${sessionInfo}${lastActive}</div>`;
+    card.innerHTML=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block"></span><span style="font-size:13px;font-weight:500;color:#22c55e">Running</span></div>${badges?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${badges}</div>`:''}<div style="display:flex;gap:12px;flex-wrap:wrap">${sessionInfo}${lastActive}${scope}</div>${btns}`;
+    bind();
   }).catch(()=>{card.innerHTML=`<div style="color:#ef4444;font-size:12px">Failed to load gateway status</div>`});
 }
 // Load MCP servers when system settings tab opens

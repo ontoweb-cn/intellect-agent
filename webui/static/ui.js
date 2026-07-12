@@ -4731,7 +4731,9 @@ function _showAgentHealthAlert(payload){
   if(!banner) return;
   if(title) title.textContent='Intellect agent is not responding';
   const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
-  if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
+  const scopeRaw=payload&&payload.details&&payload.details.probe_scope;
+  const scope=scopeRaw?` Probe: ${scopeRaw}.`:'';
+  if(details) details.textContent=`Gateway heartbeat failed.${state}${scope} Messages may not be delivered until it comes back.`;
   banner.hidden=false;
   banner.classList.add('visible');
 }
