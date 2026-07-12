@@ -121,7 +121,8 @@
 > **W5（2026-07-12）**：deferred worklog 已合入 `d6a94d7`；下一拍见 [`2026-07-12-w6-transparent-stream.md`](./2026-07-12-w6-transparent-stream.md)。  
 > **W6（2026-07-12）**：transparent stream 已合入 `609f705`；下一拍见 [`2026-07-12-w7-p2-security.md`](./2026-07-12-w7-p2-security.md)（P2 anchored I/O + trusted proxy）。  
 > **W7（2026-07-12）**：P2 I/O + trusted proxy 已合入 `e91d30c`；下一拍见 [`2026-07-12-w8-update-channel.md`](./2026-07-12-w8-update-channel.md)（P2 #9 update channel 收口）。  
-> **W8（2026-07-12）**：update channel 已合入 `8e434b1`（#49）；下一拍见 [`2026-07-12-w9-compression-exhausted.md`](./2026-07-12-w9-compression-exhausted.md)（P3 #12 focused continuation）。
+> **W8（2026-07-12）**：update channel 已合入 `8e434b1`（#49）；下一拍见 [`2026-07-12-w9-compression-exhausted.md`](./2026-07-12-w9-compression-exhausted.md)（P3 #12 focused continuation）。  
+> **W9（2026-07-12）**：compression_exhausted 已合入 `e04cc95`（#51）；下一拍见 [`2026-07-12-w10-profile-journey-p1-3.md`](./2026-07-12-w10-profile-journey-p1-3.md)（profile 恢复 + Journey P1-3）。
 
 ### P2 — 安全与同机运维
 
