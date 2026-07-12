@@ -105,11 +105,6 @@ function renderWikiCatalog() {
   if (global && global.visible !== false) {
     html += '<div class="side-menu-group-title">' + _wikiEsc(_wikiT('wiki_catalog_global', 'Organization')) + '</div>';
     html += _wikiRenderCatalogRow(global, 'global');
-    if (global.pending_contributions > 0) {
-      html += '<div class="wiki-catalog-hint">' + _wikiEsc(
-        _wikiT('wiki_pending_contributions', 'Pending reviews') + ': ' + global.pending_contributions
-      ) + '</div>';
-    }
   }
   html += '</div>';
   el.innerHTML = html;

@@ -200,6 +200,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function applyContext(ctx) {
     hideErr();
+    // Permanent single-user (W11): never render multi-user member login chrome.
+    if (ctx && ctx.mode === 'multi_user') {
+      ctx = Object.assign({}, ctx, {
+        mode: 'legacy',
+        members: Object.assign({}, ctx.members || {}, { enabled: false }),
+      });
+    }
     window.__LOGIN_CONTEXT__ = ctx;
     if (!ctx) {
       showErr(connFailed);

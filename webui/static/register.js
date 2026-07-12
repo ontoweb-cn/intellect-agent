@@ -224,8 +224,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function applyContext(ctx) {
     hideErr();
+    // Permanent single-user (W11): registration stays closed; never open multi-user tabs.
+    if (ctx) {
+      ctx = Object.assign({}, ctx, { registration_open: false, mode: 'legacy' });
+    }
     window.__REGISTER_CONTEXT__ = ctx;
-    var open = ctx && ctx.registration_open;
+    var open = false;
     if (closedEl) closedEl.classList.toggle('hidden', open);
     if (openEl) openEl.classList.toggle('hidden', !open);
     if (!open) {

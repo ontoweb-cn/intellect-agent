@@ -1,14 +1,14 @@
 ---
 sidebar_position: 6
 title: "LLM Wiki & Vault"
-description: "Scoped markdown knowledge bases, Quartz Vault browsing in Intellect WebUI, and Global wiki contribution review"
+description: "Scoped markdown knowledge bases and Quartz Vault browsing in Intellect WebUI"
 ---
 
 # LLM Wiki & Vault
 
 Intellect ships a bundled **[llm-wiki](/docs/user-guide/skills/bundled/research/research-llm-wiki)** skill that builds and maintains a **Karpathy-style LLM Wiki** — a directory of interlinked markdown files the agent compiles over time. Unlike one-shot RAG retrieval, the wiki **compounds**: cross-links, contradictions, and synthesis persist across sessions.
 
-In **Intellect WebUI**, the dedicated **Wiki** rail tab lets you browse every scoped wiki as a **Quartz Vault** site, trigger builds, initialize missing wikis, and (for admins) review member contributions to the organization-wide Global wiki.
+In **Intellect WebUI**, the dedicated **Wiki** rail tab lets you browse the wiki as a **Quartz Vault** site, trigger builds, and initialize a missing wiki.
 
 :::tip Skill vs feature page
 This page covers **product behavior** (paths, WebUI, permissions, Vault). The full agent instructions live in the bundled skill reference: [Llm Wiki](/docs/user-guide/skills/bundled/research/research-llm-wiki).
@@ -105,29 +105,11 @@ Scheduled rebuilds use gateway cron + `intellect vault tick` (see [Vault schedul
 
 The **Insights** tab also shows a compact **LLM Wiki** status card (`GET /api/wiki/status`): entry counts, last writer, traffic-light availability, enable/disable toggle (`POST /api/wiki/toggle`), and quick rebuild — useful when you are not on the Wiki panel.
 
-## Global wiki — member workflow
+## Global wiki (single-user)
 
-When a member asks the agent to **add content to the organization / global wiki**:
+Intellect Agent is **permanently single-user**. There is no multi-user contribution review queue (`/api/wiki/contributions` is not mounted).
 
-1. The agent **cannot** write under `wiki/global/` (`read_only` guard).
-2. Content is saved to the member's **personal wiki** instead.
-3. The agent explains that Global is admin-only and offers **submission for review**.
-
-To promote personal pages to Global:
-
-1. Confirm which relative paths to submit (e.g. `entities/topic.md`). Do not submit `SCHEMA.md`, `index.md`, or `log.md`.
-2. Submit via `POST /api/wiki/contributions` with `page_paths`, `title`, `summary`, and optional `note`.
-3. Track status in the Wiki panel (**Organization (Global)** row shows pending contribution count for admins; members see their own submissions).
-
-**Admins (`owner` / `admin`):**
-
-- List queue: `GET /api/wiki/contributions`
-- Preview diff: `GET /api/wiki/contributions/{id}/diff`
-- Approve (merge into Global): `POST /api/wiki/contributions/{id}/review` with `action: approve`
-- Reject or request changes: same endpoint with `rejected` / `changes_requested`
-- Withdraw (member): `POST /api/wiki/contributions/{id}/withdraw`
-
-Merged pages land in `wiki/global/` with provenance recorded in Global `log.md`. A Global Vault rebuild runs after merge.
+Write to your personal / profile wiki (`~/wiki` or `skills.config.wiki.path`). Organization-scoped `wiki/global/` paths from the legacy multi-user layout are unused unless you manage them manually on disk.
 
 ## Configuration
 
@@ -171,12 +153,12 @@ Trigger the bundled skill by asking the agent to:
 
 Attach `/llm-wiki` or enable the skill in session settings when you want explicit skill loading.
 
-With [Teams, Projects & Members](teams-and-members.md), pin team/project context in WebUI (or gateway headers) so writes land in the shared wiki you intend.
+Isolation is **profile-based** (`INTELLECT_HOME` / `intellect -p`); multi-user members/teams are not available.
 
 ## Related docs
 
 - [Llm Wiki skill reference](/docs/user-guide/skills/bundled/research/research-llm-wiki) — full SKILL.md the agent sees
-- [Teams, Projects & Members](teams-and-members.md) — multi-user scope and RBAC
+- [Profiles](../profiles.md) — per-instance isolation
 - [RAG Providers](rag-providers.md) — document corpora retrieval (complementary)
 - [Obsidian skill](/docs/user-guide/skills/bundled/note-taking/note-taking-obsidian) — optional vault sync patterns
 
@@ -186,9 +168,6 @@ With [Teams, Projects & Members](teams-and-members.md), pin team/project context
 |---------|----------------|
 | Wiki panel shows **Missing** | Scoped directory never initialized — use **Initialize Wiki** or ask the agent to create the wiki |
 | Vault iframe blank after build | Build failed — check build status badge; run Rebuild; confirm `vault.routing.enabled` |
-| Agent writes to personal wiki instead of Global | Expected for non-admin members — use contribution flow or ask an admin |
-| Agent cannot write to team/project wiki | Not a member of that team/project, or session context not pinned to that scope |
 | Stale Vault content | Trigger Rebuild or wait for `intellect vault tick` / scheduled cron |
-| `WIKI_PATH` in `.env` ignored | Multi-member auto-scoping overrides profile `.env`; check injected scope in agent logs |
 
 Run `intellect doctor` after config changes. Wiki and vault health integrate with WebUI status APIs when the dashboard is running.

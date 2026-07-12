@@ -57,3 +57,28 @@ def test_members_config_gates_ignored_when_stubbed(monkeypatch):
     assert "join" not in opened
     assert "join-project" not in opened
     assert "verbose" in opened
+
+
+def test_member_slash_commanddefs_removed():
+    from intellect_cli.commands import (
+        GATEWAY_KNOWN_COMMANDS,
+        gateway_help_lines,
+        resolve_command,
+    )
+
+    for name in (
+        "team",
+        "teams",
+        "project",
+        "projects",
+        "join",
+        "join-project",
+        "join_project",
+        "login",
+        "logout",
+    ):
+        assert resolve_command(name) is None
+        assert name not in GATEWAY_KNOWN_COMMANDS
+    help_text = "\n".join(gateway_help_lines())
+    for needle in ("/team", "/teams", "/project", "/projects", "/login", "/logout", "/join"):
+        assert needle not in help_text

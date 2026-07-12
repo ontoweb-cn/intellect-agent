@@ -69,27 +69,16 @@ WIKI="${WIKI_PATH:-$HOME/wiki}"
 echo "scope=$WIKI_SCOPE id=$WIKI_SCOPE_ID mode=$WIKI_WRITE_MODE"
 ```
 
-## Global Wiki — member redirect (CRITICAL)
+## Global Wiki (single-user)
 
-When the user asks to **add to the global / org wiki** and `WIKI_WRITE_MODE=read_only`:
+Intellect Agent is permanently single-user. There is **no** contribution review API
+(`POST /api/wiki/contributions` is not mounted).
 
-1. **Do not** write under `wiki/global/`.
-2. **Redirect** writes to the member personal wiki (`WIKI_SCOPE=member`).
-3. Tell the user: Global is admin-only; content was saved to **personal wiki**.
-4. Offer to **submit for admin review** (see below).
-5. Append to personal `log.md`: `promotion_requested | global | <page paths>`.
+Write directly to the active wiki (`WIKI_PATH`, usually `~/wiki` or the profile wiki).
+Do not promise admin review queues or organization contribution flows.
 
-When `WIKI_WRITE_MODE=read_write` and scope is global, proceed normally for admins.
-
-## Submit personal wiki pages for Global review
-
-After saving to personal wiki, if the user wants org-wide visibility:
-
-1. Confirm which relative paths to submit (e.g. `entities/topic.md`).
-2. Call `POST /api/wiki/contributions` with `page_paths`, `title`, `summary`, `note`.
-3. Tell the user an admin will review; they can track status in the Wiki panel.
-
-Do not submit `SCHEMA.md`, `index.md`, or `log.md`.
+When `WIKI_WRITE_MODE=read_write`, proceed normally. If write mode is `read_only`,
+tell the user the wiki is read-only and suggest updating config / using a writable path.
 
 ## Architecture: Three Layers
 
