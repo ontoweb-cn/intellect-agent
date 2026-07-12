@@ -1,7 +1,8 @@
 # W6 细化稿 — Transparent Stream 全 UI（chronological cockpit）
 
 > **日期**：2026-07-12  
-> **状态**：**EXECUTED** — 2026-07-12；实现见 `feat/w6-transparent-stream`  
+> **状态**：**EXECUTED** — 2026-07-12；合入 main @ `609f705`（PR [#45](https://github.com/ontoweb-cn/intellect-agent/pull/45)）  
+> **下一拍**：[`2026-07-12-w7-p2-security.md`](./2026-07-12-w7-p2-security.md)  
 > **策略**：先技术评审，再按 **0→2** 串行  
 > **前置**：W2–W5 已合入 main（SSE、scene、virt、deferred worklog @ `d6a94d7`）；计划合入 @ `9e7eab0`  
 > **契约**：[`docs/webui/rfcs/stable-assistant-turn-anchors.md`](../webui/rfcs/stable-assistant-turn-anchors.md) **A6**（alias 已落地）+ Hermes RFC 方向（`hermes-webui` `transparent-stream-activity-mode.md`）  
