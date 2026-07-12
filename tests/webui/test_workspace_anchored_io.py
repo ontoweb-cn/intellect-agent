@@ -271,3 +271,82 @@ def test_open_resolved_nofollow_after_in_root_symlink_resolve(tmp_path: Path):
     fd = open_resolved_nofollow(resolved, os.O_RDONLY)
     with os.fdopen(fd, "rb") as fh:
         assert fh.read() == b"via-link"
+
+
+def test_rmtree_nested_via_dir_fd(tmp_path: Path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    nested = root / "a" / "b"
+    nested.mkdir(parents=True)
+    (nested / "c.txt").write_text("x", encoding="utf-8")
+    (root / "a" / "d.txt").write_text("y", encoding="utf-8")
+    rmtree_under_root(root, "a")
+    assert not (root / "a").exists()
+
+
+def test_rmtree_does_not_follow_dir_symlink(tmp_path: Path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    real = root / "keep"
+    real.mkdir()
+    (real / "secret.txt").write_text("keep-me", encoding="utf-8")
+    tree = root / "tree"
+    tree.mkdir()
+    link = tree / "to_keep"
+    try:
+        link.symlink_to(real)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    (tree / "file.txt").write_text("z", encoding="utf-8")
+    rmtree_under_root(root, "tree")
+    assert not tree.exists()
+    assert (real / "secret.txt").read_text(encoding="utf-8") == "keep-me"
+
+
+def test_collect_files_under_root_nested(tmp_path: Path):
+    from api.workspace_io import collect_files_under_root
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "d").mkdir()
+    (root / "d" / "a.txt").write_text("aa", encoding="utf-8")
+    (root / "d" / "sub").mkdir()
+    (root / "d" / "sub" / "b.txt").write_text("bbb", encoding="utf-8")
+    files, total, hit = collect_files_under_root(root, "d", max_bytes=10_000, max_files=100)
+    assert hit is None
+    arcs = sorted(a for _, a in files)
+    assert arcs == ["a.txt", "sub/b.txt"]
+    assert total == 5
+
+
+def test_collect_skips_escape_symlink_file(tmp_path: Path):
+    from api.workspace_io import collect_files_under_root
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("leak", encoding="utf-8")
+    (root / "d").mkdir()
+    link = root / "d" / "evil.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    (root / "d" / "ok.txt").write_text("ok", encoding="utf-8")
+    files, _total, hit = collect_files_under_root(root, "d", max_bytes=10_000, max_files=100)
+    assert hit is None
+    assert [a for _, a in files] == ["ok.txt"]
+
+
+def test_list_names_under_root(tmp_path: Path):
+    from api.workspace_io import list_names_under_root
+    from api.workspace import list_dir
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "a.txt").write_text("1", encoding="utf-8")
+    (root / "b").mkdir()
+    names = set(list_names_under_root(root, "."))
+    assert names == {"a.txt", "b"}
+    entries = list_dir(root, ".")
+    assert {e["name"] for e in entries} == {"a.txt", "b"}

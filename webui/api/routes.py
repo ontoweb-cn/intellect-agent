@@ -10248,42 +10248,20 @@ def _folder_download_collect(target: Path, workspace_root: Path,
 
     files is a list of (filesystem_path, archive_name) tuples ready for
     ZipFile.write. Symlinks escaping the workspace are skipped.
+    Delegates to Tier C ``collect_files_under_root`` (dir-fd walk on POSIX).
     """
-    import os as _os
-    files = []
-    total_bytes = 0
-    for root, dirs, names in _os.walk(target, followlinks=False):
-        root_path = Path(root)
-        try:
-            if not root_path.resolve().is_relative_to(workspace_root):
-                dirs[:] = []
-                continue
-        except (ValueError, OSError):
-            dirs[:] = []
-            continue
-        for name in names:
-            fp = root_path / name
-            if fp.is_symlink():
-                try:
-                    if not fp.resolve().is_relative_to(workspace_root):
-                        continue
-                except (ValueError, OSError):
-                    continue
-            try:
-                size = fp.stat().st_size
-            except OSError:
-                continue
-            if len(files) >= max_files:
-                return files, total_bytes, "max_files"
-            if total_bytes + size > max_bytes:
-                return files, total_bytes, "max_bytes"
-            try:
-                arcname = fp.relative_to(target)
-            except ValueError:
-                continue
-            files.append((fp, str(arcname)))
-            total_bytes += size
-    return files, total_bytes, None
+    from api.workspace_io import collect_files_under_root
+
+    try:
+        rel = str(target.relative_to(workspace_root))
+    except ValueError:
+        # target should already be under workspace_root via safe_resolve
+        rel = "."
+    if rel in (".", ""):
+        requested = "."
+    else:
+        requested = rel
+    return collect_files_under_root(workspace_root, requested, max_bytes, max_files)
 
 
 def _handle_folder_download(handler, parsed):
