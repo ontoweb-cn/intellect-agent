@@ -2,7 +2,9 @@
 
 Node ids:
 - **skills** → skill name (e.g. ``"debugging-desktop"``)
-- **memories** → ``memory:<source>:<index>`` (``memory`` = MEMORY.md, ``profile`` = USER.md)
+- **memories** → ``memory:<source>:<local>`` where ``local`` is the per-file
+  index into ``MemoryStore._read_file`` chunks (``memory`` = MEMORY.md,
+  ``profile`` = USER.md). Not a global index across both files.
 
 Deleting an agent-created / profile skill archives it (``intellect curator restore``).
 Deleting a hub-installed skill uninstalls it (``intellect skills uninstall``) — not curator.
@@ -37,27 +39,13 @@ def _parse_memory_id(node_id: str) -> tuple[str, int]:
         raise ValueError(f"bad memory node id: {node_id!r}") from exc
 
 
-def _memory_local_index(source: str, global_index: int) -> int:
-    from agent.learning_graph import _memory_cards
-
-    cards = _memory_cards()
-    if not 0 <= global_index < len(cards):
-        raise ValueError("memory node id is stale — refresh the graph")
-    if cards[global_index].get("source") != source:
-        raise ValueError("memory node id is stale — refresh the graph")
-    if source == "memory":
-        return global_index
-    return global_index - sum(1 for c in cards if c.get("source") == "memory")
-
-
-def _locate_memory(source: str, gidx: int) -> tuple[Path, list[str], int]:
+def _locate_memory(source: str, local: int) -> tuple[Path, list[str], int]:
     from tools.memory_tool import MemoryStore
 
     path = _memories_dir() / _MEMORY_FILES[source]
     if not path.exists():
         raise ValueError(f"{path.name} not found")
     chunks = MemoryStore._read_file(path)
-    local = _memory_local_index(source, gidx)
     if not 0 <= local < len(chunks):
         raise ValueError("memory node id is stale — refresh the graph")
     return path, chunks, local
@@ -144,8 +132,8 @@ def _resolve_journey_skill(name: str) -> Optional[dict[str, Any]]:
 
 def _node_detail(node_id: str) -> dict[str, Any]:
     if parse_node_kind(node_id) == "memory":
-        source, gidx = _parse_memory_id(node_id)
-        _, chunks, local = _locate_memory(source, gidx)
+        source, local_idx = _parse_memory_id(node_id)
+        _, chunks, local = _locate_memory(source, local_idx)
         body = chunks[local].strip()
         return {
             "ok": True,
@@ -278,8 +266,8 @@ def _delete_skill(name: str) -> dict[str, Any]:
 
 
 def _delete_memory(node_id: str) -> dict[str, Any]:
-    source, gidx = _parse_memory_id(node_id)
-    path, chunks, local = _locate_memory(source, gidx)
+    source, local_idx = _parse_memory_id(node_id)
+    path, chunks, local = _locate_memory(source, local_idx)
 
     del chunks[local]
     _write_memory(path, chunks)
@@ -354,11 +342,11 @@ def _edit_skill(name: str, content: str) -> dict[str, Any]:
 
 
 def _edit_memory(node_id: str, content: str) -> dict[str, Any]:
-    source, gidx = _parse_memory_id(node_id)
+    source, local_idx = _parse_memory_id(node_id)
     body = content.strip()
     if not body:
         return {"ok": False, "message": "empty memory — use delete to remove it"}
-    path, chunks, local = _locate_memory(source, gidx)
+    path, chunks, local = _locate_memory(source, local_idx)
 
     chunks[local] = body
     _write_memory(path, chunks)
