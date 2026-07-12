@@ -6901,6 +6901,10 @@ def handle_get(handler, parsed) -> bool:
             "platforms": platforms,
             "last_active": last_active,
             "session_count": len(identity_map),
+            "probe_scope": (health.get("details") or {}).get("probe_scope"),
+            "active_profile_pid": (health.get("details") or {}).get("active_profile_pid"),
+            "root_pid": (health.get("details") or {}).get("root_pid"),
+            "health_details": health.get("details") or {},
         })
 
     # ── MCP Servers (GET) ──
@@ -7831,8 +7835,30 @@ def handle_post(handler, parsed) -> bool:
     if parsed.path == "/api/health/restart":
         from api.gateway_lifecycle import request_gateway_restart
 
+        # Thin wrap of layer C restart (W13 G8).
         wait = bool(body.get("wait"))
         result = request_gateway_restart(wait=wait)
+        status_code = 200 if result.get("ok") or result.get("status") == "in_progress" else 409
+        if result.get("status") == "busy":
+            status_code = 409
+        return j(handler, result, status=status_code)
+
+    if parsed.path in ("/api/gateway/restart", "/api/gateway/start", "/api/gateway/stop"):
+        from api.gateway_lifecycle import (
+            request_gateway_restart,
+            request_gateway_start,
+            request_gateway_stop,
+        )
+
+        action = parsed.path.rsplit("/", 1)[-1]
+        wait = body.get("wait", True)
+        wait = True if wait is None else bool(wait)
+        fn = {
+            "restart": request_gateway_restart,
+            "start": request_gateway_start,
+            "stop": request_gateway_stop,
+        }[action]
+        result = fn(wait=wait)
         status_code = 200 if result.get("ok") or result.get("status") == "in_progress" else 409
         if result.get("status") == "busy":
             status_code = 409

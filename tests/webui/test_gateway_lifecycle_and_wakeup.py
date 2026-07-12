@@ -50,17 +50,23 @@ def test_gateway_lifecycle_busy_and_status(monkeypatch, tmp_path):
         return True, "ok"
 
     monkeypatch.setattr(gl, "_run_gateway_restart", _fake_run)
+    monkeypatch.setattr(gl, "_run_gateway_cli", lambda action: (True, f"{action} ok"))
     # Reset module state
     with gl._LOCK:
-        gl._STATE.update(status="idle", message="", started_at=None, finished_at=None)
+        gl._STATE.update(
+            status="idle", operation=None, message="", started_at=None, finished_at=None
+        )
 
     result = gl.request_gateway_restart(wait=True)
     assert result.get("status") == "completed"
+    assert result.get("operation") == "restart"
     assert gl.get_restart_status()["status"] == "completed"
+    assert gl.get_restart_status()["operation"] == "restart"
 
     # Force in_progress to exercise busy
     with gl._LOCK:
         gl._STATE["status"] = "in_progress"
+        gl._STATE["operation"] = "restart"
     busy = gl.request_gateway_restart(wait=False)
     assert busy.get("status") == "busy"
 
@@ -73,12 +79,54 @@ def test_ensure_gateway_restart_hard_fail(monkeypatch, tmp_path):
 
     gl = importlib.reload(gl)
 
-    monkeypatch.setattr(gl, "_run_gateway_restart", lambda: (False, "boom"))
+    monkeypatch.setattr(gl, "_run_gateway_cli", lambda action: (False, "boom"))
     with gl._LOCK:
-        gl._STATE.update(status="idle", message="", started_at=None, finished_at=None)
+        gl._STATE.update(
+            status="idle", operation=None, message="", started_at=None, finished_at=None
+        )
     out = gl.ensure_gateway_restarted_for_agent_update(timeout_s=2)
     assert out.get("ok") is False
     assert out.get("status") == "failed"
+
+
+def test_stop_completed_does_not_prove_restart(monkeypatch, tmp_path):
+    import importlib
+
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path / ".intellect"))
+    import api.gateway_lifecycle as gl
+
+    gl = importlib.reload(gl)
+
+    with gl._LOCK:
+        gl._STATE.update(
+            status="completed",
+            operation="stop",
+            message="stopped",
+            started_at=1.0,
+            finished_at=2.0,
+        )
+
+    monkeypatch.setattr(
+        gl,
+        "request_gateway_restart",
+        lambda **kw: {"ok": True, "status": "in_progress", "operation": "restart"},
+    )
+    out = gl.ensure_gateway_restarted_for_agent_update(timeout_s=1.5)
+    assert out.get("ok") is False
+    assert out.get("status") == "failed"
+
+
+def test_in_gateway_env_blocks_ops(monkeypatch, tmp_path):
+    import importlib
+
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path / ".intellect"))
+    monkeypatch.setenv("_INTELLECT_GATEWAY", "1")
+    import api.gateway_lifecycle as gl
+
+    gl = importlib.reload(gl)
+    ok, msg = gl._run_gateway_cli("start")
+    assert ok is False
+    assert "inside" in msg.lower()
 
 
 def test_clear_pause_for_fingerprint_only(wakeup_mod):

@@ -169,17 +169,58 @@ def _gateway_status_module():
 
 
 def _gateway_root_pid_path() -> Path | None:
-    """Return the root Intellect gateway PID path.
-
-    Gateway runtime files are root-level singletons.  A profile-scoped WebUI
-    process may have INTELLECT_HOME=<root>/profiles/<name>, but gateway.pid,
-    gateway.lock, and gateway_state.json still live under <root>.
-    """
+    """Return the root Intellect gateway PID path (fallback probe)."""
     try:
         from intellect_constants import get_default_intellect_root
+
         return get_default_intellect_root() / _GATEWAY_PID_FILE
     except Exception:
         return None
+
+
+def _gateway_active_pid_path() -> Path | None:
+    """Return the active WebUI profile INTELLECT_HOME gateway PID path."""
+    try:
+        from api.profiles import get_active_intellect_home
+
+        return Path(get_active_intellect_home()) / _GATEWAY_PID_FILE
+    except Exception:
+        pass
+    try:
+        from intellect_constants import get_intellect_home
+
+        return Path(get_intellect_home()) / _GATEWAY_PID_FILE
+    except Exception:
+        return None
+
+
+def _select_gateway_probe(
+    gateway_status: Any,
+) -> tuple[Path | None, str, int | None, int | None]:
+    """L3(a′): prefer live active-profile PID; else root fallback.
+
+    Returns ``(probe_pid_path, probe_scope, active_pid, root_pid)``.
+    """
+    root_path = _gateway_root_pid_path()
+    active_path = _gateway_active_pid_path()
+    root_pid = _gateway_running_pid(gateway_status, root_path)
+    active_pid = _gateway_running_pid(gateway_status, active_path)
+
+    same = (
+        root_path is not None
+        and active_path is not None
+        and root_path.resolve() == active_path.resolve()
+    )
+    if active_pid is not None:
+        return active_path, "active_profile", active_pid, root_pid
+    if root_pid is not None and not same:
+        return root_path, "root_fallback", active_pid, root_pid
+    if same:
+        return active_path or root_path, "active_profile", active_pid, root_pid
+    # Neither live: still probe active first so down/unknown reflects profile home.
+    if active_path is not None:
+        return active_path, "active_profile", active_pid, root_pid
+    return root_path, "root_fallback", active_pid, root_pid
 
 
 def _read_runtime_status_path(path: Path) -> dict[str, Any] | None:
@@ -294,7 +335,7 @@ def build_agent_health_payload() -> dict[str, Any]:
             },
         }
 
-    gateway_pid_path = _gateway_root_pid_path()
+    gateway_pid_path, probe_scope, active_pid, root_pid = _select_gateway_probe(gateway_status)
 
     runtime_status = None
     try:
@@ -302,12 +343,32 @@ def build_agent_health_payload() -> dict[str, Any]:
     except Exception:
         runtime_status = None
 
+    # If active probe has no live PID/runtime but root does (cross-home),
+    # _select already chose root_fallback when root_pid live. For freshness-only
+    # root signals with dead PIDs, try root runtime when active is empty.
+    if runtime_status is None and probe_scope == "active_profile":
+        root_path = _gateway_root_pid_path()
+        try:
+            root_runtime = _read_gateway_runtime_status(gateway_status, root_path)
+        except Exception:
+            root_runtime = None
+        if _runtime_status_is_fresh(root_runtime):
+            runtime_status = root_runtime
+            probe_scope = "root_fallback"
+            gateway_pid_path = root_path
+
     try:
         running_pid = _gateway_running_pid(gateway_status, gateway_pid_path)
     except Exception:
         running_pid = None
 
-    safe_details = _runtime_detail_subset(runtime_status)
+    scope_details = {
+        "probe_scope": probe_scope,
+        "active_profile_pid": active_pid,
+        "root_pid": root_pid,
+    }
+
+    safe_details = {**_runtime_detail_subset(runtime_status), **scope_details}
     if running_pid is not None:
         return {
             "alive": True,
@@ -374,5 +435,6 @@ def build_agent_health_payload() -> dict[str, Any]:
         "details": {
             "state": "unknown",
             "reason": "gateway_not_configured",
+            **scope_details,
         },
     }
