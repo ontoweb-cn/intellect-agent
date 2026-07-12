@@ -1,7 +1,7 @@
 # W11 细化稿 — 永久单用户卫生清扫
 
 > **日期**：2026-07-12  
-> **状态**：**执行中 → sweep 落地**（已吸收技术评审 Request changes）  
+> **状态**：**DONE** — docs #58 + sweep #59 @ `3fba844`  
 > **策略**：先文档声明 → 再 **单 PR sweep**（registry+wiki+auth+FE）；保留 OAuth shim  
 > **前置**：W0–W10 已合入（tip @ `fef7fcb` / #57）；membership 空壳清理 #53–#57  
 > **产品决议**：intellect-agent **永久单用户**；隔离 = profile / `INTELLECT_HOME`；用户选卫生档 **2**  
@@ -140,7 +140,7 @@
 ### Task 5 — 回归
 
 - [x] 5.1 `pytest`：membership stub / members thin / members security + 本拍新测  
-- [ ] 5.2 Sweep PR merge  
+- [x] 5.2 Sweep PR merge  
 - [x] 5.3 可选 M1–M4  
 
 ### 手工验收（W11-qa）
