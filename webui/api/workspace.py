@@ -663,33 +663,13 @@ def validate_workspace_to_add(path: str) -> Path:
 def safe_resolve_ws(root: Path, requested: str) -> Path:
     """Resolve a relative path inside a workspace root, raising ValueError on traversal.
 
-    Symlinks whose *unresolved* path is within the workspace root are allowed —
-    the user placed them there intentionally.  Only raw ``..`` traversal outside
-    the root is blocked.
+    W7 S2: strict containment — final canonical path MUST be under root.
+    In-root symlinks are allowed (resolve lands inside root). Escape via an
+    in-tree symlink to an outside target is rejected.
     """
-    import os
-    unresolved = root / requested
-    resolved = unresolved.resolve()
-    # Fast path: resolved path is inside root (covers most cases)
-    try:
-        resolved.relative_to(root.resolve())
-        return resolved
-    except ValueError:
-        pass
-    # Symlink path: normalize '..' (without following symlinks) and check
-    # os.path.normpath collapses '..' but does NOT follow symlinks.
-    norm = Path(os.path.normpath(str(unresolved)))
-    try:
-        norm.relative_to(root)
-    except ValueError:
-        raise ValueError(f"Path traversal blocked: {requested}")
-    # Symlink points outside workspace root — additionally block system directories.
-    # Even if the user placed the symlink intentionally, prevent reads from
-    # /etc, /proc, /sys, /dev and other blocked roots (LLM agents can call
-    # read_file_content via tool calls, not just human users).
-    if _is_blocked_system_path(resolved):
-        raise ValueError(f"Path traversal blocked (system dir): {requested}")
-    return resolved
+    from api.workspace_io import resolve_under_root
+
+    return resolve_under_root(root, requested)
 
 
 def list_dir(workspace: Path, rel: str='.'):
@@ -794,13 +774,15 @@ def dir_signature(workspace: Path, rel: str = '.', entries: list[dict] | None = 
 
 
 def read_file_content(workspace: Path, rel: str) -> dict:
-    target = safe_resolve_ws(workspace, rel)
+    from api.workspace_io import read_text_under_root, resolve_under_root
+
+    target = resolve_under_root(workspace, rel)
     if not target.is_file():
         raise FileNotFoundError(f"Not a file: {rel}")
     size = target.stat().st_size
     if size > MAX_FILE_BYTES:
         raise ValueError(f"File too large ({size} bytes, max {MAX_FILE_BYTES})")
-    content = target.read_text(encoding='utf-8', errors='replace')
+    content = read_text_under_root(workspace, rel)
     return {'path': rel, 'content': content, 'size': size, 'lines': content.count('\n') + 1}
 
 

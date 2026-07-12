@@ -43,10 +43,13 @@ def _sanitize_error(e: Exception) -> str:
 
 
 def safe_resolve(root: Path, requested: str) -> Path:
-    """Resolve a relative path inside root, raising ValueError on traversal."""
-    resolved = (root / requested).resolve()
-    resolved.relative_to(root.resolve())  # raises ValueError if outside root
-    return resolved
+    """Resolve a relative path inside root, raising ValueError on traversal.
+
+    Delegates to :func:`api.workspace_io.resolve_under_root` (W7 strict containment).
+    """
+    from api.workspace_io import resolve_under_root
+
+    return resolve_under_root(root, requested)
 
 
 def _security_headers(handler):
