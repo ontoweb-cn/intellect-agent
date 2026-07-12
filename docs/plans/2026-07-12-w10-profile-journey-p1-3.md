@@ -1,9 +1,10 @@
 # W10 细化稿 — Profile 管理恢复（opt-in）+ Journey P1-3（Gateway scope）
 
 > **日期**：2026-07-12  
-> **状态**：**DONE** — 1a (#54) + 1b 进程-profile Journey MVP 完成；member = W10.1  
+> **状态**：**DONE** — 1a (#54) + 1b 进程-profile Journey MVP 完成；**W10.1 WONTFIX**（永久单用户，见 W11）  
 > **策略**：先技术评审，再按 **0→1a→1b** 串行  
 > **前置**：W0–W9 已合入 main（parity 主轴闭环 @ `e04cc95` / #51）；membership 空壳已删 (#53)  
+> **后续**：[`2026-07-12-w11-single-user-hygiene.md`](./2026-07-12-w11-single-user-hygiene.md) — 永久单用户卫生清扫  
 > **父文档**：[`2026-06-profile-management-disabled-restore.md`](./2026-06-profile-management-disabled-restore.md)、[`2026-07-11-p1-journey-and-webui-parity-refinement.md`](./2026-07-11-p1-journey-and-webui-parity-refinement.md) §1.4  
 > **探索**：[`explore`](e94251a8-5022-41d7-9577-a606b25b19ef)  
 > **产品决议**：`management_enabled` **出厂默认 false**（运维显式 `true` 恢复）— 用户选 1  
@@ -18,7 +19,7 @@
 | Parity P0–P2 + P3 #12 | ✅ W0–W9 | **不改** |
 | Profile 管理门控 | 配置可开；**DEFAULT_CONFIG=`True` 与 gate/文档「默认关」矛盾** | **对齐默认 false + 迁移说明** |
 | Journey P1-3 | Gateway `/journey` 裸 `build_learning_graph()`；语义未写死 | **本拍：进程 profile（`-p`）契约 + 双 home 测** |
-| Members / `resolve_member_id` | **本仓 single-user stub** | **不进**（W10.1）；P1-3 **未关** member 半截 |
+| Members / `resolve_member_id` | **本仓 single-user stub** | **不做** → **W10.1 WONTFIX**（永久单用户） |
 
 **一句话**：修好默认 false 的真源；Gateway Journey = 进程 `INTELLECT_HOME`；双 profile 不串。Member 等 stub 解开后再做。
 
@@ -56,7 +57,7 @@
 | Gateway 文案：Journey = 进程 `-p` | Session profile 驱动 Gateway Journey |
 | WebUI learning profile 测不回归 | WebUI member 包装；Secure cookie 对齐 |
 
-**完成定义表述**：「P1-3 **进程-profile MVP** 完成；**member 半截仍开** → W10.1」。
+**完成定义表述**：「P1-3 **进程-profile MVP** 完成；member 半截 **关闭**（永久单用户 / W10.1 WONTFIX）」。
 
 ---
 
@@ -71,7 +72,7 @@
 | **J5** | Journey profile | Gateway `/journey` = **进程** `INTELLECT_HOME`（`-p`）。**禁止**从 messaging session 猜/切 home |
 | **J6** | 实现（钉死） | **仅**在 `_handle_journey_command` 加简短注释（进程 home / 未来 member 挂钩一句）。**禁止**本拍新增 `journey_graph_for_process_home()`；第二调用点出现再抽 |
 | **J7** | 双 home 测（钉死） | `tests/gateway/test_journey_*.py`：两 temp home；**必须**用 `set_intellect_home_override`（或等价 ContextVar），禁止只靠进程全局 env 跨用例串扰。断言 `build_learning_graph()`（及可选 list 格式化）A/B **零交叉**；完整 gateway handler 可选 |
-| **J8** | Member | **不做**。文案：membership stub 下隔离边界 = **profile home only**；解 stub → W10.1 |
+| **J8** | Member | **不做**。**W10.1 WONTFIX**（永久单用户）；隔离 = profile home only |
 | **J9** | WebUI Journey | **不改** REST；`test_learning_api_profile` 绿 |
 | **J10** | 安全 | 保持 STREAMS / `process_wide` switch 护栏；Secure cookie **不挡** |
 | **J11** | Prompt-cache | 禁止活跃 stream 静默换 home（现有护栏） |
@@ -136,7 +137,7 @@
 原 MVP：`resolve_member_id` → `INTELLECT_MEMBER_ID`。  
 本仓 stub → 空包装假绿。  
 
-**W10**：进程-profile MVP；member = **W10.1**（P1-3 文档应记「半截仍开」）。
+**W10**：进程-profile MVP；member = **WONTFIX**（永久单用户 → [`W11`](./2026-07-12-w11-single-user-hygiene.md)）。
 
 ---
 
@@ -165,3 +166,4 @@
 | 2026-07-12 | REVISED — J6 禁 wrapper；J7 ContextVar；J13/R8 迁移+release note；R6/R9/R10 钉死 |
 | 2026-07-12 | APPROVED — 签字执行；#53 清 membership 空壳后开 1a |
 | 2026-07-12 | 1a 合入 (#54)；1b Journey 注释 + 双 home 测 |
+| 2026-07-12 | W10.1 WONTFIX；member 半截关闭；指针 → W11 |
