@@ -29,6 +29,8 @@ coder chat                        # 开始对话
 - **WebUI：** Profiles 面板与切换/创建/删除隐藏；会话仅限 **default** profile。
 
 恢复管理：在 `config.yaml` 中设置 `profiles.management_enabled: true` 并重启 gateway/WebUI。
+
+**Gateway `/journey`：** 始终使用进程 profile 主目录（`intellect -p` / gateway 启动时的 home），不会按 messaging session 切换。
 :::
 
 ## 创建 profile
