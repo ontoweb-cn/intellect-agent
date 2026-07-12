@@ -4861,11 +4861,13 @@ async function refreshSession() {
 // ── Update banner ──
 function _formatUpdateTargetStatus(label,info){
   if(!info||!(info.behind>0)) return null;
+  const channel=info.channel||(window._updateData&&window._updateData.channel)||'';
+  const channelTag=channel==='experimental'?' [experimental]':'';
   const release=(info.release_based&&info.latest_version)
     ?` (${info.current_version||'unknown'} -> ${info.latest_version})`
     :(info.branch?` (${info.branch})`:'');
   const noun=info.release_based?'release':'update';
-  return `${label}${release}: ${info.behind} ${noun}${info.behind>1?'s':''}`;
+  return `${label}${channelTag}${release}: ${info.behind} ${noun}${info.behind>1?'s':''}`;
 }
 function _formatUpdateCheckError(label,info){
   if(!info||!info.error) return null;
@@ -5099,6 +5101,8 @@ function _showUpdateBanner(data){
   // Normalize so downstream consumers always find data.updates.
   if (!data.updates) data.updates = data.webui || data.agent;
   const updateInfo = data.updates;
+  // U5: stamp channel onto the info dict so banner formatting can label it.
+  if(updateInfo&&data.channel&&!updateInfo.channel) updateInfo.channel=data.channel;
   const parts=[];
   const unifiedPart=_formatUpdateTargetStatus('Intellect',updateInfo);
   if(unifiedPart) parts.push(unifiedPart);

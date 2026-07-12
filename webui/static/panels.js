@@ -6082,6 +6082,8 @@ function _preferencesPayloadFromUi(){
   if(syncCb) payload.sync_to_insights=syncCb.checked;
   const updateCb=$('settingsCheckUpdates');
   if(updateCb) payload.check_for_updates=updateCb.checked;
+  const updateChannelSel=$('settingsUpdateChannel');
+  if(updateChannelSel) payload.update_channel=updateChannelSel.value==='experimental'?'experimental':'stable';
   const ignoreAgentUpdatesCb=$('settingsIgnoreAgentUpdates');
   if(ignoreAgentUpdatesCb) payload.ignore_agent_updates=ignoreAgentUpdatesCb.checked;
   const whatsNewSummaryCb=$('settingsWhatsNewSummary');
@@ -6408,6 +6410,11 @@ async function loadSettingsPanel(){
     if(syncCb){syncCb.checked=!!settings.sync_to_insights;syncCb.addEventListener('change',_schedulePreferencesAutosave,{once:false});}
     const updateCb=$('settingsCheckUpdates');
     if(updateCb){updateCb.checked=settings.check_for_updates!==false;updateCb.addEventListener('change',_schedulePreferencesAutosave,{once:false});}
+    const updateChannelSel=$('settingsUpdateChannel');
+    if(updateChannelSel){
+      updateChannelSel.value=settings.update_channel==='experimental'?'experimental':'stable';
+      updateChannelSel.addEventListener('change',_schedulePreferencesAutosave,{once:false});
+    }
     const ignoreAgentUpdatesCb=$('settingsIgnoreAgentUpdates');
     if(ignoreAgentUpdatesCb){ignoreAgentUpdatesCb.checked=!!settings.ignore_agent_updates;ignoreAgentUpdatesCb.addEventListener('change',_schedulePreferencesAutosave,{once:false});}
     const whatsNewSummaryCb=$('settingsWhatsNewSummary');
@@ -7706,6 +7713,7 @@ async function saveSettings(andClose){
   body.pinned_sessions_limit=parseInt(($('settingsPinnedSessionsLimit')||{}).value,10)||3;
   body.sync_to_insights=!!($('settingsSyncInsights')||{}).checked;
   body.check_for_updates=!!($('settingsCheckUpdates')||{}).checked;
+  body.update_channel=(($('settingsUpdateChannel')||{}).value==='experimental')?'experimental':'stable';
   body.ignore_agent_updates=!!($('settingsIgnoreAgentUpdates')||{}).checked;
   body.whats_new_summary_enabled=!!($('settingsWhatsNewSummary')||{}).checked;
   body.sound_enabled=!!($('settingsSoundEnabled')||{}).checked;
