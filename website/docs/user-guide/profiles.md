@@ -32,6 +32,8 @@ To re-enable management: set `profiles.management_enabled: true` in `config.yaml
 
 **Gateway `/journey`:** always uses the process profile home (`intellect -p` / how the gateway was started), not messaging-session profile switching.
 
+**Single-user:** Intellect Agent does not provide multi-user members/teams. Isolation is profiles only. Config key `members.enabled` is ignored.
+
 **Restore inventory (all files and functions):** `docs/plans/2026-06-profile-management-disabled-restore.md` in the intellect-agent repo (WebUI index: `intellect-webui/docs/plans/profile-management-disabled-restore.md`).
 :::
 

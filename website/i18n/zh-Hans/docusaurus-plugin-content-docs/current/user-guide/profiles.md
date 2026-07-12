@@ -31,6 +31,8 @@ coder chat                        # 开始对话
 恢复管理：在 `config.yaml` 中设置 `profiles.management_enabled: true` 并重启 gateway/WebUI。
 
 **Gateway `/journey`：** 始终使用进程 profile 主目录（`intellect -p` / gateway 启动时的 home），不会按 messaging session 切换。
+
+**单用户：** Intellect Agent 不提供 multi-user members/teams；隔离仅靠 profile。配置项 `members.enabled` 无效。
 :::
 
 ## 创建 profile

@@ -89,12 +89,15 @@ intellect-agent/
 `gateway.log` when running the gateway. Profile-aware via `get_intellect_home()`.
 Browse with `intellect logs [--follow] [--level ...] [--session ...]`.
 
-### Multi-User / Multi-Project (legacy stubs)
+### Single-user (permanent)
 
-Multi-user members/teams/projects were removed from the product surface in
-v0.5.0. Feature flags in config (`members.enabled`, etc.) remain for schema
-compatibility but `agent/membership.is_members_enabled()` always returns
-`False`. Isolation today is **profile-based** (`INTELLECT_HOME` / `-p`).
+Intellect Agent is **permanently single-user**. Isolation is **profile-based**
+only (`INTELLECT_HOME` / `intellect -p`). Multi-user members/teams/projects are
+**WONTFIX** (removed from the product surface in v0.5.0; no W10.1 restore).
+
+Config keys like `members.enabled` may still appear in yaml for schema
+compatibility, but `agent/membership.is_members_enabled()` always returns
+`False` — they do **not** enable multi-user behavior.
 
 Legacy DB tables and on-disk layout may still exist under `INTELLECT_HOME`
 (harmless empty tables/dirs). Do **not** reintroduce `agent/oauth_tokens.py`
@@ -112,14 +115,12 @@ or `agent/team_soul.py` file shims — live OAuth persistence is
 | `agent/member_rbac.py` / `agent/member_session.py` | Permissive/no-op imports for gateway |
 | `agent/runtime_context.py` | Live single-user runtime + stub `resolve_member_id` → `(None, None)` |
 | `agent/oauth/` | Live provider OAuth (`OAuthEngine`, storage, migrations) |
-| `webui/api/members.py` | Thin status + request-hook no-ops (`GET /api/members/status`) |
+| `webui/api/members.py` | Thin status + request-hook no-ops (`GET /api/members/status`, public) |
 | `webui/api/session_visibility.py` | Single-user unrestricted session visibility |
 
 **CLI:** `intellect members` prints removed + exits 1. Use `intellect oauth` for providers; use profiles for isolation.
 
-**Gateway honesty:** slash commands gated on `members.*` also require
-`is_members_enabled()` (always false here), so stale yaml cannot resurface
-`/team` `/login` etc. Doctor warns that yaml member/project flags are ignored.
+**Gateway honesty:** member slash CommandDefs are removed in W11; `gateway/run.py` still replies “removed” if typed. Doctor warns that yaml member/project flags are ignored.
 
 ## File Dependency Chain
 
