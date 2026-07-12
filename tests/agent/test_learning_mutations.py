@@ -43,10 +43,10 @@ def test_parse_node_kind():
     assert lm.parse_node_kind("debugging-intellect") == "skill"
 
 
-def test_memory_global_index_maps_across_files(home):
+def test_memory_local_index_per_source(home):
     assert lm.node_detail("memory:memory:0")["content"].startswith("alpha note")
     assert lm.node_detail("memory:memory:1")["content"] == "beta note"
-    assert lm.node_detail("memory:profile:2")["content"] == "user profile note"
+    assert lm.node_detail("memory:profile:0")["content"] == "user profile note"
 
 
 def test_memory_label_is_first_line(home):
@@ -61,7 +61,7 @@ def test_delete_memory_rewrites_file(home):
 
 
 def test_edit_memory_replaces_chunk(home):
-    assert lm.edit_node("memory:profile:2", "rewritten profile")["ok"]
+    assert lm.edit_node("memory:profile:0", "rewritten profile")["ok"]
     assert (home / "memories" / "USER.md").read_text(encoding="utf-8").strip() == "rewritten profile"
 
 
@@ -75,13 +75,19 @@ def test_stale_memory_index_errors(home):
     res = lm.node_detail("memory:memory:9")
     assert not res["ok"]
     assert res.get("code") == "stale"
-
-
-def test_stale_memory_source_mismatch(home):
-    # Index 0 is MEMORY.md; claiming profile source must fail as stale.
-    res = lm.node_detail("memory:profile:0")
+    res = lm.node_detail("memory:profile:9")
     assert not res["ok"]
     assert res.get("code") == "stale"
+
+
+def test_profile_local_stable_after_memory_delete(home):
+    """Cross-source stability: deleting MEMORY.md[0] must not shift USER.md ids."""
+    before = lm.node_detail("memory:profile:0")
+    assert before["ok"]
+    assert lm.delete_node("memory:memory:0")["ok"]
+    after = lm.node_detail("memory:profile:0")
+    assert after["ok"]
+    assert after["content"] == before["content"]
 
 
 def test_bad_memory_id_returns_error(home):

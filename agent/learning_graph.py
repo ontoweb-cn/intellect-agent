@@ -189,6 +189,15 @@ def density_stats(nodes: dict[str, SkillNode], edges: list[tuple[str, str]]) -> 
     }
 
 
+def memory_node_id(source: str, local: int) -> str:
+    """Stable Journey id for a memory card: ``memory:{source}:{local}``.
+
+    ``local`` is the per-file index into ``MemoryStore._read_file`` chunks
+    (MEMORY.md → source ``memory``, USER.md → ``profile``).
+    """
+    return f"memory:{source}:{local}"
+
+
 def _memory_cards() -> list[dict[str, Any]]:
     """Freeform memory as readable cards using the same § split as MemoryStore."""
     from tools.memory_tool import MemoryStore, get_memory_dir
@@ -204,7 +213,7 @@ def _memory_cards() -> list[dict[str, Any]]:
             file_ts = _to_int_ts(path.stat().st_mtime)
         except OSError:
             continue
-        for chunk_idx, chunk in enumerate(chunks):
+        for local, chunk in enumerate(chunks):
             chunk = chunk.strip()
             if not chunk:
                 continue
@@ -212,7 +221,9 @@ def _memory_cards() -> list[dict[str, Any]]:
             cards.append(
                 {
                     "source": source,
-                    "timestamp": file_ts + chunk_idx if file_ts is not None else None,
+                    "local": local,
+                    "id": memory_node_id(source, local),
+                    "timestamp": file_ts + local if file_ts is not None else None,
                     "title": (first[:80] + "…") if len(first) > 80 else first,
                     "body": chunk[:1200],
                 }
@@ -227,8 +238,8 @@ def _tokenize(text: str) -> set[str]:
 def _memory_skill_edges(memory_cards: list[dict[str, Any]], skills: list[SkillNode]) -> list[tuple[str, str]]:
     edges: list[tuple[str, str]] = []
     skill_meta = [(s, _tokenize(s.name), s.name.lower()) for s in skills]
-    for idx, card in enumerate(memory_cards):
-        mem_id = f"memory:{card['source']}:{idx}"
+    for card in memory_cards:
+        mem_id = card.get("id") or memory_node_id(card["source"], int(card["local"]))
         text = f"{card.get('title', '')}\n{card.get('body', '')}".lower()
         text_tokens = _tokenize(text)
         scored: list[tuple[int, str]] = []
@@ -289,10 +300,10 @@ def build_learning_graph() -> dict[str, Any]:
         }
         for n in learned_skills.values()
     ]
-    for i, card in enumerate(memory_cards):
+    for card in memory_cards:
         graph_nodes.append(
             {
-                "id": f"memory:{card['source']}:{i}",
+                "id": card.get("id") or memory_node_id(card["source"], int(card["local"])),
                 "label": card["title"],
                 "kind": "memory",
                 "memorySource": card["source"],
