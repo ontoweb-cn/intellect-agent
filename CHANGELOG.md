@@ -6,6 +6,12 @@ roadmap.
 
 ## Unreleased
 
+### Permanent single-user hygiene (W11)
+
+- Intellect Agent is **permanently single-user**; multi-user members/teams remain WONTFIX.
+- Isolation is profile / `INTELLECT_HOME` only; `members.enabled` in yaml does not enable multi-user.
+- Hygiene: remove ghost member slash CommandDefs, wiki contribution HTTP routes, and member oauth/register public auth carve-outs — while keeping `GET /api/members/status` public and `MembershipDB` for provider OAuth.
+
 ### Profiles management default (W10)
 
 - **`profiles.management_enabled` now defaults to `false`** in `DEFAULT_CONFIG` (aligned with the gate and user docs).
