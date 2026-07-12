@@ -17,8 +17,6 @@ from api.helpers import j as json_response
 
 logger = logging.getLogger(__name__)
 
-_TEAM_HEADER = "X-Intellect-Team"
-_PROJECT_HEADER = "X-Intellect-Project"
 _tls = threading.local()
 
 try:

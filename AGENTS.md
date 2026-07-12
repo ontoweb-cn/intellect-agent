@@ -89,42 +89,33 @@ intellect-agent/
 `gateway.log` when running the gateway. Profile-aware via `get_intellect_home()`.
 Browse with `intellect logs [--follow] [--level ...] [--session ...]`.
 
-### Multi-User / Multi-Project (P6–P11, May 2026)
+### Multi-User / Multi-Project (legacy stubs)
 
-Feature flags (all default `false`): `members.enabled`, `members.teams.enabled`, `members.projects.enabled`.
+Multi-user members/teams/projects were removed from the product surface in
+v0.5.0. Feature flags in config (`members.enabled`, etc.) remain for schema
+compatibility but `agent/membership.is_members_enabled()` always returns
+`False`. Isolation today is **profile-based** (`INTELLECT_HOME` / `-p`).
 
-```
-{INTELLECT_HOME}/
-├── config.yaml              # members.* config block
-├── state.db                 # v15 schema: members, teams, projects, memberships, audit log
-├── teams/                   # team dirs (SOUL, skills, .env, workspace)
-├── projects/                # project dirs (SOUL, skills, .env, workspace)
-│   └── <slug>/
-│       ├── SOUL.md          # project identity
-│       ├── CONVENTIONS.md   # project conventions (like CLAUDE.md)
-│       ├── .env             # project secrets (chmod 0600)
-│       └── workspace/       # git clone target
-└── members/                 # member dirs (SOUL, memories, skills, tokens)
-```
+Legacy DB tables and on-disk layout may still exist under `INTELLECT_HOME`
+(harmless empty tables/dirs). Do **not** reintroduce `agent/oauth_tokens.py`
+or `agent/team_soul.py` file shims — live OAuth persistence is
+`agent/oauth/` (SQLite `oauth_tokens` / `oauth_providers`).
 
-**Key modules:**
+**Compatibility shims still imported by WebUI/CLI/gateway:**
 
 | Module | Purpose |
 |--------|---------|
-| `agent/membership.py` | Feature flags (`is_*_enabled`), `Action`/`authorize()` RBAC, `MembershipDB` |
-| `agent/projects.py` | `ProjectDB(MembershipDB)` — project CRUD, memberships, team links, project tokens |
-| `agent/runtime_context.py` | `RuntimeContext` dataclass, `resolve_project_id()` (8-step) |
-| `agent/project_env.py` | `.env` read/write/delete (0600), SOUL.md I/O, audit logging |
-| `agent/project_workspace.py` | `clone_project_repo()`, OAuth git credential chain, workspace paths |
-| `agent/members_oauth.py` | OAuth engine: PKCE, state, provider presets, token exchange, `resolve_oauth_member()` |
-| `agent/oauth_tokens.py` | OAuth token persistence — `{HOME}/.oauth-tokens/` (0600), git auth integration |
-| `agent/team_soul.py` | `synthesize_team_soul()` — LLM/concat member SOULs into team identity |
-| `gateway/session.py` | `build_session_key()` supports `member_id`/`team_id`/`project_id` suffixes |
-| `gateway/platforms/api_server.py` | Member Bearer token auth, `X-Intellect-Team`/`X-Intellect-Project` headers |
-| `intellect_cli/doctor.py` | `_check_project_health()` + `_check_oauth_health()` |
-| `intellect_state.py` | v15: 12 tables, 4 session columns, `secret_access_log` |
+| `agent/membership.py` | Always-off flags, no-op `MembershipDB`/`MembershipStore` (OAuthEngine ctor) |
+| `agent/projects.py` / `agent/teams.py` | No-op DB facades used by doctor/gateway gates |
+| `agent/project_env.py` / `agent/project_workspace.py` | Project path helpers (doctor) |
+| `agent/members_oauth.py` | Facade over `agent/oauth/_stubs.py` config reads |
+| `agent/member_rbac.py` / `agent/member_session.py` | Permissive/no-op imports for gateway |
+| `agent/runtime_context.py` | Live single-user runtime + stub `resolve_member_id` → `(None, None)` |
+| `agent/oauth/` | Live provider OAuth (`OAuthEngine`, storage, migrations) |
+| `webui/api/members.py` | Thin status + request-hook no-ops (`GET /api/members/status`) |
+| `webui/api/session_visibility.py` | Single-user unrestricted session visibility |
 
-**CLI:** `intellect members` — 40+ subcommands across members (7), teams (10), and projects (23).
+**CLI:** `intellect members` prints removed + exits 1. Use `intellect oauth` for providers; use profiles for isolation.
 
 ## File Dependency Chain
 
