@@ -1,3 +1,5 @@
+"""Wiki runtime env helpers — single-user profile scope."""
+
 from __future__ import annotations
 
 import os
@@ -5,7 +7,6 @@ import os
 import pytest
 
 from agent.runtime_context import (
-    RuntimeContext,
     inject_wiki_runtime_env,
     restore_wiki_runtime_env,
     snapshot_wiki_runtime_env,
@@ -21,22 +22,27 @@ def wiki_env_isolation(monkeypatch: pytest.MonkeyPatch):
     restore_wiki_runtime_env(snap)
 
 
-def test_inject_wiki_runtime_env_member(tmp_path, monkeypatch: pytest.MonkeyPatch, wiki_env_isolation) -> None:
+def test_inject_wiki_runtime_env_sets_path(tmp_path, monkeypatch, wiki_env_isolation):
     monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
-    ctx = RuntimeContext(member_id="alice", platform="webui")
-    config = {"members": {"enabled": True}}
-    old = inject_wiki_runtime_env(ctx, config, actor_role="member")
-    assert os.environ["WIKI_SCOPE"] == "member"
-    assert os.environ["WIKI_PATH"].endswith("/members/alice/wiki")
+    old = inject_wiki_runtime_env({})
+    assert "WIKI_PATH" in os.environ
+    assert os.environ["WIKI_SCOPE"] == "global"
     assert os.environ["WIKI_WRITE_MODE"] == "read_write"
     restore_wiki_runtime_env(old)
     assert os.environ.get("WIKI_PATH") is None
 
 
-def test_inject_global_read_only_for_member(tmp_path, monkeypatch: pytest.MonkeyPatch, wiki_env_isolation) -> None:
+def test_inject_global_target_scope(tmp_path, monkeypatch, wiki_env_isolation):
     monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
-    ctx = RuntimeContext(member_id="alice", platform="webui")
-    config = {"members": {"enabled": True}}
-    inject_wiki_runtime_env(ctx, config, target_scope="global", actor_role="member")
+    inject_wiki_runtime_env({}, target_scope="global")
     assert os.environ["WIKI_SCOPE"] == "global"
-    assert os.environ["WIKI_WRITE_MODE"] == "read_only"
+    assert os.environ.get("WIKI_TARGET_SCOPE") == "global"
+
+
+def test_snapshot_restore_roundtrip(monkeypatch, wiki_env_isolation):
+    monkeypatch.setenv("WIKI_PATH", "/tmp/wiki-test")
+    snap = snapshot_wiki_runtime_env()
+    monkeypatch.delenv("WIKI_PATH", raising=False)
+    assert os.environ.get("WIKI_PATH") is None
+    restore_wiki_runtime_env(snap)
+    assert os.environ.get("WIKI_PATH") == "/tmp/wiki-test"

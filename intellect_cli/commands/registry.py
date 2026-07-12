@@ -421,6 +421,9 @@ def _resolve_config_gates() -> set[str]:
     Reads ``config.yaml`` and walks the dot-separated key path for each
     config-gated command.  Returns an empty set on any error so callers
     degrade gracefully.
+
+    Gates under ``members.*`` also require ``is_members_enabled()`` so stale
+    yaml cannot resurface removed multi-user slash commands.
     """
     gated = [c for c in COMMAND_REGISTRY if c.gateway_config_gate]
     if not gated:
@@ -430,10 +433,22 @@ def _resolve_config_gates() -> set[str]:
         cfg = read_raw_config()
     except Exception:
         return set()
+
+    members_live = False
+    try:
+        from agent.membership import is_members_enabled
+
+        members_live = bool(is_members_enabled(cfg if isinstance(cfg, dict) else None))
+    except Exception:
+        members_live = False
+
     result: set[str] = set()
     for cmd in gated:
+        gate = cmd.gateway_config_gate or ""
+        if gate.startswith("members.") and not members_live:
+            continue
         val: Any = cfg
-        for key in cmd.gateway_config_gate.split("."):
+        for key in gate.split("."):
             if isinstance(val, dict):
                 val = val.get(key)
             else:

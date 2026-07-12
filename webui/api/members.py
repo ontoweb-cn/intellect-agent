@@ -14,15 +14,11 @@ from typing import Any, Optional
 
 from api.helpers import bad
 from api.helpers import j as json_response
+from agent.membership import MembershipStore  # re-export for vault/routes call sites
 
 logger = logging.getLogger(__name__)
 
 _tls = threading.local()
-
-try:
-    from agent.membership import MembershipStore
-except Exception:  # pragma: no cover - agent package optional in some installs
-    MembershipStore = None  # type: ignore[misc, assignment]
 
 
 def _load_config() -> dict[str, Any]:

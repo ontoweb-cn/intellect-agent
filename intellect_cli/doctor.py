@@ -386,106 +386,39 @@ def _check_gateway_model_overrides(issues: list[str]) -> None:
 
 
 def _check_project_health(issues: list[str]) -> None:
-    """Check multi-project configuration health (spec §31)."""
+    """Check multi-project configuration health (spec §31).
+
+    Multi-user projects are removed; stale yaml flags only emit a short warning.
+    """
     from intellect_cli.config import load_config
+
+    try:
+        from agent.membership import is_members_enabled, is_projects_enabled
+    except Exception:
+        return
 
     cfg = load_config()
     members = cfg.get("members", {}) if isinstance(cfg, dict) else {}
     projects_cfg = members.get("projects", {}) if isinstance(members, dict) else {}
 
-    # PROJECTS_ENABLED_NO_MEMBERS (check before early return)
-    if projects_cfg.get("enabled") and not members.get("enabled"):
+    yaml_wants_projects = bool(
+        isinstance(projects_cfg, dict) and projects_cfg.get("enabled")
+    )
+    yaml_wants_members = bool(isinstance(members, dict) and members.get("enabled"))
+
+    if not yaml_wants_members and not yaml_wants_projects:
+        return
+
+    # Code gates always off in this tree — do not run project DB checks or
+    # suggest removed ``intellect members`` commands.
+    if not is_members_enabled(cfg) or not is_projects_enabled(cfg):
         _section("Projects")
-        _fail_and_issue("projects.enabled=true but members.enabled=false",
-                        "(projects require members to be enabled)",
-                        "Set members.enabled: true in config.yaml",
-                        issues)
+        check_info(
+            "members/projects yaml flags are ignored (multi-user removed in v0.5.0)",
+            "Clear members.enabled / members.projects.enabled, or use profiles "
+            "(intellect -p) for isolation",
+        )
         return
-
-    if not members.get("enabled") or not projects_cfg.get("enabled"):
-        return  # Projects not enabled — nothing to check
-
-    _section("Projects")
-
-    try:
-        from agent.projects import ProjectDB
-        db = ProjectDB(config=cfg)
-    except Exception:
-        check_warn("Could not open project database")
-        return
-
-    try:
-        projects = db.list_projects(include_archived=False)
-        all_projects = db.list_projects(include_archived=True)
-
-        # PROJECT_DEFAULT_NOT_FOUND
-        default_slug = projects_cfg.get("default_project")
-        if default_slug:
-            dp = db.get_project_by_slug(default_slug)
-            if not dp:
-                check_warn(f"default_project '{default_slug}' not found",
-                           "Run: intellect members projects bootstrap")
-            else:
-                check_ok(f"Default project '{default_slug}' exists")
-
-        # Check each active project
-        for p in projects:
-            slug = p.get("slug", p.get("id", "?"))
-            pid = p["id"]
-            members_list = db.get_project_members(pid)
-
-            # PROJECT_NO_ADMIN
-            admins = [m for m in members_list if m.get("role") == "admin"]
-            if not admins:
-                check_warn(f"Project '{slug}': no admin",
-                           f"Assign with: intellect members projects admin add {slug} <member>")
-            else:
-                check_ok(f"Project '{slug}': {len(members_list)} member(s), "
-                         f"{len(admins)} admin(s)")
-
-            # PROJECT_ORPHANED
-            if not members_list:
-                check_info(f"Project '{slug}' has no members (orphaned)")
-
-            # PROJECT_ENV_PERMISSIONS
-            _check_project_env_perms(slug)
-
-            # PROJECT_WORKSPACE_MISSING
-            repo_url = p.get("repo_url")
-            if repo_url:
-                from agent.project_workspace import get_workspace_path, resolve_workspace
-                ws = resolve_workspace(slug, config=cfg)
-                if ws and (get_workspace_path(slug, config=cfg) / ".git").exists():
-                    check_ok(f"Project '{slug}': workspace cloned")
-                else:
-                    check_info(f"Project '{slug}': workspace not cloned",
-                               f"Run: intellect members projects clone {slug}")
-
-                # PROJECT_GIT_AUTH_MISSING
-                from agent.project_env import read_project_env
-                env = read_project_env(slug, config=cfg)
-                if not env.get("GIT_USERNAME") and not env.get("GIT_TOKEN") and not env.get("GIT_SSH_KEY"):
-                    if repo_url.startswith("https://") or repo_url.startswith("git@"):
-                        check_warn(f"Project '{slug}': repo_url set but no git credentials",
-                                   f"Set GIT_USERNAME + GIT_TOKEN or GIT_SSH_KEY via: "
-                                   f"intellect members projects env set {slug} GIT_TOKEN <token>")
-
-        # Summary
-        if projects:
-            archived = len(all_projects) - len(projects)
-            detail = f"{len(all_projects)} total"
-            if archived:
-                detail += f", {archived} archived"
-            check_ok(f"{len(projects)} active project(s)", detail)
-        else:
-            check_info("No active projects",
-                       "Run: intellect members projects bootstrap")
-
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
 
 
 def _check_onepassword_health(issues: list[str]) -> None:
@@ -592,7 +525,9 @@ def _check_oauth_health(issues: list[str]) -> None:
                 else:
                     check_info(f"Provider '{pid}': git auth disabled (store_git_token=false)")
 
-    check_info("OAuth login: intellect members login --oauth <provider>")
+    check_info(
+        "Member login removed; manage model-provider OAuth with: intellect oauth list",
+    )
 
     th_cfg = oauth_cfg.get("trusted_header") or {}
     if th_cfg.get("enabled"):
@@ -613,7 +548,10 @@ def _check_oauth_health(issues: list[str]) -> None:
 
 
 def _check_session_isolation_health(issues: list[str]) -> None:
-    """Warn when multi-user mode has unowned (NULL member_id) sessions."""
+    """Warn when multi-user mode has unowned (NULL member_id) sessions.
+
+    Multi-user is removed; stale yaml only emits a short note.
+    """
     from intellect_cli.config import load_config
 
     cfg = load_config()
@@ -623,46 +561,18 @@ def _check_session_isolation_health(issues: list[str]) -> None:
     if not isinstance(members, dict) or not members.get("enabled"):
         return
 
-    _section("Session isolation")
-
-    iso = members.get("session_isolation") or {}
-    legacy = iso.get("legacy_null_visibility", "strict")
-    check_ok(f"legacy_null_visibility: {legacy!r}")
-
     try:
-        from intellect_cli.members_sessions import count_null_member_sessions
-
-        counts = count_null_member_sessions()
-    except Exception as exc:
-        check_warn("Session ownership audit skipped", str(exc))
+        from agent.membership import is_members_enabled
+    except Exception:
         return
 
-    if counts["json_null"] or counts["db_null"]:
-        _fail_and_issue(
-            f"Unowned sessions: {counts['json_null']} JSON, {counts['db_null']} session-store row(s)",
-            "(member_id NULL — hidden from members under strict mode)",
-            "Run: intellect members sessions audit-null && "
-            "intellect members sessions migrate-ownership --member-id <id>",
-            issues,
+    _section("Session isolation")
+    if not is_members_enabled(cfg):
+        check_info(
+            "members.enabled in yaml is ignored (multi-user removed in v0.5.0)",
+            "Clear members.enabled; session isolation is profile-scoped via INTELLECT_HOME",
         )
-    else:
-        check_ok("No NULL member_id sessions in JSON or session store")
-
-
-def _check_project_env_perms(slug: str) -> None:
-    """Check that a project's .env file has 0600 permissions."""
-    import stat
-    from agent.project_env import _env_path
-    env_path = _env_path(slug)
-    if not env_path.exists():
-        return  # No .env file — nothing to check
-    try:
-        mode = stat.S_IMODE(env_path.stat().st_mode)
-        if mode != 0o600:
-            check_warn(f"Project '{slug}': .env permissions are {oct(mode)} (should be 600)",
-                       f"Fix: chmod 600 {env_path}")
-    except OSError:
-        pass
+        return
 
 
 _APIKEY_PROVIDERS_CACHE: list | None = None

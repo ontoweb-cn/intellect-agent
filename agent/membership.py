@@ -1,5 +1,10 @@
 """Single-user stub — replaced multi-user membership system."""
 
+from __future__ import annotations
+
+from typing import Any
+
+
 # Feature flags (always off)
 def is_members_enabled(config=None):
     return False
@@ -118,6 +123,30 @@ def ensure_member_dirs(*a, **kw):
     return d
 
 
+_LISTISH_METHODS = frozenset({
+    "list_members",
+    "list_projects",
+    "list_teams",
+    "list_pending_registrations",
+    "list_member_project_memberships",
+    "list_project_tokens",
+    "list_wiki_contributions",
+    "get_project_members",
+    "get_team_members",
+})
+
+
+def _stub_method(name: str):
+    """Return fail-closed callables: lists → [], membership checks → False, else None."""
+    if name in _LISTISH_METHODS or name.startswith("list_"):
+        return lambda *a, **kw: []
+    if name.startswith("is_") or name.startswith("has_") or name.startswith("verify_"):
+        return lambda *a, **kw: False
+    if name.startswith("count_"):
+        return lambda *a, **kw: 0
+    return lambda *a, **kw: None
+
+
 class MembershipDB:
     def __init__(self, *a, **kw):
         pass
@@ -125,8 +154,8 @@ class MembershipDB:
     def close(self):
         pass
 
-    def __getattr__(self, name):
-        return lambda *a, **kw: None
+    def __getattr__(self, name: str) -> Any:
+        return _stub_method(name)
 
     conn = None
     _conn = None

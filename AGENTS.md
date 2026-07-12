@@ -117,6 +117,10 @@ or `agent/team_soul.py` file shims — live OAuth persistence is
 
 **CLI:** `intellect members` prints removed + exits 1. Use `intellect oauth` for providers; use profiles for isolation.
 
+**Gateway honesty:** slash commands gated on `members.*` also require
+`is_members_enabled()` (always false here), so stale yaml cannot resurface
+`/team` `/login` etc. Doctor warns that yaml member/project flags are ignored.
+
 ## File Dependency Chain
 
 ```
