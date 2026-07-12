@@ -1,22 +1,39 @@
-"""Anchored workspace I/O — strict containment + leaf O_NOFOLLOW (W7 S1–S3).
+"""Anchored workspace I/O — strict containment + dir-fd last-hop hardening (W7/W13-O).
 
-Policy:
+Policy (W7 S3):
 - Final canonical path MUST be under root (strict relative_to).
 - In-root symlinks are allowed (resolve lands inside root).
 - Escape via in-tree symlink → outside target is REJECTED.
 - Open uses post-resolve path with O_NOFOLLOW as a leaf TOCTOU guard.
-- Delete/rename helpers centralize the same containment checks (W12c).
-- Not TOCTOU-closed; not a full directory-fd openat walk (residual → W13).
+
+Hardening depth (W13-O Tier table — source of truth):
+
+| Tier | Depth | Ops | TOCTOU claim | Status |
+|------|-------|-----|--------------|--------|
+| W7/W12c | resolve + leaf O_NOFOLLOW | read/write/open; unlink/rmtree/rename | not closed | done |
+| A | no bare Path.open/read_bytes on serve hot paths | _serve_file_bytes, HTML preview, read_file_content | leaf-only | W13-O |
+| B | workspace dir-fd + openat/unlinkat/renameat/mkdirat (last hop) | unlink, rename, mkdir, create/open | last-hop closed (POSIX); parent-chain residual | W13-O |
+| C | component-chain openat(O_NOFOLLOW) | list_dir, folder-zip walk, rmtree | tree closed | follow-up tip |
+
+Windows residual: when O_DIRECTORY / dir_fd / O_NOFOLLOW are unavailable, fall back
+to resolve + containment checks + Path operations (degraded; same W7 semantics).
+
+Keep out (not this module): agent ``tools/path_security.py``, ``tools/file_tools.py``,
+Rust sandbox, attachment-inbox whole-tree openat.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import stat
+import sys
 from pathlib import Path
 from typing import BinaryIO, TextIO, Union
 
 _OPEN_FLAGS_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_SUPPORTS_DIR_FD = sys.platform != "win32" and hasattr(os, "O_DIRECTORY")
 
 
 def resolve_under_root(root: Path, requested: str) -> Path:
@@ -32,6 +49,30 @@ def resolve_under_root(root: Path, requested: str) -> Path:
     return resolved
 
 
+def open_resolved_nofollow(path: Path, flags: int, mode: int = 0o666) -> int:
+    """Open an already-resolved path with leaf ``O_NOFOLLOW`` when available."""
+    if not _OPEN_FLAGS_NOFOLLOW and path.is_symlink():
+        raise ValueError(f"Symlink open blocked: {path}")
+    open_flags = flags | _OPEN_FLAGS_NOFOLLOW
+    try:
+        return os.open(path, open_flags, mode)
+    except OSError as exc:
+        if path.is_symlink():
+            raise ValueError(f"Symlink open blocked: {path}") from exc
+        raise
+
+
+def read_bytes_resolved(path: Path) -> bytes:
+    """Read bytes from a resolved path via leaf ``O_NOFOLLOW`` open."""
+    fd = open_resolved_nofollow(path, os.O_RDONLY)
+    with os.fdopen(fd, "rb") as fh:
+        return fh.read()
+
+
+def _open_parent_dir_fd(parent: Path) -> int:
+    return os.open(str(parent), os.O_RDONLY | _O_DIRECTORY)
+
+
 def open_under_root(
     root: Path,
     requested: str,
@@ -40,16 +81,7 @@ def open_under_root(
 ) -> int:
     """``os.open`` under root with leaf ``O_NOFOLLOW`` when available."""
     path = resolve_under_root(root, requested)
-    if not _OPEN_FLAGS_NOFOLLOW and path.is_symlink():
-        # Windows / platforms without O_NOFOLLOW: refuse unresolved symlink leaf.
-        raise ValueError(f"Symlink open blocked: {requested}")
-    open_flags = flags | _OPEN_FLAGS_NOFOLLOW
-    try:
-        return os.open(path, open_flags, mode)
-    except OSError as exc:
-        if path.is_symlink():
-            raise ValueError(f"Symlink open blocked: {requested}") from exc
-        raise
+    return open_resolved_nofollow(path, flags, mode)
 
 
 def read_bytes_under_root(root: Path, requested: str) -> bytes:
@@ -144,6 +176,31 @@ def _reject_workspace_root(root: Path, requested: str, resolved: Path) -> None:
         raise ValueError("Refusing to operate on workspace root")
 
 
+def mkdir_under_root(root: Path, requested: str, *, parents: bool = False) -> Path:
+    """Create a directory under root; multi-segment paths accepted.
+
+    POSIX: parent chain may use Path mkdir (residual TOCTOU); final hop uses
+    ``mkdirat`` via dir-fd when available.
+    """
+    path = resolve_under_root(root, requested)
+    _reject_workspace_root(root, requested, path)
+    if path.exists():
+        raise FileExistsError(f"Path already exists: {requested}")
+    if parents:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path = resolve_under_root(root, requested)
+        _reject_workspace_root(root, requested, path)
+    if _SUPPORTS_DIR_FD:
+        parent_fd = _open_parent_dir_fd(path.parent)
+        try:
+            os.mkdir(path.name, mode=0o777, dir_fd=parent_fd)
+        finally:
+            os.close(parent_fd)
+    else:
+        path.mkdir(parents=False)
+    return path
+
+
 def unlink_under_root(root: Path, requested: str) -> Path:
     """Unlink a non-directory leaf under root (in-root symlinks OK).
 
@@ -152,13 +209,24 @@ def unlink_under_root(root: Path, requested: str) -> Path:
     """
     path = resolve_under_root(root, requested)
     _reject_workspace_root(root, requested, path)
-    # Best-effort re-check after resolve (not TOCTOU-closed).
     path = resolve_under_root(root, requested)
     _reject_workspace_root(root, requested, path)
     if not path.exists():
         raise FileNotFoundError(f"File not found: {requested}")
+    if _SUPPORTS_DIR_FD:
+        parent_fd = _open_parent_dir_fd(path.parent)
+        try:
+            try:
+                st = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                raise FileNotFoundError(f"File not found: {requested}") from None
+            if stat.S_ISDIR(st.st_mode):
+                raise ValueError("Set recursive=true to delete directories")
+            os.unlink(path.name, dir_fd=parent_fd)
+        finally:
+            os.close(parent_fd)
+        return path
     if path.is_symlink():
-        # Unlink the link itself; never follow into the target tree.
         path.unlink()
         return path
     if path.is_dir():
@@ -171,7 +239,7 @@ def rmtree_under_root(root: Path, requested: str) -> Path:
     """Recursively delete a directory under root.
 
     Re-resolves before ``shutil.rmtree`` as a best-effort containment check.
-    Not TOCTOU-closed.
+    Not TOCTOU-closed (Tier C follow-up).
     """
     path = resolve_under_root(root, requested)
     _reject_workspace_root(root, requested, path)
@@ -194,7 +262,6 @@ def rename_under_root(root: Path, src_rel: str, dest_rel: str) -> Path:
     _reject_workspace_root(root, src_rel, source)
     dest = resolve_under_root(root, dest_rel)
     _reject_workspace_root(root, dest_rel, dest)
-    # Best-effort re-resolve before rename.
     source = resolve_under_root(root, src_rel)
     dest = resolve_under_root(root, dest_rel)
     _reject_workspace_root(root, src_rel, source)
@@ -203,5 +270,20 @@ def rename_under_root(root: Path, src_rel: str, dest_rel: str) -> Path:
         raise FileNotFoundError(f"File not found: {src_rel}")
     if dest.exists():
         raise ValueError(f'A file named "{Path(dest_rel).name}" already exists')
+    if _SUPPORTS_DIR_FD:
+        src_fd = _open_parent_dir_fd(source.parent)
+        dst_fd = src_fd if source.parent == dest.parent else _open_parent_dir_fd(dest.parent)
+        try:
+            os.rename(
+                source.name,
+                dest.name,
+                src_dir_fd=src_fd,
+                dst_dir_fd=dst_fd,
+            )
+        finally:
+            os.close(src_fd)
+            if dst_fd is not src_fd:
+                os.close(dst_fd)
+        return dest
     source.rename(dest)
     return dest
