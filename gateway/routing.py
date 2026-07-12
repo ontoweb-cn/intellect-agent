@@ -34,10 +34,3 @@ COMMAND_ROUTES: list[tuple[str, str, dict]] = [
     ("oauth", "_handle_oauth_command", {}),
     ("bind", "_handle_bind_command", {}),
 ]
-
-# Multi-user commands removed in v0.5.0 — route to deprecation notice
-DEPRECATED_COMMANDS: frozenset = frozenset({
-    "login", "logout",
-    "team", "teams", "join", "join-project", "join_project",
-    "project", "projects",
-})

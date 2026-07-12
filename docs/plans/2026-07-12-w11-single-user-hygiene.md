@@ -104,7 +104,7 @@
 - [x] 1.1 删除 CommandDef：`team`, `teams`, `project`, `projects`, `join`, `join-project`, `login`, `logout`  
 - [x] 1.2 **保留** `gateway/run.py` 内联 deprecation「removed in v0.5.0」  
 - [x] 1.3 测试：`resolve_command` 上述名为 None；∉ `GATEWAY_KNOWN_COMMANDS` / `gateway_help_lines()`；yaml `members.enabled: true` 仍不出现  
-- [ ] 1.4 （可选）删未接入 dispatch 的 `_handle_team_*` / `_handle_member_login_*`  
+- [x] 1.4 （可选）删未接入 dispatch 的 `_handle_team_*` / `_handle_member_login_*`  
 
 ### Task 2 — Wiki contributions 卸载
 
@@ -134,21 +134,25 @@
 - [x] 4.1 隐藏/折叠 multi-user login（OAuth/password/redeem tabs）与 register 流程  
 - [x] 4.2 i18n `members_*` → removed / 指向 `intellect oauth` 或 provider OAuth UI  
 - [x] 4.3 确认 `member-auth.js` `fetchMembersStatus` 仍工作  
-- [ ] 4.4 （可选）删未加载的 `members.js` / `teams.js` / `projects.js`  
+- [x] 4.4 （可选）删未加载的 `members.js` / `teams.js` / `projects.js`  
 - [x] 4.5 **勿动** `oauth-providers.js`（S4）  
 
 ### Task 5 — 回归
 
 - [x] 5.1 `pytest`：membership stub / members thin / members security + 本拍新测  
 - [ ] 5.2 Sweep PR merge  
-- [ ] 5.3 可选 M1–M4  
+- [x] 5.3 可选 M1–M4  
 
 ### 手工验收（W11-qa）
 
-- [ ] **M1** 无显式 key：Profiles 隐藏；CLI create 拒  
-- [ ] **M2** 显式 `true` + 重启：Profiles 可用  
-- [ ] **M3**（可选）`-p A` vs `-p B` `/journey list`  
-- [ ] **M4** 管理开时 WebUI Journey 按 cookie profile  
+- [x] **M1** 无显式 key：Profiles 隐藏；CLI create 拒  
+- [x] **M2** 显式 `true` + 重启：Profiles 可用  
+- [x] **M3**（可选）`-p A` vs `-p B` `/journey list`  
+- [x] **M4** 管理开时 WebUI Journey 按 cookie profile  
+
+> 2026-07-12 验收：M1–M4 用自动化等价检查通过（DEFAULT/CLI create、explicit true、
+> process-home A≠B、management off→default / on→TLS cookie profile）；并跑
+> `test_profile_gate` + `test_journey_profile_home`。
 
 ---
 
