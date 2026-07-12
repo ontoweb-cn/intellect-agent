@@ -8240,6 +8240,13 @@ def handle_post(handler, parsed) -> bool:
 
         saved = save_settings(body)
         saved.pop("password_hash", None)  # never expose hash to client
+        if "update_channel" in body:
+            try:
+                from api.updates import invalidate_update_cache
+
+                invalidate_update_cache()
+            except Exception:
+                pass
 
         auth_enabled_after = is_auth_enabled()
         auth_just_enabled = bool(

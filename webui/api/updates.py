@@ -29,7 +29,13 @@ try:
 except ImportError:
     _AGENT_DIR = None
 
-_update_cache = {'updates': None, 'webui': None, 'agent': None, 'checked_at': 0}
+_update_cache = {
+    'updates': None,
+    'webui': None,
+    'agent': None,
+    'checked_at': 0,
+    'channel': None,
+}
 _SUMMARY_CACHE_MAX = 16
 _summary_cache: OrderedDict = OrderedDict()
 _cache_lock = threading.Lock()
@@ -248,6 +254,67 @@ def _split_remote_ref(ref):
     return remote, branch
 
 
+def get_update_channel() -> str:
+    """Return configured update channel (stable|experimental)."""
+    try:
+        from api.config import load_settings
+
+        ch = str((load_settings() or {}).get("update_channel") or "stable").strip().lower()
+    except Exception:
+        ch = "stable"
+    return ch if ch in ("stable", "experimental") else "stable"
+
+
+def experimental_compare_ref() -> str:
+    """Remote ref for experimental channel (env override or origin/experimental)."""
+    return (os.environ.get("INTELLECT_WEBUI_EXPERIMENTAL_REF") or "").strip() or "origin/experimental"
+
+
+def invalidate_update_cache() -> None:
+    """Force the next check_for_updates to re-fetch (U12)."""
+    with _cache_lock:
+        _update_cache["checked_at"] = 0
+        _update_cache["updates"] = None
+        _update_cache["webui"] = None
+        _update_cache["agent"] = None
+        _update_cache["channel"] = None
+
+
+def _remote_ref_exists(path, ref: str) -> bool:
+    _, ok = _run_git(["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], path)
+    return bool(ok)
+
+
+def resolve_compare_ref(path, channel: str | None = None) -> str:
+    """Unified compare ref for check/apply/force (U4).
+
+    experimental: configured remote ref only (U8 — never release tags).
+    Raises ValueError when experimental ref is missing (U3).
+    """
+    ch = channel or get_update_channel()
+    if ch == "experimental":
+        ref = experimental_compare_ref()
+        if not _remote_ref_exists(path, ref):
+            raise ValueError(
+                f"Experimental update track not found ({ref}). "
+                "Create the remote branch or set INTELLECT_WEBUI_EXPERIMENTAL_REF."
+            )
+        return ref
+    return _select_apply_compare_ref(path)
+
+
+def _ensure_checkout_for_experimental(path, compare_ref: str) -> tuple[bool, str]:
+    """Checkout/create local branch tracking experimental remote ref (U9)."""
+    remote, branch = _split_remote_ref(compare_ref)
+    if remote is None:
+        return True, ""
+    out, ok = _run_git(["checkout", "-B", branch, compare_ref], path)
+    if not ok:
+        return False, _sanitize_git_diagnostic(out or "checkout failed")
+    _run_git(["branch", f"--set-upstream-to={compare_ref}", branch], path)
+    return True, ""
+
+
 def _detect_default_branch(path):
     """Detect the remote default branch (master or main)."""
     out, ok = _run_git(['symbolic-ref', 'refs/remotes/origin/HEAD'], path)
@@ -418,7 +485,7 @@ def _check_repo_release(path, name):
     }
 
 
-def _check_repo_branch(path, name, *, fetch=True):
+def _check_repo_branch(path, name, *, fetch=True, compare_ref=None):
     """Fallback: check if a git repo is behind its upstream branch."""
 
     # Fetch latest from origin (network call, cached by TTL)
@@ -431,13 +498,15 @@ def _check_repo_branch(path, name, *, fetch=True):
     # This avoids false "N updates behind" alerts when the user is on a feature
     # branch and master/main has moved forward with unrelated commits.
     # If no upstream is set (brand-new local branch), fall back to the default branch.
-    upstream, ok = _run_git(['rev-parse', '--abbrev-ref', '@{upstream}'], path)
-    if ok and upstream:
-        # upstream is like "origin/feat/foo" — use it directly in rev-list
-        compare_ref = upstream
-    else:
-        branch = _detect_default_branch(path)
-        compare_ref = f'origin/{branch}'
+    # W8: callers may pass an explicit compare_ref (experimental channel).
+    if not compare_ref:
+        upstream, ok = _run_git(['rev-parse', '--abbrev-ref', '@{upstream}'], path)
+        if ok and upstream:
+            # upstream is like "origin/feat/foo" — use it directly in rev-list
+            compare_ref = upstream
+        else:
+            branch = _detect_default_branch(path)
+            compare_ref = f'origin/{branch}'
 
     # Count commits behind
     out, ok = _run_git(['rev-list', '--count', f'HEAD..{compare_ref}'], path)
@@ -489,10 +558,12 @@ def _check_repo_branch(path, name, *, fetch=True):
     }
 
 
-def _check_repo(path, name):
+def _check_repo(path, name, *, channel=None):
     """Check if a git repo is behind its latest release. Returns dict or None."""
     if path is None or not (path / '.git').exists():
         return None
+
+    channel = channel or get_update_channel()
 
     # Fetch tags first so update prompts track published releases, not every
     # development commit that lands on master/main after the latest release.
@@ -505,6 +576,17 @@ def _check_repo(path, name):
     # See #2756.
     fetch_out, fetch_ok = _run_git(['fetch', 'origin', '--tags', '--force'], path, timeout=15)
     if not fetch_ok:
+        if channel == 'experimental':
+            message = 'fetch failed'
+            if fetch_out:
+                message = f'{message}: {_sanitize_git_diagnostic(fetch_out)}'
+            return {
+                'name': name,
+                'behind': None,
+                'error': message,
+                'stale_check': True,
+                'channel': 'experimental',
+            }
         release_info = _check_repo_release(path, name)
         message = 'fetch failed'
         if fetch_out:
@@ -513,19 +595,44 @@ def _check_repo(path, name):
             release_info = dict(release_info)
             release_info['error'] = message
             release_info['stale_check'] = True
+            release_info['channel'] = 'stable'
             return release_info
         return {
             'name': name,
             'behind': None,
             'error': message,
             'stale_check': True,
+            'channel': 'stable',
         }
+
+    # U8: experimental never uses the release-tag track.
+    if channel == 'experimental':
+        try:
+            compare_ref = resolve_compare_ref(path, 'experimental')
+        except ValueError as exc:
+            return {
+                'name': name,
+                'behind': None,
+                'error': str(exc),
+                'channel': 'experimental',
+            }
+        info = _check_repo_branch(path, name, fetch=False, compare_ref=compare_ref)
+        if isinstance(info, dict):
+            info = dict(info)
+            info['channel'] = 'experimental'
+        return info
 
     release_info = _check_repo_release(path, name)
     if release_info is not None:
+        release_info = dict(release_info)
+        release_info['channel'] = 'stable'
         return release_info
 
-    return _check_repo_branch(path, name, fetch=False)
+    info = _check_repo_branch(path, name, fetch=False)
+    if isinstance(info, dict):
+        info = dict(info)
+        info['channel'] = 'stable'
+    return info
 
 
 def check_for_updates(force=False, *, include_agent=True):
@@ -540,10 +647,12 @@ def check_for_updates(force=False, *, include_agent=True):
     are populated as aliases so existing consumers continue to work.
     """
     global _check_in_progress
+    channel = get_update_channel()
     with _cache_lock:
         if (
             not force
             and time.time() - _update_cache['checked_at'] < CACHE_TTL
+            and _update_cache.get('channel') == channel
         ):
             return dict(_update_cache)
         if _check_in_progress:
@@ -553,14 +662,16 @@ def check_for_updates(force=False, *, include_agent=True):
     try:
         # Single unified check — REPO_ROOT.parent is the project root
         # (webui/ lives inside the agent repo, .git is one level up).
-        info = _check_repo(REPO_ROOT.parent, 'intellect-agent')
+        info = _check_repo(REPO_ROOT.parent, 'intellect-agent', channel=channel)
 
         with _cache_lock:
             _update_cache['updates'] = info
             _update_cache['webui'] = info    # backward compat
             _update_cache['agent'] = info    # backward compat
             _update_cache['checked_at'] = time.time()
-            return dict(_update_cache)
+            _update_cache['channel'] = channel
+            out = dict(_update_cache)
+            return out
     finally:
         _check_in_progress = False
 
@@ -1072,7 +1183,16 @@ def apply_force_update(target: str) -> dict:
                 'message': 'Could not reach the remote repository. Check your connection.',
             }
 
-        compare_ref = _select_apply_compare_ref(path)
+        try:
+            channel = get_update_channel()
+            compare_ref = resolve_compare_ref(path, channel)
+        except ValueError as exc:
+            return {'ok': False, 'message': str(exc)}
+
+        if channel == 'experimental':
+            switched, err = _ensure_checkout_for_experimental(path, compare_ref)
+            if not switched:
+                return {'ok': False, 'message': f'Could not switch to experimental track: {err}'}
 
         # Discard local modifications then reset to remote HEAD
         _run_git(['checkout', '.'], path)
@@ -1152,7 +1272,16 @@ def _apply_update_inner(target):
             ),
         }
 
-    compare_ref = _select_apply_compare_ref(path)
+    try:
+        channel = get_update_channel()
+        compare_ref = resolve_compare_ref(path, channel)
+    except ValueError as exc:
+        return {'ok': False, 'message': str(exc)}
+
+    if channel == 'experimental':
+        switched, err = _ensure_checkout_for_experimental(path, compare_ref)
+        if not switched:
+            return {'ok': False, 'message': f'Could not switch to experimental track: {err}'}
 
     # Check for dirty working tree (ignore untracked files — git stash
     # doesn't include them, so stashing on '??' alone leaves nothing to pop)

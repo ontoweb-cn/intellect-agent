@@ -1,8 +1,8 @@
 # W8 细化稿 — P2 收口：Update Channel（stable / experimental）
 
 > **日期**：2026-07-12  
-> **状态**：**REVISED** — 待签字（已吸收计划评审 Request changes）  
-> **策略**：先技术评审，再按 **0→1** 串行  
+> **状态**：**EXECUTED** — 功能落地于 `feat/w8-update-channel`（U1–U13）  
+> **策略**：先技术评审，再按 **0→1** 串行（计划已 Approve；本拍实现收口）  
 > **前置**：W0–W7 已合入 main（parity UX + P2 安全 @ `e91d30c`）  
 > **父文档**：[`2026-07-11-webui-hermes-parity-analysis.md`](./2026-07-11-webui-hermes-parity-analysis.md) §P2 #9  
 > **探索**：[`explore`](f02826c1-a91d-4730-85b7-329111e4003e)  
@@ -141,3 +141,4 @@ _resolve_compare_ref(path, channel)
 |------|------|
 | 2026-07-12 | DRAFT v1 |
 | 2026-07-12 | REVISED — U8–U13；修正 check/apply 未统一；R2/缺轨/Apply 切分支 |
+| 2026-07-12 | EXECUTED — `update_channel` + `resolve_compare_ref` + Settings UI + tests |
