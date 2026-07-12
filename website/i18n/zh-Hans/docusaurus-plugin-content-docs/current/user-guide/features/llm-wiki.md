@@ -1,14 +1,14 @@
 ---
 sidebar_position: 6
 title: "LLM Wiki 与 Vault"
-description: "按作用域划分的 Markdown 知识库、Intellect WebUI 中的 Quartz Vault 浏览，以及 Global 维基贡献审核"
+description: "按作用域划分的 Markdown 知识库，以及 Intellect WebUI 中的 Quartz Vault 浏览"
 ---
 
 # LLM Wiki 与 Vault
 
 Intellect 内置 **[llm-wiki](/user-guide/skills/bundled/research/research-llm-wiki)** 技能，用于构建和维护 **Karpathy 风格的 LLM Wiki**——由 Agent 持续编译的互联 Markdown 文件目录。与一次性 RAG 检索不同，维基会**复利增长**：交叉引用、矛盾标注与综合结论跨会话保留。
 
-在 **Intellect WebUI** 中，左侧 Rail 的 **Wiki** 标签可按作用域将每份维基浏览为 **Quartz Vault** 站点，触发构建、初始化缺失目录，管理员还可审核成员提交到组织级 Global 维基的内容。
+在 **Intellect WebUI** 中，左侧 Rail 的 **Wiki** 标签可将维基浏览为 **Quartz Vault** 站点，触发构建并初始化缺失目录。
 
 :::tip 技能页 vs 功能页
 本页说明**产品行为**（路径、WebUI、权限、Vault）。Agent 完整指令见 bundled 技能参考：[Llm Wiki](/user-guide/skills/bundled/research/research-llm-wiki)。
@@ -105,29 +105,11 @@ Agent 每次维基会话开始前会读取 `SCHEMA.md`、`index.md` 及 `log.md`
 
 **Insights** 标签另有精简 **LLM Wiki** 状态卡（`GET /api/wiki/status`）：条目数、最后写入者、红绿灯可用性、启用/禁用（`POST /api/wiki/toggle`）及快速重建——不在 Wiki 面板时同样有用。
 
-## Global 维基 — 成员工作流
+## Global 维基（单用户）
 
-成员要求 Agent **写入组织/Global 维基**时：
+Intellect Agent **永久单用户**。不再提供多用户贡献审核队列（`/api/wiki/contributions` 未挂载）。
 
-1. Agent **不能**写入 `wiki/global/`（`read_only` 硬拦）。
-2. 内容改存成员**个人维基**。
-3. Agent 说明 Global 仅管理员可写，并提议**提交审核**。
-
-将个人页面提升到 Global：
-
-1. 确认要提交的相对路径（如 `entities/topic.md`）。勿提交 `SCHEMA.md`、`index.md`、`log.md`。
-2. 通过 `POST /api/wiki/contributions` 提交 `page_paths`、`title`、`summary` 及可选 `note`。
-3. 在 Wiki 面板跟踪状态（**组织（Global）** 行对管理员显示待审数量；成员可见自己的提交）。
-
-**管理员（`owner` / `admin`）：**
-
-- 列表：`GET /api/wiki/contributions`
-- 预览 diff：`GET /api/wiki/contributions/{id}/diff`
-- 批准（合并到 Global）：`POST /api/wiki/contributions/{id}/review`，`action: approve`
-- 驳回或要求修改：同端点，`rejected` / `changes_requested`
-- 撤回（成员）：`POST /api/wiki/contributions/{id}/withdraw`
-
-合并后的页面写入 `wiki/global/`，并在 Global `log.md` 记录来源。合并后会触发 Global Vault 重建。
+请写入个人 / profile 维基（`~/wiki` 或 `skills.config.wiki.path`）。旧版多用户布局下的 `wiki/global/` 除非你在磁盘上手动维护，否则不会使用。
 
 ## 配置
 
@@ -171,12 +153,12 @@ intellect vault tick --json       # 机器可读输出
 
 可附加 `/llm-wiki` 或在会话设置中启用该技能以显式加载。
 
-配合 [团队、项目与成员](teams-and-members.md)，在 WebUI（或 gateway 头）中固定团队/项目上下文，确保写入目标维基正确。
+隔离仅靠 **profile**（`INTELLECT_HOME` / `intellect -p`）；多用户 members/teams 不可用。
 
 ## 相关文档
 
 - [Llm Wiki 技能参考](/user-guide/skills/bundled/research/research-llm-wiki) — Agent 可见的完整 SKILL.md
-- [团队、项目与成员](teams-and-members.md) — 多用户作用域与 RBAC
+- [Profiles](../profiles.md) — 按实例隔离
 - [RAG 提供商](rag-providers.md) — 文档语料检索（互补）
 - [Obsidian 技能](/user-guide/skills/bundled/note-taking/note-taking-obsidian) — 可选 vault 同步模式
 
@@ -186,9 +168,6 @@ intellect vault tick --json       # 机器可读输出
 |------|----------|
 | Wiki 面板显示 **Missing** | 作用域目录未初始化 — 使用 **Initialize Wiki** 或让 Agent 创建 |
 | 构建后 Vault iframe 空白 | 构建失败 — 查看状态徽章；Rebuild；确认 `vault.routing.enabled` |
-| Agent 写入个人而非 Global | 非管理员成员的预期行为 — 走贡献审核或联系管理员 |
-| 无法写入团队/项目维基 | 非该团队/项目成员，或会话未固定到对应作用域 |
 | Vault 内容陈旧 | 触发 Rebuild 或等待 `intellect vault tick` / 定时 cron |
-| `.env` 中 `WIKI_PATH` 被忽略 | 多成员自动作用域覆盖 profile `.env`；查看 Agent 日志中的注入作用域 |
 
 配置变更后运行 `intellect doctor`。WebUI 运行时可从状态 API 查看维基与 Vault 健康情况。

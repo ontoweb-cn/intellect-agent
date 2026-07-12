@@ -50,13 +50,8 @@ PUBLIC_PATHS = frozenset({
     '/login', '/register', '/health', '/favicon.ico', '/sw.js',
     '/api/auth/login', '/api/auth/logout', '/api/auth/status', '/api/auth/login-context',
     '/api/auth/register-context',
+    # Keep status public so member-auth.js can detect enabled:false without a cookie.
     '/api/members/status',
-    '/api/members/oauth/providers',
-    '/api/members/register/check',
-    '/api/members/register/pending',
-    '/api/members/register/local',
-    '/api/members/register',
-    '/api/members/login',
     '/manifest.json', '/manifest.webmanifest',
     '/session/manifest.json', '/session/manifest.webmanifest',
 })
@@ -500,23 +495,15 @@ def _multi_user_members_enabled() -> bool:
 
 
 def _members_flag_from_config() -> bool:
-    """Best-effort read of members.enabled without requiring agent imports."""
+    """True only when membership is actually enabled (never via raw yaml alone).
+
+    Permanent single-user: ``is_members_enabled()`` is always False here, so
+    stale ``members.enabled: true`` in yaml must not surface multi-user chrome.
+    """
     try:
-        if _multi_user_members_enabled():
-            return True
+        return _multi_user_members_enabled()
     except Exception:
         logger.debug('non-critical operation failed', exc_info=True)
-    try:
-        from api.config import _get_config_path
-        import yaml
-
-        path = _get_config_path()
-        if not path.exists():
-            return False
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        members = raw.get("members") if isinstance(raw.get("members"), dict) else {}
-        return bool(members.get("enabled"))
-    except Exception:
         return False
 
 
@@ -615,13 +602,8 @@ def check_auth(handler, parsed) -> bool:
     # Public paths don't require auth
     if parsed.path in PUBLIC_PATHS or parsed.path.startswith('/static/') or parsed.path.startswith('/session/static/'):
         return True
-    if parsed.path.startswith('/api/members/oauth/'):
-        return True
-    if parsed.path == '/api/members/redeem':
-        return True
-    if parsed.path.startswith('/api/members/register') or parsed.path == '/api/members/login':
-        return True
-    # Multi-user: member OAuth / redeem session satisfies the WebUI gate (production).
+    # Multi-user member OAuth / register / login / redeem public carve-outs removed (W11).
+    # Multi-user: member session satisfies the WebUI gate (unreachable while stubbed).
     if _multi_user_members_enabled():
         try:
             from api.members import resolve_member_id

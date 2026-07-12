@@ -146,7 +146,7 @@ WebUI 作为独立后台进程运行，由 `intellect webui` CLI 命令管理。
 | `approval_events.py` | 审批事件处理 |
 | `usage.py` | 用量查询 |
 | `user_profile.py` | 用户 Profile |
-| `wiki_contributions_handlers.py` | Wiki 贡献处理 |
+| `wiki_contributions_handlers.py` | *(removed W11 — contribution HTTP unmounted)* |
 
 ## 前端架构
 

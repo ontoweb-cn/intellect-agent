@@ -80,27 +80,13 @@ echo "scope=$WIKI_SCOPE id=$WIKI_SCOPE_ID mode=$WIKI_WRITE_MODE"
 作用域路径、WebUI Wiki 面板、Vault 构建与 Global 贡献审核见功能页：[LLM Wiki 与 Vault](/user-guide/features/llm-wiki)。
 :::
 
-## Global 维基 — 成员改投（关键）
+## Global 维基（单用户）
 
-用户要求**写入全局/组织维基**且 `WIKI_WRITE_MODE=read_only` 时：
+Intellect Agent 永久单用户。**没有**贡献审核 API（`POST /api/wiki/contributions` 未挂载）。
 
-1. **不要**写入 `wiki/global/`。
-2. **改投**成员个人维基（`WIKI_SCOPE=member`）。
-3. 告知用户：Global 仅管理员可写；内容已存入**个人维基**。
-4. 提议**提交管理员审核**（见下文）。
-5. 在个人 `log.md` 追加：`promotion_requested | global | <page paths>`。
+请直接写入当前维基（`WIKI_PATH`，通常为 `~/wiki` 或 profile 维基）。不要承诺管理员审核队列或组织级贡献流程。
 
-`WIKI_WRITE_MODE=read_write` 且作用域为 global 时，管理员可正常写入。
-
-## 提交个人维基页面供 Global 审核
-
-存入个人维基后，若用户需要组织级可见性：
-
-1. 确认要提交的相对路径（如 `entities/topic.md`）。
-2. 调用 `POST /api/wiki/contributions`，传入 `page_paths`、`title`、`summary`、`note`。
-3. 告知用户管理员将审核；可在 Wiki 面板查看状态。
-
-勿提交 `SCHEMA.md`、`index.md`、`log.md`。
+`WIKI_WRITE_MODE=read_write` 时正常写入；若为 `read_only`，告知用户维基只读，并建议调整配置或改用可写路径。
 
 ## 架构：三层结构
 

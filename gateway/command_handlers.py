@@ -1782,38 +1782,6 @@ class GatewayCommandHandlers:
         return t("gateway.set_home.success", name=chat_name, chat_id=chat_id)
 
 
-    async def _handle_member_login_command(self, event: MessageEvent) -> str:
-        return "Multi-user features (login/logout) were removed in v0.5.0."
-
-
-    async def _handle_member_logout_command(self, event: MessageEvent) -> str:
-        return "Multi-user features (login/logout) were removed in v0.5.0."
-
-
-    async def _handle_team_command(self, event: MessageEvent) -> str:
-        return "Multi-user features (teams) were removed in v0.5.0."
-
-
-    async def _handle_teams_list_command(self, event: MessageEvent) -> str:
-        return "Multi-user features (teams) were removed in v0.5.0."
-
-
-    async def _handle_team_join_command(self, event: MessageEvent) -> str:
-        return "Multi-user features (teams) were removed in v0.5.0."
-
-
-    async def _handle_project_join_command(self, event: MessageEvent) -> str:
-        return "Multi-user features (projects) were removed in v0.5.0."
-
-
-    async def _handle_project_command(self, event: MessageEvent) -> str:
-        return "Multi-user features (projects) were removed in v0.5.0."
-
-
-    async def _handle_projects_list_command(self, event: MessageEvent) -> str:
-        return "Multi-user features (projects) were removed in v0.5.0."
-
-
     async def _handle_voice_command(self, event: MessageEvent) -> str:
         """Handle /voice [on|off|tts|channel|leave|status] command."""
         args = event.get_command_args().strip().lower()

@@ -2905,7 +2905,7 @@ _LOGIN_LOCALE = {
         "register_password_mismatch": "Passwords do not match",
         "register_fill_required": "Complete all required fields",
         "register_oauth_prepare_failed": "Could not start OAuth registration",
-        "register_closed": "Registration is not available in this mode.",
+        "register_closed": "Multi-user registration was removed. Use the WebUI password login, or configure provider OAuth via intellect oauth.",
     },
     "fr": {
         "lang": "fr-FR",
@@ -2996,7 +2996,7 @@ _LOGIN_LOCALE = {
         "register_password_mismatch": "\u4e24\u6b21\u5bc6\u7801\u4e0d\u4e00\u81f4",
         "register_fill_required": "\u8bf7\u586b\u5199\u6240\u6709\u5fc5\u586b\u9879",
         "register_oauth_prepare_failed": "\u65e0\u6cd5\u5f00\u59cb OAuth \u6ce8\u518c",
-        "register_closed": "\u5f53\u524d\u6a21\u5f0f\u4e0d\u652f\u6301\u6ce8\u518c\u3002",
+        "register_closed": "\u591a\u7528\u6237\u6ce8\u518c\u5df2\u79fb\u9664\u3002\u8bf7\u4f7f\u7528 WebUI \u5bc6\u7801\u767b\u5f55\uff0c\u6216\u901a\u8fc7 intellect oauth \u914d\u7f6e\u63d0\u4f9b\u5546 OAuth\u3002",
     },
     "zh-Hant": {
         "lang": "zh-TW",
@@ -3900,7 +3900,6 @@ def _build_wiki_global_catalog_entry(handler, actor: str | None, members_on: boo
 
     entry = _build_wiki_catalog_entry("global", None, "Global Wiki")
     can_write = False
-    pending = 0
     if actor and members_on:
         try:
             from agent.membership import Action
@@ -3909,8 +3908,6 @@ def _build_wiki_global_catalog_entry(handler, actor: str | None, members_on: boo
             store = _store()
             try:
                 can_write = _member_authorize(store, actor, Action.ADMIN)
-                if can_write:
-                    pending = store.count_pending_wiki_contributions()
             finally:
                 store.close()
         except Exception:
@@ -3918,7 +3915,8 @@ def _build_wiki_global_catalog_entry(handler, actor: str | None, members_on: boo
     entry["can_read"] = True
     entry["can_write"] = can_write
     entry["write_mode"] = wiki_write_mode("global", "admin" if can_write else "member")
-    entry["pending_contributions"] = pending
+    # Wiki contribution review HTTP removed (W11); badge always zero.
+    entry["pending_contributions"] = 0
     entry["visible"] = bool(members_on)
     entry["path_hint"] = str(global_wiki_dir(_llm_wiki_active_intellect_home()))
     return entry
@@ -4602,38 +4600,6 @@ def _handle_wiki_init(handler, body) -> bool:
         "files_created": result.files_created,
         "build": build_payload,
     })
-
-
-def _handle_wiki_contributions_get(handler, parsed) -> bool:
-    parts = [p for p in parsed.path.split("/") if p]
-    if len(parts) < 4:
-        return j(handler, {"error": "not found"}, status=404)
-    contrib_id = parts[3]
-    from api.wiki_contributions_handlers import (
-        handle_wiki_contribution_diff,
-        handle_wiki_contribution_get,
-    )
-    if len(parts) == 5 and parts[4] == "diff":
-        return handle_wiki_contribution_diff(handler, parsed, contrib_id)
-    if len(parts) == 4:
-        return handle_wiki_contribution_get(handler, parsed, contrib_id)
-    return j(handler, {"error": "not found"}, status=404)
-
-
-def _handle_wiki_contributions_post(handler, parsed, body) -> bool:
-    parts = [p for p in parsed.path.split("/") if p]
-    if len(parts) < 4:
-        return j(handler, {"error": "not found"}, status=404)
-    contrib_id = parts[3]
-    from api.wiki_contributions_handlers import (
-        handle_wiki_contribution_review,
-        handle_wiki_contribution_withdraw,
-    )
-    if len(parts) == 5 and parts[4] == "review":
-        return handle_wiki_contribution_review(handler, parsed, contrib_id, body)
-    if len(parts) == 5 and parts[4] == "withdraw":
-        return handle_wiki_contribution_withdraw(handler, parsed, contrib_id)
-    return j(handler, {"error": "not found"}, status=404)
 
 
 def _handle_vault_config_get(handler, parsed) -> bool:
@@ -5874,11 +5840,6 @@ def handle_get(handler, parsed) -> bool:
         return _handle_llm_wiki_status(handler, parsed)
     if parsed.path == "/api/wiki/catalog":
         return _handle_wiki_catalog(handler, parsed)
-    if parsed.path == "/api/wiki/contributions":
-        from api.wiki_contributions_handlers import handle_wiki_contributions_list
-        return handle_wiki_contributions_list(handler, parsed)
-    if parsed.path.startswith("/api/wiki/contributions/"):
-        return _handle_wiki_contributions_get(handler, parsed)
     if parsed.path == "/api/wiki/build/status":
         return _handle_vault_build_status(handler, parsed)
     if _api_path_normalized(parsed.path) == "/api/vault/config":
@@ -8061,11 +8022,6 @@ def handle_post(handler, parsed) -> bool:
         return _handle_wiki_init(handler, body)
     if parsed.path == "/api/wiki/toggle":
         return _handle_wiki_toggle(handler, body)
-    if parsed.path == "/api/wiki/contributions":
-        from api.wiki_contributions_handlers import handle_wiki_contributions_create
-        return handle_wiki_contributions_create(handler, parsed, body)
-    if parsed.path.startswith("/api/wiki/contributions/"):
-        return _handle_wiki_contributions_post(handler, parsed, body)
     if _api_path_normalized(parsed.path) == "/api/vault/config":
         return _handle_vault_config_save(handler, body)
     if parsed.path == "/api/vault/tick":

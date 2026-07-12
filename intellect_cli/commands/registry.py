@@ -126,31 +126,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("resume", "Resume a previously-named session", "Session",
                args_hint="[name]"),
 
-    # Multi-user / multi-team / multi-project
-    CommandDef("team", "Set active team for this session", "Teams & Projects",
-               gateway_only=True, args_hint="<team_id>",
-               gateway_config_gate="members.teams.enabled"),
-    CommandDef("teams", "List your active and pending teams", "Teams & Projects",
-               gateway_only=True,
-               gateway_config_gate="members.teams.enabled"),
-    CommandDef("project", "Set active project for this session", "Teams & Projects",
-               gateway_only=True, args_hint="<project_id>",
-               gateway_config_gate="members.projects.enabled"),
-    CommandDef("projects", "List your active and pending projects", "Teams & Projects",
-               gateway_only=True,
-               gateway_config_gate="members.projects.enabled"),
-    CommandDef("join", "Request to join a team", "Teams & Projects",
-               gateway_only=True, args_hint="<team_id>",
-               gateway_config_gate="members.teams.enabled"),
-    CommandDef("join-project", "Request to join a project", "Teams & Projects",
-               aliases=("join_project",), gateway_only=True, args_hint="<project_id>",
-               gateway_config_gate="members.projects.enabled"),
-    CommandDef("login", "Log in as a member for this session", "Session",
-               gateway_only=True, args_hint="<login>",
-               gateway_config_gate="members.enabled"),
-    CommandDef("logout", "Log out current member for this session", "Session",
-               gateway_only=True,
-               gateway_config_gate="members.enabled"),
+    # Multi-user slash CommandDefs removed (W11). gateway/run.py still replies
+    # "removed in v0.5.0" if /login /team /project etc. are typed.
 
     # Session
     CommandDef("sessions", "Browse and resume previous sessions", "Session"),
