@@ -30,6 +30,8 @@ As of 2026-06, **`profiles.management_enabled` defaults to `false`**. While disa
 
 To re-enable management: set `profiles.management_enabled: true` in `config.yaml` and restart the gateway/WebUI.
 
+**Gateway `/journey`:** always uses the process profile home (`intellect -p` / how the gateway was started), not messaging-session profile switching.
+
 **Restore inventory (all files and functions):** `docs/plans/2026-06-profile-management-disabled-restore.md` in the intellect-agent repo (WebUI index: `intellect-webui/docs/plans/profile-management-disabled-restore.md`).
 :::
 

@@ -3738,7 +3738,12 @@ class GatewayCommandHandlers:
         return status
 
     async def _handle_journey_command(self, event: "MessageEvent") -> str:
-        """Gateway /journey — list-only (HP-401f)."""
+        """Gateway /journey — list-only (HP-401f).
+
+        Scope is the process INTELLECT_HOME (``intellect -p <profile>`` / gateway
+        start home). Do not switch home from messaging session metadata.
+        Member-scoped journey is deferred (membership stubs removed; W10.1).
+        """
         from agent.learning_graph import build_learning_graph
         from agent.learning_graph_render import format_date
 
