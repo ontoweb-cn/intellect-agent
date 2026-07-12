@@ -459,12 +459,57 @@ def _cancelled_turn_hint(agent_name: str | None = None) -> str:
     return f'The run was cancelled by the user before {name} finished. No provider failure occurred.'
 
 
-def _classify_provider_error(err_str: str, exc=None, *, silent_failure: bool = False) -> dict:
+# Multi-word overflow phrases aligned with agent/gateway classifiers (C2).
+# Never use bare "exceeded" / "token" / "limit" — those false-positive on rate limits.
+_CONTEXT_OVERFLOW_PHRASES = (
+    'context length',
+    'context size',
+    'context window',
+    'maximum context',
+    'token limit',
+    'too many tokens',
+    'reduce the length',
+    'exceeds the limit',
+    'request entity too large',
+    'prompt is too long',
+    'payload too large',
+    'input is too long',
+)
+
+
+def _suggested_focus_from_user_text(msg_text: str, *, limit: int = 500) -> str:
+    """Prefill focus_topic from the WebUI turn's user text (C5)."""
+    text = str(msg_text or '').strip()
+    if len(text) > limit:
+        return text[:limit]
+    return text
+
+
+def _classify_provider_error(
+    err_str: str,
+    exc=None,
+    *,
+    silent_failure: bool = False,
+    compression_exhausted: bool = False,
+) -> dict:
     """Classify provider/agent failure text for WebUI apperror UX.
+
+    Precedence (C2): compression_exhausted flag → cancelled/interrupted →
+    quota → rate_limit → auth / model_not_found → narrow overflow phrases →
+    silent no_response → generic error.
 
     Keep this string-based until intellect-agent exposes stable structured
     provider error classes for Codex OAuth plan limits.
     """
+    if compression_exhausted:
+        return {
+            'label': 'Context compression exhausted',
+            'type': 'compression_exhausted',
+            'hint': (
+                'Automatic context compression could not free enough space. '
+                'Try a focused compress on the current topic, or start a new session.'
+            ),
+        }
     err_str = str(err_str or '')
     _err_lower = err_str.lower()
     _exc_name = type(exc).__name__ if exc is not None else ''
@@ -553,6 +598,15 @@ def _classify_provider_error(err_str: str, exc=None, *, silent_failure: bool = F
             'type': 'model_not_found',
             'hint': 'The selected model was not found by the provider. Check the model ID in Settings or run `intellect model` to verify it exists for your provider.',
         }
+    if any(p in _err_lower for p in _CONTEXT_OVERFLOW_PHRASES):
+        return {
+            'label': 'Context too large',
+            'type': 'compression_exhausted',
+            'hint': (
+                'The conversation context is too large for the model. '
+                'Try a focused compress on the current topic, or start a new session.'
+            ),
+        }
     if silent_failure:
         return {
             'label': 'No response from provider',
@@ -562,6 +616,88 @@ def _classify_provider_error(err_str: str, exc=None, *, silent_failure: bool = F
             'hint': 'The provider returned no content and no error. This often means a usage/rate limit was hit silently. Check provider status, switch providers via `intellect model`, or try again in a moment.',
         }
     return {'label': 'Error', 'type': 'error', 'hint': ''}
+
+
+def _compression_exhausted_apperror_payload(
+    *,
+    msg_text: str,
+    err_str: str = '',
+    session_id: str | None = None,
+    old_session_id: str | None = None,
+    continuation_session_id: str | None = None,
+) -> dict:
+    """Build the locked W9 apperror payload (C4/C5)."""
+    classification = _classify_provider_error(
+        err_str,
+        compression_exhausted=True,
+    )
+    payload = _provider_error_payload(
+        err_str or f'{classification["label"]}.',
+        classification['type'],
+        classification['hint'],
+    )
+    payload['compression_exhausted'] = True
+    payload['suggested_focus'] = _suggested_focus_from_user_text(msg_text)
+    if session_id:
+        payload['session_id'] = session_id
+    if old_session_id:
+        payload['old_session_id'] = old_session_id
+    if continuation_session_id:
+        payload['continuation_session_id'] = continuation_session_id
+        payload['new_session_id'] = continuation_session_id
+    return payload
+
+
+def _rotate_webui_session_if_agent_compressed(
+    s,
+    agent,
+    session_id: str,
+    *,
+    agent_lock,
+    member_id=None,
+    resolved_profile_name: str | None = None,
+) -> tuple[str, str | None, bool]:
+    """Migrate WebUI session when agent.session_id rotated after compress (C7b).
+
+    Returns ``(origin_sid, continuation_sid_or_None, rotated)``.
+    """
+    origin_sid = session_id
+    agent_sid = getattr(agent, 'session_id', None)
+    if not agent_sid or agent_sid == session_id:
+        return origin_sid, None, False
+
+    new_sid = agent_sid
+    s.session_id = new_sid
+    if not getattr(s, 'profile', None) and resolved_profile_name:
+        s.profile = resolved_profile_name
+        logger.info(
+            "Stamped profile=%r on continuation session %s after compression",
+            resolved_profile_name,
+            new_sid,
+        )
+    _preserve_pre_compression_snapshot(s, origin_sid)
+    s.parent_session_id = origin_sid
+    with LOCK:
+        if origin_sid in SESSIONS:
+            SESSIONS[new_sid] = SESSIONS.pop(origin_sid)
+    with SESSION_AGENT_LOCKS_LOCK:
+        SESSION_AGENT_LOCKS[new_sid] = agent_lock
+        SESSION_AGENT_LOCKS.pop(origin_sid, None)
+    from api.config import (
+        SESSION_AGENT_CACHE,
+        SESSION_AGENT_CACHE_LOCK,
+        session_agent_cache_key,
+    )
+    cache_mid = member_id or getattr(s, "member_id", None)
+    old_key = session_agent_cache_key(origin_sid, cache_mid)
+    new_key = session_agent_cache_key(new_sid, cache_mid)
+    with SESSION_AGENT_CACHE_LOCK:
+        cached_entry = SESSION_AGENT_CACHE.pop(old_key, None)
+        if cached_entry is None:
+            cached_entry = SESSION_AGENT_CACHE.pop(origin_sid, None)
+        if cached_entry:
+            SESSION_AGENT_CACHE[new_key] = cached_entry
+    return origin_sid, new_sid, True
 
 
 def _provider_error_payload(message: str, err_type: str, hint: str = '') -> dict:
@@ -5059,6 +5195,69 @@ def _run_agent_streaming(
                                 if isinstance(_part, dict) and isinstance(_part.get('text'), str):
                                     _part['text'] = _strip_xml_tool_calls(_part['text'])
 
+                # ── W9: session migration then compression_exhausted (C7a/C7b) ──
+                # Rotate before any terminal apperror so Focused compress hits the
+                # post-compression session id. Emit exhaustion regardless of
+                # _token_sent / partial assistant text.
+                (
+                    _compression_origin_session_id,
+                    _compression_continuation_session_id,
+                    _compressed,
+                ) = _rotate_webui_session_if_agent_compressed(
+                    s,
+                    agent,
+                    session_id,
+                    agent_lock=_agent_lock,
+                    member_id=member_id,
+                    resolved_profile_name=_resolved_profile_name,
+                )
+                if _compressed and _compression_continuation_session_id:
+                    session_id = _compression_continuation_session_id
+
+                _compression_exhausted = bool(result.get('compression_exhausted'))
+                if _compression_exhausted:
+                    _exh_err = str(
+                        getattr(agent, '_last_error', None) or result.get('error') or ''
+                    )
+                    _error_payload = _compression_exhausted_apperror_payload(
+                        msg_text=msg_text,
+                        err_str=_exh_err,
+                        session_id=s.session_id,
+                        old_session_id=(
+                            _compression_origin_session_id
+                            if _compression_continuation_session_id
+                            else None
+                        ),
+                        continuation_session_id=_compression_continuation_session_id,
+                    )
+                    put('apperror', _error_payload)
+                    _materialize_pending_user_turn_before_error(s)
+                    s.active_stream_id = None
+                    s.pending_user_message = None
+                    s.pending_attachments = []
+                    s.pending_started_at = None
+                    _exh_label = 'Context compression exhausted'
+                    _exh_hint = _error_payload.get('hint') or ''
+                    _error_message = {
+                        'role': 'assistant',
+                        'content': (
+                            f'**{_exh_label}:** '
+                            f'{_error_payload.get("message") or _exh_label}\n\n*{_exh_hint}*'
+                        ),
+                        'timestamp': int(time.time()),
+                        '_error': True,
+                        'error_type': 'compression_exhausted',
+                        'suggested_focus': _error_payload.get('suggested_focus') or '',
+                    }
+                    if _error_payload.get('details'):
+                        _error_message['provider_details'] = _error_payload['details']
+                    s.messages.append(_error_message)
+                    try:
+                        s.save()
+                    except Exception:
+                        logger.debug('non-critical operation failed', exc_info=True)
+                    return
+
                 # ── Detect silent agent failure (no assistant reply produced) ──
                 # When the agent catches an auth/network error internally it may return
                 # an empty final_response without raising — the stream would end with
@@ -5275,96 +5474,9 @@ def _run_agent_streaming(
                         return  # apperror already closes the stream on the client side
 
                 # ── Handle context compression side effects ──
-                # If compression fired inside run_conversation, the agent may have
-                # rotated its session_id. Detect and fix the mismatch so the WebUI
-                # continues writing to the correct session file.
-                #
-                # Lock migration: when session_id rotates, we alias the new ID to
-                # the *same* Lock object under SESSION_AGENT_LOCKS so that
-                # subsequent callers using _get_session_agent_lock(new_sid) get the
-                # same Lock the streaming thread is already holding.  We then pop
-                # the old-id entry to prevent a leak.  This is safe because we
-                # already hold _agent_lock (the Lock object itself), so the
-                # reference stays alive even after the dict entry is removed.
-                # Concurrent readers that already looked up the old ID will still
-                # see the same Lock object until they release it.
-                _compression_origin_session_id = session_id
-                _compression_continuation_session_id = None
-                _agent_sid = getattr(agent, 'session_id', None)
-                _compressed = False
-                if _agent_sid and _agent_sid != session_id:
-                    old_sid = session_id
-                    new_sid = _agent_sid
-                    _compression_origin_session_id = old_sid
-                    _compression_continuation_session_id = new_sid
-                    s.session_id = new_sid
-                    # Carry profile identity across the compression boundary.
-                    # Without this, s.profile stays None on the continuation
-                    # session. On the next request, _run_agent_streaming calls
-                    # get_intellect_home_for_profile(getattr(s, 'profile', None))
-                    # which falls back to the default profile's INTELLECT_HOME.
-                    # Memory writes then land in the wrong profile's MEMORY.md.
-                    # Stamping here also ensures s.save() persists a non-null
-                    # profile field to the continuation session's JSON file,
-                    # covering the case where the session is later evicted from
-                    # SESSIONS and reconstructed from disk via Session.load().
-                    if not s.profile and _resolved_profile_name:
-                        s.profile = _resolved_profile_name
-                        logger.info(
-                            "Stamped profile=%r on continuation session %s after compression",
-                            _resolved_profile_name, new_sid,
-                        )
-                    # Preserve the original session file so the full pre-compression
-                    # history survives even when summarisation fails.  The previous
-                    # implementation renamed old_sid.json → new_sid.json, which
-                    # destroyed the only persistent copy of the uncompressed history
-                    # before the new (possibly summary-only) session had been saved.
-                    # If the LLM summariser also failed, the user was left with zero
-                    # recoverable messages.  (#2223)
-                    # ---
-                    # Archive the old session: write its current state to disk so
-                    # the full conversation history survives even when context
-                    # compression removes messages from the model's context.  Skip
-                    # the write when the file already contains up-to-date data
-                    # (i.e. it was just saved by a checkpoint).
-                    _preserve_pre_compression_snapshot(s, old_sid)
-                    # Always link the continuation session to its immediate predecessor
-                    # (the preserved snapshot).  This OVERRIDES any prior
-                    # parent_session_id because the new continuation IS the next link
-                    # in the chain: traversal walks new → old → old.parent → ... root.
-                    # Stage-353 Opus SHOULD-FIX: previous `if not s.parent_session_id`
-                    # guard skipped this stamp on fork-of-fork compressions, so a
-                    # subsequent traversal from the new continuation would jump
-                    # over the just-preserved snapshot back to the original fork
-                    # parent, losing access to the recoverable history in old_sid.json.
-                    s.parent_session_id = old_sid
-                    with LOCK:
-                        if old_sid in SESSIONS:
-                            SESSIONS[new_sid] = SESSIONS.pop(old_sid)
-                    # Migrate the per-session lock: alias new_sid to the held
-                    # _agent_lock reference directly (not via old_sid lookup),
-                    # then remove the old_sid entry to prevent a leak.
-                    with SESSION_AGENT_LOCKS_LOCK:
-                        SESSION_AGENT_LOCKS[new_sid] = _agent_lock
-                        SESSION_AGENT_LOCKS.pop(old_sid, None)
-                    # Migrate cached agent to the new session ID so the turn
-                    # count survives context compression.
-                    from api.config import (
-                        SESSION_AGENT_CACHE,
-                        SESSION_AGENT_CACHE_LOCK,
-                        session_agent_cache_key,
-                    )
-                    _cache_mid = member_id or getattr(s, "member_id", None)
-                    _old_key = session_agent_cache_key(old_sid, _cache_mid)
-                    _new_key = session_agent_cache_key(new_sid, _cache_mid)
-                    with SESSION_AGENT_CACHE_LOCK:
-                        _cached_entry = SESSION_AGENT_CACHE.pop(_old_key, None)
-                        if _cached_entry is None:
-                            _cached_entry = SESSION_AGENT_CACHE.pop(old_sid, None)
-                        if _cached_entry:
-                            SESSION_AGENT_CACHE[_new_key] = _cached_entry
-                    _compressed = True
-                # Also detect compression via the result dict or compressor state
+                # Session rotation (if any) already ran above for C7b. Here we
+                # stamp anchors and emit the success `compressed` event when
+                # compression succeeded without exhaustion.
                 if not _compressed:
                     _compressor = getattr(agent, 'context_compressor', None)
                     if _compressor and getattr(_compressor, 'compression_count', 0) > _pre_compression_count:

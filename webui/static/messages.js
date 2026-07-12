@@ -2247,11 +2247,45 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           const isCancelled=d.type==='cancelled';
           const isInterrupted=d.type==='interrupted';
           const isNoResponse=d.type==='no_response'||d.type==='silent_failure';
+          const isCompressionExhausted=d.type==='compression_exhausted'||d.compression_exhausted===true;
+          // W9 C7b: adopt post-rotation session id before CTA compress.
+          let effectiveSid=activeSid;
+          const contSid=d.continuation_session_id||d.new_session_id||d.session_id;
+          if(contSid&&S.session&&contSid!==S.session.session_id){
+            S.session.session_id=contSid;
+            effectiveSid=contSid;
+            try{if(typeof setSavedWebuiSessionId==='function')setSavedWebuiSessionId(contSid);else localStorage.setItem('intellect-webui-session',contSid);}catch(_){}
+            if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(contSid);
+          }
+          if(isCompressionExhausted){
+            const suggested=(d.suggested_focus||'').trim();
+            const label=(typeof t==='function'?t('compression_exhausted_label'):'Context compression exhausted');
+            const hint=d.hint||(typeof t==='function'?t('compression_exhausted_hint'):'Try a focused compress, or start a new session.');
+            S.messages.push({
+              role:'assistant',
+              content:`**${label}:** ${d.message||label}\n\n*${hint}*`,
+              _error:true,
+              error_type:'compression_exhausted',
+              suggested_focus:suggested,
+            });
+            if(typeof setCompressionUi==='function'){
+              setCompressionUi({
+                sessionId:effectiveSid,
+                phase:'exhausted',
+                focusTopic:suggested,
+                suggestedFocus:suggested,
+                commandText:suggested?`/compress ${suggested}`:'/compress',
+                errorText:d.message||label,
+                hint,
+              });
+            }
+          }else{
           const label=isCancelled?'Task cancelled':isInterrupted?'Response interrupted':isQuotaExhausted?'Out of credits':isRateLimit?'Rate limit reached':isAuthMismatch?(typeof t==='function'?t('provider_mismatch_label'):'Provider mismatch'):isModelNotFound?(typeof t==='function'?t('model_not_found_label'):'Model not found'):isNoResponse?'No response from provider':'Error';
           const hint=d.hint?`\n\n*${d.hint}*`:'';
           const details=d.details?String(d.details).replace(/```/g,'`\u200b``'):'';
           const detailsLabel=isCancelled?'Cancellation details':isInterrupted?'Interruption details':undefined;
           S.messages.push({role:'assistant',content:`**${label}:** ${d.message}${hint}`,provider_details:details,provider_details_label:detailsLabel});
+          }
         }catch(_){
           S.messages.push({role:'assistant',content:'**Error:** An error occurred. Check server logs.'});
         }
