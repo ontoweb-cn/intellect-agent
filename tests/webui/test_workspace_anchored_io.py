@@ -338,6 +338,77 @@ def test_collect_skips_escape_symlink_file(tmp_path: Path):
     assert [a for _, a in files] == ["ok.txt"]
 
 
+def test_collect_skips_dir_symlink_in_root(tmp_path: Path):
+    """Directory symlinks must not be emitted or descended (os.walk parity)."""
+    from api.workspace_io import collect_files_under_root
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    keep = root / "keep"
+    keep.mkdir()
+    (keep / "secret.txt").write_text("keep-me", encoding="utf-8")
+    d = root / "d"
+    d.mkdir()
+    (d / "ok.txt").write_text("ok", encoding="utf-8")
+    link = d / "to_keep"
+    try:
+        link.symlink_to(keep)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    files, _total, hit = collect_files_under_root(root, "d", max_bytes=10_000, max_files=100)
+    assert hit is None
+    assert [a for _, a in files] == ["ok.txt"]
+
+
+def test_collect_skips_escape_dir_symlink(tmp_path: Path):
+    from api.workspace_io import collect_files_under_root
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("leak", encoding="utf-8")
+    d = root / "d"
+    d.mkdir()
+    (d / "ok.txt").write_text("ok", encoding="utf-8")
+    link = d / "evil"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    files, _total, hit = collect_files_under_root(root, "d", max_bytes=10_000, max_files=100)
+    assert hit is None
+    assert [a for _, a in files] == ["ok.txt"]
+
+
+def test_folder_download_collect_fail_closed(tmp_path: Path):
+    from api.routes import _folder_download_collect
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    outside = tmp_path / "other"
+    outside.mkdir()
+    (outside / "x.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="escapes workspace"):
+        _folder_download_collect(outside, root.resolve(), max_bytes=10_000, max_files=100)
+
+
+def test_zip_writestr_nofollow_rejects_escape(tmp_path: Path):
+    import io
+    import zipfile
+
+    from api.routes import _zip_writestr_nofollow
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("leak", encoding="utf-8")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w") as zf:
+        with pytest.raises(ValueError, match="escapes workspace"):
+            _zip_writestr_nofollow(zf, root, outside, "secret.txt")
+
+
 def test_list_names_under_root(tmp_path: Path):
     from api.workspace_io import list_names_under_root
     from api.workspace import list_dir

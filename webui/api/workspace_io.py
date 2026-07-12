@@ -10,10 +10,15 @@ Hardening depth (Tier table — source of truth):
 
 | Tier | Depth | Ops | TOCTOU claim | Status |
 |------|-------|-----|--------------|--------|
-| W7/W12c | resolve + leaf O_NOFOLLOW | read/write/open; unlink/rmtree/rename | not closed | done |
+| W7/W12c | resolve + leaf O_NOFOLLOW | read/write/open; unlink/rename (leaf) | not closed | done |
 | A | no bare Path.open/read_bytes on serve hot paths | _serve_file_bytes, HTML preview, read_file_content; open/create still path+O_NOFOLLOW | leaf-only | W13-O |
 | B | workspace dir-fd + unlinkat/renameat/mkdirat (last hop) | unlink, rename, mkdir | last-hop closed (POSIX); parent-chain residual | W13-O |
-| C | root→start 分量链 openat + dir-fd scandir/unlinkat（不跟随目录符号链接） | list_dir, folder-zip walk, rmtree_under_root | POSIX：三 ops 在 root→start 分量链 + 树内 walk 上 closed；非「全仓 TOCTOU-closed」 | W14-A done |
+| C | root→start 分量链 openat + dir-fd scandir/unlinkat（不跟随目录符号链接） | list names; folder-zip collect; rmtree_under_root | POSIX：这三 ops 的 enumerate/walk/delete 在分量链+树内 walk 上 closed；非「全仓 TOCTOU-closed」；list 元数据与 zip **写出**见下方 residual | W14-A done |
+
+Residuals (explicit):
+- ``list_dir`` metadata/sort still uses Path on each name after dir-fd name enum.
+- Folder-zip **collect** skips directory symlinks and escape file symlinks; **write**
+  should re-resolve + leaf ``O_NOFOLLOW`` read (see routes) — not ``ZipFile.write`` bare path.
 
 Windows residual: when O_DIRECTORY / dir_fd / O_NOFOLLOW are unavailable, fall back
 to resolve + containment checks + Path/`os.walk`/`shutil.rmtree` (degraded).
@@ -168,6 +173,13 @@ def _walk_files_via_dir_fd(
             except OSError:
                 continue
             if stat.S_ISLNK(st.st_mode):
+                # Match os.walk(followlinks=False): directory symlinks are neither
+                # descended into nor emitted as archive members.
+                try:
+                    if entry.is_dir(follow_symlinks=True):
+                        continue
+                except OSError:
+                    continue
                 fp = start / Path(arc)
                 try:
                     if not fp.resolve().is_relative_to(workspace_root):
@@ -227,8 +239,10 @@ def collect_files_under_root(
     """Collect files under ``requested`` for zip download (Tier C).
 
     Returns ``(files, total_bytes, limit_hit)`` where each file is
-    ``(filesystem_path, archive_name)``. Does not follow directory symlinks.
-    File symlinks are included only when their resolved target stays under root.
+    ``(filesystem_path, archive_name)``. Does not follow or emit directory
+    symlinks. File symlinks are included only when their resolved target stays
+    under root. Callers must still open members with leaf ``O_NOFOLLOW`` when
+    writing the archive (collect alone is not write-TOCTOU-closed).
     """
     workspace_root = Path(root).resolve()
     files: list[tuple[Path, str]] = []

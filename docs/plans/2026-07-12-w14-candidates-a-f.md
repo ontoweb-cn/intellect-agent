@@ -144,7 +144,7 @@
 |----|-----|
 | F1 | W13 计划头 **DONE @ feeba35**；Task 1–5 按合并实况勾选；5.4 Tier C = 跳过→W14-A |
 | F2 | parity：W13 DONE；刷新 §2 过时行（restart/openat）；**标 compression_exhausted = W9 DONE**（勿当 P3 未做） |
-| F3 | Canvas（Markdown Canvas，非 Star Map）：**API-only stub** — 文档标明；不接线 `canvas.js`；不删 `/api/canvas`（本拍） |
+| F3 | Canvas（Markdown Canvas，非 Star Map）：**API-only stub** — `ARCHITECTURE.md` + parity 标明；不接线 `canvas.js`；不删 `/api/canvas`（本拍） |
 | F4 | 可选：刷新 **plans backlog 索引**（勿称 “backlog canvas”） |
 
 **估时：** 0.5–1d。**可先合。**
@@ -182,9 +182,11 @@ F（文档）──可先合──┐
 
 ### Task F — 文档（默认必做）
 
-- [ ] F1–F4 见 §2  
+- [x] F1–F3（F4 可选未做）  
 
-### Task A / B / C / D / E — 见 §2 DoD（选定后勾）
+### Task A — openat Tier C
+
+- [x] A1–A5（含评审收口：fail-closed zip rel、list_dir 不静默降级、dir symlink 不进 zip、写出 leaf O_NOFOLLOW）  
 
 ---
 

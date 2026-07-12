@@ -10246,22 +10246,41 @@ def _folder_download_collect(target: Path, workspace_root: Path,
                               max_bytes: int, max_files: int):
     """Walk target dir; return (files, total_bytes, hit_limit_reason_or_None).
 
-    files is a list of (filesystem_path, archive_name) tuples ready for
-    ZipFile.write. Symlinks escaping the workspace are skipped.
+    files is a list of (filesystem_path, archive_name) tuples. Escape symlinks
+    and directory symlinks are skipped. Fail-closed if ``target`` is not under
+    ``workspace_root`` (raises ValueError — do not fall back to whole-workspace).
     Delegates to Tier C ``collect_files_under_root`` (dir-fd walk on POSIX).
     """
     from api.workspace_io import collect_files_under_root
 
     try:
         rel = str(target.relative_to(workspace_root))
-    except ValueError:
-        # target should already be under workspace_root via safe_resolve
-        rel = "."
-    if rel in (".", ""):
-        requested = "."
-    else:
-        requested = rel
+    except ValueError as exc:
+        raise ValueError(
+            f"folder download target escapes workspace: {target}"
+        ) from exc
+    requested = "." if rel in (".", "") else rel
     return collect_files_under_root(workspace_root, requested, max_bytes, max_files)
+
+
+def _zip_writestr_nofollow(zf, workspace_root: Path, fp: Path, arcname: str) -> None:
+    """Add one zip member via resolve-under-root + leaf O_NOFOLLOW read.
+
+    Avoids bare ``ZipFile.write(path)`` which can follow a raced symlink.
+    """
+    import os
+
+    from api.workspace_io import open_resolved_nofollow
+
+    root_r = Path(workspace_root).resolve()
+    resolved = Path(fp).resolve()
+    try:
+        resolved.relative_to(root_r)
+    except ValueError as exc:
+        raise ValueError(f"zip member escapes workspace: {fp}") from exc
+    fd = open_resolved_nofollow(resolved, os.O_RDONLY)
+    with os.fdopen(fd, "rb") as fh:
+        zf.writestr(arcname, fh.read())
 
 
 def _handle_folder_download(handler, parsed):
@@ -10299,9 +10318,12 @@ def _handle_folder_download(handler, parsed):
     max_bytes = _folder_zip_max_bytes()
     max_files = _folder_zip_max_files()
 
-    files, total_bytes, limit_hit = _folder_download_collect(
-        target, workspace_root, max_bytes, max_files
-    )
+    try:
+        files, total_bytes, limit_hit = _folder_download_collect(
+            target, workspace_root, max_bytes, max_files
+        )
+    except ValueError:
+        return bad(handler, "invalid path", 400)
     if limit_hit == "max_files":
         return j(handler, {
             "error": "too many files",
@@ -10338,9 +10360,9 @@ def _handle_folder_download(handler, parsed):
     with zipfile.ZipFile(handler.wfile, mode="w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
         for fp, arcname in files:
             try:
-                zf.write(fp, arcname=arcname)
+                _zip_writestr_nofollow(zf, workspace_root, Path(fp), arcname)
                 written += 1
-            except (OSError, PermissionError) as e:
+            except (OSError, PermissionError, ValueError) as e:
                 logger.warning("folder-download: skipping %s: %s", fp, e)
     logger.info(
         "folder-download: streamed %d/%d files (~%d bytes) from %s",

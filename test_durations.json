@@ -39,5 +39,5 @@
   "tests/webui/test_session_sse_resume.py": 2.658,
   "tests/webui/test_stream_channel_bounds.py": 3.118,
   "tests/webui/test_w11_single_user_hygiene.py": 2.237,
-  "tests/webui/test_workspace_anchored_io.py": 1.254
+  "tests/webui/test_workspace_anchored_io.py": 1.702
 }

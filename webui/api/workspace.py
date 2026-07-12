@@ -739,9 +739,11 @@ def list_dir(workspace: Path, rel: str='.'):
         })
 
     # Tier C: enumerate names via dir-fd scandir when available.
-    try:
-        from api.workspace_io import list_names_under_root
+    # On POSIX with dir-fd support, fail closed — do not silently degrade to
+    # Path.iterdir() (that would hide openat / containment failures).
+    from api.workspace_io import _SUPPORTS_DIR_FD, list_names_under_root
 
+    if _SUPPORTS_DIR_FD:
         names = list_names_under_root(workspace, rel if rel else ".")
         for name in sorted(
             names,
@@ -755,9 +757,8 @@ def list_dir(workspace: Path, rel: str='.'):
             if len(entries) >= 200:
                 break
         return entries
-    except (OSError, ValueError, FileNotFoundError):
-        entries = []
 
+    # Windows / degraded: Path.iterdir after safe_resolve_ws.
     for item in sorted(target.iterdir(), key=lambda p: (not p.is_symlink(), p.is_file(), p.name.lower())):
         _append_from_path_item(item)
         if len(entries) >= 200:

@@ -70,7 +70,7 @@
 | 6 | Provider / 会话加载竞态 | 部分 generation 注释；需审计 | **中** | P1 |
 | 7 | Gateway 重启（健康 + 更新挂钩） | **W13 DONE** @ `feeba35`：层 C `POST /api/gateway/{start,stop,restart}` + banner/Settings + updates 挂钩；L3(a′) `probe_scope` | **已收口** | — |
 | 8 | Trusted-proxy-first / 更新通道 | 部分 CORS/同源；无 stable/experimental 通道 | **中/低** | P2 |
-| 9 | Workspace anchored I/O | **W7/W12/W13 DONE**：resolve + leaf `O_NOFOLLOW`；Tier A/B dir-fd `openat`；Tier C（`list_dir`/zip/rmtree 树 walk）→ **W14-A** | **部分收口** | W14-A |
+| 9 | Workspace anchored I/O | **W7/W12/W13 DONE** + **W14-A Tier C**：分量链 `openat` + dir-fd walk（`list` names / zip collect / `rmtree`）；zip 写出 leaf `O_NOFOLLOW`；非全仓 TOCTOU-closed | **收口（三 ops）** | W14-A |
 | 10 | Office sidecar / CSV 预览下载 | MIME 有；无 OOXML 提取 sidecar | **低** | P3 / 按需 |
 | 11 | Outline / 三栏布局 | 无 outline.js | **低** | P3 |
 | 12 | compression_exhausted 恢复包 | **W9 DONE** @ `e04cc95`：focused continuation + `compression_anchor` | **已收口** | — |
@@ -127,7 +127,7 @@
 > **W11（2026-07-12）**：永久单用户卫生清扫已合入 `3fba844`（#58/#59）。
 > **W12（2026-07-12）**：DONE @ `348140e` — Journey 本地 memory id（#61）+ delete/rename `workspace_io` 集中（#62）；详见 [`2026-07-12-w12-journey-ideal-and-openat-narrow.md`](./2026-07-12-w12-journey-ideal-and-openat-narrow.md)。  
 > **W13（2026-07-12）**：DONE @ `feeba35`（#64）— Gateway lifecycle RFC→层 C + openat Tier A/B；Tier C 跳过 → W14-A；详见 [`2026-07-12-w13-gateway-lifecycle-and-openat.md`](./2026-07-12-w13-gateway-lifecycle-and-openat.md) + [`gateway-lifecycle-same-host.md`](../webui/rfcs/gateway-lifecycle-same-host.md)。  
-> **W14（2026-07-12）**：**执行中 F+A** — 文档收口 + openat Tier C；详见 [`2026-07-12-w14-candidates-a-f.md`](./2026-07-12-w14-candidates-a-f.md)。
+> **W14（2026-07-12）**：**执行中 F+A** — 文档收口 + openat Tier C；Markdown Canvas = **API-only stub**（`/api/canvas` 保留，不接线 `canvas.js`；≠ Star Map）；详见 [`2026-07-12-w14-candidates-a-f.md`](./2026-07-12-w14-candidates-a-f.md)。
 
 ### P2 — 安全与同机运维
 
