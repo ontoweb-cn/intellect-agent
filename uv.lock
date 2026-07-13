@@ -1973,7 +1973,7 @@ requires-dist = [
     { name = "qrcode", marker = "extra == 'dingtalk'", specifier = "==7.4.2" },
     { name = "qrcode", marker = "extra == 'feishu'", specifier = "==7.4.2" },
     { name = "qrcode", marker = "extra == 'messaging'", specifier = "==7.4.2" },
-    { name = "redis", marker = "extra == 'high-performance'", specifier = ">=5.0.0,<6" },
+    { name = "redis", marker = "extra == 'high-performance'", specifier = ">=5.0.0,<9" },
     { name = "requests", specifier = "==2.34.2" },
     { name = "rich", specifier = "==14.3.3" },
     { name = "ruamel-yaml", specifier = "==0.18.17" },
