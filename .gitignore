@@ -23,3 +23,9 @@ venv/
 *.log
 rustup-init.exe
 webui/quartz/_quartz/
+# 根目录 Docker Compose 的本地 bind mount 只保存容器运行数据，不应进入源码仓库。
+/intellect-config/
+/workspace/
+
+# 离线镜像属于独立交付物，不能随源码一起加入 Git。
+/intellect-agent-*.tar

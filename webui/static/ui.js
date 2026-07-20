@@ -7035,7 +7035,9 @@ function renderMessages(options){
   const msgCount=S.messages.length;
   if(sid!==_messageRenderWindowSid) _resetMessageRenderWindow(sid);
   const renderWindowSize=_currentMessageRenderWindowSize();
-  const hiddenBeforeCount=_messageHiddenBeforeCount();
+  // 缓存命中判断必须使用“本轮渲染开始前”的隐藏消息数快照；函数后半段还会重新计算
+  // 当前窗口的 hiddenBeforeCount，因此这里使用独立变量名，避免同一作用域重复声明使整个脚本解析失败。
+  const cachedHiddenBeforeCountSnapshot=_messageHiddenBeforeCount();
   let cachedRenderSignature=null;
   const hasTransientTranscriptUi=!!(
     (window._compressionUi&&(!window._compressionUi.sessionId||window._compressionUi.sessionId===sid)) ||
@@ -7059,7 +7061,7 @@ function renderMessages(options){
     const virtStart=_messageVirtState&&_messageVirtState.virtualized?_messageVirtState.start:null;
     const virtEnd=_messageVirtState&&_messageVirtState.virtualized?_messageVirtState.end:null;
     const heightGen=_messageHeightGeneration|0;
-    if(cached&&cached.msgCount===msgCount&&cached.renderWindowSize===renderWindowSize&&cached.hiddenBeforeCount===hiddenBeforeCount&&cached.signature===renderSignature&&cached.virtStart===virtStart&&cached.virtEnd===virtEnd&&cached.heightGeneration===heightGen){
+    if(cached&&cached.msgCount===msgCount&&cached.renderWindowSize===renderWindowSize&&cached.hiddenBeforeCount===cachedHiddenBeforeCountSnapshot&&cached.signature===renderSignature&&cached.virtStart===virtStart&&cached.virtEnd===virtEnd&&cached.heightGeneration===heightGen){
       inner.innerHTML=cached.html;
       _sessionHtmlCacheSid=sid;
       _wireMessageWindowLoadEarlierButton();
