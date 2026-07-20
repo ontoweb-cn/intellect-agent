@@ -31,9 +31,11 @@
     try{window.dispatchEvent(new CustomEvent(name,{detail:detail||{}}));}catch(_){}
   }
 
+  // 自定义事件名称必须作为字符串传入；统一使用 intellect: 前缀，便于其他脚本按命名空间监听，
+  // 同时避免未加引号的事件名被 JavaScript 解析器当作非法表达式，导致整个 PWA 启动脚本失效。
   syncMode();
-  window.addEventListener('online',function(){syncMode();dispatch(.intellect:pwa-connection-change',{online:true});});
-  window.addEventListener('offline',function(){syncMode();dispatch(.intellect:pwa-connection-change',{online:false});});
+  window.addEventListener('online',function(){syncMode();dispatch('intellect:pwa-connection-change',{online:true});});
+  window.addEventListener('offline',function(){syncMode();dispatch('intellect:pwa-connection-change',{online:false});});
   if(window.matchMedia){
     ['(display-mode: standalone)','(display-mode: fullscreen)','(display-mode: window-controls-overlay)'].forEach(function(query){
       try{
@@ -49,13 +51,13 @@
     event.preventDefault();
     window.intellectDeferredInstallPrompt=event;
     root.classList.add('pwa-installable');
-    dispatch(.intellect:pwa-installable');
+    dispatch('intellect:pwa-installable');
   });
   window.addEventListener('appinstalled',function(){
     window.intellectDeferredInstallPrompt=null;
     root.classList.remove('pwa-installable');
     root.classList.add('pwa-installed');
-    dispatch(.intellect:pwa-installed');
+    dispatch('intellect:pwa-installed');
   });
   document.addEventListener('visibilitychange',function(){
     if(document.visibilityState==='visible'){

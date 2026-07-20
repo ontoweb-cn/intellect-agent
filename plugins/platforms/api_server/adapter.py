@@ -8,6 +8,8 @@ Exposes an HTTP server with endpoints:
 - DELETE /v1/responses/{response_id} — Delete a stored response
 - GET  /v1/models                  — lists intellect-agent as an available model
 - GET  /v1/capabilities            — machine-readable API capabilities for external UIs
+- GET  /v1/skills                  — list all skills callable through the API server
+- GET  /v1/skills/custom           — list only local custom callable skills
 - GET  /api/sessions               — list client-visible Intellect sessions
 - POST /api/sessions               — create an empty Intellect session
 - GET/PATCH/DELETE /api/sessions/{session_id} — read/update/delete a session
@@ -69,6 +71,11 @@ MAX_REQUEST_BYTES = 10_000_000  # 10 MB — accommodates long agent conversation
 CHAT_COMPLETIONS_SSE_KEEPALIVE_SECONDS = 30.0
 MAX_NORMALIZED_TEXT_LENGTH = 65_536  # 64 KB cap for normalized content parts
 MAX_CONTENT_LIST_SIZE = 1_000  # Max items when content is an array
+# ``POST /v1/runs`` 只接受 Skill 命令名称，不接受文件路径或任意文本。
+# 该格式与 ``scan_skill_commands`` 生成的斜杠命令保持一致，同时允许外部平台
+# 使用大小写和下划线别名；真正可用性仍由现有 Skill 注册表做精确匹配。
+MAX_RUN_SKILL_NAME_LENGTH = 128
+_RUN_SKILL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 
 def _coerce_port(value: Any, default: int = DEFAULT_PORT) -> int:
@@ -1092,6 +1099,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "responses_api": True,
                 "responses_streaming": True,
                 "run_submission": True,
+                "run_skill_selection": True,
                 "run_status": True,
                 "run_events_sse": True,
                 "run_stop": True,
@@ -1106,6 +1114,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "jobs_admin": False,
                 "memory_write_api": False,
                 "skills_api": True,
+                "custom_skills_api": True,
                 "audio_api": False,
                 "realtime_voice": False,
                 "session_continuity_header": "X-Intellect-Session-Id",
@@ -1124,6 +1133,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "run_approval": {"method": "POST", "path": "/v1/runs/{run_id}/approval"},
                 "run_stop": {"method": "POST", "path": "/v1/runs/{run_id}/stop"},
                 "skills": {"method": "GET", "path": "/v1/skills"},
+                "custom_skills": {"method": "GET", "path": "/v1/skills/custom"},
                 "toolsets": {"method": "GET", "path": "/v1/toolsets"},
                 "sessions": {"method": "GET", "path": "/api/sessions"},
                 "session_create": {"method": "POST", "path": "/api/sessions"},
@@ -1136,6 +1146,40 @@ class APIServerAdapter(BasePlatformAdapter):
                 "session_chat_stream": {"method": "POST", "path": "/api/sessions/{session_id}/chat/stream"},
             },
         })
+
+    def _enumerate_available_skills(self) -> List[Dict[str, Any]]:
+        """枚举当前 API Server 上下文中实际可调用的 Skill 元数据。
+
+        该方法只负责共享的枚举、平台兼容性过滤和排序，不处理 HTTP 认证或
+        异常响应。两个公开列表接口分别在各自的处理器中完成这些边界工作，
+        从而保证旧接口的响应契约不变，并避免新接口复制一套易漂移的逻辑。
+        """
+        from agent.skill_commands import get_skill_commands
+        from gateway.session_context import clear_session_vars, set_session_vars
+        from tools.skills_tool import _find_all_skills, _sort_skills
+
+        # Skill 的禁用配置支持按 gateway 平台细分。这里显式设置 api_server
+        # ContextVar，使并发请求互不污染，也保证列表与 POST /v1/runs 的解析
+        # 范围一致；finally 必须恢复调用方原有上下文。
+        skill_context_tokens = set_session_vars(platform="api_server")
+        try:
+            skill_commands = get_skill_commands()
+            available_names = {
+                str(info.get("name") or command.removeprefix("/"))
+                for command, info in skill_commands.items()
+            }
+
+            # ``skip_disabled=True`` 在这里用于取得完整元数据；真正的全局禁用
+            # 和 api_server 平台禁用已体现在上面的命令注册表中。二次按名称
+            # 过滤既保留 description/category，又不会把不可调用 Skill 暴露给平台。
+            all_skill_metadata = _find_all_skills(skip_disabled=True)
+            return _sort_skills([
+                skill
+                for skill in all_skill_metadata
+                if str(skill.get("name") or "") in available_names
+            ])
+        finally:
+            clear_session_vars(skill_context_tokens)
 
     async def _handle_skills(self, request: "web.Request") -> "web.Response":
         """GET /v1/skills — list installed skills visible to the API-server agent.
@@ -1154,8 +1198,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
 
         try:
-            from tools.skills_tool import _find_all_skills, _sort_skills
-            skills = _sort_skills(_find_all_skills(skip_disabled=False))
+            skills = self._enumerate_available_skills()
         except Exception:
             logger.exception("GET /v1/skills failed")
             return web.json_response(
@@ -1166,6 +1209,50 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({
             "object": "list",
             "data": skills,
+        })
+
+    async def _handle_custom_skills(self, request: "web.Request") -> "web.Response":
+        """GET /v1/skills/custom — 仅列出本地自定义且可调用的 Skill。"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+
+        try:
+            from tools.skill_usage import (
+                _read_bundled_manifest_names,
+                _read_hub_installed_names,
+            )
+
+            available_skills = self._enumerate_available_skills()
+
+            # 来源规则与 ``intellect skills list --source local`` 一致：只要名称
+            # 记录在 bundled manifest 或 Hub lock 中，就不属于 local。两个
+            # 来源文件各读取一次；即使用户修改过内置 Skill，也仍按 builtin
+            # 处理，避免把系统内容误标为用户自定义内容。
+            non_custom_names = (
+                _read_bundled_manifest_names()
+                | _read_hub_installed_names()
+            )
+            custom_skills = [
+                skill
+                for skill in available_skills
+                if str(skill.get("name") or "") not in non_custom_names
+            ]
+        except Exception:
+            # 对外只返回稳定错误，不暴露本地目录、锁文件内容或异常栈；详细
+            # 原因仅进入服务端日志，保持与原 /v1/skills 相同的安全边界。
+            logger.exception("GET /v1/skills/custom failed")
+            return web.json_response(
+                _openai_error(
+                    "Failed to enumerate custom skills",
+                    err_type="server_error",
+                ),
+                status=500,
+            )
+
+        return web.json_response({
+            "object": "list",
+            "data": custom_skills,
         })
 
     # ── OAuth unified platform handlers ──────────────────────────────────
@@ -3690,6 +3777,35 @@ class APIServerAdapter(BasePlatformAdapter):
         if not user_message:
             return web.json_response(_openai_error("No user message found in input"), status=400)
 
+        requested_skill: Optional[str] = None
+        selected_skill_name: Optional[str] = None
+        if "skill" in body:
+            raw_skill = body.get("skill")
+            if not isinstance(raw_skill, str):
+                return web.json_response(
+                    _openai_error(
+                        "'skill' must be a non-empty skill name string",
+                        param="skill",
+                        code="invalid_skill",
+                    ),
+                    status=400,
+                )
+
+            requested_skill = raw_skill.strip()
+            if (
+                not requested_skill
+                or len(requested_skill) > MAX_RUN_SKILL_NAME_LENGTH
+                or not _RUN_SKILL_NAME_PATTERN.fullmatch(requested_skill)
+            ):
+                return web.json_response(
+                    _openai_error(
+                        "'skill' must be a valid skill name, not a path or free-form prompt",
+                        param="skill",
+                        code="invalid_skill",
+                    ),
+                    status=400,
+                )
+
         instructions = body.get("instructions")
         previous_response_id = body.get("previous_response_id")
 
@@ -3739,6 +3855,62 @@ class APIServerAdapter(BasePlatformAdapter):
 
         run_id = f"run_{uuid.uuid4().hex}"
         session_id = body.get("session_id") or stored_session_id or run_id
+
+        if requested_skill is not None:
+            from agent.skill_commands import (
+                build_skill_invocation_message,
+                get_skill_commands,
+                resolve_skill_command_key,
+            )
+            from gateway.session_context import clear_session_vars, set_session_vars
+
+            # Skill 禁用列表可以按 gateway 平台配置，因此解析和加载必须明确
+            # 绑定 api_server 上下文。ContextVar 使并发请求互不污染，也避免
+            # 临时修改进程级环境变量。
+            skill_context_tokens = set_session_vars(
+                platform="api_server",
+                session_key=session_id,
+            )
+            try:
+                # 外部平台只能从已注册命令中选择 Skill。这里不把请求值传给
+                # skill_view，也不接受绝对/相对路径，从而避免越权读取任意文件。
+                skill_command_key = resolve_skill_command_key(requested_skill.lower())
+                if skill_command_key is None:
+                    return web.json_response(
+                        _openai_error(
+                            f"Skill not found or unavailable: {requested_skill}",
+                            param="skill",
+                            code="skill_not_found",
+                        ),
+                        status=404,
+                    )
+
+                skill_info = get_skill_commands().get(skill_command_key) or {}
+                selected_skill_name = str(
+                    skill_info.get("name") or skill_command_key.removeprefix("/")
+                )
+
+                # 复用 CLI/Gateway 已有的确定性加载流程：完整 SKILL.md、配置项、
+                # 支持文件位置和用户原始任务会合并为一条受控消息，而不是依赖模型
+                # 猜测应该加载哪个 Skill。task_id 使用会话标识以保持使用记录一致。
+                skill_message = build_skill_invocation_message(
+                    skill_command_key,
+                    user_instruction=str(user_message),
+                    task_id=session_id,
+                )
+                if not skill_message:
+                    return web.json_response(
+                        _openai_error(
+                            f"Skill could not be loaded: {selected_skill_name}",
+                            param="skill",
+                            code="skill_unavailable",
+                        ),
+                        status=422,
+                    )
+                user_message = skill_message
+            finally:
+                clear_session_vars(skill_context_tokens)
+
         approval_session_key = gateway_session_key or session_id or run_id
         ephemeral_system_prompt = instructions
         loop = asyncio.get_running_loop()
@@ -3764,13 +3936,14 @@ class APIServerAdapter(BasePlatformAdapter):
             except Exception:
                 pass
 
-        self._set_run_status(
-            run_id,
-            "queued",
-            created_at=created_at,
-            session_id=session_id,
-            model=body.get("model", self._model_name),
-        )
+        run_status_fields: Dict[str, Any] = {
+            "created_at": created_at,
+            "session_id": session_id,
+            "model": body.get("model", self._model_name),
+        }
+        if selected_skill_name is not None:
+            run_status_fields["skill"] = selected_skill_name
+        self._set_run_status(run_id, "queued", **run_status_fields)
 
         async def _run_and_close():
             try:
@@ -3949,11 +4122,10 @@ class APIServerAdapter(BasePlatformAdapter):
         response_headers = (
             {"X-Intellect-Session-Key": gateway_session_key} if gateway_session_key else {}
         )
-        return web.json_response(
-            {"run_id": run_id, "status": "started"},
-            status=202,
-            headers=response_headers,
-        )
+        response_payload = {"run_id": run_id, "status": "started"}
+        if selected_skill_name is not None:
+            response_payload["skill"] = selected_skill_name
+        return web.json_response(response_payload, status=202, headers=response_headers)
 
     async def _handle_get_run(self, request: "web.Request") -> "web.Response":
         """GET /v1/runs/{run_id} — return pollable run status for external UIs."""
@@ -4197,6 +4369,9 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/v1/health", self._handle_health)
             self._app.router.add_get("/v1/models", self._handle_models)
             self._app.router.add_get("/v1/capabilities", self._handle_capabilities)
+            # 先注册更具体的静态路径，清晰表达其独立资源语义；两个接口均为
+            # 只读列表，且共享相同的 Bearer Token 认证与可调用性过滤。
+            self._app.router.add_get("/v1/skills/custom", self._handle_custom_skills)
             self._app.router.add_get("/v1/skills", self._handle_skills)
             self._app.router.add_get("/v1/toolsets", self._handle_toolsets)
             # Session/client control surface (thin wrappers over SessionDB + _run_agent)

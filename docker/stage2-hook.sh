@@ -42,9 +42,13 @@ mkdir -p "$INTELLECT_HOME"
 INTELLECT_UID="${INTELLECT_UID:-${PUID:-}}"
 INTELLECT_GID="${INTELLECT_GID:-${PGID:-}}"
 
+# 该标志只记录“本次启动是否实际修改了 UID”，不能仅根据目标 UID 是否为 10000 判断。
+# 同一容器第二次启动时 /etc/passwd 已经是目标 UID，若仍递归 chown 依赖树会造成无意义的启动延迟。
+uid_was_remapped=false
 if [ -n "${INTELLECT_UID:-}" ] && [ "$INTELLECT_UID" != "$(id -u intellect)" ]; then
     echo "[stage2] Changing intellect UID to $INTELLECT_UID"
     usermod -u "$INTELLECT_UID" intellect
+    uid_was_remapped=true
 fi
 if [ -n "${INTELLECT_GID:-}" ] && [ "$INTELLECT_GID" != "$(id -g intellect)" ]; then
     echo "[stage2] Changing intellect GID to $INTELLECT_GID"
@@ -145,20 +149,13 @@ if [ "$needs_chown" = true ]; then
                 echo "[stage2] Warning: chown $INTELLECT_HOME/$sub failed (rootless container?) — continuing"
         fi
     done
-    # Intellect-owned trees under $INSTALL_DIR must be re-chowned when the UID
-    # is remapped — otherwise:
-    #   - .venv: lazy_deps.py cannot install platform packages (discord.py,
-    #     telegram, slack, etc.) with EACCES (#15012, #21100)
-    #   - ui-tui: esbuild rebuilds dist/entry.js on every TUI launch (when
-    #     the source mtime is newer than dist/ or when intellect_TUI_FORCE_BUILD
-    #     is set) and writes to ui-tui/dist/. Without this chown the new
-    #     intellect UID can't write the build output (#28851).
-    #   - node_modules: root-level dependencies (puppeteer, web tooling)
-    #     that runtime code may walk/update.
-    # The set mirrors the build-time `chown -R intellect:intellect` line in the
-    # Dockerfile — keep them in sync if the Dockerfile chown set changes.
-    # These are under $INSTALL_DIR (not $INTELLECT_HOME), so the bind-mount
-    # concern doesn't apply — recursive is fine.
+fi
+
+# 只有运行 UID 真正从镜像默认值 10000 改变时，才需要重新处理镜像内的依赖树。
+# Windows Docker Desktop 的 9p 挂载通常只会让 /opt/data 所有者不匹配；若因此连带 chown
+# .venv/node_modules，会无意义地遍历几十万个文件并让首次启动延迟数分钟。
+if [ "$uid_was_remapped" = true ]; then
+    # .venv、ui-tui 和 node_modules 都可能在运行期写入，因此自定义 UID 时必须同步其所有权。
     chown -R intellect:intellect \
         "$INSTALL_DIR/.venv" \
         "$INSTALL_DIR/ui-tui" \

@@ -1,59 +1,39 @@
-#
-# docker-compose.yml for Intellect Agent
-#
-# Usage:
-#   INTELLECT_UID=$(id -u) INTELLECT_GID=$(id -g) docker compose up -d
-#
-# Set INTELLECT_UID / INTELLECT_GID to the host user that owns ~/.intellect so
-# files created inside the container stay readable/writable on the host.
-# The s6-overlay stage2 hook remaps the internal `intellect` user to these
-# values via usermod/groupmod; each supervised service then drops to that
-# user via `s6-setuidgid`.
-#
-# Security notes:
-#   - API keys are stored in config; exposing them on the network is
-#     unsafe.
-#   - If you override entrypoint, keep `/init` as the first command in
-#     the chain (or let docker use the image's default ENTRYPOINT,
-#     which is `["/init", "/opt/intellect/docker/main-wrapper.sh"]`).
-#     `/init` is s6-overlay's PID 1 — it runs the cont-init.d scripts
-#     (chown, profile reconcile) and sets up the
-#     supervision tree before any service starts. Bypassing it skips
-#     all of that setup and the gateway will not work correctly.
-#   - The gateway's API server is off unless you uncomment API_SERVER_KEY
-#     and API_SERVER_HOST. See docs/user-guide/api-server.md before doing
-#     this on an internet-facing host.
-#
+name: intellect-agent
+
 services:
-  gateway:
-    build: .
-    image: intellect-agent
-    container_name: intellect
+  intellect-agent:
+    # Compose 只负责编排；镜像必须先在仓库根目录通过官方 Dockerfile 手动构建。
+    image: intellect-agent:0.6.7
+    container_name: intellect-agent-0.6.7
     restart: unless-stopped
-    network_mode: host
-    volumes:
-      - ~/.intellect:/opt/data
+
+    # 所有运行参数统一从仓库根目录 .env 读取，不在编排文件中保存真实凭据。
+    env_file:
+      - ./.env
     environment:
-      - INTELLECT_UID=${INTELLECT_UID:-10000}
-      - INTELLECT_GID=${INTELLECT_GID:-10000}
-      # To expose the OpenAI-compatible API server beyond localhost,
-      # uncomment BOTH lines (API_SERVER_KEY is mandatory for auth):
-      # - API_SERVER_HOST=0.0.0.0
-      # - API_SERVER_KEY=${API_SERVER_KEY}
-      # Microsoft Teams — uncomment and fill in to enable Teams gateway.
-      # Register your bot at https://dev.botframework.com/ to get these values.
-      # - TEAMS_CLIENT_ID=${TEAMS_CLIENT_ID}
-      # - TEAMS_CLIENT_SECRET=${TEAMS_CLIENT_SECRET}
-      # - TEAMS_TENANT_ID=${TEAMS_TENANT_ID}
-      # - TEAMS_ALLOWED_USERS=${TEAMS_ALLOWED_USERS}
-      # - TEAMS_PORT=${TEAMS_PORT:-3978}
-      # Google Chat — uncomment and fill in to enable the Google Chat gateway.
-      # See website/docs/user-guide/messaging/google_chat.md for the full setup.
-      # The SA JSON path must point to a file mounted into the container —
-      # add a volume entry above (e.g. ``- ~/.intellect/google-chat-sa.json:/secrets/google-chat-sa.json:ro``)
-      # then set GOOGLE_CHAT_SERVICE_ACCOUNT_JSON to that mount path.
-      # - GOOGLE_CHAT_PROJECT_ID=${GOOGLE_CHAT_PROJECT_ID}
-      # - GOOGLE_CHAT_SUBSCRIPTION_NAME=${GOOGLE_CHAT_SUBSCRIPTION_NAME}
-      # - GOOGLE_CHAT_SERVICE_ACCOUNT_JSON=${GOOGLE_CHAT_SERVICE_ACCOUNT_JSON}
-      # - GOOGLE_CHAT_ALLOWED_USERS=${GOOGLE_CHAT_ALLOWED_USERS}
-    command: ["gateway", "run"]
+      # 两项均为必填项；缺失时 Compose 在创建容器之前直接报错，避免服务无认证暴露。
+      API_SERVER_KEY: ${API_SERVER_KEY:?请先在根目录 .env 中设置 API_SERVER_KEY}
+      INTELLECT_WEBUI_PASSWORD: ${INTELLECT_WEBUI_PASSWORD:?请先在根目录 .env 中设置 INTELLECT_WEBUI_PASSWORD}
+
+    # 一个容器同时启动 Agent/Gateway、OpenAI 兼容 API Server 和 WebUI。
+    command: ["/opt/intellect/docker/all-in-one.sh"]
+
+    ports:
+      - "${API_SERVER_BIND_HOST}:${API_SERVER_PORT}:${API_SERVER_PORT}"
+      - "${WEBUI_BIND_HOST}:${WEBUI_PORT}:${INTELLECT_WEBUI_PORT}"
+
+    volumes:
+      # 使用官方仓库根目录下既有约定的本地运行目录；两者均被 Git 和镜像构建上下文排除。
+      - ./intellect-config:/opt/data
+      - ./workspace:/workspace
+
+    healthcheck:
+      # 只有 API Server 和 WebUI 两个入口都能响应时，容器才会被标记为 healthy。
+      test: ["CMD", "python", "-c", "import os, urllib.request; api=os.getenv('API_SERVER_PORT', '8642'); web=os.getenv('INTELLECT_WEBUI_PORT', '9119'); urllib.request.urlopen(f'http://127.0.0.1:{api}/health', timeout=3); urllib.request.urlopen(f'http://127.0.0.1:{web}/health', timeout=3)"]
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 120s
+
+    # 给 Gateway、WebUI 和 s6-overlay 留出保存会话、停止子进程及回收资源的时间。
+    stop_grace_period: 30s

@@ -8,6 +8,15 @@ node_modules
 **/node_modules
 .venv
 **/.venv
+venv
+**/venv
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+**/*.egg-info
+.pytest_cache
+**/.pytest_cache
 .notebooklm-cli-venv/
 .notebooklm-playwright/
 .pip-cache/
@@ -24,6 +33,7 @@ ui-tui/packages/intellect-ink/dist/
 
 # Environment files
 .env
+.env.*
 
 *.md
 
@@ -35,3 +45,9 @@ data/
 # Compose/profile runtime state (bind-mounted; avoid ownership/secret issues)
 intellect-config/
 runtime/
+workspace/
+
+# Rust 本地编译产物和源码运行占位包会在 Linux 镜像中重新生成，不能复制宿主机版本。
+target/
+**/target/
+intellect_community_core/
