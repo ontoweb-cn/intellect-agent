@@ -5525,19 +5525,12 @@ function isSimplifiedToolCalling(){
   return window._simplifiedToolCalling!==false;
 }
 
-/** W6 TS5: preference-backed transparent cockpit mode (alias of !compact). */
-function isTransparentStream(){
-  return chatActivityDisplayMode()==='transparent_stream';
-}
-
 // ── activity_scene_v1 (P1-A MVP) ─────────────────────────────────────────────
 // Wire shape matches docs/webui/rfcs/stable-assistant-turn-anchors.md §3 (A3).
 // Cap algorithm mirrors webui/api/activity_scene.py::compact_activity_scene_v1
 // (drop-oldest tool/thinking; keep newest text). Keep in sync for W3 #3 reuse.
 const ACTIVITY_SCENE_MAX_SEGMENTS=40;
 const _sceneAppliedForStream=Object.create(null);
-// C1: same-session settle stash — turnKey / streamKey → activity_scene_v1
-const _transparentSceneByTurn=new Map();
 
 function chatActivityDisplayMode(){
   const mode=window._chatActivityDisplayMode;
@@ -5558,10 +5551,7 @@ function setChatActivityDisplayMode(mode, opts){
 
 /** A-M5: refresh live + settled Activity without full page reload. */
 function applyActivityDisplayModeRefresh(){
-  // TS8: wipe deferred-worklog state when flipping compact ↔ transparent
-  if(typeof _cancelAllDeferredWorklogIdle==='function') _cancelAllDeferredWorklogIdle();
   if(typeof clearMessageRenderCache==='function') clearMessageRenderCache();
-  if(typeof _bumpMessageHeightGeneration==='function') _bumpMessageHeightGeneration();
   const preserve=true;
   if(typeof renderMessages==='function') renderMessages({preserveScroll:preserve});
   // Live turn is wiped by renderMessages; rebuild from inflight scene / toolCalls.
@@ -5579,81 +5569,6 @@ function applyActivityDisplayModeRefresh(){
   for(const tc of (inflight.toolCalls||S.toolCalls||[])){
     if(tc&&tc.name&&typeof appendLiveToolCard==='function') appendLiveToolCard(tc);
   }
-}
-
-function stashTransparentSceneForSettle(assistantIdx, scene){
-  if(!scene||typeof scene!=='object') return;
-  const copy=typeof compactActivityScene==='function'?compactActivityScene(scene):scene;
-  if(Number.isInteger(assistantIdx)&&assistantIdx>=0){
-    _transparentSceneByTurn.set('assistant:'+assistantIdx, copy);
-    if(S.messages&&S.messages[assistantIdx]) S.messages[assistantIdx]._activityScene=copy;
-  }
-  if(copy.stream_id) _transparentSceneByTurn.set('stream:'+copy.stream_id, copy);
-}
-
-function lookupTransparentSceneForAssistant(assistantIdx){
-  if(Number.isInteger(assistantIdx)&&assistantIdx>=0){
-    const keyed=_transparentSceneByTurn.get('assistant:'+assistantIdx);
-    if(keyed) return keyed;
-    const m=S.messages&&S.messages[assistantIdx];
-    if(m&&m._activityScene&&typeof m._activityScene==='object') return m._activityScene;
-  }
-  return null;
-}
-
-/**
- * Normalize scene segments to thinking|tool events (R3: skip text).
- * @returns {{kind:string,text?:string,tc?:object}[]}
- */
-function normalizeTransparentEvents(scene, toolCalls){
-  const out=[];
-  const segs=scene&&Array.isArray(scene.segments)?scene.segments:[];
-  const calls=Array.isArray(toolCalls)?toolCalls:(S.toolCalls||[]);
-  for(const seg of segs){
-    if(!seg||typeof seg!=='object') continue;
-    if(seg.kind==='thinking'){
-      out.push({kind:'thinking',text:String(seg.text||'')});
-    }else if(seg.kind==='tool'){
-      const tid=seg.tid||'';
-      const full=tid?calls.find(t=>t&&t.tid===tid):null;
-      out.push({
-        kind:'tool',
-        tc:full||{
-          name:seg.name||'tool',
-          tid:tid,
-          preview:seg.summary||'',
-          snippet:seg.summary||'',
-          done:seg.status!=='waiting',
-          is_error:seg.status==='error',
-        },
-      });
-    }
-    // text anchors: message body owns them (R3 / C4)
-  }
-  return out;
-}
-
-function _insertTransparentChronologicalEvents(anchorParent, insertAfterNode, scene){
-  if(!anchorParent||!insertAfterNode||!scene) return insertAfterNode;
-  let cursor=insertAfterNode;
-  const events=normalizeTransparentEvents(scene, S.toolCalls);
-  for(const ev of events){
-    if(!ev) continue;
-    if(ev.kind==='thinking'&&window._showThinking!==false){
-      const row=document.createElement('div');
-      row.className='assistant-segment thinking-card-row';
-      row.setAttribute('data-transparent-event','thinking');
-      row.innerHTML=_thinkingCardHtml(ev.text||'', false);
-      cursor.insertAdjacentElement('afterend', row);
-      cursor=row;
-    }else if(ev.kind==='tool'&&ev.tc){
-      const card=buildToolCard(ev.tc);
-      card.setAttribute('data-transparent-event','tool');
-      cursor.insertAdjacentElement('afterend', card);
-      cursor=card;
-    }
-  }
-  return cursor;
 }
 
 function compactActivityScene(scene, maxSegments){
@@ -5811,19 +5726,14 @@ function buildActivitySceneFromLive(opts){
 /**
  * Rebuild Activity from an activity_scene_v1 object.
  * @param {object} scene
- * @param {{source?:string,force?:boolean,latchOnly?:boolean}} opts
- *   source: 'inflight'|'replay'|'sse'|'display_toggle'|…
+ * @param {{source?:string,force?:boolean}} opts
+ *   source: 'inflight'|'replay'|'display_toggle'|…
  *   force: bypass per-stream latch (display toggle / replace-in-place)
- *   latchOnly: set §4.3.4 latch without DOM rebuild / disclosure write (live SSE)
  */
 function applyActivityScene(scene, opts){
   opts=opts||{};
   if(!scene||typeof scene!=='object') return false;
   const streamId=scene.stream_id||S.activeStreamId||'';
-  if(opts.latchOnly){
-    if(streamId) _sceneAppliedForStream[streamId]=true;
-    return true;
-  }
   if(streamId&&_sceneAppliedForStream[streamId]&&!opts.force){
     return true; // idempotent latch (§4.3.4) — #3 replay reuse
   }
@@ -5832,9 +5742,8 @@ function applyActivityScene(scene, opts){
     return false; // A-M2: never cross-session
   }
   try{
-    // C2 / TS7: preference always selects renderer; scene.display is metadata only.
     if(scene.display==='transparent_stream'||scene.display==='compact_worklog'){
-      /* journal stamp — do not override chatActivityDisplayMode() */
+      // Do not mutate global preference from scene restore; only honor for this apply.
     }
     if(typeof placeLiveToolCardsHost==='function') placeLiveToolCardsHost();
     if(typeof clearLiveToolCards==='function') clearLiveToolCards();
@@ -5860,34 +5769,24 @@ function applyActivityScene(scene, opts){
         };
         if(typeof appendLiveToolCard==='function') appendLiveToolCard(tc);
       }
-      // text anchors: live text comes back via messages / SSE; no DOM force here (R3)
+      // text anchors: live text comes back via messages / SSE; no DOM force here
     }
     if(!sawToolOrThink&&typeof appendThinking==='function'){
       appendThinking('',{pending:true});
     }
     const activityKey=streamId?('live:'+streamId):(scene.turn_id||null);
-    // A3a: server scene disclosure is always default {expanded:false}.
-    // Never overwrite an existing localStorage disclosure for sse/replay.
-    // Inflight scenes are client-authored and may carry real expand state.
-    const disclosureSrc=opts.source||'';
-    const skipServerDefaultDisclosure=(disclosureSrc==='sse'||disclosureSrc==='replay');
-    const priorDisclosure=activityKey&&typeof _readActivityDisclosureState==='function'
-      ?_readActivityDisclosureState(activityKey):null;
     if(scene.disclosure&&typeof scene.disclosure.expanded==='boolean'&&activityKey){
-      const mayWriteDisclosure=!skipServerDefaultDisclosure||!priorDisclosure;
-      if(mayWriteDisclosure&&typeof _writeActivityDisclosureState==='function'){
+      if(typeof _writeActivityDisclosureState==='function'){
         _writeActivityDisclosureState(activityKey, !!scene.disclosure.expanded);
       }
-      const effectiveExpanded=priorDisclosure==='open'?true
-        :(priorDisclosure==='closed'?false:!!scene.disclosure.expanded);
       const turn=$('liveAssistantTurn');
       const group=turn&&turn.querySelector('.tool-call-group');
       if(group){
-        if(effectiveExpanded){
+        if(scene.disclosure.expanded){
           group.classList.remove('tool-call-group-collapsed');
           const summary=group.querySelector('.tool-call-group-summary');
           if(summary) summary.setAttribute('aria-expanded','true');
-          if(priorDisclosure==='open') _liveActivityUserExpanded=true;
+          _liveActivityUserExpanded=true;
         }else{
           group.classList.add('tool-call-group-collapsed');
           const summary=group.querySelector('.tool-call-group-summary');
@@ -5902,21 +5801,11 @@ function applyActivityScene(scene, opts){
   }
 }
 
-/** §4.3.4 / A3a: latch without rebuilding DOM or writing disclosure. */
-function markActivitySceneApplied(streamId){
-  if(streamId) _sceneAppliedForStream[streamId]=true;
-}
-
 function clearActivitySceneLatch(streamId){
   if(streamId) delete _sceneAppliedForStream[streamId];
   else{
     for(const k of Object.keys(_sceneAppliedForStream)) delete _sceneAppliedForStream[k];
   }
-}
-
-/** §4.3.4: when latch is set, ignore flat tool/thinking for Activity tree. */
-function isActivitySceneApplied(streamId){
-  return !!(streamId&&_sceneAppliedForStream[streamId]);
 }
 
 function _thinkingActivityNode(text, open){

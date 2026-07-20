@@ -4921,7 +4921,6 @@ _SETTINGS_ENUM_VALUES = {
     "auto_title_refresh_every": {"0", "5", "10", "20"},
     "busy_input_mode": {"queue", "interrupt", "steer"},
     "chat_activity_display_mode": {"compact_worklog", "transparent_stream"},
-    "update_channel": {"stable", "experimental"},
 }
 _SETTINGS_INT_RANGES = {
     "pinned_sessions_limit": (1, 99),
