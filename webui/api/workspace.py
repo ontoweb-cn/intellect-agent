@@ -678,30 +678,25 @@ def list_dir(workspace: Path, rel: str='.'):
         raise FileNotFoundError(f"Not a directory: {rel}")
     ws_resolved = workspace.resolve()
     entries = []
-    for item in sorted(target.iterdir(), key=lambda p: (not p.is_symlink(), p.is_file(), p.name.lower())):
+
+    def _append_from_path_item(item: Path) -> None:
+        nonlocal entries
         if item.is_symlink():
-            # Resolve the symlink target and check if it stays within workspace
             try:
                 link_target = item.resolve()
             except OSError:
-                continue
-            # Cycle detection: skip if symlink points back to current dir,
-            # workspace root, or any ancestor of current dir.
-            # This must run REGARDLESS of whether target is inside workspace.
+                return
             if (link_target == target.resolve() or link_target == target
                     or link_target == ws_resolved):
-                continue
+                return
             try:
                 target.resolve().relative_to(link_target)
-                # target is under link_target — link_target is an ancestor → cycle
-                continue
+                return
             except ValueError:
                 pass
-            # Block symlinks that resolve to system directories.
             if _is_blocked_system_path(link_target):
-                continue
+                return
             is_dir = link_target.is_dir()
-            # Keep the display path relative to workspace (don't follow the link)
             display_path = str(Path(item.name))
             if rel and rel != '.':
                 display_path = rel + '/' + display_path
@@ -724,26 +719,48 @@ def list_dir(workspace: Path, rel: str='.'):
                 except OSError:
                     entry['size'] = None
             entries.append(entry)
-        else:
-            # Use rel-based path so entries under symlink targets (outside
-            # the workspace root) still get a valid workspace-relative path.
-            entry_path = item.name
-            if rel and rel != '.':
-                entry_path = rel + '/' + item.name
-            try:
-                item_stat = item.stat()
-                size = item_stat.st_size if item.is_file() else None
-                mtime_ns = item_stat.st_mtime_ns
-            except OSError:
-                size = None
-                mtime_ns = None
-            entries.append({
-                'name': item.name,
-                'path': entry_path,
-                'type': 'dir' if item.is_dir() else 'file',
-                'size': size,
-                'mtime_ns': mtime_ns,
-            })
+            return
+        entry_path = item.name
+        if rel and rel != '.':
+            entry_path = rel + '/' + item.name
+        try:
+            item_stat = item.stat()
+            size = item_stat.st_size if item.is_file() else None
+            mtime_ns = item_stat.st_mtime_ns
+        except OSError:
+            size = None
+            mtime_ns = None
+        entries.append({
+            'name': item.name,
+            'path': entry_path,
+            'type': 'dir' if item.is_dir() else 'file',
+            'size': size,
+            'mtime_ns': mtime_ns,
+        })
+
+    # Tier C: enumerate names via dir-fd scandir when available.
+    # On POSIX with dir-fd support, fail closed — do not silently degrade to
+    # Path.iterdir() (that would hide openat / containment failures).
+    from api.workspace_io import _SUPPORTS_DIR_FD, list_names_under_root
+
+    if _SUPPORTS_DIR_FD:
+        names = list_names_under_root(workspace, rel if rel else ".")
+        for name in sorted(
+            names,
+            key=lambda n: (
+                not (target / n).is_symlink(),
+                (target / n).is_file(),
+                n.lower(),
+            ),
+        ):
+            _append_from_path_item(target / name)
+            if len(entries) >= 200:
+                break
+        return entries
+
+    # Windows / degraded: Path.iterdir after safe_resolve_ws.
+    for item in sorted(target.iterdir(), key=lambda p: (not p.is_symlink(), p.is_file(), p.name.lower())):
+        _append_from_path_item(item)
         if len(entries) >= 200:
             break
     return entries

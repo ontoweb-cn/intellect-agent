@@ -178,7 +178,7 @@ WebUI 作为独立后台进程运行，由 `intellect webui` CLI 命令管理。
 | `teams.js` | 团队管理 |
 | `workspace.js` | 工作区文件浏览 |
 | `commands.js` | 命令面板 |
-| `canvas.js` | Canvas/SVG 渲染 |
+| `canvas.js` | Markdown Canvas 前端（**API-only stub**：`/api/canvas` 保留，本拍不接线此脚本；≠ Journey Star Map） |
 | `code-cell.js` | 代码单元格 |
 | `icons.js` | 图标库 |
 | `i18n.js` | 国际化 |
