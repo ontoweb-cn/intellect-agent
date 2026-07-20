@@ -212,9 +212,15 @@ OpenAI Responses API 格式。通过 `previous_response_id` 支持服务端对�
     "chat_completions": true,
     "responses_api": true,
     "run_submission": true,
+    "run_skill_selection": true,
+    "custom_skills_api": true,
     "run_status": true,
     "run_events_sse": true,
     "run_stop": true
+  },
+  "endpoints": {
+    "skills": {"method": "GET", "path": "/v1/skills"},
+    "custom_skills": {"method": "GET", "path": "/v1/skills/custom"}
   }
 }
 ```
@@ -228,6 +234,45 @@ OpenAI Responses API 格式。通过 `previous_response_id` 支持服务端对�
 ### GET /health/detailed
 
 扩展健康检查，同时报告活跃 session、运行中的 agent 和资源使用情况。适用于监控/可观测性工具。
+
+## Skill 查询 API
+
+两个 Skill 查询接口都是只读接口，使用与 API Server 其他接口相同的 Bearer Token 认证，并且只返回元数据，不会返回 Skill 文件内容、绝对路径或 Provider 凭据。结果按 `category` 和 `name` 排序；没有结果时返回 `200 OK` 和 `{"object":"list","data":[]}`。
+
+### GET /v1/skills
+
+列出当前 Profile 中已启用、且可从 `api_server` 平台调用的全部 Skill。这个原有接口同时包含系统内置、Skills Hub 安装和本地自定义 Skill。
+
+```bash
+curl http://localhost:8642/v1/skills \
+  -H "Authorization: Bearer $API_SERVER_KEY"
+```
+
+### GET /v1/skills/custom
+
+只列出当前 Profile 中已启用、且可从 `api_server` 平台调用的本地自定义 Skill。外部平台如果只想展示用户自己维护的 Skill，而不混入 Intellect 系统目录或 Skills Hub 安装项，应使用此接口。
+
+```bash
+curl http://localhost:8642/v1/skills/custom \
+  -H "Authorization: Bearer $API_SERVER_KEY"
+```
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "name": "my-custom-skill",
+      "description": "用户自定义 Skill",
+      "category": "custom"
+    }
+  ]
+}
+```
+
+仅当 Skill 名称同时不在 `~/.intellect/skills/.bundled_manifest` 和 `~/.intellect/skills/.hub/lock.json` 中时，才归类为 custom/local。因此，手工创建、Agent 创建、团队/项目目录和已配置外部目录中的本地 Skill 均可返回。全局禁用或针对 `api_server` 平台禁用的 Skill 不会返回。修改系统内置 Skill 的内容不会改变其来源分类，通过 Skills Hub 安装的 Skill 也始终排除。
+
+枚举失败时沿用现有 OpenAI 风格的 `500 server_error` 响应；凭据缺失或错误时沿用现有 `401` 响应。
 
 ## Runs API（流式友好的替代方案）
 
@@ -246,6 +291,29 @@ OpenAI Responses API 格式。通过 `previous_response_id` 支持服务端对�
 
 Runs 接受简单的 `input` 字符串，以及可选的 `session_id`、`instructions`、`conversation_history` 或 `previous_response_id`。当提供 `session_id` 时，Intellect 会在 run 状态中暴露它，以便外部 UI 将 run 与自己的对话 ID 关联。
 
+如需确定性调用某个已安装 Skill，可在可选的 `skill` 字段中传入 Skill 名称。外部平台应先通过 `GET /v1/skills` 填充选择列表，再把用户选中的 `data[].name` 提交给 runs 接口：
+
+```bash
+curl -X POST http://localhost:8642/v1/runs \
+  -H "Authorization: Bearer $API_SERVER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "提取标题并返回 JSON。",
+    "skill": "pdf",
+    "session_id": "platform-task-42"
+  }'
+```
+
+```json
+{
+  "run_id": "run_abc123",
+  "status": "started",
+  "skill": "pdf"
+}
+```
+
+`skill` 只能是 Skill 名称，不能是路径或任意提示词。Intellect 只会在当前已启用且与 API Server 平台兼容的 Skill 注册表中精确解析，并复用 CLI/Gateway 的确定性加载器载入完整 Skill。未安装、已禁用或平台不兼容时返回 `404 skill_not_found`；字段格式错误时返回 `400 invalid_skill`；已注册但加载失败时返回 `422 skill_unavailable`。不传 `skill` 时保持原有 runs 行为不变。
+
 ### GET /v1/runs/\{run_id\}
 
 轮询当前 run 状态。适用于需要状态但不想保持 SSE 连接的仪表板，或在导航后重新连接的 UI。
@@ -257,6 +325,7 @@ Runs 接受简单的 `input` 字符串，以及可选的 `session_id`、`instruc
   "status": "completed",
   "session_id": "space-session",
   "model": "intellect-agent",
+  "skill": "pdf",
   "output": "Done.",
   "usage": {"input_tokens": 50, "output_tokens": 200, "total_tokens": 250}
 }

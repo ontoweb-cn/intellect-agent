@@ -212,9 +212,15 @@ Returns a machine-readable description of the API server's stable surface for ex
     "chat_completions": true,
     "responses_api": true,
     "run_submission": true,
+    "run_skill_selection": true,
+    "custom_skills_api": true,
     "run_status": true,
     "run_events_sse": true,
     "run_stop": true
+  },
+  "endpoints": {
+    "skills": {"method": "GET", "path": "/v1/skills"},
+    "custom_skills": {"method": "GET", "path": "/v1/skills/custom"}
   }
 }
 ```
@@ -228,6 +234,45 @@ Health check. Returns `{"status": "ok"}`. Also available at **GET /v1/health** f
 ### GET /health/detailed
 
 Extended health check that also reports active sessions, running agents, and resource usage. Useful for monitoring/observability tooling.
+
+## Skill discovery API
+
+Both Skill discovery endpoints are read-only, require the same Bearer token as the rest of the API server, and return metadata only. They never return Skill file contents, absolute paths, or provider credentials. Results are sorted by `category` and `name`; an empty result is returned as `200 OK` with `{"object":"list","data":[]}`.
+
+### GET /v1/skills
+
+Lists every Skill that is enabled and callable from the current profile's `api_server` platform. This existing endpoint includes bundled, Skills Hub, and local Skills.
+
+```bash
+curl http://localhost:8642/v1/skills \
+  -H "Authorization: Bearer $API_SERVER_KEY"
+```
+
+### GET /v1/skills/custom
+
+Lists only local custom Skills that are enabled and callable from the current profile's `api_server` platform. Use this endpoint when an external platform should expose user-authored Skills without mixing in Intellect's bundled catalog or Skills Hub installations.
+
+```bash
+curl http://localhost:8642/v1/skills/custom \
+  -H "Authorization: Bearer $API_SERVER_KEY"
+```
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "name": "my-custom-skill",
+      "description": "A user-authored Skill",
+      "category": "custom"
+    }
+  ]
+}
+```
+
+A Skill is classified as custom/local only when its name is absent from both `~/.intellect/skills/.bundled_manifest` and `~/.intellect/skills/.hub/lock.json`. Manually authored, agent-authored, team/project, and configured external-directory Skills can therefore be returned. Disabled Skills and Skills disabled specifically for `api_server` are excluded. Editing a bundled Skill does not change its source classification, and Skills Hub installations remain excluded.
+
+Enumeration failures return the existing OpenAI-style `500 server_error` response; invalid or missing credentials return the existing `401` response.
 
 ## Runs API (streaming-friendly alternative)
 
@@ -246,6 +291,29 @@ Create a new agent run. Returns a `run_id` that can be used to subscribe to prog
 
 Runs accept a simple `input` string and optional `session_id`, `instructions`, `conversation_history`, or `previous_response_id`. When `session_id` is provided, Intellect surfaces it in the run status so external UIs can correlate runs with their own conversation IDs.
 
+To invoke one installed skill deterministically, pass its name in the optional `skill` field. Use `GET /v1/skills` to populate a picker in an external platform, then submit the selected `data[].name` value:
+
+```bash
+curl -X POST http://localhost:8642/v1/runs \
+  -H "Authorization: Bearer $API_SERVER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Extract the headings and return JSON.",
+    "skill": "pdf",
+    "session_id": "platform-task-42"
+  }'
+```
+
+```json
+{
+  "run_id": "run_abc123",
+  "status": "started",
+  "skill": "pdf"
+}
+```
+
+`skill` must be a skill name, not a path or free-form prompt. Intellect resolves it only against the currently enabled, platform-compatible skill registry and loads the full skill through the same deterministic loader used by the CLI and gateway. Unknown, disabled, or incompatible skills return `404 skill_not_found`; malformed values return `400 invalid_skill`; a skill that is registered but cannot be loaded returns `422 skill_unavailable`. Omitting `skill` preserves the original run behavior.
+
 ### GET /v1/runs/\{run_id\}
 
 Poll the current run state. This is useful for UIs that need status without holding an SSE connection open, or for clients that reconnect after navigation.
@@ -257,6 +325,7 @@ Poll the current run state. This is useful for UIs that need status without hold
   "status": "completed",
   "session_id": "space-session",
   "model": "intellect-agent",
+  "skill": "pdf",
   "output": "Done.",
   "usage": {"input_tokens": 50, "output_tokens": 200, "total_tokens": 250}
 }
