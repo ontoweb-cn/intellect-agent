@@ -410,6 +410,15 @@ wheels = [
 ]
 
 [[package]]
+name = "asyncstdlib"
+version = "3.14.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3a/66/7b76f2b48afc5c8b4648500a4ff9869f83528e3d601a19de51da18b5e8a5/asyncstdlib-3.14.0.tar.gz", hash = "sha256:f99396992a3bba7495d8cf6c832bfe8c8727f61213233d3569a5a9cbd1c04385", size = 51074, upload-time = "2026-03-20T21:06:46.025Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/93/50/463443651ddb0ba66c289d5649369099ab72b4665888b337ed25ea622550/asyncstdlib-3.14.0-py3-none-any.whl", hash = "sha256:cad90c590ce357da6e70c56f0e2ad9e9baaf146a8fc2ede189879da57eb8bd87", size = 44255, upload-time = "2026-03-20T21:06:45.033Z" },
+]
+
+[[package]]
 name = "attrs"
 version = "26.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1206,17 +1215,19 @@ wheels = [
 
 [[package]]
 name = "fal-client"
-version = "0.13.1"
+version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "aiofiles" },
+    { name = "asyncstdlib" },
     { name = "httpx" },
     { name = "httpx-sse" },
     { name = "msgpack" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0d/2c/3097270895a959aa4304b8e38c598182973ab106166e4ae3810533270bd3/fal_client-0.13.1.tar.gz", hash = "sha256:9e1c07d0a61b452a8ffb48c199de5f2543d7546f1230f6312370443127c5e937", size = 30281, upload-time = "2026-02-20T07:21:29.192Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/95/17727aba8ac0d7c958bd4823f256c2690fea57173f6748720784750237ad/fal_client-1.0.0.tar.gz", hash = "sha256:ba62cc008a4bbfae2c3cbade6c7a691093e42cfb5a79f7fca4dd61acbd87372a", size = 37713, upload-time = "2026-04-28T22:42:32.469Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/48/265c2935467ac1dbcb7c5b54cd8a2f579cbb263db6bfc0e0c8fe4bc79c02/fal_client-0.13.1-py3-none-any.whl", hash = "sha256:967a01f3a4112d485a30f8f3a0e678c6ff5b919eb9c5d480315cfc30a79fc037", size = 19265, upload-time = "2026-02-20T07:21:28.143Z" },
+    { url = "https://files.pythonhosted.org/packages/06/ae/2f1ec97492ced94256acfc39040fe979cb6f96e2ba4602ac59b6fd548538/fal_client-1.0.0-py3-none-any.whl", hash = "sha256:0e8a611fde2363c15cd26de8eadfada72a6fdf5077211e95120d7c870a233b2b", size = 22632, upload-time = "2026-04-28T22:42:31.035Z" },
 ]
 
 [[package]]
@@ -1912,7 +1923,7 @@ requires-dist = [
     { name = "edge-tts", marker = "extra == 'edge-tts'", specifier = "==7.2.8" },
     { name = "elevenlabs", marker = "extra == 'tts-premium'", specifier = "==1.59.0" },
     { name = "exa-py", marker = "extra == 'exa'", specifier = "==2.10.2" },
-    { name = "fal-client", marker = "extra == 'fal'", specifier = "==0.13.1" },
+    { name = "fal-client", marker = "extra == 'fal'", specifier = "==1.0.0" },
     { name = "faster-whisper", marker = "extra == 'voice'", specifier = "==1.2.1" },
     { name = "filelock", marker = "extra == 'dev'", specifier = "==3.29.5" },
     { name = "fire", specifier = "==0.7.1" },
