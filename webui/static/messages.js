@@ -1659,16 +1659,14 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       try{scene=JSON.parse(e.data);}catch(_){return;}
       if(!scene||typeof scene!=='object') return;
       const sceneStreamId=scene.stream_id||streamId;
-      // Live path: Activity DOM already built from tool SSE — latch only.
-      // Full apply would clearLiveToolCards + write server default disclosure
-      // (expanded:false), violating A3a and wiping user expand before done.
+      // Activity DOM already built from tool SSE — applyScene reconciles
+      // with server state. Idempotency latch (_sceneAppliedForStream) prevents
+      // redundant rebuilds on subsequent activity_scene events for this stream.
       const liveTurn=$('liveAssistantTurn');
       const hasLiveActivity=!!(liveTurn&&liveTurn.querySelector('.tool-call-group'));
       if(hasLiveActivity){
-        if(typeof markActivitySceneApplied==='function') markActivitySceneApplied(sceneStreamId);
-        else if(typeof applyActivityScene==='function'){
-          // Fallback: force latch without rebuild if helper missing.
-          applyActivityScene(scene,{source:'sse',latchOnly:true});
+        if(typeof applyActivityScene==='function'){
+          applyActivityScene(scene,{source:'sse'});
         }
         return;
       }
@@ -2000,29 +1998,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           // Opt-C / W6 TS6: settle live activity DOM before wipe.
           try{
             const _asstIdx=lastAsst?S.messages.indexOf(lastAsst):-1;
-            const _transparent=typeof isTransparentStream==='function'&&isTransparentStream();
-            if(_transparent){
-              // C1: stash scene for chronological settled rebuild
-              let _scene=null;
-              try{
-                if(typeof buildActivitySceneFromLive==='function'){
-                  _scene=buildActivitySceneFromLive({mode:'settled'});
-                }
-              }catch(__){}
-              if((!_scene||!_scene.segments||!_scene.segments.length)&&S.session&&INFLIGHT[S.session.session_id]){
-                _scene=INFLIGHT[S.session.session_id].scene||_scene;
-              }
-              if(_scene&&typeof stashTransparentSceneForSettle==='function'){
-                stashTransparentSceneForSettle(_asstIdx, _scene);
-              }
-              // TS6: skip Opt-C + skip clearLiveToolCards; strip live ids only
-              const _liveTurn=$('liveAssistantTurn');
-              if(_liveTurn){
-                _liveTurn.removeAttribute('id');
-                _liveTurn.removeAttribute('data-live');
-              }
-              const _wait=$('toolRunningRow');if(_wait)_wait.remove();
-            }else if(typeof _convertLiveActivityGroupToSettled!=='function'||!_convertLiveActivityGroupToSettled(_asstIdx)){
+            if(typeof _convertLiveActivityGroupToSettled!=='function'||!_convertLiveActivityGroupToSettled(_asstIdx)){
               clearLiveToolCards();
             }else{
               // Converted group still lives under #liveAssistantTurn; clearLive
