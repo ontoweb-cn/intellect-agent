@@ -5538,6 +5538,10 @@ function chatActivityDisplayMode(){
   return isSimplifiedToolCalling()?'compact_worklog':'transparent_stream';
 }
 
+function isTransparentStream(){
+  return chatActivityDisplayMode()==='transparent_stream';
+}
+
 function setChatActivityDisplayMode(mode, opts){
   opts=opts||{};
   const next=(mode==='transparent_stream')?'transparent_stream':'compact_worklog';

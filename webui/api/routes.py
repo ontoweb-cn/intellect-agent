@@ -9284,6 +9284,11 @@ def _handle_list_dir(handler, parsed):
         )
     except (FileNotFoundError, ValueError) as e:
         return bad(handler, _sanitize_error(e), 404)
+    except OSError as e:
+        return bad(handler, _sanitize_error(e), 404)
+    except Exception as e:
+        logger.exception("list_dir failed for sid=%s path=%s", sid, rel_path)
+        return bad(handler, "Internal server error", 500)
 
 
 def _sse_with_id(handler, event, data, event_id=None):
