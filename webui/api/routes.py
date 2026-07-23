@@ -9242,6 +9242,27 @@ def _handle_sessions_search(handler, parsed):
     return j(handler, {"sessions": results, "query": q, "count": len(results)})
 
 
+def _lookup_cli_session_workspace(sid: str) -> str | None:
+    """Try to find *sid* in the CLI session list and return its workspace path.
+
+    Returns ``None`` when the session is not found or access is denied.
+    """
+    try:
+        from api.session_visibility import SessionAccessDenied, enforce_session_access
+
+        cli_meta = None
+        for cs in get_cli_sessions():
+            if cs["session_id"] == sid:
+                cli_meta = cs
+                break
+        if not cli_meta:
+            return None
+        enforce_session_access(cli_meta, sid)
+        return cli_meta.get("workspace", "") or None
+    except Exception:
+        return None
+
+
 def _handle_list_dir(handler, parsed):
     qs = parse_qs(parsed.query)
     sid = qs.get("session_id", [""])[0]
@@ -9251,26 +9272,17 @@ def _handle_list_dir(handler, parsed):
         s = get_session(sid)
         workspace = s.workspace
     except KeyError:
-        # Fallback for CLI sessions not loaded in WebUI memory
-        try:
-            cli_meta = None
-            for cs in get_cli_sessions():
-                if cs["session_id"] == sid:
-                    cli_meta = cs
-                    break
-            if not cli_meta:
-                return bad(handler, "Session not found", 404)
-            from api.session_visibility import SessionAccessDenied, enforce_session_access
-
-            try:
-                enforce_session_access(cli_meta, sid)
-            except SessionAccessDenied:
-                return bad(handler, "Session not found", 404)
-            workspace = cli_meta.get("workspace", "")
-        except SessionAccessDenied:
+        # Session not found or access denied — fallback to CLI sessions
+        _s = _lookup_cli_session_workspace(sid)
+        if _s is None:
             return bad(handler, "Session not found", 404)
-        except Exception:
+        workspace = _s
+    except Exception:
+        # Session access denied or other lookup error — fallback to CLI sessions
+        _s = _lookup_cli_session_workspace(sid)
+        if _s is None:
             return bad(handler, "Session not found", 404)
+        workspace = _s
     try:
         rel_path = qs.get("path", ["."])[0]
         entries = list_dir(Path(workspace), rel_path)
