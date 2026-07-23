@@ -241,13 +241,13 @@ $_SAFE_SPEC = ".[$($_SAFE_EXTRAS -join ',')]"
 
 function Invoke-PipInstall {
     # Multi-tier fallback: .[all] -> safe extras -> base
-    & $UvCmd pip install -e ".[all]" 2>&1
+    & $UvCmd pip install -e ".[all]"
     if ($LASTEXITCODE -ne 0) {
         Write-Warn ".[all] install failed, trying safe extras..."
-        & $UvCmd pip install -e $_SAFE_SPEC 2>&1
+        & $UvCmd pip install -e $_SAFE_SPEC
         if ($LASTEXITCODE -ne 0) {
             Write-Warn "Safe extras install failed, falling back to base..."
-            & $UvCmd pip install -e "." 2>&1
+            & $UvCmd pip install -e "."
         }
     }
     if ($LASTEXITCODE -ne 0) {
@@ -261,7 +261,7 @@ if (Test-Path "uv.lock") {
     Write-Info "Using uv.lock for hash-verified installation..."
     Write-Info "(first run on a fresh venv can take 1-5 minutes; uv prints progress below)"
     $env:UV_PROJECT_ENVIRONMENT = Join-Path $ScriptDir "venv"
-    & $UvCmd sync --extra all --locked 2>&1
+    & $UvCmd sync --extra all --locked
     if ($LASTEXITCODE -eq 0) {
         Write-Success "Dependencies installed (hash-verified via uv.lock)"
     } else {
@@ -351,7 +351,8 @@ Set-Content -Path $IntellectLink -Value $launcherContent -Encoding UTF8
 Write-Success "Launcher created: $IntellectLink"
 
 # Ensure %USERPROFILE%\.local\bin is in User PATH
-$currentUserPath = [Environment]::GetEnvironmentVariable("Path", "User") ?? ""
+$currentUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (-not $currentUserPath) { $currentUserPath = "" }
 if ($currentUserPath -notlike "*$LocalBin*") {
     [Environment]::SetEnvironmentVariable("Path", "$currentUserPath;$LocalBin", "User")
     $env:Path = "$env:Path;$LocalBin"
