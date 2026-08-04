@@ -14,9 +14,11 @@ interface contract).
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 from acp import PROTOCOL_VERSION, spawn_agent_process
@@ -389,3 +391,114 @@ class ACPSubagentClient:
             options=list(req.options),
             _resolve=lambda option_id: self.respond(req.request_id, option_id),
         )
+
+
+# ---------------------------------------------------------------------------
+# OpenAI-compatible sync facade (P1a provider integration)
+# ---------------------------------------------------------------------------
+# create_openai_client() in agent_runtime_helpers.py returns a synchronous
+# OpenAI-compatible client. This facade wraps ACPSubagentClient (async) so a
+# generic ACP command can be used as an Intellect model provider: each
+# chat.completions.create() spawns one sub-agent turn and returns the reply.
+
+class _ACPSubagentChatCompletions:
+    def __init__(self, facade: "ACPSubagentOpenAIFacade") -> None:
+        self._facade = facade
+
+    def create(self, **kwargs: Any) -> Any:
+        return self._facade._create_chat_completion(**kwargs)
+
+
+class _ACPSubagentChat:
+    def __init__(self, facade: "ACPSubagentOpenAIFacade") -> None:
+        self.completions = _ACPSubagentChatCompletions(facade)
+
+
+class ACPSubagentOpenAIFacade:
+    """Synchronous OpenAI-compatible facade over a generic ACP sub-agent.
+
+    Each ``create()`` runs one delegated turn: spawn the ACP command, send the
+    rendered prompt, collect the reply, then tear the sub-process down.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        acp_command: str | None = None,
+        acp_args: list[str] | None = None,
+        acp_cwd: str | None = None,
+        command: str | None = None,
+        args: list[str] | None = None,
+        auto_deny_permissions: bool = True,
+        **_: Any,
+    ) -> None:
+        from agent.copilot_acp_client import _resolve_command
+
+        self.api_key = api_key or "acp-subagent"
+        self.base_url = base_url or "acp://generic"
+        self._command = acp_command or command or _resolve_command()
+        self._args = list(acp_args or args or [])
+        self._cwd = str(Path(acp_cwd or os.getcwd()).resolve())
+        self._auto_deny = auto_deny_permissions
+        self.chat = _ACPSubagentChat(self)
+        self.is_closed = False
+
+    def _create_chat_completion(
+        self,
+        *,
+        model: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        timeout: float | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: Any = None,
+        **_: Any,
+    ) -> Any:
+        from types import SimpleNamespace
+
+        from agent.copilot_acp_client import _extract_tool_calls_from_text, _format_messages_as_prompt
+
+        prompt_text = _format_messages_as_prompt(
+            messages or [], model=model, tools=tools, tool_choice=tool_choice
+        )
+        timeout_s = float(timeout) if isinstance(timeout, (int, float)) else 120.0
+        response_text, reasoning_text = self._run_prompt(prompt_text, timeout_s)
+        tool_calls, cleaned_text = _extract_tool_calls_from_text(response_text)
+        usage = SimpleNamespace(
+            prompt_tokens=0, completion_tokens=0, total_tokens=0,
+            prompt_tokens_details=SimpleNamespace(cached_tokens=0),
+        )
+        assistant_message = SimpleNamespace(
+            content=cleaned_text, tool_calls=tool_calls,
+            reasoning=reasoning_text or None, reasoning_content=reasoning_text or None,
+            reasoning_details=None,
+        )
+        choice = SimpleNamespace(
+            message=assistant_message,
+            finish_reason="tool_calls" if tool_calls else "stop",
+        )
+        return SimpleNamespace(
+            choices=[choice], usage=usage, model=model or "acp-subagent"
+        )
+
+    def _run_prompt(self, prompt_text: str, timeout_s: float) -> tuple[str, str]:
+        import asyncio
+
+        async def _one_turn() -> tuple[str, str]:
+            client = ACPSubagentClient(
+                command=self._command, args=self._args, cwd=self._cwd,
+                auto_deny_permissions=self._auto_deny, client_version="0.0.1",
+            )
+            try:
+                await asyncio.wait_for(client.start(), timeout=timeout_s)
+                await asyncio.wait_for(client.new_session(cwd=self._cwd), timeout=timeout_s)
+                result = await asyncio.wait_for(client.prompt(prompt_text), timeout=timeout_s)
+                return result.text, result.thoughts
+            finally:
+                await client.close()
+
+        return asyncio.run(_one_turn())
+
+    def close(self) -> None:
+        self.is_closed = True
