@@ -358,6 +358,28 @@ class TestSessionOps:
         await agent.cancel(session_id="does-not-exist")
 
     @pytest.mark.asyncio
+    async def test_close_session_removes_session_and_sets_event(self, agent):
+        resp = await agent.new_session(cwd=".")
+        state = agent.session_manager.get_session(resp.session_id)
+        assert state is not None
+        await agent.close_session(session_id=resp.session_id)
+        assert agent.session_manager.get_session(resp.session_id) is None
+        assert state.cancel_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_close_session_clears_queued_prompts(self, agent):
+        resp = await agent.new_session(cwd=".")
+        state = agent.session_manager.get_session(resp.session_id)
+        state.queued_prompts.append("queued text")
+        await agent.close_session(session_id=resp.session_id)
+        assert state.queued_prompts == []
+
+    @pytest.mark.asyncio
+    async def test_close_session_nonexistent_returns_none(self, agent):
+        result = await agent.close_session(session_id="does-not-exist")
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_load_session_not_found_returns_none(self, agent):
         resp = await agent.load_session(cwd="/tmp", session_id="bogus")
         assert resp is None

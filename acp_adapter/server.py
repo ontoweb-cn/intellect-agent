@@ -25,6 +25,7 @@ from acp.schema import (
     AvailableCommandsUpdate,
     BlobResourceContents,
     ClientCapabilities,
+    CloseSessionResponse,
     EmbeddedResourceContentBlock,
     ForkSessionResponse,
     ImageContentBlock,
@@ -1188,6 +1189,30 @@ class intellectACPAgent(acp.Agent):
             except Exception:
                 logger.debug("Failed to interrupt ACP session %s", session_id, exc_info=True)
             logger.info("Cancelled session %s", session_id)
+
+    async def close_session(
+        self, session_id: str, **kwargs: Any
+    ) -> CloseSessionResponse | None:
+        """Close a session: cancel pending work and remove it (memory + DB)."""
+        state = self.session_manager.get_session(session_id)
+        if state is None:
+            logger.warning("close_session: session %s not found", session_id)
+            return None
+
+        # Cancel any in-flight prompt / clear queued prompts so a running
+        # turn can't keep the agent alive after the client has closed it.
+        if state.cancel_event:
+            state.cancel_event.set()
+            try:
+                if getattr(state, "agent", None) and hasattr(state.agent, "interrupt"):
+                    state.agent.interrupt()
+            except Exception:
+                logger.debug("Failed to interrupt ACP session %s on close", session_id, exc_info=True)
+        state.queued_prompts.clear()
+
+        self.session_manager.remove_session(session_id)
+        logger.info("Closed ACP session %s", session_id)
+        return CloseSessionResponse()
 
     async def fork_session(
         self,
