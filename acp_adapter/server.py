@@ -36,22 +36,21 @@ from acp.schema import (
     McpServerHttp,
     McpServerSse,
     McpServerStdio,
-    ModelInfo,
     NewSessionResponse,
     PromptCapabilities,
     PromptResponse,
     ResumeSessionResponse,
     SetSessionConfigOptionResponse,
-    SetSessionModelResponse,
     SetSessionModeResponse,
     ResourceContentBlock,
     SessionCapabilities,
+    SessionConfigOptionSelect,
+    SessionConfigSelectOption,
     SessionForkCapabilities,
     SessionInfoUpdate,
     SessionListCapabilities,
     SessionMode,
     SessionModeState,
-    SessionModelState,
     SessionResumeCapabilities,
     SessionInfo,
     TextContentBlock,
@@ -500,6 +499,9 @@ class intellectACPAgent(acp.Agent):
     )
 
     _EDIT_APPROVAL_POLICY_CONFIG_ID = "edit_approval_policy"
+    # Model selector is advertised via config_options (SDK 0.11.0 replaced the
+    # unstable SessionModelState / session/set_model with a select config option).
+    _MODEL_CONFIG_ID = "model"
     _EDIT_APPROVAL_POLICY_DEFAULT = "ask"
     _MODE_DEFAULT = "default"
     _MODE_ACCEPT_EDITS = "accept_edits"
@@ -524,7 +526,6 @@ class intellectACPAgent(acp.Agent):
         """Store the client connection for sending session updates."""
         self._conn = conn
         logger.info("ACP client connected")
-
 
     def _session_modes(self, state: SessionState) -> SessionModeState:
         """Return ACP session modes while preserving Zed's separate model picker.
@@ -575,17 +576,30 @@ class intellectACPAgent(acp.Agent):
             return raw_model
         return f"{raw_provider}:{raw_model}"
 
-    def _build_model_state(self, state: SessionState) -> SessionModelState | None:
-        """Return the ACP model selector payload for editors like Zed."""
+    def _build_model_config_options(self, state: SessionState) -> list[SessionConfigOptionSelect] | None:
+        """Return the ACP 0.11.0 model selector, advertised via ``config_options``.
+
+        SDK 0.11.0 removed the unstable ``SessionModelState``/``session/set_model``;
+        a model picker is now a select config option (``SessionConfigOptionSelect``)
+        rendered by editors like Zed in the prominent selector slot. Values are the
+        ``_encode_model_choice`` ids that ``_resolve_model_selection`` round-trips.
+        """
         model = str(state.model or getattr(state.agent, "model", "") or "").strip()
         provider = getattr(state.agent, "provider", None) or detect_provider() or "openrouter"
+
+        def _option(choice_id: str, name: str, desc_parts: list[str]) -> SessionConfigSelectOption:
+            return SessionConfigSelectOption(
+                value=choice_id,
+                name=name,
+                description=" • ".join(part for part in desc_parts if part) or None,
+            )
 
         try:
             from intellect_cli.models import curated_models_for_provider, normalize_provider, provider_label
 
             normalized_provider = normalize_provider(provider)
             provider_name = provider_label(normalized_provider)
-            available_models: list[ModelInfo] = []
+            options: list[SessionConfigSelectOption] = []
             seen_ids: set[str] = set()
 
             for model_id, description in curated_models_for_provider(normalized_provider):
@@ -600,42 +614,44 @@ class intellectACPAgent(acp.Agent):
                     desc_parts.append(str(description).strip())
                 if rendered_model == model:
                     desc_parts.append("current")
-                available_models.append(
-                    ModelInfo(
-                        model_id=choice_id,
-                        name=rendered_model,
-                        description=" • ".join(part for part in desc_parts if part),
-                    )
-                )
+                options.append(_option(choice_id, rendered_model, desc_parts))
                 seen_ids.add(choice_id)
 
             current_model_id = self._encode_model_choice(normalized_provider, model)
             if current_model_id and current_model_id not in seen_ids:
-                available_models.insert(
+                options.insert(
                     0,
-                    ModelInfo(
-                        model_id=current_model_id,
-                        name=model,
-                        description=f"Provider: {provider_name} • current",
-                    ),
+                    _option(current_model_id, model, [f"Provider: {provider_name}", "current"]),
                 )
 
-            if available_models:
-                return SessionModelState(
-                    available_models=available_models,
-                    current_model_id=current_model_id or available_models[0].model_id,
-                )
+            if options:
+                return [
+                    SessionConfigOptionSelect(
+                        type="select",
+                        id=self._MODEL_CONFIG_ID,
+                        name="Model",
+                        description="The model used for this session.",
+                        current_value=current_model_id or options[0].value,
+                        options=options,
+                    )
+                ]
         except Exception:
-            logger.debug("Could not build ACP model state", exc_info=True)
+            logger.debug("Could not build ACP model config option", exc_info=True)
 
         if not model:
             return None
 
         fallback_choice = self._encode_model_choice(provider, model)
-        return SessionModelState(
-            available_models=[ModelInfo(model_id=fallback_choice, name=model)],
-            current_model_id=fallback_choice,
-        )
+        return [
+            SessionConfigOptionSelect(
+                type="select",
+                id=self._MODEL_CONFIG_ID,
+                name="Model",
+                description="The model used for this session.",
+                current_value=fallback_choice,
+                options=[SessionConfigSelectOption(value=fallback_choice, name=model)],
+            )
+        ]
 
     @staticmethod
     def _resolve_model_selection(raw_model: str, current_provider: str) -> tuple[str, str]:
@@ -1079,7 +1095,7 @@ class intellectACPAgent(acp.Agent):
         self._schedule_usage_update(state)
         return NewSessionResponse(
             session_id=state.session_id,
-            models=self._build_model_state(state),
+            config_options=self._build_model_config_options(state),
             modes=self._session_modes(state),
         )
 
@@ -1123,7 +1139,7 @@ class intellectACPAgent(acp.Agent):
         self._schedule_available_commands_update(session_id)
         self._schedule_usage_update(state)
         return LoadSessionResponse(
-            models=self._build_model_state(state),
+            config_options=self._build_model_config_options(state),
             modes=self._session_modes(state),
         )
 
@@ -1155,7 +1171,7 @@ class intellectACPAgent(acp.Agent):
         self._schedule_available_commands_update(state.session_id)
         self._schedule_usage_update(state)
         return ResumeSessionResponse(
-            models=self._build_model_state(state),
+            config_options=self._build_model_config_options(state),
             modes=self._session_modes(state),
         )
 
@@ -1189,7 +1205,7 @@ class intellectACPAgent(acp.Agent):
             self._schedule_available_commands_update(new_id)
         return ForkSessionResponse(
             session_id=new_id,
-            models=self._build_model_state(state) if state is not None else None,
+            config_options=self._build_model_config_options(state) if state is not None else None,
             modes=self._session_modes(state) if state is not None else None,
         )
 
@@ -1817,7 +1833,7 @@ class intellectACPAgent(acp.Agent):
 
             try:
                 # ACP sessions must keep a stable session id, so avoid the
-                # SQLite session-splitting side effect inside _compress_context.
+                # session-splitting side effect inside _compress_context.
                 agent._session_db = None
                 compressed, _ = agent._compress_context(
                     state.history,
@@ -1877,41 +1893,36 @@ class intellectACPAgent(acp.Agent):
     def _cmd_version(self, args: str, state: SessionState) -> str:
         return f"Intellect Agent v{intellect_VERSION}"
 
-    # ---- Model switching (ACP protocol method) -------------------------------
+    # ---- Model switching -----------------------------------------------------
+    # SDK 0.11.0 removed the unstable session/set_model protocol method; model
+    # selection is now a config option (see _build_model_config_options) applied
+    # through set_config_option with _MODEL_CONFIG_ID.
 
-    async def set_session_model(
-        self, model_id: str, session_id: str, **kwargs: Any
-    ) -> SetSessionModelResponse | None:
-        """Switch the model for a session (called by ACP protocol)."""
-        state = self.session_manager.get_session(session_id)
-        if state:
-            current_provider = getattr(state.agent, "provider", None)
-            requested_provider, resolved_model = self._resolve_model_selection(
-                model_id,
-                current_provider or "openrouter",
-            )
-            state.model = resolved_model
-            provider_changed = bool(current_provider and requested_provider != current_provider)
-            current_base_url = None if provider_changed else getattr(state.agent, "base_url", None)
-            current_api_mode = None if provider_changed else getattr(state.agent, "api_mode", None)
-            state.agent = self.session_manager._make_agent(
-                session_id=session_id,
-                cwd=state.cwd,
-                model=resolved_model,
-                requested_provider=requested_provider,
-                base_url=current_base_url,
-                api_mode=current_api_mode,
-            )
-            self.session_manager.save_session(session_id)
-            logger.info(
-                "Session %s: model switched to %s via provider %s",
-                session_id,
-                resolved_model,
-                requested_provider,
-            )
-            return SetSessionModelResponse()
-        logger.warning("Session %s: model switch requested for missing session", session_id)
-        return None
+    async def _apply_model_switch(self, state: SessionState, raw_value: str) -> None:
+        """Switch the model for a session (config-option value is a choice id)."""
+        current_provider = getattr(state.agent, "provider", None)
+        requested_provider, resolved_model = self._resolve_model_selection(
+            raw_value,
+            current_provider or "openrouter",
+        )
+        state.model = resolved_model
+        provider_changed = bool(current_provider and requested_provider != current_provider)
+        current_base_url = None if provider_changed else getattr(state.agent, "base_url", None)
+        current_api_mode = None if provider_changed else getattr(state.agent, "api_mode", None)
+        state.agent = self.session_manager._make_agent(
+            session_id=state.session_id,
+            cwd=state.cwd,
+            model=resolved_model,
+            requested_provider=requested_provider,
+            base_url=current_base_url,
+            api_mode=current_api_mode,
+        )
+        logger.info(
+            "Session %s: model switched to %s via provider %s",
+            state.session_id,
+            resolved_model,
+            requested_provider,
+        )
 
     async def set_session_mode(
         self, mode_id: str, session_id: str, **kwargs: Any
@@ -1938,7 +1949,9 @@ class intellectACPAgent(acp.Agent):
             logger.warning("Session %s: config update requested for missing session", session_id)
             return None
 
-        if str(config_id) == self._EDIT_APPROVAL_POLICY_CONFIG_ID:
+        if str(config_id) == self._MODEL_CONFIG_ID:
+            await self._apply_model_switch(state, str(value))
+        elif str(config_id) == self._EDIT_APPROVAL_POLICY_CONFIG_ID:
             mode = self._EDIT_APPROVAL_POLICY_TO_MODE.get(str(value), self._MODE_DEFAULT)
             setattr(state, "mode", mode)
         else:
@@ -1949,4 +1962,7 @@ class intellectACPAgent(acp.Agent):
             setattr(state, "config_options", options)
         self.session_manager.save_session(session_id)
         logger.info("Session %s: config option %s updated", session_id, config_id)
-        return SetSessionConfigOptionResponse(config_options=[])
+        # After a model switch, return the refreshed selector so the client's
+        # config-option state stays in sync.
+        current = self._build_model_config_options(state) if str(config_id) == self._MODEL_CONFIG_ID else None
+        return SetSessionConfigOptionResponse(config_options=current or [])

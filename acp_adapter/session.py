@@ -454,7 +454,7 @@ class SessionManager:
                     session_id=state.session_id,
                     source="acp",
                     model=model_str,
-                    model_config={"cwd": state.cwd},
+                    model_config=session_meta,
                     member_id=_member_id,
                 )
             else:
@@ -497,10 +497,11 @@ class SessionManager:
         if row.get("source") != "acp":
             return None
 
-        # Extract cwd from model_config.
+        # Extract cwd from model_config. provider/base_url/api_mode are stored
+        # in model_config by _persist (never in billing_* columns).
         cwd = "."
-        requested_provider = row.get("billing_provider")
-        restored_base_url = row.get("billing_base_url")
+        requested_provider = None
+        restored_base_url = None
         restored_api_mode = None
         mc = row.get("model_config")
         if mc:
@@ -508,9 +509,9 @@ class SessionManager:
                 meta = json.loads(mc)
                 if isinstance(meta, dict):
                     cwd = meta.get("cwd", ".")
-                    requested_provider = meta.get("provider") or requested_provider
-                    restored_base_url = meta.get("base_url") or restored_base_url
-                    restored_api_mode = meta.get("api_mode") or restored_api_mode
+                    requested_provider = meta.get("provider")
+                    restored_base_url = meta.get("base_url")
+                    restored_api_mode = meta.get("api_mode")
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -610,9 +611,13 @@ class SessionManager:
 
         try:
             runtime = resolve_runtime_provider(requested=requested_provider or config_provider)
+            # Restored per-session values take priority over runtime resolution;
+            # fall back to runtime only where a restored value is absent. This
+            # keeps provider/api_mode/base_url mutually consistent (a stale
+            # base_url must never pair with a freshly resolved provider).
             kwargs.update(
                 {
-                    "provider": runtime.get("provider"),
+                    "provider": requested_provider or runtime.get("provider"),
                     "api_mode": api_mode or runtime.get("api_mode"),
                     "base_url": base_url or runtime.get("base_url"),
                     "api_key": runtime.get("api_key"),
@@ -621,7 +626,25 @@ class SessionManager:
                 }
             )
         except Exception:
-            logger.debug("ACP session falling back to default provider resolution", exc_info=True)
+            # Provider resolution failed: keep the restored provider (if any) so
+            # the agent isn't silently rebuilt without provider/api_key. Surface
+            # a warning instead of silently degrading to defaults.
+            if requested_provider:
+                logger.warning(
+                    "ACP session %s: runtime provider resolution failed; "
+                    "using restored provider=%r without runtime credentials",
+                    session_id,
+                    requested_provider,
+                    exc_info=True,
+                )
+                kwargs.setdefault("provider", requested_provider)
+            else:
+                logger.warning(
+                    "ACP session %s: runtime provider resolution failed; "
+                    "falling back to default provider (no restored provider)",
+                    session_id,
+                    exc_info=True,
+                )
 
         _register_task_cwd(session_id, cwd)
         agent = AIAgent(**kwargs)

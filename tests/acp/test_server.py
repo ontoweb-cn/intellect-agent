@@ -22,10 +22,9 @@ from acp.schema import (
     NewSessionResponse,
     PromptResponse,
     ResumeSessionResponse,
-    SessionModelState,
+    SessionConfigOptionSelect,
     SessionModeState,
     SetSessionConfigOptionResponse,
-    SetSessionModelResponse,
     SetSessionModeResponse,
     SessionInfo,
     SessionInfoUpdate,
@@ -57,7 +56,7 @@ def agent(mock_manager):
 async def test_new_session_exposes_edit_approvals_as_modes_not_config_options(agent):
     resp = await agent.new_session(cwd="/tmp")
 
-    assert resp.config_options is None
+    # Edit-approval policy is advertised via modes (not config_options).
     assert isinstance(resp.modes, SessionModeState)
     assert resp.modes.current_mode_id == "default"
     assert [(mode.id, mode.name) for mode in resp.modes.available_modes] == [
@@ -65,6 +64,11 @@ async def test_new_session_exposes_edit_approvals_as_modes_not_config_options(ag
         ("accept_edits", "Accept Edits"),
         ("dont_ask", "Don't Ask"),
     ]
+    # config_options now carries the model selector (SDK 0.11.0 replaced the
+    # unstable SessionModelState with a select config option) — no edit-approval
+    # entries here.
+    assert resp.config_options
+    assert all(opt.id == "model" for opt in resp.config_options)
 
 
 @pytest.mark.asyncio
@@ -250,11 +254,13 @@ class TestSessionOps:
         ):
             resp = await acp_agent.new_session(cwd="/tmp")
 
-        assert isinstance(resp.models, SessionModelState)
-        assert resp.models.current_model_id == "openai-codex:gpt-5.4"
-        assert resp.models.available_models[0].model_id == "openai-codex:gpt-5.4"
-        assert resp.models.available_models[0].description is not None
-        assert "Provider:" in resp.models.available_models[0].description
+        assert resp.config_options
+        selector = resp.config_options[0]
+        assert isinstance(selector, SessionConfigOptionSelect)
+        assert selector.current_value == "openai-codex:gpt-5.4"
+        assert selector.options[0].value == "openai-codex:gpt-5.4"
+        assert selector.options[0].description is not None
+        assert "Provider:" in selector.options[0].description
 
     @pytest.mark.asyncio
     async def test_available_commands_include_help(self, agent):
@@ -924,22 +930,24 @@ class TestSessionConfiguration:
         assert config_result["configOptions"] == []
 
     @pytest.mark.asyncio
-    async def test_router_accepts_unstable_model_switch_when_enabled(self, agent):
+    async def test_router_routes_model_config_option(self, agent):
+        # SDK 0.11.0 removed session/set_model; model selection is now a
+        # config option routed through session/set_config_option.
         new_resp = await agent.new_session(cwd="/tmp")
         router = build_agent_router(agent, use_unstable_protocol=True)
 
         result = await router(
-            "session/set_model",
-            {"modelId": "gpt-5.4", "sessionId": new_resp.session_id},
+            "session/set_config_option",
+            {"configId": "model", "sessionId": new_resp.session_id, "value": "gpt-5.4"},
             False,
         )
         state = agent.session_manager.get_session(new_resp.session_id)
 
-        assert result == {}
+        assert result is not None
         assert state.model == "gpt-5.4"
 
     @pytest.mark.asyncio
-    async def test_set_session_model_accepts_provider_prefixed_choice(self, tmp_path, monkeypatch):
+    async def test_set_model_config_option_accepts_provider_prefixed_choice(self, tmp_path, monkeypatch):
         runtime_calls = []
 
         def fake_resolve_runtime_provider(requested=None, **kwargs):
@@ -986,12 +994,14 @@ class TestSessionConfiguration:
         with patch("run_agent.AIAgent", side_effect=fake_agent):
             acp_agent = intellectACPAgent(session_manager=manager)
             state = manager.create_session(cwd="/tmp")
-            result = await acp_agent.set_session_model(
-                model_id="anthropic:claude-sonnet-4-6",
+            # SDK 0.11.0: model selection is a config option, not session/set_model.
+            result = await acp_agent.set_config_option(
+                config_id="model",
                 session_id=state.session_id,
+                value="anthropic:claude-sonnet-4-6",
             )
 
-        assert isinstance(result, SetSessionModelResponse)
+        assert isinstance(result, SetSessionConfigOptionResponse)
         assert state.model == "claude-sonnet-4-6"
         assert state.agent.provider == "anthropic"
         assert state.agent.base_url == "https://anthropic.example/v1"
@@ -1241,7 +1251,6 @@ class TestPrompt:
         assert any(
             text and "[plugin appended this]" in text for text in all_texts
         ), f"expected transformed final to be delivered, got: {all_texts!r}"
-
 
     @pytest.mark.asyncio
     async def test_prompt_auto_titles_session(self, agent):
@@ -1665,6 +1674,7 @@ class TestRegisterSessionMcpServers:
         )
 
         registered_config = {}
+
         def capture_register(config_map):
             registered_config.update(config_map)
             return ["mcp_test_server_tool1"]
@@ -1697,6 +1707,7 @@ class TestRegisterSessionMcpServers:
         )
 
         registered_config = {}
+
         def capture_register(config_map):
             registered_config.update(config_map)
             return []
