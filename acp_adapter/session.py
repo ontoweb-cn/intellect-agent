@@ -8,7 +8,6 @@ history.
 """
 from __future__ import annotations
 
-from intellect_constants import get_intellect_home
 
 import copy
 import json
@@ -181,6 +180,10 @@ class SessionState:
     runtime_lock: Any = field(default_factory=Lock)
     current_prompt_text: str = ""
     interrupted_prompt_text: str = ""
+    # Set by close_session when the client closes the session mid-turn; the
+    # running prompt checks it afterwards to skip persistence/streaming on a
+    # session that has been removed.
+    closed: bool = False
 
 
 class SessionManager:
@@ -462,7 +465,7 @@ class SessionManager:
                 try:
                     with db._lock:
                         db._conn.execute(
-                            "UPDATE sessions SET model_config = ?, model = COALESCE(?, model) WHERE id = ?",
+                            "UPDATE sessions SET model_config = %s, model = COALESCE(%s, model) WHERE id = %s",
                             (cwd_json, model_str, state.session_id),
                         )
                         db._conn.commit()

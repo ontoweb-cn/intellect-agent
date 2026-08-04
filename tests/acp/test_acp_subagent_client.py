@@ -127,12 +127,13 @@ async def test_request_permission_queues_and_resolves(client):
         )
         await asyncio.sleep(0.05)
 
-        # Consume the queued request and resolve it.
+        # Consume the queued request and resolve it by request_id.
         req = await client.host.perm_requests.get()
         assert isinstance(req, PermissionRequest)
         assert req.session_id == "fake-session"
+        assert req.request_id.startswith("perm-")
 
-        client.host.resolve_permission("fake-session", "call-1", "allow_once")
+        client.host.resolve_permission(req.request_id, "allow_once")
         decision = await asyncio.wait_for(perm_task, timeout=1)
         assert decision.outcome.option_id == "allow_once"
 
@@ -196,8 +197,13 @@ async def test_stdio_smoke_permission_round_trip():
     )
 
     async def _approve():
-        req = await client.host.perm_requests.get()
-        client.host.resolve_permission(req.session_id, req.tool_call.tool_call_id, "allow_once")
+        # P1b contract: consume a SuspendedPermission and respond by request_id.
+        async for perm in client.permission_events():
+            assert perm.request_id.startswith("perm-")
+            assert perm.description  # raw tool input surfaced
+            assert any(o.option_id == "allow_once" for o in perm.options)
+            await client.respond(perm.request_id, "allow_once")
+            return
 
     try:
         await asyncio.wait_for(client.start(), timeout=10)
@@ -207,6 +213,6 @@ async def test_stdio_smoke_permission_round_trip():
             client.prompt("needs-permission rm -rf"), timeout=10
         )
         assert result.stop_reason == "end_turn"
-        await approver
+        await asyncio.wait_for(approver, timeout=5)
     finally:
         await client.close()

@@ -1193,22 +1193,40 @@ class intellectACPAgent(acp.Agent):
     async def close_session(
         self, session_id: str, **kwargs: Any
     ) -> CloseSessionResponse | None:
-        """Close a session: cancel pending work and remove it (memory + DB)."""
+        """Close a session: cancel pending work and remove it (memory + DB).
+
+        Marks the session ``closed`` so a still-running prompt skips
+        persistence/streaming on completion, and always deletes the DB row —
+        even if the session exists only in DB and the agent can't be rebuilt.
+        """
         state = self.session_manager.get_session(session_id)
         if state is None:
+            # Session may exist only in DB (after restart) but fail to rebuild
+            # its agent; still delete the row so it can't be orphaned.
+            if self.session_manager._get_db() is not None:
+                try:
+                    row = self.session_manager._get_db().get_session(session_id)
+                    if row is not None:
+                        self.session_manager.remove_session(session_id)
+                        logger.info("Closed DB-only ACP session %s", session_id)
+                        return CloseSessionResponse()
+                except Exception:
+                    logger.debug("Failed to delete DB-only ACP session %s", session_id, exc_info=True)
             logger.warning("close_session: session %s not found", session_id)
             return None
 
-        # Cancel any in-flight prompt / clear queued prompts so a running
-        # turn can't keep the agent alive after the client has closed it.
-        if state.cancel_event:
-            state.cancel_event.set()
-            try:
-                if getattr(state, "agent", None) and hasattr(state.agent, "interrupt"):
-                    state.agent.interrupt()
-            except Exception:
-                logger.debug("Failed to interrupt ACP session %s on close", session_id, exc_info=True)
-        state.queued_prompts.clear()
+        # Cancel any in-flight prompt under the session lock, and mark closed
+        # so the running turn's completion path becomes a no-op.
+        with state.runtime_lock:
+            state.closed = True
+            if state.cancel_event:
+                state.cancel_event.set()
+                try:
+                    if getattr(state, "agent", None) and hasattr(state.agent, "interrupt"):
+                        state.agent.interrupt()
+                except Exception:
+                    logger.debug("Failed to interrupt ACP session %s on close", session_id, exc_info=True)
+            state.queued_prompts.clear()
 
         self.session_manager.remove_session(session_id)
         logger.info("Closed ACP session %s", session_id)
@@ -1547,6 +1565,15 @@ class intellectACPAgent(acp.Agent):
                 state.is_running = False
                 state.current_prompt_text = ""
             return PromptResponse(stop_reason="end_turn")
+
+        # If the client closed this session while the turn was running, skip
+        # persistence/auto-title/streaming — the session was removed and any
+        # write would resurrect a ghost row or emit on a closed session.
+        if getattr(state, "closed", False):
+            with state.runtime_lock:
+                state.is_running = False
+                state.current_prompt_text = ""
+            return PromptResponse(stop_reason="cancelled")
 
         if result.get("messages"):
             state.history = result["messages"]
