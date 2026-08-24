@@ -42,7 +42,7 @@ dependencies = [
   # user picks that backend. Smaller `dependencies` = smaller blast
   # radius for the next supply-chain attack.
   "openai==2.46.0",
-  "python-dotenv==1.2.2",
+  "python-dotenv==1.2.3",
   "fire==0.7.1",
   "httpx[socks]==0.28.1",
   "rich==14.3.3",
@@ -57,7 +57,7 @@ dependencies = [
   # codex_responses dispatch in agent/chat_completion_helpers.py:_call.
   "pydantic==2.13.4",
   # Interactive CLI (prompt_toolkit is used directly by cli.py)
-  "prompt_toolkit==3.0.52",
+  "prompt_toolkit==3.0.53",
   # Cron scheduler (built-in feature — scheduled cron/interval jobs use croniter).
   "croniter==6.2.4",
   # Skills Hub (GitHub App JWT auth — optional, only needed for bot identity)
@@ -86,18 +86,18 @@ exa = ["exa-py==2.16.0"]
 firecrawl = ["firecrawl-py==4.32.1"]
 parallel-web = ["parallel-web==0.4.2"]
 # Image generation backends
-fal = ["fal-client==1.0.0"]
+fal = ["fal-client==1.0.1"]
 # Edge TTS — default TTS provider but still optional (users can pick
 # ElevenLabs / OpenAI / MiniMax instead).
 edge-tts = ["edge-tts==7.2.8"]
-modal = ["modal==1.5.2"]
+modal = ["modal==1.5.4"]
 daytona = ["daytona==0.199.0"]
 hindsight = ["hindsight-client==0.8.4"]
-dev = ["debugpy==1.8.21", "pytest==9.1.1", "pytest-asyncio==1.4.0", "pytest-timeout==2.4.0", "filelock==3.31.0", "mcp==1.28.1", "starlette==1.3.1", "ty==0.0.56", "ruff==0.15.20", "setuptools==82.0.1"]  # starlette: CVE-2026-48710
-messaging = ["python-telegram-bot[webhooks]==22.8", "discord.py[voice]==2.7.1", "aiohttp==3.14.1", "brotlicffi==1.2.0.1", "slack-bolt==1.30.0", "slack-sdk==3.43.0", "qrcode==7.4.2"]
+dev = ["debugpy==1.8.21", "pytest==9.1.1", "pytest-asyncio==1.4.0", "pytest-timeout==2.4.0", "filelock==3.31.0", "mcp==1.28.1", "starlette==1.3.1", "ty==0.0.73", "ruff==0.15.20", "setuptools==82.0.1"]  # starlette: CVE-2026-48710
+messaging = ["python-telegram-bot[webhooks]==22.8", "discord.py[voice]==2.7.1", "aiohttp==3.14.3", "brotlicffi==1.2.0.1", "slack-bolt==1.30.0", "slack-sdk==3.43.0", "qrcode==7.4.2"]
 cron = []  # croniter is now a core dependency; this extra kept for back-compat
-slack = ["slack-bolt==1.30.0", "slack-sdk==3.43.0", "aiohttp==3.14.1"]
-matrix = ["mautrix[encryption]==0.21.1", "Markdown==3.10.2", "aiosqlite==0.22.1", "asyncpg==0.31.0", "aiohttp-socks==0.11.0"]
+slack = ["slack-bolt==1.30.0", "slack-sdk==3.43.0", "aiohttp==3.14.3"]
+matrix = ["mautrix[encryption]==0.21.1", "Markdown==3.10.3", "aiosqlite==0.22.1", "asyncpg==0.31.0", "aiohttp-socks==0.11.0"]
 high-performance = [
   "redis>=5.0.0,<9",
 ]
@@ -113,8 +113,8 @@ voice = [
   # Local STT pulls in wheel-only transitive deps (ctranslate2, onnxruntime),
   # so keep it out of the base install for source-build packagers like Homebrew.
   "faster-whisper==1.2.1",
-  "sounddevice==0.5.5",
-  "numpy==2.5.1",
+  "sounddevice==0.5.6",
+  "numpy==2.5.2",
 ]
 pty = [
   "ptyprocess==0.7.0; sys_platform != 'win32'",
@@ -129,8 +129,8 @@ honcho = ["honcho-ai==2.2.0"]
 # extra that exposes a Starlette-backed server surface so pip/uv can't resolve
 # a vulnerable pre-1.0.1 transitive. Bump in lockstep with uv.lock.
 mcp = ["mcp==1.28.1", "starlette==1.3.1"]  # starlette: CVE-2026-48710
-homeassistant = ["aiohttp==3.14.1"]
-sms = ["aiohttp==3.14.1"]
+homeassistant = ["aiohttp==3.14.3"]
+sms = ["aiohttp==3.14.3"]
 # Computer use — macOS background desktop control via cua-driver (MCP stdio).
 # The cua-driver binary itself is installed via `intellect tools` post-setup
 # (curl install script); this extra just pins the MCP client used to talk
@@ -147,7 +147,7 @@ msal = ["msal>=1.31,<2"]  # P3-2: Azure AD native auth (WAM broker, conditional 
 # NOT re-added to [all] so a future quarantined release can't break fresh
 # installs (see [all] policy comment below).
 mistral = ["mistralai==2.7.0"]
-bedrock = ["boto3==1.43.51"]
+bedrock = ["boto3==1.43.76"]
 azure-identity = ["azure-identity==1.25.3"]
 termux = [
   # Baseline Android / Termux path for reliable fresh installs.
@@ -169,8 +169,8 @@ termux-all = [
   "intellect-agent[homeassistant]",
   "intellect-agent[sms]",
 ]
-dingtalk = ["dingtalk-stream==0.24.3", "alibabacloud-dingtalk==2.2.51", "qrcode==7.4.2"]
-feishu = ["lark-oapi==1.7.1", "qrcode==7.4.2"]
+dingtalk = ["dingtalk-stream==0.24.3", "alibabacloud-dingtalk==2.2.57", "qrcode==7.4.2"]
+feishu = ["lark-oapi==1.7.3", "qrcode==7.4.2"]
 google = [
   # Required by the google-workspace skill (Gmail, Calendar, Drive, Contacts,
   # Sheets, Docs).  Declared here so packagers (Nix, Homebrew) ship them with
@@ -178,7 +178,7 @@ google = [
   # in environments without pip (e.g. Nix-managed Python).
   "google-api-python-client==2.198.0",
   "google-auth-oauthlib==1.4.0",
-  "google-auth-httplib2==0.4.0",
+  "google-auth-httplib2==0.4.1",
 ]
 youtube = [
   # Required by skills/media/youtube-content and
