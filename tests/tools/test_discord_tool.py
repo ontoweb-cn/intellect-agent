@@ -1114,7 +1114,13 @@ class TestModelToolsIntegration:
         mock_req.return_value = {"flags": 0}
 
         from model_tools import get_tool_definitions
-        tools = get_tool_definitions(enabled_toolsets=["intellect-discord"], quiet_mode=True)
+        # Inspect the raw schema, not the bridge-assembled list: discord_admin
+        # is a deferrable (non-core) tool, so under always-on activation it
+        # lives behind the bridge. This test pins the schema REBUILD.
+        tools = get_tool_definitions(
+            enabled_toolsets=["intellect-discord"], quiet_mode=True,
+            skip_tool_search_assembly=True,
+        )
         discord_admin_tool = next(
             (t for t in tools if t.get("function", {}).get("name") == "discord_admin"),
             None,
@@ -1135,7 +1141,13 @@ class TestModelToolsIntegration:
         mock_req.return_value = {"flags": 0}
 
         from model_tools import get_tool_definitions
-        tools = get_tool_definitions(enabled_toolsets=["intellect-discord"], quiet_mode=True)
+        # Inspect the raw schema: under always-on activation discord tools
+        # would be deferred behind the bridge anyway, so asserting on the
+        # pre-assembly list is the only way this test still means anything.
+        tools = get_tool_definitions(
+            enabled_toolsets=["intellect-discord"], quiet_mode=True,
+            skip_tool_search_assembly=True,
+        )
         names = [t.get("function", {}).get("name") for t in tools]
         assert "discord" not in names
         assert "discord_admin" not in names

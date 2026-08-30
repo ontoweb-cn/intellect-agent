@@ -28,7 +28,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from agent.tool_result_classification import (
     FILE_MUTATING_TOOL_NAMES as _FILE_MUTATING_TOOLS,
@@ -57,6 +57,9 @@ _PARALLEL_SAFE_TOOLS = frozenset({
 
 # File tools can run concurrently when they target independent paths.
 _PATH_SCOPED_TOOLS = frozenset({"read_file", "write_file", "patch"})
+
+# Read-only bridge lookups may run concurrently — they only read the catalog.
+_PARALLEL_SAFE_BRIDGE_LOOKUPS = frozenset({"tool_search", "tool_describe"})
 
 # Patterns that indicate a terminal command may modify/delete files.
 _DESTRUCTIVE_PATTERNS = re.compile(
@@ -100,8 +103,42 @@ def _is_mcp_tool_parallel_safe(tool_name: str) -> bool:
         return False
 
 
+def _peel_bridge_call(tool_name: str, function_args: dict) -> Tuple[str, dict]:
+    """Resolve a ``tool_call`` bridge invocation to its underlying tool.
+
+    The batch planner admits calls to a parallel run by tool NAME, but when
+    tool search is active the model emits the literal name ``tool_call`` for
+    every deferred tool — so a server opted in via
+    ``supports_parallel_tool_calls: true`` silently lost concurrency the
+    moment the bridge activated. Peel the wrapper here so admission is
+    decided on the underlying tool, exactly like the executors' unwrap.
+
+    Returns ``(underlying_name, underlying_args)`` when the wrapper parses
+    cleanly, else ``(tool_name, function_args)`` unchanged — an unparseable
+    bridge call stays a sequential barrier and fails at dispatch as before.
+    """
+    try:
+        from tools.tool_search import TOOL_CALL_NAME, resolve_underlying_call
+        if tool_name != TOOL_CALL_NAME:
+            return tool_name, function_args
+        underlying, underlying_args, err = resolve_underlying_call(function_args)
+        if err is not None or not underlying:
+            return tool_name, function_args
+        return underlying, underlying_args
+    except Exception:
+        return tool_name, function_args
+
+
 def _should_parallelize_tool_batch(tool_calls) -> bool:
-    """Return True when a tool-call batch is safe to run concurrently."""
+    """Return True when a tool-call batch is safe to run concurrently.
+
+    Bridge-aware: a ``tool_call`` wrapper is peeled to its underlying tool
+    before admission is decided (matching the executors' unwrap), and the
+    read-only bridge lookups ``tool_search`` / ``tool_describe`` are
+    parallel-safe. Malformed bridge calls stay a sequential barrier. The
+    result is exactly equal to the direct admission of the underlying tools
+    (no upgrade, no downgrade).
+    """
     if len(tool_calls) <= 1:
         return False
 
@@ -129,8 +166,15 @@ def _should_parallelize_tool_batch(tool_calls) -> bool:
             )
             return False
 
-        if tool_name in _PATH_SCOPED_TOOLS:
-            scoped_path = _extract_parallel_scope_path(tool_name, function_args)
+        # Bridge peel: admission is decided on the UNDERLYING tool, not on
+        # the literal wrapper name the model emitted.
+        effective_name, effective_args = _peel_bridge_call(tool_name, function_args)
+
+        if effective_name in _NEVER_PARALLEL_TOOLS:
+            return False
+
+        if effective_name in _PATH_SCOPED_TOOLS:
+            scoped_path = _extract_parallel_scope_path(effective_name, effective_args)
             if scoped_path is None:
                 return False
             if any(_paths_overlap(scoped_path, existing) for existing in reserved_paths):
@@ -138,10 +182,12 @@ def _should_parallelize_tool_batch(tool_calls) -> bool:
             reserved_paths.append(scoped_path)
             continue
 
-        if tool_name not in _PARALLEL_SAFE_TOOLS:
-            # Check if it's an MCP tool from a server that opted into parallel calls.
-            if not _is_mcp_tool_parallel_safe(tool_name):
-                return False
+        if effective_name in _PARALLEL_SAFE_TOOLS or effective_name in _PARALLEL_SAFE_BRIDGE_LOOKUPS:
+            continue
+
+        # Check if it's an MCP tool from a server that opted into parallel calls.
+        if not _is_mcp_tool_parallel_safe(effective_name):
+            return False
 
     return True
 

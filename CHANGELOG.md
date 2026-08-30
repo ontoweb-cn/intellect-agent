@@ -6,6 +6,35 @@ roadmap.
 
 ## Unreleased
 
+### W15 — Tool Search L2: progressive disclosure aligned to Hermes
+
+- **Activation is now always-on (常开).** `enabled: auto` is an alias of `on`:
+  any MCP / non-core plugin tool turns the bridge on. `threshold_pct` no
+  longer gates activation — it is now the **listing budget percent**
+  (default changed **10 → 5**, capped by the new `listing_max_tokens`).
+- **Catalog listing (progressive disclosure).** A grouped manifest of every
+  deferred tool is embedded in the `tool_search` description, degrading
+  `full → names → mixed → groups → none` as the budget shrinks (per-server,
+  not global). New config keys: `listing` (auto/on/off) and
+  `listing_max_tokens` (default 4000).
+- **Multi-query search & batch describe.** `tool_search` now takes
+  `queries: []` (≤10) and `tool_describe` takes `names: []` (≤10) — a
+  **model-facing schema change** (`query` → `queries`, `name` → `names`),
+  so the bridge tools' schemas changed once on upgrade and the prefix cache
+  is invalidated for that turn.
+- **Blind-call probe.** `tool_call` missing a schema-`required` argument now
+  returns the tool's parameter schema ("NOT invoked") instead of dispatching
+  into an opaque downstream failure.
+- **Bridge-aware parallel admission.** `_should_parallelize_tool_batch`
+  peels `tool_call` to its underlying tool before deciding concurrency;
+  `tool_search`/`tool_describe` are parallel-safe; malformed bridge calls
+  stay a sequential barrier. `max_search_limit` default **20 → 25**.
+- **Retrieval hardening.** Exact-name `inf` scoring, source-label indexing,
+  `mcp__` prefix stripping, empty-result `available_sources` + hint, and
+  optional Snowball stemming (fallback to plain tokenization).
+- **Rollback:** `tools.tool_search.enabled: off` returns to full eager
+  exposure; `listing: off` keeps the bare bridge.
+
 ### Permanent single-user hygiene (W11)
 
 - Intellect Agent is **permanently single-user**; multi-user members/teams remain WONTFIX.

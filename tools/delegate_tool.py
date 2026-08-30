@@ -931,13 +931,22 @@ def _build_child_agent(
     if parent_enabled is not None:
         parent_toolsets = set(parent_enabled)
     elif parent_agent and hasattr(parent_agent, "valid_tool_names"):
-        # enabled_toolsets is None (all tools) — derive from loaded tool names
+        # enabled_toolsets is None (all tools) — derive from the parent's REAL
+        # tool catalog. valid_tool_names is the bridge-collapsed model surface
+        # (core + tool_search/describe/call) and would drop every deferred
+        # MCP/plugin toolset; skip_tool_search_assembly=True restores them.
         import model_tools
 
+        parent_defs = model_tools.get_tool_definitions(
+            enabled_toolsets=None,
+            disabled_toolsets=getattr(parent_agent, "disabled_toolsets", None),
+            quiet_mode=True,
+            skip_tool_search_assembly=True,
+        ) or []
         parent_toolsets = {
             ts
-            for name in parent_agent.valid_tool_names
-            if (ts := model_tools.get_toolset_for_tool(name)) is not None
+            for tool in parent_defs
+            if (ts := model_tools.get_toolset_for_tool(tool["function"]["name"])) is not None
         }
     else:
         parent_toolsets = set(DEFAULT_TOOLSETS)

@@ -19,6 +19,8 @@ _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from tools.tool_search import _HAS_SNOWBALL  # noqa: E402
+
 
 def _td(name: str, description: str = "", properties: Dict[str, Any] | None = None) -> Dict[str, Any]:
     return {
@@ -44,7 +46,10 @@ class TestConfigParsing:
         from tools.tool_search import ToolSearchConfig
         cfg = ToolSearchConfig.from_raw(None)
         assert cfg.enabled == "auto"
-        assert cfg.threshold_pct == 10.0
+        assert cfg.threshold_pct == 5.0
+        assert cfg.max_search_limit == 25
+        assert cfg.listing == "auto"
+        assert cfg.listing_max_tokens == 4000
 
     def test_bool_true_maps_to_auto(self):
         from tools.tool_search import ToolSearchConfig
@@ -137,36 +142,33 @@ class TestThresholdGate:
     def test_off_never_activates(self):
         from tools.tool_search import ToolSearchConfig, should_activate
         cfg = ToolSearchConfig.from_raw({"enabled": "off"})
-        assert not should_activate(cfg, deferrable_tokens=1_000_000, context_length=200_000)
+        assert not should_activate(cfg, deferrable_tokens=1_000_000)
 
     def test_zero_deferrable_never_activates(self):
         from tools.tool_search import ToolSearchConfig, should_activate
         cfg = ToolSearchConfig.from_raw({"enabled": "on"})
-        assert not should_activate(cfg, deferrable_tokens=0, context_length=200_000)
+        assert not should_activate(cfg, deferrable_tokens=0)
 
     def test_on_activates_with_any_deferrable(self):
         from tools.tool_search import ToolSearchConfig, should_activate
         cfg = ToolSearchConfig.from_raw({"enabled": "on"})
-        assert should_activate(cfg, deferrable_tokens=100, context_length=200_000)
+        assert should_activate(cfg, deferrable_tokens=100)
 
-    def test_auto_below_threshold_does_not_activate(self):
+    def test_auto_activates_with_any_deferrable(self):
+        """'auto' is an alias of 'on' (常开): a single deferrable tool
+        activates the bridge regardless of token cost."""
         from tools.tool_search import ToolSearchConfig, should_activate
         cfg = ToolSearchConfig.from_raw({"enabled": "auto", "threshold_pct": 10})
-        # 5% of 200K = below 10% threshold
-        assert not should_activate(cfg, deferrable_tokens=10_000, context_length=200_000)
+        assert should_activate(cfg, deferrable_tokens=1)
+        assert should_activate(cfg, deferrable_tokens=10_000)
 
-    def test_auto_at_or_above_threshold_activates(self):
+    def test_auto_equals_on(self):
+        """auto and on must produce identical activation decisions."""
         from tools.tool_search import ToolSearchConfig, should_activate
-        cfg = ToolSearchConfig.from_raw({"enabled": "auto", "threshold_pct": 10})
-        assert should_activate(cfg, deferrable_tokens=20_000, context_length=200_000)
-        assert should_activate(cfg, deferrable_tokens=50_000, context_length=200_000)
-
-    def test_auto_without_context_length_uses_20k_cutoff(self):
-        """Fallback cutoff used when the active model is unknown."""
-        from tools.tool_search import ToolSearchConfig, should_activate
-        cfg = ToolSearchConfig.from_raw({"enabled": "auto"})
-        assert not should_activate(cfg, deferrable_tokens=10_000, context_length=0)
-        assert should_activate(cfg, deferrable_tokens=25_000, context_length=0)
+        auto_cfg = ToolSearchConfig.from_raw({"enabled": "auto"})
+        on_cfg = ToolSearchConfig.from_raw({"enabled": "on"})
+        for tokens in (1, 10_000, 1_000_000):
+            assert should_activate(auto_cfg, tokens) == should_activate(on_cfg, tokens)
 
     def test_token_estimate_proportional_to_schema_size(self):
         from tools.tool_search import estimate_tokens_from_schemas
@@ -250,20 +252,33 @@ class TestAssembly:
         assert not result.activated
         assert {t["function"]["name"] for t in result.tool_defs} == {"terminal", "read_file"}
 
-    def test_below_threshold_returns_unchanged(self):
-        """Tiny deferrable surface: don't bother."""
+    def test_auto_activates_with_small_deferrable_surface(self, monkeypatch):
+        """常开: a single MCP tool (tiny schema) is enough to activate.
+
+        Uses a monkeypatched ``get_entry`` so no real tool is registered in
+        the global registry (the module's own registry has no public
+        ``unregister``).
+        """
+        import types
         from tools.tool_search import assemble_tool_defs, ToolSearchConfig
-        # _td renders to ~80 chars / 20 tokens. 3 of them = ~60 tokens.
-        # 10% of 200K = 20K. Way below.
-        defs = [_td("unknown_tool_a"), _td("unknown_tool_b"), _td("unknown_tool_c")]
+
+        def _fake_get_entry(name):
+            if name == "mcp_p0_tiny_probe":
+                return types.SimpleNamespace(toolset="mcp-p0-probe")
+            return None
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+
+        defs = [_td("mcp_p0_tiny_probe", "A tiny MCP tool")]
         result = assemble_tool_defs(
             defs,
             context_length=200_000,
             config=ToolSearchConfig.from_raw({"enabled": "auto", "threshold_pct": 10}),
         )
-        assert not result.activated
+        assert result.activated
         names = {(t.get("function") or {}).get("name") for t in result.tool_defs}
-        assert "tool_search" not in names
+        assert "tool_search" in names
+        assert "mcp_p0_tiny_probe" not in names  # deferred behind the bridge
 
     def test_idempotent_when_bridge_already_present(self):
         from tools.tool_search import assemble_tool_defs, ToolSearchConfig, BRIDGE_TOOL_NAMES
@@ -300,9 +315,10 @@ class TestBridgeDispatch:
         in the visible list."""
         from tools.tool_search import dispatch_tool_describe
         result = dispatch_tool_describe(
-            {"name": "terminal"}, current_tool_defs=[_td("terminal", "Run shell")],
+            {"names": ["terminal"]}, current_tool_defs=[_td("terminal", "Run shell")],
         )
-        assert "error" in json.loads(result)
+        parsed = json.loads(result)
+        assert "terminal" in parsed["errors"]
 
     def test_resolve_underlying_call_parses_object_args(self):
         from tools.tool_search import resolve_underlying_call
@@ -357,12 +373,12 @@ class TestHandleFunctionCallIntegration:
         import model_tools
         result = model_tools.handle_function_call(
             function_name="tool_search",
-            function_args={"query": "nothing matches this"},
+            function_args={"queries": ["nothing matches this"]},
         )
         parsed = json.loads(result)
         # Without a real registry, the matches will be empty, but the
         # dispatch path completed without error.
-        assert "matches" in parsed or "error" in parsed
+        assert "results" in parsed or "error" in parsed
 
 
 class TestRegression_OpenClawCron84141:
@@ -458,7 +474,7 @@ class TestRegression_ToolsetScoping:
         # out-of-scope plugin tool (or any of the host registry).
         result = model_tools.handle_function_call(
             function_name="tool_search",
-            function_args={"query": "mcp_scoped_gh", "limit": 5},
+            function_args={"queries": ["mcp_scoped_gh"], "limit": 5},
             enabled_toolsets=["mcp-scoped-gh"],
         )
         parsed = json.loads(result)
@@ -466,7 +482,7 @@ class TestRegression_ToolsetScoping:
             f"expected scoped catalog of 12, got {parsed['total_available']} "
             "— catalog leaked tools outside the session's toolsets"
         )
-        hit_names = {m["name"] for m in parsed["matches"]}
+        hit_names = set(parsed["results"][0]["matches"])
         assert "scoped_oos_plugin" not in hit_names
 
     def test_tool_call_rejects_out_of_scope_tool(self):
@@ -512,7 +528,7 @@ class TestRegression_ToolsetScoping:
         # core/sandbox tools into execute_code's fallback).
         model_tools.handle_function_call(
             function_name="tool_search",
-            function_args={"query": "pollute"},
+            function_args={"queries": ["pollute"]},
             enabled_toolsets=["mcp-pollute"],
         )
         after = set(model_tools._last_resolved_tool_names)
@@ -535,4 +551,490 @@ class TestRegression_ToolsetScoping:
         assert "mcp_helper_op" in names
         # core tools are never deferrable
         assert "terminal" not in names
+
+
+# ---------------------------------------------------------------------------
+# Tiered catalog listing
+# ---------------------------------------------------------------------------
+
+
+class TestCatalogListing:
+    def test_config_defaults(self):
+        from tools.tool_search import ToolSearchConfig
+        cfg = ToolSearchConfig.from_raw(None)
+        assert cfg.listing == "auto"
+        assert cfg.listing_max_tokens == 4000
+        # legacy bool shapes keep listing defaults too
+        assert ToolSearchConfig.from_raw(True).listing == "auto"
+
+    def test_listing_budget_is_min_of_percent_and_cap(self):
+        from tools.tool_search import ToolSearchConfig, listing_token_budget
+        cfg = ToolSearchConfig.from_raw({"threshold_pct": 5, "listing_max_tokens": 4000})
+        # 5% of 200K = 10K → capped at 4K.
+        assert listing_token_budget(cfg, 200_000) == 4000
+        # 5% of 40K = 2K → percent leg wins.
+        assert listing_token_budget(cfg, 40_000) == 2000
+        # Unknown context → fixed 10K leg, capped at 4K.
+        assert listing_token_budget(cfg, 0) == 4000
+
+    @staticmethod
+    def _register(name, desc="Deferred capability description."):
+        from tools.registry import registry
+
+        def _handler(args, task_id=None, **kw):
+            return json.dumps({"ok": True})
+
+        registry.register(
+            name=name,
+            handler=_handler,
+            schema=_td(name, desc),
+            toolset="mcp-listingtest",
+        )
+
+    def test_full_listing_renders_grouped_names_and_short_descs(self, monkeypatch):
+        import types
+        from tools.tool_search import build_catalog_listing_with_form
+
+        def _fake_get_entry(name):
+            if name.startswith("github_"):
+                return types.SimpleNamespace(toolset="mcp-github")
+            if name.startswith("slack_"):
+                return types.SimpleNamespace(toolset="mcp-slack")
+            return None
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+
+        defs = [
+            _td("github_create_issue", "Open a new issue in a GitHub repository."),
+            _td("github_merge_pr", "Merge an open pull request."),
+            _td("slack_post", "Post a message to a channel."),
+        ]
+        text, form = build_catalog_listing_with_form(defs, max_tokens=4000)
+        assert form == "full"
+        assert "github tools (2):" in text
+        assert "- github_create_issue: Open a new issue" in text
+        assert "- slack_post: Post a message to a channel." in text
+
+    def test_deterministic_bytes_across_calls(self):
+        from tools.tool_search import build_catalog_listing_with_form
+        defs = [_td(f"t{i}", f"Desc {i}. More.") for i in range(20)]
+        text1, form1 = build_catalog_listing_with_form(defs, max_tokens=4000)
+        text2, form2 = build_catalog_listing_with_form(list(reversed(defs)), max_tokens=4000)
+        assert (text1, form1) == (text2, form2)
+
+    def test_mixed_keeps_small_server_tools_when_big_server_folds(self, monkeypatch):
+        import types
+        from tools.tool_search import build_catalog_listing_with_form
+
+        def _fake_get_entry(name):
+            if name.startswith("big_"):
+                return types.SimpleNamespace(toolset="mcp-big")
+            if name.startswith("small_"):
+                return types.SimpleNamespace(toolset="mcp-small")
+            return None
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+
+        big = [_td(f"big_{i:03d}", "Synchronize enterprise credentials across regions. " * 3)
+               for i in range(200)]
+        small = [_td(f"small_{i:03d}", "Ping.") for i in range(3)]
+        text, form = build_catalog_listing_with_form(big + small, max_tokens=120)
+        assert form == "mixed"
+        assert "names not listed" in text
+        assert "small" in text
+
+    def test_oversized_catalog_degrades_to_names_then_groups(self):
+        from tools.tool_search import build_catalog_listing_with_form
+        many = [_td(f"big_tool_{i}", "A deliberately verbose description " * 8)
+                for i in range(60)]
+        _, form_names = build_catalog_listing_with_form(many, max_tokens=300)
+        assert form_names == "names"
+        _, form_groups = build_catalog_listing_with_form(many, max_tokens=45)
+        assert form_groups == "groups"
+
+    def test_default_listing_cap_bounds_fixed_catalog_overhead(self):
+        """The default manifest must not grow back to the old 20K-token cap."""
+        from tools.registry import registry
+        from tools.tool_search import (
+            ToolSearchConfig, assemble_tool_defs, estimate_tokens_from_schemas,
+        )
+        names = []
+        defs = []
+        for i in range(500):
+            name = f"lean_catalog_tool_{i:04d}"
+            names.append(name)
+            self._register(name, "Perform a deliberately verbose connected service action.")
+            defs.append(_td(name, "Perform a deliberately verbose connected service action."))
+        try:
+            cfg = ToolSearchConfig.from_raw(None)
+            result = assemble_tool_defs(defs, context_length=1_000_000, config=cfg)
+            search = next(
+                td for td in result.tool_defs
+                if td["function"]["name"] == "tool_search"
+            )
+            description_tokens = estimate_tokens_from_schemas([search])
+            # Bridge schema around the listing, so allow modest framing
+            # overhead above the 4K listing budget.
+            assert description_tokens < 4500
+            assert result.listing_form in {"names", "groups", "mixed"}
+        finally:
+            for n in names:
+                registry.deregister(n)
+
+    def test_assembly_listing_off_keeps_legacy_description(self):
+        from tools.registry import registry
+        from tools.tool_search import assemble_tool_defs, ToolSearchConfig
+        names = [f"mcp_off_{i}" for i in range(10)]
+        defs = []
+        for n in names:
+            self._register(n, "Deferred.")
+            defs.append(_td(n, "Deferred."))
+        try:
+            result = assemble_tool_defs(
+                defs, context_length=1000,
+                config=ToolSearchConfig.from_raw({"enabled": "on", "listing": "off"}),
+            )
+            assert result.activated
+            assert result.listing_form == "none"
+            search = next(t for t in result.tool_defs if t["function"]["name"] == "tool_search")
+            assert "mcp_off_0" not in search["function"]["description"]
+        finally:
+            for n in names:
+                registry.deregister(n)
+
+
+class TestShortDescSentenceBoundary:
+    """Listing lines survive abbreviations, versions, hostnames."""
+
+    def test_clean_two_sentence_case_still_clips_at_first(self):
+        from tools.tool_search import _short_desc
+        assert _short_desc("Open an issue. Second sentence dropped.") == "Open an issue."
+
+    def test_abbreviation_does_not_truncate(self):
+        from tools.tool_search import _short_desc
+        s = _short_desc("Create an issue (e.g. a bug report) in a repository.")
+        assert s.startswith("Create an issue (e.g. a bug report)")
+
+    def test_hostname_does_not_truncate(self):
+        from tools.tool_search import _short_desc
+        s = _short_desc("Fetch a page from api.github.com and return the JSON body.")
+        assert "api.github.com" in s
+
+    def test_version_string_does_not_truncate(self):
+        from tools.tool_search import _short_desc
+        s = _short_desc("Upgrade to v1.2 of the schema and migrate all rows.")
+        assert "v1.2" in s
+
+    def test_title_abbreviation_does_not_truncate(self):
+        from tools.tool_search import _short_desc
+        s = _short_desc("Contact Dr. Smith for help. Runs daily.")
+        assert s.startswith("Contact Dr. Smith for help.")
+
+    def test_vs_abbreviation_does_not_truncate(self):
+        from tools.tool_search import _short_desc
+        s = _short_desc("Compare this PR vs. the baseline branch.")
+        assert s.startswith("Compare this PR vs. the baseline branch.")
+
+    def test_lowercase_continuation_does_not_truncate(self):
+        from tools.tool_search import _short_desc
+        s = _short_desc("Fetch a page from api.github.com and return the body.")
+        assert s.startswith("Fetch a page from api.github.com and return")
+
+    def test_exclamation_terminator_is_kept(self):
+        from tools.tool_search import _short_desc
+        assert _short_desc("List repos! Supports pagination.") == "List repos!"
+
+    def test_question_terminator_is_kept(self):
+        from tools.tool_search import _short_desc
+        s = _short_desc("What does this do? It lists channels.")
+        assert s == "What does this do?"
+
+    def test_long_text_still_clips_with_ellipsis(self):
+        from tools.tool_search import _short_desc
+        s = _short_desc("word " * 40)
+        assert len(s) <= 61
+        assert s.endswith("…")
+
+    def test_empty_is_empty(self):
+        from tools.tool_search import _short_desc
+        assert _short_desc("") == ""
+
+
+# ---------------------------------------------------------------------------
+# Multi-query search + batch describe
+# ---------------------------------------------------------------------------
+
+
+class TestMultiQuerySearch:
+    def test_multiple_queries_group_results_per_query(self, monkeypatch):
+        import types
+        from tools.tool_search import dispatch_tool_search
+
+        def _fake_get_entry(name):
+            if name.startswith("github_"):
+                return types.SimpleNamespace(toolset="mcp-github")
+            if name.startswith("slack_"):
+                return types.SimpleNamespace(toolset="mcp-slack")
+            return None
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        defs = [
+            _td("github_create_issue", "Open a new issue in a GitHub repository."),
+            _td("slack_post_message", "Post a message into a Slack channel."),
+        ]
+        out = json.loads(dispatch_tool_search(
+            {"queries": ["create issue", "post message"]}, current_tool_defs=defs))
+        assert out["queries"] == ["create issue", "post message"]
+        assert [g["query"] for g in out["results"]] == ["create issue", "post message"]
+        assert out["results"][0]["matches"] == ["github_create_issue"]
+        assert out["results"][1]["matches"] == ["slack_post_message"]
+        # shared tools map holds each matched tool exactly once
+        assert set(out["tools"]) == {"github_create_issue", "slack_post_message"}
+        assert out["tools"]["github_create_issue"]["source"] == "mcp"
+
+    def test_limit_applies_per_query(self, monkeypatch):
+        import types
+        from tools.tool_search import dispatch_tool_search
+
+        def _fake_get_entry(name):
+            return types.SimpleNamespace(toolset="mcp-github")
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        defs = [_td(f"github_tool_{i}", f"Perform action {i}.") for i in range(20)]
+        out = json.loads(dispatch_tool_search(
+            {"queries": ["github"], "limit": 3}, current_tool_defs=defs))
+        assert len(out["results"][0]["matches"]) == 3
+
+    def test_stringified_json_array_accepted_as_queries(self, monkeypatch):
+        import types
+        from tools.tool_search import dispatch_tool_search
+
+        def _fake_get_entry(name):
+            return types.SimpleNamespace(toolset="mcp-github")
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        defs = [
+            _td("github_create_issue", "Open a new issue."),
+            _td("github_search_repos", "Search repositories."),
+        ]
+        out = json.loads(dispatch_tool_search(
+            {"queries": '["create issue", "search repos"]'}, current_tool_defs=defs))
+        assert [g["query"] for g in out["results"]] == ["create issue", "search repos"]
+
+    def test_bare_string_accepted_as_single_query(self, monkeypatch):
+        import types
+        from tools.tool_search import dispatch_tool_search
+
+        def _fake_get_entry(name):
+            return types.SimpleNamespace(toolset="mcp-github")
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        defs = [_td("github_issue", "Open an issue.")]
+        out = json.loads(dispatch_tool_search({"queries": "github"}, current_tool_defs=defs))
+        assert out["results"][0]["query"] == "github"
+
+    def test_rejects_empty_or_overcap_queries(self, monkeypatch):
+        import types
+        from tools.tool_search import dispatch_tool_search
+
+        monkeypatch.setattr("tools.registry.registry.get_entry",
+                            lambda n: types.SimpleNamespace(toolset="mcp-x"))
+        assert "error" in json.loads(dispatch_tool_search({}, current_tool_defs=[]))
+        assert "error" in json.loads(dispatch_tool_search({"queries": []}, current_tool_defs=[]))
+        assert "error" in json.loads(dispatch_tool_search(
+            {"queries": ["q"] * 11}, current_tool_defs=[]))
+
+
+class TestBatchDescribe:
+    def test_batch_describe_returns_tools_not_found_and_errors(self, monkeypatch):
+        import types
+        from tools.tool_search import dispatch_tool_describe
+
+        def _fake_get_entry(name):
+            if name == "mcp_doc_reader":
+                return types.SimpleNamespace(toolset="mcp-docs")
+            return None
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        defs = [_td("mcp_doc_reader", "Read a document", {"path": {"type": "string"}})]
+        out = json.loads(dispatch_tool_describe(
+            {"names": ["mcp_doc_reader", "ghost_tool", "terminal"]},
+            current_tool_defs=defs,
+        ))
+        assert "path" in out["tools"]["mcp_doc_reader"]["parameters"]["properties"]
+        assert "ghost_tool" in out["not_found"]
+        assert "terminal" in out["errors"]
+
+    def test_bare_string_accepted(self, monkeypatch):
+        import types
+        from tools.tool_search import dispatch_tool_describe
+
+        def _fake_get_entry(name):
+            if name == "mcp_doc_reader":
+                return types.SimpleNamespace(toolset="mcp-docs")
+            return None
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        defs = [_td("mcp_doc_reader", "Read a document")]
+        out = json.loads(dispatch_tool_describe(
+            {"names": "mcp_doc_reader"}, current_tool_defs=defs))
+        assert "mcp_doc_reader" in out["tools"]
+
+    def test_oversized_batch_describe_is_rejected_not_truncated(self, monkeypatch):
+        import types
+        from tools.tool_search import dispatch_tool_describe, _MAX_DESCRIBE_RESPONSE_CHARS
+
+        def _fake_get_entry(name):
+            if name.startswith("big_"):
+                return types.SimpleNamespace(toolset="mcp-big")
+            return None
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        huge = "x" * (_MAX_DESCRIBE_RESPONSE_CHARS // 2)
+        defs = [_td(f"big_{i}", huge) for i in range(3)]
+        out = json.loads(dispatch_tool_describe(
+            {"names": [f"big_{i}" for i in range(3)]}, current_tool_defs=defs))
+        assert "error" in out
+        assert "Retry tool_describe with fewer names" in out["error"]
+
+
+class TestRetrievalHardening:
+    def test_exact_name_ranks_first(self):
+        from tools.tool_search import (
+            CatalogEntry, _tokenize, _entry_search_text, search_catalog,
+        )
+        defs = [
+            _td("get_issue", "Retrieve issues from the tracker."),
+            _td("github_get_issue", "Get a single issue from GitHub."),
+        ]
+        catalog = [CatalogEntry(
+            name=d["function"]["name"], description=d["function"]["description"],
+            schema=d, source="mcp", source_name="mcp-test",
+            _tokens=_tokenize(_entry_search_text(d))) for d in defs]
+        hits = search_catalog(catalog, "get_issue", limit=5)
+        assert hits[0].name == "get_issue"
+
+    def test_service_query_reaches_tool_without_service_in_name(self, monkeypatch):
+        import types
+        from tools.tool_search import build_catalog, search_catalog
+
+        def _fake_get_entry(name):
+            if name.startswith("create_issue"):
+                return types.SimpleNamespace(toolset="mcp-linear")
+            if name.startswith("post_message"):
+                return types.SimpleNamespace(toolset="mcp-slack")
+            return None
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        defs = [
+            _td("create_issue", "Create a new issue in a team."),
+            _td("post_message", "Post a message to a channel."),
+        ]
+        catalog = build_catalog(defs)
+        hits = search_catalog(catalog, "linear")
+        assert [h.name for h in hits] == ["create_issue"]
+
+    def test_mcp_prefix_is_not_a_matchable_token(self):
+        from tools.tool_search import _entry_search_text
+        td = _td("mcp__create_issue", "Create an issue.")
+        text = _entry_search_text(td, source_label="github")
+        assert "mcp" not in text.split()
+
+    def test_mcp_and_plugin_same_label_do_not_merge(self, monkeypatch):
+        import types
+        from tools.tool_search import build_catalog_listing_with_form
+
+        def _fake_get_entry(name):
+            if name.startswith("cloudflare_"):
+                return types.SimpleNamespace(toolset="mcp-cloudflare")
+            if name.startswith("plugin_"):
+                return types.SimpleNamespace(toolset="cloudflare")
+            return None
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        defs = (
+            [_td(f"cloudflare_{i}", f"CF tool {i}.") for i in range(5)]
+            + [_td("plugin_one", "Plugin tool.")]
+        )
+        text, form = build_catalog_listing_with_form(defs, max_tokens=4000)
+        assert form == "full"
+        # An MCP server "mcp-cloudflare" and a plugin toolset "cloudflare" are
+        # two distinct degradation groups: the tiny plugin server must not be
+        # dragged into the big server's group.
+        assert text.count("cloudflare tools (") == 2
+        assert "plugin_one: Plugin tool." in text
+
+    def test_empty_result_attaches_available_sources_and_hint(self, monkeypatch):
+        import types
+        from tools.tool_search import dispatch_tool_search
+
+        def _fake_get_entry(name):
+            return types.SimpleNamespace(toolset="mcp-github")
+
+        monkeypatch.setattr("tools.registry.registry.get_entry", _fake_get_entry)
+        defs = [_td(f"github_tool_{i}", f"Desc {i}.") for i in range(3)]
+        out = json.loads(dispatch_tool_search({"queries": ["zzzzzqqqq"]}, current_tool_defs=defs))
+        group = out["results"][0]
+        assert group["matches"] == []
+        assert group["available_sources"][0]["name"] == "github"
+        assert "hint" in group
+
+    @pytest.mark.skipif(not _HAS_SNOWBALL, reason="snowballstemmer not installed")
+    def test_snowball_stemming_unifies_plural_query(self):
+        from tools.tool_search import _tokenize
+        assert _tokenize("issues") == _tokenize("issue")
+
+
+# ---------------------------------------------------------------------------
+# Blind tool_call probe (validate_deferred_call_args)
+# ---------------------------------------------------------------------------
+
+
+class TestDeferredCallSchemaProbe:
+    """Blind tool_call invocations missing required arguments must return
+    the tool's parameter schema instead of dispatching into an opaque
+    downstream failure (port of nearai/ironclaw#5149's describe-first fix)."""
+
+    @staticmethod
+    def _register(name="mcp_probe_doc"):
+        from tools.registry import registry
+
+        def _handler(args, task_id=None, **kw):
+            return json.dumps({"ok": True, "doc": args.get("document_id")})
+
+        schema = _td(name, "Read a document by id.", {
+            "document_id": {"type": "string", "description": "Doc id"},
+            "format": {"type": "string"},
+        })
+        schema["function"]["parameters"]["required"] = ["document_id"]
+        registry.register(name=name, handler=_handler, schema=schema, toolset="mcp-probe")
+        return name
+
+    def test_validator_returns_schema_for_missing_required(self):
+        from tools.tool_search import validate_deferred_call_args
+        name = self._register()
+        try:
+            err = validate_deferred_call_args(name, {})
+            assert err is not None
+            parsed = json.loads(err)
+            assert "document_id" in parsed["error"]
+            assert "NOT invoked" in parsed["error"]
+            assert parsed["parameters"]["required"] == ["document_id"]
+        finally:
+            from tools.registry import registry
+            registry.deregister(name)
+
+    def test_valid_tool_call_still_dispatches(self):
+        from tools.tool_search import validate_deferred_call_args
+        name = self._register()
+        try:
+            assert validate_deferred_call_args(name, {"document_id": "doc-1"}) is None
+        finally:
+            from tools.registry import registry
+            registry.deregister(name)
+
+    def test_validator_never_blocks_unvalidatable_tools(self):
+        from tools.tool_search import validate_deferred_call_args
+        # Unknown tool: no schema → cannot validate → never block.
+        assert validate_deferred_call_args("xx_not_a_real_tool", {}) is None
 

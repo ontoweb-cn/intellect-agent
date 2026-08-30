@@ -6760,7 +6760,7 @@ def _(rid, params: dict) -> dict:
             if session
             else _load_enabled_toolsets()
         )
-        tools = get_tool_definitions(enabled_toolsets=enabled, quiet_mode=True)
+        tools = get_tool_definitions(enabled_toolsets=enabled, quiet_mode=True, skip_tool_search_assembly=True)
         sections = {}
 
         for tool in sorted(tools, key=lambda t: t["function"]["name"]):
