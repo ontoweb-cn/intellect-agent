@@ -476,6 +476,13 @@ def run_conversation(
     compression_attempts = 0
     _turn_exit_reason = "unknown"  # Diagnostic: why the loop ended
 
+    # Wall-clock run budget: bounds the whole turn by elapsed time (not just
+    # iteration count).  When set, we inject a wrap-up nudge at 80% so the
+    # model concludes gracefully, and hard-stop new iterations at 100%.
+    _run_budget_seconds = agent._resolved_run_budget_seconds()
+    _run_budget_start = time.monotonic() if _run_budget_seconds else None
+    _run_budget_wrapup_injected = False
+
     # Per-turn file-mutation verifier state.  Keyed by resolved path;
     # each failed ``write_file`` / ``patch`` call records the error
     # preview.  Later successful writes to the same path remove the
@@ -556,7 +563,35 @@ def run_conversation(
             if not agent.quiet_mode:
                 agent._safe_print("\n⚡ Breaking out of tool loop due to interrupt...")
             break
-        
+
+        # Wall-clock budget: hard-stop new iterations once elapsed, and inject
+        # a one-shot wrap-up nudge at 80% so the model concludes instead of
+        # being cut off mid-tool-call.
+        if _run_budget_seconds:
+            _run_budget_elapsed = time.monotonic() - _run_budget_start
+            if _run_budget_elapsed >= _run_budget_seconds:
+                _turn_exit_reason = "run_budget_exhausted"
+                if not agent.quiet_mode:
+                    agent._safe_print(
+                        f"\n⏱️  Run time budget exhausted "
+                        f"({_run_budget_elapsed:.0f}s ≥ {_run_budget_seconds:.0f}s)"
+                    )
+                break
+            if (not _run_budget_wrapup_injected
+                    and _run_budget_elapsed >= 0.8 * _run_budget_seconds):
+                _run_budget_wrapup_injected = True
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "You are approaching your run time budget. Please "
+                        "wrap up the current task and provide your final "
+                        "answer now, without starting any new work."
+                    ),
+                    "_run_budget_wrapup": True,
+                })
+                if not agent.quiet_mode:
+                    agent._safe_print("\n⏱️  Run time budget at 80% — wrapping up")
+
         api_call_count += 1
         agent._api_call_count = api_call_count
         agent._touch_activity(f"starting API call #{api_call_count}")
@@ -3882,7 +3917,24 @@ def run_conversation(
                         _has_structured
                         and agent._thinking_prefill_retries >= 2
                     )
-                    if _truly_empty and (not _has_structured or _prefill_exhausted) and agent._empty_content_retries < 3:
+                    # Deterministic empty: the model explicitly stopped
+                    # (finish_reason "stop", not "length") with no tool calls
+                    # and no content.  Retrying re-bills the prompt for a
+                    # response that will deterministically come back empty, so
+                    # skip the same-model retry loop and fall through to the
+                    # fallback provider / terminal instead (Hermes ac06c2ff8b).
+                    # Note: suspicious Ollama/GLM premature "stop" is already
+                    # rewritten to "length" upstream via
+                    # ``_should_treat_stop_as_truncated``.
+                    _deterministic_empty = (
+                        _truly_empty
+                        and not _has_structured
+                        and finish_reason == "stop"
+                        and not getattr(assistant_message, "tool_calls", None)
+                    )
+                    if (_truly_empty and (not _has_structured or _prefill_exhausted)
+                            and agent._empty_content_retries < 3
+                            and not _deterministic_empty):
                         agent._empty_content_retries += 1
                         logger.warning(
                             "Empty response (no content or reasoning) — "
@@ -4095,24 +4147,31 @@ def run_conversation(
                 messages.append({"role": "assistant", "content": final_response})
                 break
     
+    _run_budget_exhausted = _turn_exit_reason == "run_budget_exhausted"
     if final_response is None and (
         api_call_count >= agent.max_iterations
         or agent.iteration_budget.remaining <= 0
+        or _run_budget_exhausted
     ):
         # Budget exhausted — ask the model for a summary via one extra
         # API call with tools stripped.  _handle_max_iterations injects a
-        # user message and makes a single toolless request.
-        _turn_exit_reason = f"max_iterations_reached({api_call_count}/{agent.max_iterations})"
-        agent._emit_status(
-            f"⚠️ Iteration budget exhausted ({api_call_count}/{agent.max_iterations}) "
-            "— asking model to summarise"
-        )
-        if not agent.quiet_mode:
-            agent._safe_print(
-                f"\n⚠️  Iteration budget exhausted ({api_call_count}/{agent.max_iterations}) "
-                "— requesting summary..."
+        # user message and makes a single toolless request.  Both the
+        # iteration budget and the wall-clock run budget funnel through here.
+        if _run_budget_exhausted:
+            _budget_label = "Run time budget exhausted"
+            _summary_request = (
+                "You've reached your run time budget. "
+                "Please provide a final response summarizing what you've found "
+                "and accomplished so far, without calling any more tools."
             )
-        final_response = agent._handle_max_iterations(messages, api_call_count)
+        else:
+            _turn_exit_reason = f"max_iterations_reached({api_call_count}/{agent.max_iterations})"
+            _budget_label = f"Iteration budget exhausted ({api_call_count}/{agent.max_iterations})"
+            _summary_request = None
+        agent._emit_status(f"⚠️ {_budget_label} — asking model to summarise")
+        if not agent.quiet_mode:
+            agent._safe_print(f"\n⚠️  {_budget_label} — requesting summary...")
+        final_response = agent._handle_max_iterations(messages, api_call_count, _summary_request)
 
         # If running as a kanban worker, signal the dispatcher that the
         # worker could not complete (rather than treating it as a
@@ -4137,10 +4196,9 @@ def run_conversation(
                         _conn,
                         _kanban_task,
                         error=(
-                            f"Iteration budget exhausted "
-                            f"({api_call_count}/{agent.max_iterations}) — "
+                            f"{_budget_label} — "
                             "task could not complete within the allowed "
-                            "iterations"
+                            "budget"
                         ),
                         outcome="timed_out",
                         release_claim=True,

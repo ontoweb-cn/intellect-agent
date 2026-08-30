@@ -4,6 +4,7 @@ import textwrap
 
 from intellect_cli.timeouts import (
     get_provider_request_timeout,
+    get_provider_run_budget,
     get_provider_stale_timeout,
 )
 
@@ -72,6 +73,39 @@ def test_provider_stale_timeout_used_when_no_model_override(monkeypatch, tmp_pat
     )
 
     assert get_provider_stale_timeout("openai-codex", "gpt-5.4") == 900.0
+
+
+def test_model_run_budget_override_wins(monkeypatch, tmp_path):
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """\
+        providers:
+          anthropic:
+            run_budget_seconds: 1200
+            models:
+              claude-opus-4-8:
+                run_budget_seconds: 3600
+        """,
+    )
+
+    assert get_provider_run_budget("anthropic", "claude-opus-4-8") == 3600.0
+
+
+def test_provider_run_budget_used_when_no_model_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+    _write_config(
+        tmp_path,
+        """\
+        providers:
+          anthropic:
+            run_budget_seconds: 1200
+        """,
+    )
+
+    assert get_provider_run_budget("anthropic", "claude-opus-4-8") == 1200.0
+    assert get_provider_run_budget("anthropic", "claude-sonnet-4-6") == 1200.0
+    assert get_provider_run_budget("missing-provider", "claude-opus-4-8") is None
 
 
 def test_missing_timeout_returns_none(monkeypatch, tmp_path):
@@ -266,6 +300,63 @@ def test_resolved_api_call_stale_timeout_priority(monkeypatch, tmp_path):
 
     monkeypatch.delenv("INTELLECT_API_CALL_STALE_TIMEOUT", raising=False)
     assert agent2._resolved_api_call_stale_timeout_base() == (90.0, True)
+
+
+def test_resolved_run_budget_seconds_priority(monkeypatch, tmp_path):
+    """AIAgent run budget honors config (model > provider) > env > None."""
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+    (tmp_path / ".env").write_text("", encoding="utf-8")
+    monkeypatch.delenv("INTELLECT_RUN_BUDGET_SECONDS", raising=False)
+
+    _write_config(tmp_path, """\
+        providers:
+          anthropic:
+            run_budget_seconds: 1200
+            models:
+              claude-opus-4-8:
+                run_budget_seconds: 3600
+        """)
+
+    from run_agent import AIAgent
+    agent = AIAgent(
+        model="claude-opus-4-8",
+        provider="anthropic",
+        api_key="sk-dummy",
+        base_url="https://api.anthropic.com",
+        quiet_mode=True,
+        skip_context_files=True,
+        skip_memory=True,
+        platform="cli",
+    )
+    assert agent._resolved_run_budget_seconds() == 3600.0
+
+    agent.model = "claude-sonnet-4-6"
+    assert agent._resolved_run_budget_seconds() == 1200.0
+
+    # Empty config -> env fallback -> None
+    _write_config(tmp_path, "")
+    import importlib
+    from intellect_cli import config as cfg_mod
+    importlib.reload(cfg_mod)
+    from intellect_cli import timeouts as to_mod
+    importlib.reload(to_mod)
+    import run_agent as ra_mod
+    importlib.reload(ra_mod)
+
+    agent2 = ra_mod.AIAgent(
+        model="claude-opus-4-8",
+        provider="anthropic",
+        api_key="sk-dummy",
+        base_url="https://api.anthropic.com",
+        quiet_mode=True,
+        skip_context_files=True,
+        skip_memory=True,
+        platform="cli",
+    )
+    assert agent2._resolved_run_budget_seconds() is None
+
+    monkeypatch.setenv("INTELLECT_RUN_BUDGET_SECONDS", "999")
+    assert agent2._resolved_run_budget_seconds() == 999.0
 
 
 def test_default_non_stream_stale_timeout_auto_disables_for_local_endpoints(monkeypatch, tmp_path):
