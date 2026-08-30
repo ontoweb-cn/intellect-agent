@@ -118,3 +118,14 @@ class TestResetSessionState:
         agent.reset_session_state()
 
         assert agent._user_turn_count == 0
+
+    def test_tokens_by_model_cleared_on_reset(self):
+        """The per-model token breakdown must not leak across sessions."""
+        agent = _make_minimal_agent()
+        agent.session_tokens_by_model = {
+            "gpt-5.5": {"input_tokens": 100, "output_tokens": 50, "api_calls": 3},
+        }
+
+        agent.reset_session_state()
+
+        assert agent.session_tokens_by_model == {}

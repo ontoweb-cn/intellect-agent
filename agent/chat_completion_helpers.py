@@ -243,7 +243,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
                         f"Available: {', '.join(available) if available else 'default'}"
                     )
                 from agent.moa_loop import MoaRunner
-                runner = MoaRunner(preset)
+                runner = MoaRunner(preset, agent=agent)
                 import asyncio
                 loop = asyncio.new_event_loop()
                 try:

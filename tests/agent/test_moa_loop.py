@@ -154,6 +154,95 @@ class TestMoaRunnerBasic:
         assert _extract_content(None) == ""
         assert _extract_content(42) == ""
 
+    def test_runner_short_circuits_when_interrupted_before_fanout(self, preset):
+        """A pre-existing interrupt aborts before spending N reference calls."""
+        from agent.moa_loop import MoaRunner
+
+        runner = MoaRunner(preset)
+        messages = [{"role": "user", "content": "test"}]
+
+        async def _run():
+            with patch("agent.moa_loop.is_interrupted", return_value=True):
+                return await runner.run(messages)
+
+        with pytest.raises(RuntimeError, match="interrupted before"):
+            asyncio.run(_run())
+
+    def test_runner_skips_aggregator_when_interrupted_during_fanout(self, preset):
+        """Interrupt arriving during the fan-out skips the +1 aggregator call."""
+        from agent.moa_loop import MoaRunner
+
+        runner = MoaRunner(preset)
+        messages = [{"role": "user", "content": "test"}]
+
+        mock_call = _make_mock_call_llm([
+            "Ref answer 1",
+            "Ref answer 2",
+            "Ref answer 3",
+            "Ref answer 4",
+            "Aggregator should not run",
+        ])
+
+        # False on the pre-fanout check, True on the post-fanout check.
+        states = iter([False, True])
+
+        async def _run():
+            with patch("agent.moa_loop.is_interrupted", side_effect=lambda: next(states)), \
+                 patch("agent.moa_loop.call_llm", side_effect=mock_call):
+                return await runner.run(messages)
+
+        response = asyncio.run(_run())
+        content = response.choices[0].message.content
+        assert "Interrupted" in content
+        assert "Ref answer 1" in content
+        # 4 reference calls only — the aggregator was skipped.
+        assert response._moa_api_calls == 4
+
+    def test_runner_short_circuits_via_agent_flag(self, preset):
+        """The thread-independent agent._interrupt_requested flag short-circuits."""
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            _interrupt_requested = True
+
+        runner = MoaRunner(preset, agent=_Agent())
+        messages = [{"role": "user", "content": "test"}]
+
+        async def _run():
+            return await runner.run(messages)
+
+        with pytest.raises(RuntimeError, match="interrupted before"):
+            asyncio.run(_run())
+
+    def test_runner_skips_aggregator_via_agent_flag_during_fanout(self, preset):
+        """Interrupt set on agent._interrupt_requested during the fan-out skips the aggregator."""
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            _interrupt_requested = False
+
+        agent = _Agent()
+        runner = MoaRunner(preset, agent=agent)
+        messages = [{"role": "user", "content": "test"}]
+
+        calls = 0
+
+        def _flip_interrupt(messages=None, provider=None, model=None, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                agent._interrupt_requested = True  # interrupt arrives mid-fan-out
+            return _fake_call_llm_result(f"Ref {calls}")
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_flip_interrupt):
+                return await runner.run(messages)
+
+        response = asyncio.run(_run())
+        content = response.choices[0].message.content
+        assert "Interrupted" in content
+        assert response._moa_api_calls == 4  # 4 refs, no aggregator
+
 
 class TestMoaPresetSwitching:
     """Test preset loading and model selection."""

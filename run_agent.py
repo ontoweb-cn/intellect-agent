@@ -627,6 +627,10 @@ class AIAgent:
         self.session_cache_write_tokens = 0
         self.session_reasoning_tokens = 0
         self.session_api_calls = 0
+        # Per-model token/usage breakdown, keyed by ``agent.model`` at the time
+        # of each call, so a mid-session ``/model`` switch accumulates each
+        # model's usage separately.
+        self.session_tokens_by_model = {}
         self.session_estimated_cost_usd = 0.0
         self.session_cost_status = "unknown"
         self.session_cost_source = "none"

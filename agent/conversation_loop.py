@@ -1612,6 +1612,31 @@ def run_conversation(
                         agent.session_cache_write_tokens += canonical_usage.cache_write_tokens
                         agent.session_reasoning_tokens += canonical_usage.reasoning_tokens
 
+                    # Per-model token breakdown — keyed by the canonical model
+                    # name (provider prefix stripped) so a mid-session /model or
+                    # provider switch keeps each model's usage in one bucket.
+                    _pm = getattr(agent, "session_tokens_by_model", None)
+                    if _pm is None:
+                        _pm = agent.session_tokens_by_model = {}
+                    from agent.anthropic_adapter import normalize_model_name
+                    _pm_key = normalize_model_name(agent.model or "unknown")
+                    _pm_entry = _pm.setdefault(_pm_key, {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cache_read_tokens": 0,
+                        "cache_write_tokens": 0,
+                        "reasoning_tokens": 0,
+                        "api_calls": 0,
+                    })
+                    _pm_entry["input_tokens"] += canonical_usage.input_tokens
+                    _pm_entry["output_tokens"] += canonical_usage.output_tokens
+                    _pm_entry["cache_read_tokens"] += canonical_usage.cache_read_tokens
+                    _pm_entry["cache_write_tokens"] += canonical_usage.cache_write_tokens
+                    _pm_entry["reasoning_tokens"] += canonical_usage.reasoning_tokens
+                    # MoA responses represent N+1 underlying calls (reference
+                    # fan-out + aggregator), tracked via _moa_api_calls.
+                    _pm_entry["api_calls"] += getattr(response, "_moa_api_calls", 1)
+
                     # Log API call details for debugging/observability
                     _cache_pct = ""
                     if canonical_usage.cache_read_tokens and prompt_tokens:
@@ -4368,6 +4393,10 @@ def run_conversation(
         "prompt_tokens": agent.session_prompt_tokens,
         "completion_tokens": agent.session_completion_tokens,
         "total_tokens": agent.session_total_tokens,
+        "tokens_by_model": {
+            k: dict(v)
+            for k, v in getattr(agent, "session_tokens_by_model", {}).items()
+        },
         "last_prompt_tokens": getattr(agent.context_compressor, "last_prompt_tokens", 0) or 0,
         "estimated_cost_usd": agent.session_estimated_cost_usd,
         "cost_status": agent.session_cost_status,

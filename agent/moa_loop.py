@@ -15,6 +15,7 @@ import time
 from typing import Any, Optional
 
 from agent.auxiliary_client import call_llm
+from tools.interrupt import is_interrupted
 
 try:
     from agent.moa_trace import MoaTrace, save_trace
@@ -44,8 +45,9 @@ class MoaRunner:
     code paths can dispatch to MoA without changing their call shape.
     """
 
-    def __init__(self, preset: dict[str, Any]):
+    def __init__(self, preset: dict[str, Any], *, agent: Any = None):
         self._preset = preset
+        self._agent = agent  # optional AIAgent — enables interrupt-aware short-circuit
         self._references: list[dict[str, str]] = preset.get("references", [])
         self._aggregator: dict[str, str] = preset.get("aggregator", {})
         self._ref_temp: float = float(preset.get("reference_temperature", 0.6))
@@ -54,6 +56,18 @@ class MoaRunner:
         # Expose a .chat.completions namespace so callers can do
         #   runner.chat.completions.create(**kwargs)
         self.chat = _ChatNamespace(self)
+
+    def _interrupted(self) -> bool:
+        """True if the user interrupted this turn.
+
+        Prefer the agent's plain ``_interrupt_requested`` flag — it is
+        thread-independent (set by ``AIAgent.interrupt()``).  ``is_interrupted()``
+        is per-thread and MoA runs on a worker thread whose id the interrupt
+        signal never targets, so it would always return False here in production.
+        """
+        if self._agent is not None:
+            return bool(getattr(self._agent, "_interrupt_requested", False))
+        return is_interrupted()
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -131,6 +145,11 @@ class MoaRunner:
         """
         t0 = time.monotonic()
 
+        # Short-circuit before the fan-out if the user already interrupted —
+        # don't spend N reference calls on a turn that's being abandoned.
+        if self._interrupted():
+            raise RuntimeError("MoA interrupted before reference fan-out")
+
         # Extract the last user message as the prompt for reference models
         user_message = ""
         for m in reversed(messages):
@@ -151,33 +170,40 @@ class MoaRunner:
                 f"models succeeded (need at least {MIN_SUCCESSFUL_REFERENCES})"
             )
 
-        # Phase 2 — aggregator
-        agg_messages = self._build_aggregator_messages(user_message, successful)
         agg_provider = self._aggregator.get("provider", "")
         agg_model = self._aggregator.get("model", "")
 
-        try:
-            agg_result = await asyncio.to_thread(
-                call_llm,
-                messages=agg_messages,
-                provider=agg_provider,
-                model=agg_model,
-                temperature=self._agg_temp,
-                task="moa_aggregator",
-            )
-            content = _extract_content(agg_result)
-        except Exception as exc:
-            logger.warning("moa_loop: aggregator failed: %s", exc)
-            # Fall back to best reference response
+        # Phase 2 — aggregator (skipped when the user interrupted during the
+        # fan-out: its +1 call is wasted on a turn that's being abandoned).
+        if self._interrupted():
             best = successful[0]
-            content = f"[Aggregator unavailable — showing best reference response]\n\n{best['content']}"
+            content = (
+                "[Interrupted — showing best reference response]\n\n"
+                f"{best['content']}"
+            )
+            api_calls = len(ref_results)  # N references, no aggregator
+        else:
+            agg_messages = self._build_aggregator_messages(user_message, successful)
+            try:
+                agg_result = await asyncio.to_thread(
+                    call_llm,
+                    messages=agg_messages,
+                    provider=agg_provider,
+                    model=agg_model,
+                    temperature=self._agg_temp,
+                    task="moa_aggregator",
+                )
+                content = _extract_content(agg_result)
+            except Exception as exc:
+                logger.warning("moa_loop: aggregator failed: %s", exc)
+                # Fall back to best reference response
+                best = successful[0]
+                content = f"[Aggregator unavailable — showing best reference response]\n\n{best['content']}"
+            api_calls = len(ref_results) + 1  # N references + 1 aggregator
 
         total_ms = round((time.monotonic() - t0) * 1000, 1)
 
-        # Count API calls for token tracking
-        api_calls = len(ref_results) + 1  # N references + 1 aggregator
-
-        # Save trace
+        # Save trace (both normal and interrupted paths)
         if MoaTrace is not None and save_trace is not None:
             try:
                 trace = MoaTrace(
