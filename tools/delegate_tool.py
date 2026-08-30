@@ -574,6 +574,8 @@ def _build_child_system_prompt(
     role: str = "leaf",
     max_spawn_depth: int = 2,
     child_depth: int = 1,
+    response_schema: Optional[Dict[str, Any]] = None,
+    project_context: Optional[str] = None,
 ) -> str:
     """Build a focused system prompt for a child agent.
 
@@ -596,6 +598,8 @@ def _build_child_system_prompt(
             f"{workspace_path}\n"
             "Use this exact path for local repository/workdir operations unless the task explicitly says otherwise."
         )
+    if project_context and project_context.strip():
+        parts.append(project_context.strip())
     parts.append(
         "\nComplete this task using the tools available to you. "
         "When finished, provide a clear, concise summary of:\n"
@@ -638,6 +642,19 @@ def _build_child_system_prompt(
             "final summary, not your workers.\n\n"
             f"NOTE: You are at depth {child_depth}. The delegation tree "
             f"is capped at max_spawn_depth={max_spawn_depth}. {child_note}"
+        )
+    if response_schema is not None:
+        try:
+            schema_json = json.dumps(response_schema)
+        except (TypeError, ValueError):
+            schema_json = str(response_schema)
+        parts.append(
+            "\n## Output Format\n"
+            "Your final response MUST be a single valid JSON object conforming "
+            "to this JSON Schema:\n"
+            f"```json\n{schema_json}\n```\n"
+            "Return only the JSON object — no prose, no markdown fences, no "
+            "explanatory text around it."
         )
     return "\n".join(parts)
 
@@ -888,6 +905,11 @@ def _build_child_agent(
     # 'leaf' (default) cannot; 'orchestrator' retains the delegation
     # toolset subject to depth/kill-switch bounds applied below.
     role: str = "leaf",
+    # Optional JSON Schema the child's final response must conform to.
+    response_schema: Optional[Dict[str, Any]] = None,
+    # Pre-resolved workspace project context (resolved once per batch by the
+    # caller to avoid re-reading the same files per child).
+    project_context: Optional[str] = None,
 ):
     """
     Build a child AIAgent on the main thread (thread-safe construction).
@@ -984,6 +1006,8 @@ def _build_child_agent(
         role=effective_role,
         max_spawn_depth=max_spawn,
         child_depth=child_depth,
+        response_schema=response_schema,
+        project_context=project_context,
     )
     # Extract parent's API key so subagents inherit auth (e.g. ONTOWEB Portal).
     parent_api_key = getattr(parent_agent, "api_key", None)
@@ -1156,6 +1180,24 @@ def _build_child_agent(
     child._subagent_id = subagent_id
     child._parent_subagent_id = parent_subagent_id
     child._subagent_goal = goal
+
+    # Decoder-level structured output: route the requested JSON Schema through
+    # the transport's request_overrides so OpenAI-compatible backends enforce it
+    # via the native ``response_format`` (json_schema) param.  The prompt-level
+    # instruction in _build_child_system_prompt remains as the fallback for
+    # Anthropic/bedrock providers that don't support response_format.
+    if response_schema:
+        _rf = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "delegate_output",
+                "schema": response_schema,
+                "strict": False,
+            },
+        }
+        _existing = dict(getattr(child, "request_overrides", None) or {})
+        _existing["response_format"] = _rf
+        child.request_overrides = _existing
 
     # Share a credential pool with the child when possible so subagents can
     # rotate credentials on rate limits instead of getting pinned to one key.
@@ -1996,6 +2038,7 @@ def delegate_task(
     acp_args: Optional[List[str]] = None,
     role: Optional[str] = None,
     background: bool = False,
+    response_schema: Optional[Dict[str, Any]] = None,
     parent_agent=None,
 ) -> str:
     """
@@ -2046,18 +2089,17 @@ def delegate_task(
     # Load config
     cfg = _load_config()
     default_max_iter = cfg.get("max_iterations", DEFAULT_MAX_ITERATIONS)
-    # Model-supplied max_iterations is ignored — the config value is authoritative
-    # so users get predictable budgets. The kwarg is retained for internal callers
-    # and tests; a model-emitted value here would only shrink the budget and
-    # surprise the user mid-run. Log and drop it if one slips through from a
-    # cached tool schema or a stale provider.
-    if max_iterations is not None and max_iterations != default_max_iter:
-        logger.debug(
-            "delegate_task: ignoring caller-supplied max_iterations=%s; "
-            "using delegation.max_iterations=%s from config",
-            max_iterations, default_max_iter,
-        )
+    # The caller/model may request a smaller per-delegation budget (for a task
+    # it knows is simple), but config remains the ceiling — a model cannot grant
+    # itself more iterations than delegation.max_iterations.
     effective_max_iter = default_max_iter
+    if max_iterations is not None:
+        try:
+            _requested = int(max_iterations)
+        except (TypeError, ValueError):
+            _requested = None
+        if _requested is not None and 0 < _requested < default_max_iter:
+            effective_max_iter = _requested
 
     # Resolve delegation credentials (provider:model pair).
     # When delegation.provider is configured, this resolves the full credential
@@ -2130,6 +2172,7 @@ def delegate_task(
             acp_args=acp_args,
             toolsets=toolsets,
             background=background,
+            response_schema=response_schema,
         )
     finally:
         _restore_parent_session_context(parent_session_sid)
@@ -2151,6 +2194,7 @@ def _delegate_task_execute(
     acp_args,
     toolsets,
     background=False,
+    response_schema=None,
 ) -> str:
     """Run child build + execution; caller restores parent session id."""
     _ = task_labels
@@ -2161,6 +2205,19 @@ def _delegate_task_execute(
     import model_tools as _model_tools
 
     _parent_tool_names = list(_model_tools._last_resolved_tool_names)
+
+    # Resolve the workspace project context ONCE for the whole batch — the
+    # file discovery + read is not cheap enough to repeat per child.
+    _workspace_hint = _resolve_workspace_hint(parent_agent)
+    _project_context = ""
+    if _workspace_hint:
+        try:
+            from agent.prompt_builder import build_context_files_prompt
+            _project_context = build_context_files_prompt(
+                cwd=str(_workspace_hint), skip_soul=True
+            ) or ""
+        except Exception:
+            logger.debug("delegate_tool: project context load failed", exc_info=True)
 
     # Build all child agents on the main thread (thread-safe construction)
     # Wrapped in try/finally so the global is always restored even if a
@@ -2194,6 +2251,8 @@ def _delegate_task_execute(
                     else (acp_args if acp_args is not None else creds.get("args"))
                 ),
                 role=effective_role,
+                response_schema=response_schema,
+                project_context=_project_context,
             )
             # Override with correct parent tool names (before child construction mutated global)
             child._delegate_saved_tool_names = _parent_tool_names
@@ -2932,6 +2991,14 @@ DELEGATE_TASK_SCHEMA = {
                     "terminal(background=True, notify_on_complete=True) for long-lived work."
                 ),
             },
+            "response_schema": {
+                "type": "object",
+                "description": (
+                    "Optional JSON Schema the subagent's final response must conform "
+                    "to. When set, the subagent returns a single JSON object matching "
+                    "this schema instead of a free-text summary."
+                ),
+            },
         },
         "required": [],
     },
@@ -2954,6 +3021,8 @@ registry.register(
         acp_command=args.get("acp_command"),
         acp_args=args.get("acp_args"),
         role=args.get("role"),
+        background=args.get("background", False),
+        response_schema=args.get("response_schema"),
         parent_agent=kw.get("parent_agent"),
     ),
     check_fn=check_delegate_requirements,

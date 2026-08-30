@@ -4671,6 +4671,7 @@ class AIAgent:
             acp_args=function_args.get("acp_args"),
             role=function_args.get("role"),
             background=bool(function_args.get("background")),
+            response_schema=function_args.get("response_schema"),
             parent_agent=self,
         )
 

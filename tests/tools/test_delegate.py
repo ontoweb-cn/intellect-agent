@@ -141,6 +141,35 @@ class TestChildSystemPrompt(unittest.TestCase):
         prompt = _build_child_system_prompt("Do something", "  ")
         self.assertNotIn("CONTEXT", prompt)
 
+    def test_response_schema_adds_output_format_instruction(self):
+        prompt = _build_child_system_prompt(
+            "Extract fields",
+            response_schema={"type": "object", "properties": {"name": {"type": "string"}}},
+        )
+        self.assertIn("Output Format", prompt)
+        self.assertIn("JSON Schema", prompt)
+        self.assertIn('"name"', prompt)
+
+    def test_no_response_schema_omits_output_format(self):
+        prompt = _build_child_system_prompt("Do something")
+        self.assertNotIn("Output Format", prompt)
+
+    def test_empty_response_schema_dict_included(self):
+        # {} is a valid JSON Schema ("any object") and must not be treated as absent.
+        prompt = _build_child_system_prompt("Do something", response_schema={})
+        self.assertIn("Output Format", prompt)
+
+    def test_project_context_injected(self):
+        prompt = _build_child_system_prompt(
+            "Fix the tests", project_context="# Project Context\n\nAlways run pytest."
+        )
+        self.assertIn("Project Context", prompt)
+        self.assertIn("Always run pytest", prompt)
+
+    def test_no_project_context_omitted(self):
+        prompt = _build_child_system_prompt("Do something")
+        self.assertNotIn("Project Context", prompt)
+
 
 class TestStripBlockedTools(unittest.TestCase):
     def test_removes_blocked_toolsets(self):
@@ -389,6 +418,53 @@ class TestDelegateTask(unittest.TestCase):
             )
 
         self.assertIs(mock_child._print_fn, sink)
+
+    def test_child_gets_decoder_level_response_format(self):
+        parent = _make_mock_parent(depth=0)
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+
+        with patch("run_agent.AIAgent") as MockAgent:
+            mock_child = MagicMock()
+            mock_child.request_overrides = None
+            MockAgent.return_value = mock_child
+
+            _build_child_agent(
+                task_index=0,
+                goal="Extract fields",
+                context=None,
+                toolsets=None,
+                model=None,
+                max_iterations=10,
+                parent_agent=parent,
+                task_count=1,
+                response_schema=schema,
+            )
+
+        rf = mock_child.request_overrides["response_format"]
+        self.assertEqual(rf["type"], "json_schema")
+        self.assertEqual(rf["json_schema"]["name"], "delegate_output")
+        self.assertEqual(rf["json_schema"]["schema"], schema)
+
+    def test_child_without_response_schema_has_no_response_format(self):
+        parent = _make_mock_parent(depth=0)
+
+        with patch("run_agent.AIAgent") as MockAgent:
+            mock_child = MagicMock()
+            mock_child.request_overrides = None
+            MockAgent.return_value = mock_child
+
+            _build_child_agent(
+                task_index=0,
+                goal="Plain task",
+                context=None,
+                toolsets=None,
+                model=None,
+                max_iterations=10,
+                parent_agent=parent,
+                task_count=1,
+            )
+
+        self.assertIsNone(mock_child.request_overrides)
 
     def test_child_uses_thinking_callback_when_progress_callback_available(self):
         parent = _make_mock_parent(depth=0)
