@@ -3,14 +3,14 @@
 > **日期**：2026-08-30
 > **状态**：**分析完成 + 已评审**；建议按 P0 → P1 → P2 分批落地
 > **数据来源**：`../hermes-agent/docs/update-summary-2026-06-15-to-2026-08-30-agent-core.md`（HEAD `4209d371aa`）
-> **本仓 HEAD**：`e9546dd`（分支 `feat/w15-tool-search-l2`）
+> **本仓 HEAD**：分析时 `e9546dd`；实施分支 `feat/agent-core-hermes-gap-p0`（HEAD `67497a3`，PR #107）
 > **关联**：既有 `2026-07-08-hermes-v0.16-v0.18-port-todo.md` 已覆盖 v0.16→v0.18 阶段；本文覆盖其后的 v0.18→v0.2x 窗口，**无重复跟踪**
 
 ---
 
 ## 一、结论先行
 
-intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usage 锚定、流式 stale 断路器、tool-call 去重、Rust 错误分类器、413/图片恢复、MoA 循环、并行 fan-out 均已存在且成熟。本窗口 Hermes 新增能力中，真正构成差距的只有**少数几条**，且集中在「可靠性补一层」「用量按模型区分」「MoA 省调用」三类。
+intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usage 锚定、流式 stale 断路器、tool-call 去重、Rust 错误分类器、413/图片恢复、并行 fan-out 均已存在且成熟；**MoA 是例外**（v0 单发合成，见第七节）。本窗口 Hermes 新增能力中，真正构成差距的只有**少数几条**，集中在「可靠性补一层」「用量按模型区分」两类，外加一个**独立大项 MoA 架构**。
 
 **最重要的判断**：与 Hermes 的差距不是"缺很多"，而是"缺几个关键原语 + 几个半成品"。改进应聚焦，不机械移植 Hermes 数字（沿用 W15 P5 备忘的纪律）。
 
@@ -27,7 +27,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | 并发/迭代上限 | 3 / 50（`delegate_tool.py:132/512`） | Hermes 已上调 3→10、50→250；但配额机制已收敛（HP-202e） | **P1（门控）** |
 | Micro-compaction per-turn | 仅一次性全量 `compress()`（`context_compressor.py:1827`） | 缺摊薄到每 turn 的微压缩 + 节奏 + 遥测 | **P1** |
 | Per-model token 聚合 | 仅 per-call DB 记录（`conversation_loop.py:1626`），`TokenAccumulator` 扁平无 model 维度 | 中途换模不区分用量 | **P1** |
-| MoA cadence / 鲁棒性 / 可见性 | 每次跑满 N+1（`moa_loop.py`）；有 aggregator fallback + 全失败抛出，但无中断中止、无 per-model 裁剪、无进度 | 缺 `user_turn`/`every_n`、中断中止、per-model clip | **P1** |
+| MoA 架构 | 单发合成：`_FakeMessage.tool_calls=None`（聚合器**无工具**）、顾问只收最后一条 user 消息（无降噪视图/角色提示）、无 prompt-cache 治理、无成本核算 | 缺「顾问只读 + 行动模型带工具」整套架构——**非单点**，已重分析为独立大项 **M**（见第七节） | **M（独立大项）** |
 | delegate_task 结构化输出 schema | 签名无 schema 参数（`delegate_tool.py:1989`） | 缺可选 `response_schema` | **P1** |
 | 项目上下文注入 | 仅 `workspace_path` hint（`delegate_tool.py:573-606`） | 缺 project-facts/briefing 注入子代理 prompt | **P1** |
 | 用户可触发 `/review` 评审子代理 | 仅自动 memory/skill review fork（`background_review.py`） | 缺用户手动拉起、带父级 skills 的代码评审子代理 | **P1** |
@@ -72,10 +72,8 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 **P1-3 Per-model token 聚合**
 给 Rust `TokenAccumulator`（`rust-core/src/usage.rs`）加 model 维度，或在 Python 侧 `run_agent.py:605` 的 `session_*` 计数旁加 `per_model` dict，支撑 `switch_model`（`agent_runtime_helpers.py:1342`）时的用量区分。
 
-**P1-4 MoA cadence + 鲁棒性 + 可见性**
-- `moa_config.py` preset schema 加 `cadence: user_turn | every_n`，避免每次跑满 N+1；
-- `moa_loop.py:145` `asyncio.gather` 改 `TaskGroup`，接用户中断（`tools/interrupt.py` 已有）中止 reference fan-out；
-- `_build_aggregator_messages`（`moa_loop.py:101-122`）按各 reference 模型上下文窗口裁剪。
+**P1-4 MoA（原「cadence + 鲁棒性 + 可见性」——已重分析，不再作为 P1 单点）**
+原方案把 cadence 当独立项。对照 `../hermes-agent/docs/moa-mechanism-analysis.md` 后判定**定位错误**：cadence 只在「聚合器带工具、一次 user turn 产生多个工具迭代」时才成立，而当前 MoA 是单发合成（聚合器无工具），一次 turn 本就只 fan-out 一次，没有「每次跑满 N+1」的浪费可省。真正缺口是整套架构，已重分析为独立大项 **M**（见第七节）。中断子项（读 `agent._interrupt_requested` 短路 fan-out）已作为 P1-4 的一部分落地。
 
 **P1-5 delegate_task 结构化输出 schema**
 给 `delegate_task` 签名（`delegate_tool.py:1989`）加可选 `response_schema`；注意 `max_iterations` kwarg 目前被 config 覆盖（`:2026-2040`），需一并放开。
@@ -94,7 +92,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 
 **第一批（P0）**：P0-2（reasoning 下限，~0.5d）→ P0-3（空响应防双计费，~0.5d）→ P0-1（墙钟预算，~1–2d）→ P0-4（读锁分离，~2–3d）。前两条低风险先落地验证方向，后两条是主要投入。
 
-**第二批（P1）**：P1-2（micro-compaction）→ P1-3（per-model 用量）→ P1-4（MoA）→ P1-5（delegate schema）→ P1-6（上下文注入）→ P1-1（门控后并发上调）。
+**第二批（P1）**：P1-2（micro-compaction）→ P1-3（per-model 用量）→ P1-5（delegate schema）→ P1-6（上下文注入）→ P1-1（门控后并发上调）；**MoA 另立大项 M（见第七节），不与 P1 混排**。
 
 **第三批（P2）**：协议变体/隔离类，随多后端节奏。
 
@@ -134,7 +132,58 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 - 结论：专用读连接必须与写后端**同库**——`RW=0`（Python 写）时 Python 读连接可行，`RW=1`（Rust 写）时需 Rust 侧第二读连接（rust-core 改造）。当前 Rust 后端只暴露单连接，**需 rust-core 支持才可安全落地**。
 - 已 `git checkout` 回退，基线测试无回归（`test_intellect_state.py` 20 failed / 213 passed 与 base 一致，均为预存 `KeyError:0` 环境问题）。
 
+**P1 批实施结果（同一分支，提交 `5cf73a4` + `67497a3`）**：
+
+| 项 | 结果 |
+|---|---|
+| P1-3 per-model token 聚合 | ✅ `session_tokens_by_model`（归一化 key `normalize_model_name`）+ turn 结果 `tokens_by_model` 快照；`reset_session_state`/`agent_init` 双站点初始化 |
+| P1-4（中断子项） | ✅ MoA 读线程无关的 `agent._interrupt_requested` 短路 fan-out（修了原 `is_interrupted` 线程错配）；其余子项重分析并入 M |
+| P1-5 delegate schema | ✅ `response_schema`（解码级 `response_format` + prompt 级回退）+ `max_iterations` 放宽（int 强制转换）；穿透 `_dispatch_delegate_task` |
+| P1-6（项目上下文子项） | ✅ 子代理 prompt 注入 workspace 项目上下文（每批解析一次）；`/review` 子项待做 |
+
 **待办**：
 - [ ] P0-4：rust-core 暴露独立读连接后，按 `SESSIONDB_USE_RUST_RW` 分支选择同库读连接。
 - [ ] P0-1 的 `--run-budget` CLI flag（当前 config + env 已覆盖能力，flag 为薄封装）。
-- [ ] P1 批次（micro-compaction / per-model 用量 / MoA cadence / delegate schema / 项目上下文注入）。
+- [ ] MoA 架构 M1–M5（见第七节）。
+- [ ] P1-2 micro-compaction（高风险压缩重构，独立专项）。
+- [ ] P1-6 `/review` 子代理（三界面泛化）。
+- [ ] P2 协议变体/隔离（依赖多后端 + M1 的 MoA facade）。
+
+---
+
+## 七、MoA 差距重分析（依据 `../hermes-agent/docs/moa-mechanism-analysis.md`）
+
+> 本节**取代**原 P1-4 的「cadence + 鲁棒性 + 可见性」定位。原方案把 cadence 当独立优化项，对照 Hermes 机制后判定是**对差距性质的误判**。
+
+### 1. 实况对照
+
+| 维度 | Hermes | intellect-agent 现状（`agent/moa_loop.py`） | 差距 |
+|---|---|---|---|
+| 行动能力 | 聚合器带**完整工具 schema**，可发 tool_call 多步执行 | `_FakeMessage.tool_calls=None`，**聚合器无工具** | ❌ 根本性 |
+| 顾问视图 | `_reference_messages` 把全对话降噪成纯文本（去 system、tool_call 渲染成 `[called tool: ...]`、工具结果折叠、零 tool-role） | `_run_single_reference` 只发 `[{"role":"user","content": user_message}]` | ❌ 顾问对任务状态/工具历史全盲 |
+| 顾问角色提示 | `_REFERENCE_SYSTEM_PROMPT` 把模型重构为「只读分析者」，否定式+正反例压制「虚构已执行动作」 | 无 | ❌ |
+| fanout cadence | `user_turn`/`per_iteration`/`every_n` + SHA-256 签名 turn 级缓存 | 无 | ❌（单发下本无意义） |
+| prompt cache | guidance 附末尾、peel/rebase、三路缓存策略统一（cache share 85%→2% 再修回） | 无 | ❌ |
+| 成本核算 | 每顾问按自己模型计价、中断 late-accounting 回填 | `_FakeResponse.usage` 全 0 | ❌ |
+| 上下文裁剪 | `_trim_messages_for_reference` 按各顾问窗口裁剪 | 无（小窗口顾问 400→`[failed]`） | ❌ |
+| 容错 | 单顾问失败→`[failed]` 标记继续；全失败→聚合器单独行动（净化 prompt） | 有全失败 raise + 聚合器 fallback，无单顾问失败标记 | ⚠️ 部分 |
+
+**已对的部分**：虚拟 provider facade（`api_mode="moa"`）、并行 fan-out、聚合器 fallback、trace 保存、中断感知（本分支已补）——方向都正确。
+
+### 2. 核心结论
+
+**cadence 是「顾问节奏」，它只在聚合器能调工具、一次 user turn 产生多个工具迭代时才成立。** 当前 MoA 是单发合成，一次 turn 只 fan-out 一次，所以没有「每次跑满 N+1」可省。**cadence 是补上工具调用之后的下游优化，不是独立项。**
+
+换句话说，Hermes 的 cadence 是「顾问视图确定性 + prompt cache」的**结果**，不是原因。单独做 cadence 等于在没打地基时先装窗户。
+
+### 3. 修正后的 MoA 优先级（M1–M5）
+
+| 顺序 | 项 | 性质 |
+|---|---|---|
+| **M1** | 聚合器接入**完整工具 schema**（让 MoA 从「单发合成」变成「行动模型」） | 根本性，最大 |
+| **M2** | 顾问**降噪视图**（`_reference_messages` 等价物）+ `_REFERENCE_SYSTEM_PROMPT` | 决定顾问建议质量 |
+| **M3** | **prompt cache 治理**（guidance 附末尾、peel/rebase、缓存策略复用） | 决定长对话成本，Hermes 最难点 |
+| **M4** | **cadence + SHA-256 签名缓存**（此时才有意义） | 依赖 M1–M3 |
+| **M5** | 每顾问成本核算 + `_trim_messages_for_reference` + 单顾问失败标记 | 成本/鲁棒性收尾 |
+
+这是一个**独立大 feature**（Hermes 用 feat 15 / fix 63 才做完），不是 P1 的 3 个 bullet。**P2 的「MoA facade」依赖其实也卡在 M1 上**——当前 MoA 连工具都发不出，谈何多后端协议兼容。
