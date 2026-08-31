@@ -218,7 +218,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | **M5** 成本核算 / 裁剪 / 单顾问失败 | ✅ | `_extract_usage`（`:63`）+ `_trim_reference_messages`（`:103`）+ 单顾问 `failed_label`（`:356`）+ 聚合 usage 汇总（`:561-570`） |
 
 **边界（非逐字移植 Hermes，可后置）**：
-- M3 只做了 **Anthropic** 一路 cache；Hermes「三路缓存策略统一」（cache share 85%→2% 再修回）未移植。
+- M3 只做了 **Anthropic** 一路 cache；Hermes「三路缓存策略统一」（cache share 85%→2% 再修回）未移植。**「三路」指三种线格式各自的 cache 治理**：chat-completions（无 native cache，靠前缀复用）、Anthropic（`cache_control` breakpoint）、Responses/Codex（`prompt_cache_key`）。当前 MoA 聚合器只对 Anthropic 聚合器打 `apply_anthropic_cache_control`（`moa_loop.py:507-516`），其余两路留待多后端接入时补。
 - M4 当前为 **user_turn** cadence（一次 user turn 内跨 tool 迭代复用）；`per_iteration` / `every_n` 未做。
 - 中断感知（读线程无关的 `agent._interrupt_requested` 短路 fan-out + 跳过聚合器）属 P1-4 子项，本次保留。
 
@@ -350,7 +350,15 @@ micro-compaction = 把一次性全量压缩摊薄成**每 turn 吸收一个 exch
 
 **目标**：Hermes 的 repair pass 合并相邻 assistant turn（同一次 model 请求的多个 tool_call 迭代）时，追踪 tool_call id 的**并集**；intellect 的 `_repair_message_sequence`（`agent/agent_runtime_helpers.py:329`）目前缺等价 reconcile，合并后 carrier 的 tool_call id 与结果行配对可能错位。
 
-**前置**：多后端（Responses / Codex）才会产生需要 merge 的 carrier 形状；当前单一 chat-completions 后端不触发。
+**前置（线格式差异）**：只有 Responses / Codex 后端才产生需要 merge 的 carrier 形状；当前默认 `chat_completions` 后端不触发。三者的本质区别：
+
+| | chat_completions（当前默认） | codex_responses / Codex |
+|---|---|---|
+| 工具调用 | `message.tool_calls=[{id, function:{name, arguments}}]`，工具结果回传 `role:"tool"` + 单 `tool_call_id` | `output[]` 里多个 `function_call` item（各带 `call_id`），结果回传 `function_call_output` item |
+| 推理内容 | `reasoning_content` / `reasoning` 字段 | 独立 `reasoning` item，Codex 还加密重放（messages 表存 `codex_reasoning_items` / `codex_message_items`） |
+| 一次请求的转录 | 一条 assistant 消息 + 一个 tool_calls 数组 | 一个 **carrier** 混着 `reasoning` + `message` + 多个 `function_call`，需拆/合并进转录 |
+
+即：chat-completions 是「一条消息一个工具回合」，Responses/Codex 是「一个 carrier 多 item 混合」——后者才需要本项的 carrier 级 reconcile。默认 `chat_completions` 路径永远走不到该分支。
 
 **步骤**：
 1. 对照 Hermes `agent_runtime_helpers.py:579-720` 的 repair 合并逻辑，找出 intellect `_repair_message_sequence` 缺的「合并 turn 时保留 tool_call id 并集」分支。
