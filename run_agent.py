@@ -159,6 +159,7 @@ from agent.codex_responses_adapter import (
     _summarize_user_message_for_log,  # noqa: F401  # re-exported for tests
 )
 from agent.tool_guardrails import (
+    IdenticalCallObservation,
     ToolGuardrailDecision,
     append_toolguard_guidance,
     toolguard_synthetic_result,
@@ -4615,7 +4616,23 @@ class AIAgent:
         function_result: str,
         *,
         failed: bool,
+        tool_call_id: str = "",
     ) -> str:
+        # Stall guard (G-01) observes the RAW result FIRST: the failure
+        # guidance appended below embeds per-call counts, which would break
+        # the byte-identity matching forever after the first warn.
+        observation = IdenticalCallObservation()
+        try:
+            observation = self._tool_guardrails.observe_call(
+                tool_name,
+                function_args,
+                function_result,
+                failed=failed,
+                tool_call_id=tool_call_id,
+            )
+        except Exception:
+            pass  # stall guards are best-effort; never break result flow
+
         decision = self._tool_guardrails.after_call(
             tool_name,
             function_args,
@@ -4626,6 +4643,13 @@ class AIAgent:
             function_result = append_toolguard_guidance(function_result, decision)
         if decision.should_halt:
             self._set_tool_guardrail_halt(decision)
+
+        if observation.stub:
+            # Replaces the result entirely — the stub itself points back to
+            # the first (full) identical result earlier this turn.
+            return observation.stub
+        if observation.notice:
+            function_result = (function_result or "") + ("\n" if function_result else "") + observation.notice
         return function_result
 
     def _guardrail_block_result(self, decision: ToolGuardrailDecision) -> str:

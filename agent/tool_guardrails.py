@@ -60,6 +60,51 @@ MUTATING_TOOL_NAMES = frozenset(
 )
 
 
+# ── Stall guards (G-01): identical-call loop breaker ─────────────────────
+# Consecutive identical (signature + byte-identical result) calls to ANY tool
+# are a strong stall signal. Two reified observations:
+#   notice — appended to the result from the threshold-th call on; pure
+#            observation, never blocks. Exempt tools skip it (pollers are
+#            SUPPOSED to return identical results).
+#   stub   — from the second call on, a >=512-char successful result is
+#            replaced by a short reference to the first result (the tool
+#            still ran; this is context de-duplication, not caching).
+#            Pollers are NOT exempt from the stub — byte-identical poll
+#            output is exactly what a stub is for.
+
+STALL_GUARD_IDENTICAL_CALL_THRESHOLD = 3
+IDENTICAL_RESULT_STUB_MIN_CHARS = 512
+_RESULT_STUB_ARGS_PREVIEW_CHARS = 120
+
+# Tools whose contract is "return the same thing until the work completes".
+STALL_GUARD_NOTICE_EXEMPT_TOOLS = frozenset({"process"})
+# Suffix match covers delegate/async pollers (x_get_result, y_poll, ...).
+_STALL_GUARD_NOTICE_EXEMPT_SUFFIXES = ("_get_result", "_poll")
+
+
+def is_stall_guard_notice_exempt(tool_name: str) -> bool:
+    if tool_name in STALL_GUARD_NOTICE_EXEMPT_TOOLS:
+        return True
+    return tool_name.endswith(_STALL_GUARD_NOTICE_EXEMPT_SUFFIXES)
+
+
+@dataclass(frozen=True)
+class IdenticalCallObservation:
+    """Reified stall-guard output for one tool-result construction.
+
+    ``notice`` is appended after the result; ``stub`` replaces it entirely.
+    At most one of them is set.
+    """
+
+    notice: str = ""
+    stub: str = ""
+    streak_count: int = 0
+
+    @property
+    def has_content(self) -> bool:
+        return bool(self.notice or self.stub)
+
+
 @dataclass(frozen=True)
 class ToolCallGuardrailConfig:
     """Thresholds for per-turn tool-call loop detection.
@@ -224,8 +269,14 @@ def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str
 class ToolCallGuardrailController:
     """Per-turn controller for repeated failed/non-progressing tool calls."""
 
-    def __init__(self, config: ToolCallGuardrailConfig | None = None):
+    def __init__(
+        self,
+        config: ToolCallGuardrailConfig | None = None,
+        *,
+        stall_guards_enabled: bool = True,
+    ):
         self.config = config or ToolCallGuardrailConfig()
+        self.stall_guards_enabled = stall_guards_enabled
         self.reset_for_turn()
 
     def reset_for_turn(self) -> None:
@@ -233,6 +284,14 @@ class ToolCallGuardrailController:
         self._same_tool_failure_counts: dict[str, int] = {}
         self._no_progress: dict[ToolCallSignature, tuple[str, int]] = {}
         self._halt_decision: ToolGuardrailDecision | None = None
+        # Stall-guard streak (G-01): consecutive identical (signature,
+        # result-hash) observations for ANY tool.
+        self._streak_signature: ToolCallSignature | None = None
+        self._streak_result_hash: str = ""
+        self._streak_count: int = 0
+        self._streak_first_call_id: str = ""
+        self._streak_first_result: str = ""
+        self._streak_first_args: Mapping[str, Any] = {}
 
     @property
     def halt_decision(self) -> ToolGuardrailDecision | None:
@@ -379,6 +438,89 @@ class ToolCallGuardrailController:
             return False
         return tool_name in self.config.idempotent_tools
 
+    # ── Stall guards (G-01) ─────────────────────────────────────────────
+
+    def observe_call(
+        self,
+        tool_name: str,
+        args: Mapping[str, Any] | None,
+        result: str | None,
+        *,
+        failed: bool,
+        tool_call_id: str = "",
+    ) -> IdenticalCallObservation:
+        """Track the identical-call streak on the RAW result; reify notice/stub.
+
+        MUST be called with the raw result BEFORE any warning suffix is
+        appended — guidance suffixes embed per-call counts, which would break
+        byte-identity matching forever after the first warn. Failures reset
+        the streak (a failing call is not a stall, it's already handled by
+        the failure guardrails above).
+        """
+        if not self.stall_guards_enabled:
+            return IdenticalCallObservation()
+
+        args = _coerce_args(args)
+        signature = ToolCallSignature.from_call(tool_name, args)
+        result_hash = _result_hash(result) if isinstance(result, str) else ""
+
+        if (
+            self._streak_signature == signature
+            and self._streak_result_hash == result_hash
+            and result_hash
+            and not failed
+        ):
+            # A failed call is handled by the failure guardrails above and its
+            # result hash is meaningless for stall purposes — reset instead.
+            self._streak_count += 1
+        else:
+            self._streak_signature = signature
+            self._streak_result_hash = result_hash
+            self._streak_count = 1
+            self._streak_first_call_id = tool_call_id
+            self._streak_first_result = result if isinstance(result, str) else ""
+            self._streak_first_args = args
+
+        count = self._streak_count
+
+        # Stub first (replaces the result; only for successful, sufficiently
+        # large, byte-identical repeats). The tool really ran — this is
+        # context de-duplication with a reference back to the first result.
+        if (
+            count >= 2
+            and not failed
+            and isinstance(result, str)
+            and len(result) >= IDENTICAL_RESULT_STUB_MIN_CHARS
+            and self._streak_first_call_id
+        ):
+            return IdenticalCallObservation(
+                stub=build_identical_result_stub(
+                    tool_name,
+                    self._streak_first_args,
+                    self._streak_first_call_id,
+                ),
+                streak_count=count,
+            )
+
+        # Notice (pure observation; exempt pollers skip it).
+        if (
+            count >= STALL_GUARD_IDENTICAL_CALL_THRESHOLD
+            and not failed
+            and not is_stall_guard_notice_exempt(tool_name)
+        ):
+            ordinal = _ordinal(count)
+            return IdenticalCallObservation(
+                notice=(
+                    f"[intellect note: this is the {ordinal} consecutive identical call "
+                    f"to {tool_name} with identical arguments returning the same "
+                    "result. Do not repeat it — change arguments, use a different "
+                    "tool, or proceed with what you have.]"
+                ),
+                streak_count=count,
+            )
+
+        return IdenticalCallObservation(streak_count=count)
+
 
 def toolguard_synthetic_result(decision: ToolGuardrailDecision) -> str:
     """Build a synthetic role=tool content string for a blocked tool call."""
@@ -389,6 +531,35 @@ def toolguard_synthetic_result(decision: ToolGuardrailDecision) -> str:
         },
         ensure_ascii=False,
     )
+
+
+def build_identical_result_stub(
+    tool_name: str,
+    args: Mapping[str, Any],
+    first_call_id: str,
+) -> str:
+    """Short reference stub replacing a byte-identical repeat result.
+
+    The tool still ran; this is context de-duplication with a pointer back
+    to the first (full) result earlier in the same turn.
+    """
+    try:
+        args_preview = canonical_tool_args(args)[:_RESULT_STUB_ARGS_PREVIEW_CHARS]
+    except TypeError:
+        args_preview = ""
+    return (
+        f"[intellect note: this result is byte-identical to the {tool_name} result "
+        f"earlier this turn (tool_call_id {first_call_id}). Refer to that result; "
+        f"it has not changed. Args: {args_preview}\u2026]"
+    )
+
+
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
 
 def append_toolguard_guidance(result: str, decision: ToolGuardrailDecision) -> str:

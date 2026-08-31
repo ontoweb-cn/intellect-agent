@@ -80,6 +80,40 @@ from agent.conversation_helpers import (
 )
 
 
+# ── Continue-intent recovery (G-01 stall guard) ─────────────────────────
+# Matches a final answer that ANNOUNCES a next action near its tail without
+# any tool call following. Tail-window only (last ~160 chars): intent phrases
+# buried mid-text are not stalls. Bounded nudges per run via
+# agent._continue_intent_nudges.
+CONTINUE_INTENT_MAX_NUDGES = 2
+_TRAILING_CONTINUE_INTENT_RE = re.compile(
+    r"(let me now|i'?ll now|i will now|now i'?ll|next,? i'?ll|"
+    r"let me (run|execute|check|test|create|write|fix|update|verify)\b|"
+    r"i'?m going to (run|execute|check|test|create|write|fix|update|verify)\b)",
+    re.IGNORECASE,
+)
+_TRAILING_CONTINUE_INTENT_WINDOW = 160
+_TRAILING_CONTINUE_INTENT_MAX_CHARS = 4000
+
+
+def _trailing_continue_intent(text: str | None) -> bool:
+    """True when the tail of *text* announces an action that never happened."""
+    if not isinstance(text, str) or not text.strip():
+        return False
+    stripped = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    if not stripped or len(stripped) > _TRAILING_CONTINUE_INTENT_MAX_CHARS:
+        return False
+    tail = stripped[-_TRAILING_CONTINUE_INTENT_WINDOW:]
+    # Must END with intent-ish content (not a completed statement + period).
+    m = _TRAILING_CONTINUE_INTENT_RE.search(tail)
+    if not m:
+        return False
+    after = tail[m.end():].strip()
+    # Trailing material after the phrase must be short (a clause, not a
+    # completed deliverable).
+    return len(after) <= 120
+
+
 def run_conversation(
     agent,
     user_message: str,
@@ -192,6 +226,9 @@ def run_conversation(
     agent._unicode_sanitization_passes = 0
     agent._tool_guardrails.reset_for_turn()
     agent._tool_guardrail_halt_decision = None
+    # Continue-intent recovery counter (G-01): per-run budget of nudge
+    # injections (shared cap per conversation run, reset each turn start).
+    agent._continue_intent_nudges = 0
     # True until the server rejects an image_url content part with an error
     # like "Only 'text' content type is supported."  Set to False on first
     # rejection and kept False for the rest of the session so we never re-send
@@ -3765,7 +3802,38 @@ def run_conversation(
             else:
                 # No tool calls - this is the final response
                 final_response = assistant_message.content or ""
-                
+
+                # ── Continue-intent recovery (G-01 stall guard) ─────────
+                # The model announced a next step ("let me now run X") but
+                # stopped without any tool call — the classic trailing-intent
+                # stall. Nudge it to continue, bounded per run; the nudge is
+                # an append-only synthetic user turn (cache-safe prefix; it
+                # intentionally remains in history — intellect has no
+                # synthetic-message stripping hook, gate-0 ruling option b).
+                if (
+                    final_response
+                    and _trailing_continue_intent(final_response)
+                    and getattr(agent, "_continue_intent_nudges", 0) < CONTINUE_INTENT_MAX_NUDGES
+                ):
+                    agent._continue_intent_nudges = getattr(agent, "_continue_intent_nudges", 0) + 1
+                    try:
+                        agent._emit_interim_assistant_message(assistant_message)
+                    except Exception:
+                        pass
+                    messages.append({"role": "assistant", "content": final_response})
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "[System: your last message announced a next action but "
+                            "included no tool call. Continue now — execute the required "
+                            "tool calls and only send your final answer after the task "
+                            "is complete.]"
+                        ),
+                    })
+                    agent._touch_activity("continue-intent nudge injected")
+                    final_response = None
+                    continue
+
                 # Fix: unmute output when entering the no-tool-call branch
                 # so the user can see empty-response warnings and recovery
                 # status messages.  _mute_post_response was set during a
