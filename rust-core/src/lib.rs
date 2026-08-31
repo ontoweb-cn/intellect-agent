@@ -40,6 +40,7 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<backend::SQLiteBackend>()?;
     m.add_class::<connection::RustConnection>()?;
     m.add_class::<connection::RustCursor>()?;
+    m.add_class::<connection::RustRow>()?;
 
     // ── Stage 2: Sandbox / security ─────────────────────────────────────
     m.add_function(wrap_pyfunction!(sandbox::detect_hardline_command_rs, m)?)?;

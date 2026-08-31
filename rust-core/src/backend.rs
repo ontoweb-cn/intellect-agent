@@ -495,31 +495,40 @@ impl SQLiteBackend {
         let placeholders: Vec<String> = match_ids.iter().map(|_| "?".to_string()).collect();
         let in_clause = placeholders.join(",");
 
-        // Build a single query that gets 1-before for all match IDs
+        // Build a single query that gets 1-before for all match IDs.
+        // Correlated subqueries in the SELECT list (no LATERAL): LATERAL is
+        // not recognised by every bundled SQLite, so the previous LEFT JOIN
+        // LATERAL form returned empty before/after maps.
         let before_sql = format!(
-            "SELECT m.id AS match_id, prev.role AS role, prev.content AS content \
+            "SELECT m.id AS match_id, \
+                    (SELECT role FROM messages p \
+                     WHERE p.session_id = m.session_id \
+                       AND (p.timestamp < m.timestamp \
+                            OR (p.timestamp = m.timestamp AND p.id < m.id)) \
+                     ORDER BY p.timestamp DESC, p.id DESC LIMIT 1) AS role, \
+                    (SELECT content FROM messages p \
+                     WHERE p.session_id = m.session_id \
+                       AND (p.timestamp < m.timestamp \
+                            OR (p.timestamp = m.timestamp AND p.id < m.id)) \
+                     ORDER BY p.timestamp DESC, p.id DESC LIMIT 1) AS content \
              FROM messages m \
-             LEFT JOIN LATERAL ( \
-               SELECT role, content FROM messages \
-               WHERE session_id = m.session_id \
-                 AND (timestamp < m.timestamp \
-                      OR (timestamp = m.timestamp AND id < m.id)) \
-               ORDER BY timestamp DESC, id DESC LIMIT 1 \
-             ) prev ON true \
              WHERE m.id IN ({in_clause})",
         );
 
         // Get self + after similarly
         let after_sql = format!(
-            "SELECT m.id AS match_id, nxt.role AS role, nxt.content AS content \
+            "SELECT m.id AS match_id, \
+                    (SELECT role FROM messages p \
+                     WHERE p.session_id = m.session_id \
+                       AND (p.timestamp > m.timestamp \
+                            OR (p.timestamp = m.timestamp AND p.id > m.id)) \
+                     ORDER BY p.timestamp ASC, p.id ASC LIMIT 1) AS role, \
+                    (SELECT content FROM messages p \
+                     WHERE p.session_id = m.session_id \
+                       AND (p.timestamp > m.timestamp \
+                            OR (p.timestamp = m.timestamp AND p.id > m.id)) \
+                     ORDER BY p.timestamp ASC, p.id ASC LIMIT 1) AS content \
              FROM messages m \
-             LEFT JOIN LATERAL ( \
-               SELECT role, content FROM messages \
-               WHERE session_id = m.session_id \
-                 AND (timestamp > m.timestamp \
-                      OR (timestamp = m.timestamp AND id > m.id)) \
-               ORDER BY timestamp ASC, id ASC LIMIT 1 \
-             ) nxt ON true \
              WHERE m.id IN ({in_clause})",
         );
 

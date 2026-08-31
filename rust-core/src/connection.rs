@@ -7,11 +7,25 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyList, PyTuple};
 use rusqlite::Connection;
 
 fn _map_err(e: rusqlite::Error) -> PyErr {
-    pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
+    let msg = e.to_string();
+    // Match Python sqlite3: SQL-level errors (no such table, constraint
+    // violation, …) surface as sqlite3.OperationalError, which Python-side code
+    // catches via `except sqlite3.OperationalError`.  A bare RuntimeError here
+    // broke those handlers.
+    Python::with_gil(|py| {
+        if let Ok(sqlite3) = py.import_bound("sqlite3") {
+            if let Ok(exc_type) = sqlite3.getattr("OperationalError") {
+                if let Ok(instance) = exc_type.call1((msg.clone(),)) {
+                    return PyErr::from_value_bound(instance);
+                }
+            }
+        }
+        pyo3::exceptions::PyRuntimeError::new_err(msg)
+    })
 }
 
 // ── SQL value storage (GIL-free during query execution) ─────────────────────
@@ -63,32 +77,24 @@ pub struct RustCursor {
 
 #[pymethods]
 impl RustCursor {
-    fn fetchone(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+    fn fetchone(&self) -> PyResult<Option<RustRow>> {
         let mut pos = self.pos.borrow_mut();
         if *pos >= self.data.len() {
             return Ok(None);
         }
-        let row = &self.data[*pos];
+        let row = self.data[*pos].clone();
         *pos += 1;
-        let dict = PyDict::new_bound(py);
-        for (col, val) in self.columns.iter().zip(row.iter()) {
-            dict.set_item(col.as_str(), val.to_py(py))?;
-        }
-        Ok(Some(dict.into()))
+        Ok(Some(RustRow::new(self.columns.clone(), row)))
     }
 
-    fn fetchall(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    fn fetchall(&self) -> PyResult<Vec<RustRow>> {
         let mut pos = self.pos.borrow_mut();
         let remaining = &self.data[*pos..];
         *pos = self.data.len();
-        let mut out = Vec::with_capacity(remaining.len());
-        for row in remaining {
-            let dict = PyDict::new_bound(py);
-            for (col, val) in self.columns.iter().zip(row.iter()) {
-                dict.set_item(col.as_str(), val.to_py(py))?;
-            }
-            out.push(dict.into());
-        }
+        let out: Vec<RustRow> = remaining
+            .iter()
+            .map(|row| RustRow::new(self.columns.clone(), row.clone()))
+            .collect();
         Ok(out)
     }
 
@@ -100,6 +106,66 @@ impl RustCursor {
     #[getter]
     fn rowcount(&self) -> i64 {
         self.rowcount
+    }
+}
+
+// ── RustRow ─────────────────────────────────────────────────────────────────
+// sqlite3.Row-compatible row: supports int and str indexing, keys(), iteration
+// over values, and dict(row) via keys()+__getitem__.
+
+#[pyclass]
+#[derive(Clone)]
+pub struct RustRow {
+    columns: Vec<String>,
+    values: Vec<SqlValue>,
+}
+
+impl RustRow {
+    fn new(columns: Vec<String>, values: Vec<SqlValue>) -> Self {
+        RustRow { columns, values }
+    }
+}
+
+#[pymethods]
+impl RustRow {
+    fn __getitem__(&self, py: Python<'_>, key: &Bound<'_, PyAny>) -> PyResult<PyObject> {
+        // Integer index (0-based; negative supported like sqlite3.Row).
+        if let Ok(idx) = key.extract::<isize>() {
+            let n = self.values.len() as isize;
+            let i = if idx < 0 { n + idx } else { idx };
+            if i >= 0 && (i as usize) < self.values.len() {
+                return Ok(self.values[i as usize].to_py(py));
+            }
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                "row index out of range",
+            ));
+        }
+        // String index (column name).
+        if let Ok(name) = key.extract::<String>() {
+            if let Some(pos) = self.columns.iter().position(|c| c == &name) {
+                return Ok(self.values[pos].to_py(py));
+            }
+            return Err(pyo3::exceptions::PyKeyError::new_err(name));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(
+            "row indices must be integers or strings",
+        ))
+    }
+
+    fn keys(&self) -> Vec<String> {
+        self.columns.clone()
+    }
+
+    fn __iter__(&self, py: Python<'_>) -> Vec<PyObject> {
+        self.values.iter().map(|v| v.to_py(py)).collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.values.len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("<RustRow ({})>", self.columns.join(", "))
     }
 }
 

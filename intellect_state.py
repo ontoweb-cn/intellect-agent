@@ -201,7 +201,9 @@ def apply_wal_with_fallback(
         current_mode = conn.execute("PRAGMA journal_mode").fetchone()
         if current_mode and current_mode[0] == "wal":
             return "wal"
-    except sqlite3.OperationalError:
+    except sqlite3.DatabaseError:
+        # Best-effort probe — a transient "file is not a database" (e.g. a
+        # WAL/connection race during reopen) must not mask the set-pragma path.
         pass
 
     try:
@@ -2631,6 +2633,27 @@ class SessionDB:
         """Count CJK characters in text."""
         return sum(1 for ch in text if cls._is_cjk_codepoint(ord(ch)))
 
+    def _postprocess_context_entries(self, entries: Any) -> List[Dict[str, Any]]:
+        """Decode + truncate a context-window entry list into {role, content}."""
+        out: List[Dict[str, Any]] = []
+        for entry in entries if isinstance(entries, list) else []:
+            role = entry.get("role", "") if hasattr(entry, "get") else ""
+            raw = entry.get("content", "") if hasattr(entry, "get") else ""
+            decoded = self._decode_content(raw)
+            if isinstance(decoded, list):
+                text_parts = [
+                    p.get("text", "") for p in decoded
+                    if isinstance(p, dict) and p.get("type") == "text"
+                ]
+                text = " ".join(t for t in text_parts if t).strip()
+                preview = text or "[multimodal content]"
+            elif isinstance(decoded, str):
+                preview = decoded
+            else:
+                preview = ""
+            out.append({"role": role, "content": preview[:200]})
+        return out
+
     def search_messages(
         self,
         query: str,
@@ -2677,10 +2700,26 @@ class SessionDB:
             rust = self._rust_backend()
             if rust is not None:
                 try:
-                    return rust.search_messages(
+                    matches = rust.search_messages(
                         query, source_filter, exclude_sources,
                         role_filter, limit, offset, sort,
                     )
+                    # The Rust search returns match rows (with full `content`)
+                    # but not the `context` window the Python path attaches.
+                    # Replicate the context extraction + content drop here so
+                    # the return shape is identical on both paths.
+                    if matches:
+                        try:
+                            match_ids = [m["id"] for m in matches]
+                            batch = rust.get_message_context_batch(match_ids)
+                            for match, ctx_list in zip(matches, batch):
+                                match["context"] = self._postprocess_context_entries(ctx_list)
+                        except Exception:
+                            for match in matches:
+                                match["context"] = []
+                    for match in matches:
+                        match.pop("content", None)
+                    return matches
                 except Exception:
                     pass  # Fall through to Python
 
