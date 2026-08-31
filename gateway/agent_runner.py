@@ -537,6 +537,120 @@ class GatewayAgentRunner:
             except Exception:
                 _log_non_critical()
 
+    async def _run_review_task(
+        self,
+        topic: str,
+        source: "SessionSource",
+        task_id: str,
+        event_message_id: Optional[str] = None,
+    ) -> None:
+        """Execute a code-review subagent and deliver the result to the chat."""
+        from run_agent import AIAgent
+
+        adapter = self.adapters.get(source.platform)
+        if not adapter:
+            logger.warning("No adapter for platform %s in review task %s", source.platform, task_id)
+            return
+
+        _thread_metadata = self._thread_metadata_for_source(source, event_message_id)
+
+        try:
+            user_config = _load_gateway_config()
+            model, runtime_kwargs = self._resolve_session_agent_runtime(
+                source=source,
+                user_config=user_config,
+            )
+            if not runtime_kwargs.get("api_key"):
+                await adapter.send(
+                    source.chat_id,
+                    "❌ Code review failed: no provider credentials configured.",
+                    metadata=_thread_metadata,
+                )
+                return
+
+            platform_key = _platform_config_key(source.platform)
+
+            from intellect_cli.tools_config import _get_platform_tools
+            enabled_toolsets = sorted(_get_platform_tools(user_config, platform_key))
+            agent_cfg = user_config.get("agent") or {}
+            disabled_toolsets = agent_cfg.get("disabled_toolsets") or None
+
+            pr = self._provider_routing
+            max_iterations = int(os.getenv("INTELLECT_MAX_ITERATIONS", "90"))
+            reasoning_config = self._resolve_session_reasoning_config(source=source)
+            self._reasoning_config = reasoning_config
+            self._service_tier = self._load_service_tier()
+            turn_route = self._resolve_turn_agent_config(
+                topic or "review recent changes", model, runtime_kwargs,
+            )
+
+            from agent.code_review import run_code_review
+
+            def run_sync():
+                agent = AIAgent(
+                    model=turn_route["model"],
+                    **turn_route["runtime"],
+                    max_iterations=max_iterations,
+                    quiet_mode=True,
+                    verbose_logging=False,
+                    enabled_toolsets=enabled_toolsets,
+                    disabled_toolsets=disabled_toolsets,
+                    reasoning_config=reasoning_config,
+                    service_tier=self._service_tier,
+                    request_overrides=turn_route.get("request_overrides"),
+                    providers_allowed=pr.get("only"),
+                    providers_ignored=pr.get("ignore"),
+                    providers_order=pr.get("order"),
+                    provider_sort=pr.get("sort"),
+                    provider_require_parameters=pr.get("require_parameters", False),
+                    provider_data_collection=pr.get("data_collection"),
+                    session_id=task_id,
+                    platform=platform_key,
+                    user_id=source.user_id,
+                    user_id_alt=source.user_id_alt,
+                    user_name=source.user_name,
+                    chat_id=source.chat_id,
+                    chat_name=source.chat_name,
+                    chat_type=source.chat_type,
+                    thread_id=source.thread_id,
+                    session_db=self._session_db,
+                    fallback_model=self._fallback_model,
+                    skip_memory=True,
+                    publish_session_context=False,
+                )
+                try:
+                    return run_code_review(agent, topic=topic)
+                finally:
+                    self._cleanup_agent_resources(agent)
+
+            response = await self._run_in_executor_with_context(run_sync)
+
+            if response:
+                focus = topic[:60] + ("..." if len(topic) > 60 else "")
+                header = "📋 Code review" + (f" (focus: {focus})" if topic else "") + "\n\n"
+                await adapter.send(
+                    source.chat_id,
+                    header + response,
+                    metadata=_thread_metadata,
+                )
+            else:
+                await adapter.send(
+                    source.chat_id,
+                    "📋 Code review: (No review generated)",
+                    metadata=_thread_metadata,
+                )
+
+        except Exception as e:
+            logger.exception("Review task %s failed", task_id)
+            try:
+                await adapter.send(
+                    source.chat_id,
+                    f"❌ Code review failed: {e}",
+                    metadata=_thread_metadata,
+                )
+            except Exception:
+                _log_non_critical()
+
     def _build_process_event_source(self, evt: dict):
         """Resolve the canonical source for a synthetic background-process event.
 

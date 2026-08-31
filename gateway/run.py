@@ -1098,6 +1098,8 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
 
         "background": "_handle_background_command",
 
+        "review": "_handle_review_command",
+
         "delegations": "_handle_delegations_command",
 
         "learn": "_handle_learn_command",

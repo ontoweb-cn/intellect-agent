@@ -149,6 +149,18 @@ def build_top_level_parser():
         default=None,
         help="Resume a previous session by ID or title",
     )
+    _inherited_flag(
+        parser,
+        "--run-budget",
+        metavar="SECONDS",
+        type=float,
+        default=None,
+        help=(
+            "Wall-clock run budget per turn in seconds. Bounds the whole turn "
+            "independent of the iteration budget. Overrides config; equivalent "
+            "to INTELLECT_RUN_BUDGET_SECONDS."
+        ),
+    )
     parser.add_argument(
         "--continue",
         "-c",
@@ -290,6 +302,18 @@ def build_top_level_parser():
         metavar="SESSION_ID",
         default=argparse.SUPPRESS,
         help="Resume a previous session by ID (shown on exit)",
+    )
+    _inherited_flag(
+        chat_parser,
+        "--run-budget",
+        metavar="SECONDS",
+        type=float,
+        default=argparse.SUPPRESS,
+        help=(
+            "Wall-clock run budget per turn in seconds. Bounds the whole turn "
+            "independent of the iteration budget. Overrides config; equivalent "
+            "to INTELLECT_RUN_BUDGET_SECONDS."
+        ),
     )
     chat_parser.add_argument(
         "--continue",

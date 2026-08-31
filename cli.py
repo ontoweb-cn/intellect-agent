@@ -8648,17 +8648,6 @@ class IntellectCLI:
 
         turn_route = self._resolve_turn_agent_config(topic or "review recent changes")
 
-        review_prompt = (
-            "Perform a focused code review of the recent work in this project. "
-            "Use your tools to inspect what changed: run `git status` and `git diff`, "
-            "read the modified files, and run relevant tests. Report concrete findings "
-            "— correctness bugs, security concerns, and improvement suggestions — with "
-            "file/line references where possible. Be specific and actionable; skip "
-            "trivial or generic observations."
-        )
-        if topic:
-            review_prompt += f"\n\nFocus area requested by the user: {topic}"
-
         review_task_id = f"review_{datetime.now().strftime('%H%M%S')}_{uuid.uuid4().hex[:6]}"
         review_agent = None
         try:
@@ -8700,10 +8689,12 @@ class IntellectCLI:
             )
             review_agent._print_fn = lambda *_a, **_kw: None
 
-            result = review_agent.run_conversation(user_message=review_prompt)
-            response = result.get("final_response", "") if result else ""
-            if not response and result and result.get("error"):
-                response = f"Error: {result['error']}"
+            from agent.code_review import run_code_review
+            response = run_code_review(
+                review_agent,
+                topic=topic,
+                parent_agent=getattr(self, "agent", None),
+            )
 
             print()
             _cprint("  📋 Code review:")
@@ -8717,11 +8708,6 @@ class IntellectCLI:
         except Exception as exc:
             _cprint(f"  ❌ Code review failed: {exc}")
         finally:
-            try:
-                if review_agent is not None:
-                    review_agent.close()
-            except Exception:
-                pass
             try:
                 set_sudo_password_callback(None)
                 set_approval_callback(None)

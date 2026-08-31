@@ -140,15 +140,29 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | P1-3 per-model token 聚合 | ✅ `session_tokens_by_model`（归一化 key `normalize_model_name`）+ turn 结果 `tokens_by_model` 快照；`reset_session_state`/`agent_init` 双站点初始化 |
 | P1-4（中断子项） | ✅ MoA 读线程无关的 `agent._interrupt_requested` 短路 fan-out（修了原 `is_interrupted` 线程错配）；其余子项重分析并入 M |
 | P1-5 delegate schema | ✅ `response_schema`（解码级 `response_format` + prompt 级回退）+ `max_iterations` 放宽（int 强制转换）；穿透 `_dispatch_delegate_task` |
-| P1-6（项目上下文子项） | ✅ 子代理 prompt 注入 workspace 项目上下文（每批解析一次）；`/review` 子项待做 |
+| P1-6（项目上下文子项） | ✅ 子代理 prompt 注入 workspace 项目上下文（每批解析一次）；`/review` 子项本次完成 |
 
-**待办**：
-- [ ] P0-4：rust-core 暴露独立读连接后，按 `SESSIONDB_USE_RUST_RW` 分支选择同库读连接。
-- [ ] P0-1 的 `--run-budget` CLI flag（当前 config + env 已覆盖能力，flag 为薄封装）。
-- [ ] MoA 架构 M1–M5（见第七节）。
-- [ ] P1-2 micro-compaction（高风险压缩重构，独立专项，见第八节）。
-- [ ] P1-6 `/review` 子代理（三界面泛化）。
-- [ ] P2 协议变体/隔离（依赖多后端 + M1 的 MoA facade）。
+**P1/P2 批实施结果（本次：micro-compaction + /review + tool_call_id 变体）**：
+
+| 项 | 结果 | 测试 |
+|---|---|---|
+| P1-2 阶段 A+B | ✅ `ContextCompressor` 新增 `_micro_compact` 全套（cursor / exchange 定位 / rolling summary / splice+supersede / defrag / 连败跳过 / content-free 遥测）；`conversation_loop.py` final-response 分支挂钩（`completed and not interrupted` gate + `_last_flushed_db_idx` 左移调整）；`agent_init.py` 配置三项（`micro_compact` 默认关）；`compress()` 成功后 reset micro 状态 | 新增 `tests/agent/test_micro_compaction.py` 24 passed；`test_context_compressor.py` 91 passed 无回归 |
+| P1-6 /review 三界面 | ✅ 新增共享 `agent/code_review.py`（`build_review_prompt` + `run_code_review`，含父级 skills/系统提示 pin）；CLI `_handle_review_command` 改调 runner（`parent_agent=self.agent`）；gateway 新增 `_handle_review_command` + `_run_review_task`（仿 `/background` 异步后台）+ `_COMMAND_DISPATCH` 注册 `review`；TUI 经 `tui_gateway/slash_worker.py` → `IntellectCLI.process_command` 免费继承 | 手动验证：`run_code_review` 生命周期（run/extract/close）通过；三界面 `import` 全绿 |
+| P2-1 tool_call_id 变体 | ✅ `_normalize_tool_call_id`（`\|` 前段规范）+ `make_tool_result_message` 应用 | `tests/agent/test_tool_dispatch_helpers.py` 32 passed |
+
+**收尾批实施结果（P0-1 flag / P1-2 阶段 C / P2-3 env scrub）**：
+
+| 项 | 结果 | 测试 |
+|---|---|---|
+| P0-1 `--run-budget` flag | ✅ `_parser.py` 顶层 + chat 子命令双注册；`main.py` `_TOP_LEVEL_VALUE_FLAGS` + env 透传 | argparse 手动验证：`--run-budget 300` 顶层/chat 均解析 |
+| P1-2 阶段 C（DB 同步） | ✅ **复用既有 `SessionDB.replace_messages`**（`intellect_state.py:1997`，原子 delete+reinsert，`/retry`/`/undo`/`/compress` 同款），无需新加 `archive_and_compact`；钩子在 micro 吸收/defrag 后调 `replace_messages` + `_last_flushed_db_idx=len(messages)`，失败回退 index-shift | `test_micro_compaction.py` 25 passed；`test_context_compressor.py` 91 passed |
+| P2-3 env scrub | ✅ `copilot_acp_client.py:_build_subprocess_env` 从全量 `os.environ.copy()` 改为 allowlist（HOME/PATH/终端 + INTELLECT_HOME），不再向 ACP 子进程泄漏密钥 | `test_copilot_acp_client.py` 21 passed |
+
+**待办（剩余）**：
+- [ ] P0-4 读锁分离：rust-core `read_conn` **已存在**（`rust-core/src/backend.rs:43`，独立 WAL 读连接），剩余为 Python 侧 31 个读方法脱离写锁（RW=1 用 `connection()` 的 Rust read_conn；RW=0 需另开 Python 读连接）。纯性能优化，非正确性。
+- [ ] P2-2 merged tool-call carrier（依赖多后端，见第九节）。
+- [ ] P2-3 剩余子项：git worktree + 独立 SessionDB（env scrub 已完成）。
+- [ ] **MoA 后置优化**：M3「三路缓存策略统一」（现仅 Anthropic 一路，见第七节第四节）；M4「per_iteration / every_n cadence」（现仅 user_turn）。
 
 ---
 
@@ -188,6 +202,23 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | **M5** | 每顾问成本核算 + `_trim_messages_for_reference` + 单顾问失败标记 | 成本/鲁棒性收尾 |
 
 这是一个**独立大 feature**（Hermes 用 feat 15 / fix 63 才做完），不是 P1 的 3 个 bullet。**P2 的「MoA facade」依赖其实也卡在 M1 上**——当前 MoA 连工具都发不出，谈何多后端协议兼容。
+
+### 4. 实施结果（M1–M5 已完成并测试）
+
+> 落于 `feat/agent-core-hermes-gap-p0` → 已合入 `main`。核心 `agent/moa_loop.py`（620 行）+ `agent/transports/moa.py`（transport 注册）+ `agent/moa_trace.py`（trace 落盘）。测试 `tests/agent/test_moa_loop.py` **36 passed**。
+
+| 项 | 结果 | 关键实现（`agent/moa_loop.py`） |
+|---|---|---|
+| **M1** 行动模型 | ✅ 聚合器接收完整 tool schema，可发 tool_calls | `run()` 转发 `kwargs["tools"]`（`:519`）；`_FakeMessage.tool_calls` 不再硬编码 None（`:617-620`）；`_extract_tool_calls`（`:49`） |
+| **M2** 顾问降噪视图 + 角色提示 | ✅ | `_REFERENCE_SYSTEM_PROMPT`（`:170`，否定式 + 正反例压制「虚构已执行」）；`_reference_messages`（`:227`，去 system、tool_calls 渲染为 `[called tool: ...]`、工具结果折叠、零 tool-role） |
+| **M3** prompt cache 治理 | ✅（Anthropic 一路） | guidance 附末尾（`:401`）；`apply_anthropic_cache_control`（`:507-516`）；peel/rebase（`:454-466`） |
+| **M4** cadence + SHA-256 签名缓存 | ✅（user_turn cadence） | `_turn_signature`（`:134`，turn_prefix）+ `_task_signature`（`:153`，压缩稳定）+ `_moa_fanout_cache`（`:442-476`） |
+| **M5** 成本核算 / 裁剪 / 单顾问失败 | ✅ | `_extract_usage`（`:63`）+ `_trim_reference_messages`（`:103`）+ 单顾问 `failed_label`（`:356`）+ 聚合 usage 汇总（`:561-570`） |
+
+**边界（非逐字移植 Hermes，可后置）**：
+- M3 只做了 **Anthropic** 一路 cache；Hermes「三路缓存策略统一」（cache share 85%→2% 再修回）未移植。
+- M4 当前为 **user_turn** cadence（一次 user turn 内跨 tool 迭代复用）；`per_iteration` / `every_n` 未做。
+- 中断感知（读线程无关的 `agent._interrupt_requested` 短路 fan-out + 跳过聚合器）属 P1-4 子项，本次保留。
 
 ---
 
@@ -298,3 +329,43 @@ micro-compaction = 把一次性全量压缩摊薄成**每 turn 吸收一个 exch
 - [ ] 遥测 content-free，`occupancy_pct` 只读缓存阈值
 - [ ] 无 DB 绑定时 splice 不破坏 `_db_persisted` stamp（对照 `test_splice_preserves_db_persisted_stamps`）
 - [ ] batch `compress()` 成功后 reset micro 状态
+
+---
+
+## 九、剩余项细化（spec-only，依赖未满足）
+
+> 本节的 P1-2 阶段 C、P2-2、P2-3 均**不写代码**，仅细化到可执行 spec。三者依赖「rust-core 第二读连接」或「多后端」等尚未落地的前置（MoA M1 已完成，不再构成阻塞）。
+
+### 1. P1-2 阶段 C —— DB 同步（✅ 已完成，复用 `replace_messages`）
+
+**结论**：无需新增 `archive_and_compact`——intellect 已有 `SessionDB.replace_messages(session_id, messages)`（`intellect_state.py:1997`，原子 delete+reinsert，`/retry`/`/undo`/`/compress` 同款），语义等价于「原位软归档 + 重插」。
+
+**已落地**：`conversation_loop.py` 钩子在 micro 吸收/defrag 后调 `replace_messages` + `_last_flushed_db_idx = len(messages)`（标记全部已持久化，随后的 append-only flush 跳过）；失败回退到阶段 A/B 的 index-shift。defrag 的 marker 改写也经同一 `replace_messages` 路径重持久化（原 `_flush_scan_cursor_invalidated` no-op 已消除）。
+
+**验收**：`test_micro_compaction.py` 25 passed；`test_context_compressor.py` 91 passed。resume 不双载（DB 存 spliced 转录，非原始+拼接）。
+
+### 2. P2-2 —— merged tool-call carrier 结果 reconcile
+
+**目标**：Hermes 的 repair pass 合并相邻 assistant turn（同一次 model 请求的多个 tool_call 迭代）时，追踪 tool_call id 的**并集**；intellect 的 `_repair_message_sequence`（`agent/agent_runtime_helpers.py:329`）目前缺等价 reconcile，合并后 carrier 的 tool_call id 与结果行配对可能错位。
+
+**前置**：多后端（Responses / Codex）才会产生需要 merge 的 carrier 形状；当前单一 chat-completions 后端不触发。
+
+**步骤**：
+1. 对照 Hermes `agent_runtime_helpers.py:579-720` 的 repair 合并逻辑，找出 intellect `_repair_message_sequence` 缺的「合并 turn 时保留 tool_call id 并集」分支。
+2. 合并后给 carrier 保留 `tool_calls` 元数据（name/arguments/id），供 `_sanitize_tool_pairs` / `make_tool_result_message` 正确配对。
+
+**验收**：Responses/Codex 后端下，合并 carrier 的工具结果能正确回填；`tool_call_id` 变体（`call_abc|def`）经 P2-1 规范后配对正确。
+
+### 3. P2-3 —— 子代理隔离（独立 SessionDB / git worktree / env scrub）
+
+**目标**：delegate / review 等子代理不再共享父 SessionDB，不继承父 ACP 环境。
+
+**前置**：多后端（MoA M1 已完成，见第七节，已不再构成阻塞）。
+
+**步骤**：
+1. **独立 SessionDB**：`tools/delegate_tool.py:1161` 当前 `session_db=getattr(parent_agent, "_session_db", None)` → 改为为子代理开独立 `SessionDB`（或复用 parent 但 `parent_session_id` 隔离 + 只读）。**（待做）**
+2. **opt-in git worktree**：`delegate_tool` 增 `worktree=True` 参数，用 `git worktree add` 给子代理一个隔离工作区（当前无）。**（待做）**
+3. **env scrub**：✅ **已完成** —— `agent/copilot_acp_client.py:_build_subprocess_env` 改为 allowlist（`_SUBPROCESS_ENV_ALLOWLIST`：HOME/PATH/终端 + INTELLECT_HOME），不再向 ACP 子进程继承密钥/凭证。
+
+**验收**：子代理写入不污染父会话；worktree 子代理改动隔离可丢弃；子进程环境不含父级敏感变量（env scrub 部分已验收：`test_copilot_acp_client.py` 21 passed）。
+

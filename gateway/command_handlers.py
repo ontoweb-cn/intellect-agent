@@ -2105,6 +2105,36 @@ class GatewayCommandHandlers:
         return t("gateway.background.started", preview=preview, task_id=task_id)
 
 
+    async def _handle_review_command(self, event: MessageEvent) -> str:
+        """Handle /review [topic] — launch a code-review subagent on recent work.
+
+        Spawns a fresh AIAgent (inheriting the session's model/provider and
+        toolsets) with a code-review prompt, runs it in a background task, and
+        delivers the review back to the chat without touching the active
+        session's history.
+        """
+        topic = event.get_command_args().strip()
+        source = event.source
+        task_id = f"review_{datetime.now().strftime('%H%M%S')}_{os.urandom(3).hex()}"
+        event_message_id = self._reply_anchor_for_event(event)
+
+        _task = asyncio.create_task(
+            self._run_review_task(
+                topic,
+                source,
+                task_id,
+                event_message_id=event_message_id,
+            )
+        )
+        self._background_tasks.add(_task)
+        _task.add_done_callback(self._background_tasks.discard)
+
+        if topic:
+            focus = topic[:60] + ("..." if len(topic) > 60 else "")
+            return f"🔍 Starting code review (focus: {focus})..."
+        return "🔍 Starting code review..."
+
+
     async def _handle_reasoning_command(self, event: MessageEvent) -> str:
         """Handle /reasoning command — manage reasoning effort and display toggle.
 

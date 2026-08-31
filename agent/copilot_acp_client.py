@@ -103,8 +103,33 @@ def _resolve_home_dir() -> str:
     return "/tmp"
 
 
+# Env vars forwarded to the ACP subprocess.  The third-party CLI only needs the
+# terminal/runtime basics; forwarding the full ``os.environ`` would leak API
+# keys, credentials, and other secrets into its process.  Everything else is
+# dropped (scrubbed), matching the sub-agent isolation goal.
+_SUBPROCESS_ENV_ALLOWLIST = frozenset({
+    "HOME", "PATH", "USER", "LOGNAME", "SHELL", "TERM", "TERM_PROGRAM",
+    "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TMP", "TEMP", "TZ",
+    "COLORTERM", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE",
+    "SSH_AUTH_SOCK", "SSH_AGENT_PID",
+    "INTELLECT_HOME",
+    # Network: the Copilot CLI needs proxy config to reach GitHub on proxied
+    # hosts, and it must NOT silently lose access (drop the proxy → hang).
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+    # Copilot auth: GITHUB_TOKEN/GH_TOKEN are the headless/CI fallback when the
+    # interactive OAuth cache is absent; dropping them breaks non-TTY auth.
+    "GITHUB_TOKEN", "GH_TOKEN", "GITHUB_ENTERPRISE_TOKEN",
+})
+
+
 def _build_subprocess_env() -> dict[str, str]:
-    env = os.environ.copy()
+    """Build a scrubbed env for the ACP subprocess (no inherited secrets)."""
+    env: dict[str, str] = {}
+    for key in _SUBPROCESS_ENV_ALLOWLIST:
+        val = os.environ.get(key)
+        if val is not None:
+            env[key] = val
     env["HOME"] = _resolve_home_dir()
     return env
 

@@ -11134,6 +11134,7 @@ _TOP_LEVEL_VALUE_FLAGS = frozenset(
         "-t", "--toolsets",
         "-r", "--resume",
         "-s", "--skills",
+        "--run-budget",
         # ``-c / --continue`` is nargs='?' (optional value). Treat it as
         # value-taking: if the next token is a subcommand-looking word
         # the user almost certainly meant it as the session name, and
@@ -11229,6 +11230,13 @@ def _should_background_mcp_startup(args) -> bool:
 
 def _prepare_agent_startup(args) -> None:
     """Discover plugins/MCP/hooks for commands that can run an agent turn."""
+    # --run-budget: wall-clock run budget per turn (seconds).  Thin wrapper over
+    # the INTELLECT_RUN_BUDGET_SECONDS env override read by the agent.  Set here
+    # (before any early return) so it reaches every agent turn path — -z/oneshot,
+    # TUI, and chat.
+    if getattr(args, "run_budget", None) is not None:
+        os.environ["INTELLECT_RUN_BUDGET_SECONDS"] = str(args.run_budget)
+
     _sub_attr, _sub_set = _AGENT_SUBCOMMANDS.get(args.command, (None, None))
     if not (
         args.command in _AGENT_COMMANDS

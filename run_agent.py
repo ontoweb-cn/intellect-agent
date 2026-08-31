@@ -1120,19 +1120,20 @@ class AIAgent:
         """Resolve the wall-clock run budget (seconds), if any.
 
         Priority:
-          1. ``providers.<id>.models.<model>.run_budget_seconds``
-          2. ``providers.<id>.run_budget_seconds``
-          3. ``INTELLECT_RUN_BUDGET_SECONDS`` env var
+          1. ``INTELLECT_RUN_BUDGET_SECONDS`` env var (set by the ``--run-budget``
+             CLI flag — an explicit runtime override beats config)
+          2. ``providers.<id>.models.<model>.run_budget_seconds``
+          3. ``providers.<id>.run_budget_seconds``
 
         Returns ``None`` (budget disabled) when unset.  Bounds a whole turn
         by elapsed wall-clock time, independent of the iteration budget.
         """
-        cfg = get_provider_run_budget(self.provider, self.model)
-        if cfg is not None:
-            return cfg
-
         from intellect_cli.timeouts import _coerce_timeout
-        return _coerce_timeout(os.getenv("INTELLECT_RUN_BUDGET_SECONDS"))
+        env = _coerce_timeout(os.getenv("INTELLECT_RUN_BUDGET_SECONDS"))
+        if env is not None:
+            return env
+
+        return get_provider_run_budget(self.provider, self.model)
 
     def _compute_non_stream_stale_timeout(self, api_payload: Any) -> float:
         """Compute the effective non-stream stale timeout for this request.

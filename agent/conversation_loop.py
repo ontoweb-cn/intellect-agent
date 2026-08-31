@@ -4268,6 +4268,97 @@ def run_conversation(
     # can replay assistant("(empty)") / recovery nudges and fall into the
     # same empty-response loop again.
     agent._drop_trailing_empty_response_scaffolding(messages)
+
+    # ── Post-turn micro-compaction ────────────────────────────────────
+    # After a normal completed turn, fold the oldest un-absorbed exchange into
+    # the rolling summary — amortizing batch compression across turns instead
+    # of paying it as one mid-session stall.  Opt-in (compression.micro_compact)
+    # and best-effort: any failure leaves the conversation unchanged.
+    #
+    # Stage A/B is memory-only: the splice is not persisted via
+    # archive_and_compact (that needs rust-core read-connection work — see
+    # P1-2 阶段 C).  We adjust the index-based flush cursor so the spliced list
+    # still persists correctly; resume may double-load compacted messages until
+    # the next batch compression, which is the documented stage-A/B tradeoff.
+    if completed and not interrupted:
+        try:
+            _compressor = getattr(agent, "context_compressor", None)
+            if (
+                _compressor is not None
+                and getattr(_compressor, "_micro_compact_enabled", False) is True
+                and callable(getattr(_compressor, "_micro_compact", None))
+                and final_response
+                and not getattr(agent, "_persist_disabled", False)
+            ):
+                _before = len(messages)
+                _compacted = _compressor._micro_compact(messages)
+                # Defrag rewrites a marker in place and raises this flag during
+                # _micro_compact; the DB sync below (replace_messages) re-persists
+                # the whole transcript, so a defragged marker is covered by the
+                # same path.
+                _defragged = getattr(_compressor, "_flush_scan_cursor_invalidated", False)
+                _compressor._flush_scan_cursor_invalidated = False
+                if isinstance(_compacted, list) and _compacted:
+                    _removed = _before - len(_compacted)
+                    messages[:] = _compacted
+                    if _removed > 0 or _defragged:
+                        # Stage C: persist the spliced/defragged transcript in
+                        # place via replace_messages (atomic delete+reinsert under
+                        # the same session id), then mark everything flushed so the
+                        # append-only flush that follows skips it.  This prevents
+                        # the resume double-load that the stage-A/B index-shift
+                        # tolerated, and re-persists a defragged marker.
+                        _db = getattr(agent, "_session_db", None)
+                        _sid = getattr(agent, "session_id", "")
+                        _persisted_in_place = False
+                        if (
+                            _db is not None
+                            and _sid
+                            and callable(getattr(_db, "replace_messages", None))
+                        ):
+                            try:
+                                # Apply the same persist-time cleanup _persist_session
+                                # would, so replace_messages never writes synthetic
+                                # scaffolding (run-budget wrapup, user-message
+                                # override) into the durable transcript.
+                                _strip = getattr(agent, "_strip_run_budget_wrapup_nudge", None)
+                                if callable(_strip):
+                                    _strip(messages)
+                                _apply = getattr(agent, "_apply_persist_user_message_override", None)
+                                if callable(_apply):
+                                    _apply(messages)
+                                _db.replace_messages(_sid, messages)
+                                agent._last_flushed_db_idx = len(messages)
+                                _persisted_in_place = True
+                            except Exception:
+                                logger.info(
+                                    "Micro-compaction DB sync failed — falling "
+                                    "back to index-shift", exc_info=True,
+                                )
+                        if not _persisted_in_place:
+                            # Fallback (no DB / DB sync failed).
+                            if _removed > 0:
+                                # Absorb: shift the flush cursor left by the net
+                                # removal (absorbed messages sit below the cursor)
+                                # and drop the stale resume-history floor so the
+                                # flush's ``max(len(conversation_history), idx)``
+                                # doesn't skip the shifted new messages.
+                                conversation_history = None
+                                _cursor = getattr(agent, "_last_flushed_db_idx", 0)
+                                agent._last_flushed_db_idx = max(0, _cursor - _removed)
+                            elif _defragged:
+                                # Defrag-only: a marker was rewritten in place (same
+                                # length), so the index-shift above cannot re-persist
+                                # it.  Force a full re-flush of the spliced transcript.
+                                conversation_history = None
+                                agent._last_flushed_db_idx = 0
+                    logger.info(
+                        "Micro-compaction: %d -> %d messages",
+                        _before, len(messages),
+                    )
+        except Exception as _mc_err:
+            logger.info("Micro-compaction failed: %s", _mc_err)
+
     agent._persist_session(messages, conversation_history)
 
     # ==================================================================

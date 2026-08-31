@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 
 
@@ -7,6 +8,10 @@ def _coerce_timeout(raw: object) -> float | None:
     try:
         timeout = float(raw)
     except (TypeError, ValueError):
+        return None
+    if not math.isfinite(timeout):
+        # Reject NaN / ±inf: a non-finite deadline never (or always) triggers,
+        # which silently disables the guard it was meant to provide.
         return None
     if timeout <= 0:
         return None

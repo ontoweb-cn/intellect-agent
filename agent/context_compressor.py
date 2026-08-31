@@ -29,6 +29,7 @@ from agent.model_metadata import (
     MINIMUM_CONTEXT_LENGTH,
     get_model_context_length,
     estimate_messages_tokens_rough,
+    estimate_tokens_rough,
 )
 from agent.redact import redact_sensitive_text
 
@@ -110,6 +111,30 @@ _SUMMARY_FAILURE_COOLDOWN_SECONDS = 600
 # become another unbounded transcript copy after the LLM summarizer failed.
 _FALLBACK_SUMMARY_MAX_CHARS = 8_000
 _FALLBACK_TURN_MAX_CHARS = 700
+
+# ── Micro-compaction marker metadata ──────────────────────────────────────
+# The batch path identifies summaries by content prefix only; micro-compaction
+# additionally needs a per-message metadata key to (a) distinguish micro markers
+# from batch markers — supersede/defrag must never rewrite a batch marker, whose
+# text is NOT contained in the rolling summary — and (b) record honest
+# provenance (micro markers absorb assistant/tool content only; user turns are
+# never micro-compacted).
+COMPRESSED_SUMMARY_METADATA_KEY = "_compressed_summary"
+COMPRESSED_SUMMARY_HAS_USER_TURN_KEY = "_compressed_summary_has_user_turn"
+MICRO_COMPACT_MARKER_KEY = "_micro_compact_marker"
+
+# Max consecutive summarization failures on the same exchange before the cursor
+# advances past it.  Without this, one unsummarizable exchange is retried every
+# turn forever and stalls micro-compaction.
+_MICRO_COMPACT_MAX_CONSECUTIVE_FAILURES = 3
+
+# End marker appended to a standalone summary so weak models don't read the
+# quoted "Active Task" text as a fresh instruction (#11475, #14521).  Shared by
+# the batch and micro paths.
+_SUMMARY_END_MARKER = (
+    "--- END OF CONTEXT SUMMARY — "
+    "respond to the message below, not the summary above ---"
+)
 
 
 _PATH_MENTION_RE = re.compile(r"(?:/|~/?|[A-Za-z]:\\)[^\s`'\")\]}<>]+")
@@ -552,6 +577,16 @@ class ContextCompressor(ContextEngine):
         self.last_compression_rough_tokens = 0
         self.last_rough_tokens_when_real_prompt_fit = 0
         self.awaiting_real_usage_after_compression = False
+        # Micro-compaction state is per-session: a /new must not carry the prior
+        # session's rolling summary or cursor into a fresh transcript.
+        self._micro_compact_cursor = 0
+        self._micro_compact_rolling_summary = ""
+        self._micro_compact_turns_since_pass = 0
+        self._micro_compact_consecutive_failures = 0
+        self._micro_compact_last_failure_cursor = -1
+        self._micro_compact_passes = 0
+        self._micro_compact_tokens_saved_total = 0
+        self._flush_scan_cursor_invalidated = False
 
     def update_model(
         self,
@@ -596,6 +631,9 @@ class ContextCompressor(ContextEngine):
         provider: str = "",
         api_mode: str = "",
         abort_on_summary_failure: bool = False,
+        micro_compact: bool = False,
+        micro_compact_every_n_turns: int = 1,
+        micro_compact_defrag_threshold_tokens: int = 2000,
     ):
         self.model = model
         self.base_url = base_url
@@ -612,6 +650,30 @@ class ContextCompressor(ContextEngine):
         # When False (default = historical behavior), insert a
         # deterministic "summary unavailable" handoff and drop the middle window.
         self.abort_on_summary_failure = abort_on_summary_failure
+
+        # ── Micro-compaction state ─────────────────────────────────────
+        # Opt-in per-turn incremental compression: after each completed turn,
+        # fold the oldest un-absorbed exchange into a rolling summary instead of
+        # paying the whole compression bill in one mid-session stall.  Off by
+        # default because each pass rewrites already-sent history (one prompt-
+        # cache prefix break per turn).
+        self._micro_compact_enabled = bool(micro_compact)
+        self._micro_compact_every_n_turns = max(1, int(micro_compact_every_n_turns or 1))
+        self._micro_compact_defrag_threshold_tokens = int(
+            micro_compact_defrag_threshold_tokens or 2000
+        )
+        self._micro_compact_cursor: int = 0
+        self._micro_compact_rolling_summary: str = ""
+        self._micro_compact_turns_since_pass: int = 0
+        self._micro_compact_consecutive_failures: int = 0
+        self._micro_compact_last_failure_cursor: int = -1
+        self._micro_compact_passes: int = 0
+        self._micro_compact_tokens_saved_total: int = 0
+        # Defrag rewrites the newest MICRO marker's content in place and must
+        # clear the append-only flush's identity stamp so the rewritten row is
+        # re-persisted.  The compressor holds no agent reference, so it raises
+        # this flag for finalize_turn to consume (invalidate the flush cursor).
+        self._flush_scan_cursor_invalidated: bool = False
 
         self.context_length = get_model_context_length(
             model, base_url=base_url, api_key=api_key,
@@ -2017,11 +2079,7 @@ The user has requested that this compaction PRIORITISE preserving all informatio
         # end marker — the same one used in the merge-into-tail path — so
         # the model has a clear "summary above, not new input" signal.
         if not _merge_summary_into_tail and summary_role == "user":
-            summary = (
-                summary
-                + "\n\n--- END OF CONTEXT SUMMARY — "
-                "respond to the message below, not the summary above ---"
-            )
+            summary = summary + "\n\n" + _SUMMARY_END_MARKER
 
         if not _merge_summary_into_tail:
             compressed.append({"role": summary_role, "content": summary})
@@ -2029,11 +2087,7 @@ The user has requested that this compaction PRIORITISE preserving all informatio
         for i in range(compress_end, n_messages):
             msg = messages[i].copy()
             if _merge_summary_into_tail and i == compress_end:
-                merged_prefix = (
-                    summary
-                    + "\n\n--- END OF CONTEXT SUMMARY — "
-                    "respond to the message below, not the summary above ---\n\n"
-                )
+                merged_prefix = summary + "\n\n" + _SUMMARY_END_MARKER + "\n\n"
                 msg["content"] = _append_text_to_content(
                     msg.get("content"),
                     merged_prefix,
@@ -2043,6 +2097,14 @@ The user has requested that this compaction PRIORITISE preserving all informatio
             compressed.append(msg)
 
         self.compression_count += 1
+
+        # A successful batch compression supersedes any micro-compaction work:
+        # the batch summary covers a strictly larger window than the rolling
+        # summary, so the in-memory micro state is now stale and must be reset.
+        self._micro_compact_rolling_summary = ""
+        self._micro_compact_cursor = 0
+        self._micro_compact_consecutive_failures = 0
+        self._micro_compact_last_failure_cursor = -1
 
         compressed = self._sanitize_tool_pairs(compressed)
 
@@ -2076,3 +2138,560 @@ The user has requested that this compaction PRIORITISE preserving all informatio
             logger.info("Compression #%d complete", self.compression_count)
 
         return compressed
+
+    # ------------------------------------------------------------------
+    # Micro-compaction (per-turn incremental compression)
+    # ------------------------------------------------------------------
+    #
+    # Amortizes the cost of batch compression: instead of one long stall when
+    # the window fills, each completed turn folds the single oldest un-absorbed
+    # exchange into a rolling summary.  Off by default (``micro_compact``); each
+    # pass is a real aux-LLM call that rewrites already-sent history, breaking
+    # the prompt-cache prefix once per turn.
+
+    @staticmethod
+    def _is_context_summary_message(message: Any) -> bool:
+        """True when *message* is a compaction summary (batch or micro)."""
+        if not isinstance(message, dict):
+            return False
+        if message.get(COMPRESSED_SUMMARY_METADATA_KEY):
+            return True
+        return ContextCompressor._is_context_summary_content(message.get("content"))
+
+    @classmethod
+    def _render_micro_marker_content(cls, summary_text: str) -> str:
+        """Assemble the marker content wrapper around *summary_text*.
+
+        Reuses :meth:`_with_summary_prefix` (the canonical prefix normalizer)
+        so the micro marker format and the batch handoff format cannot drift —
+        a rolling summary carrying a stale legacy prefix would otherwise be
+        double-prefixed here.
+        """
+        return f"{cls._with_summary_prefix(summary_text)}\n\n{_SUMMARY_END_MARKER}"
+
+    @staticmethod
+    def _rolling_summary_from_marker(content: Any) -> str:
+        """Recover the rolling-summary text from a marker's content.
+
+        The rolling summary lives in memory, but a resumed session starts with an
+        empty one while the marker holding every previous exchange is still in
+        the transcript.  Rehydrating from it is what keeps the first post-resume
+        pass from replacing the whole history with a one-exchange summary.
+        """
+        text = _content_text_for_contains(content) if not isinstance(content, str) else content
+        if not text or not text.strip():
+            return ""
+        body = ContextCompressor._strip_summary_prefix(text)
+        end = body.find(_SUMMARY_END_MARKER)
+        if end != -1:
+            body = body[:end]
+        return body.strip()
+
+    @staticmethod
+    def _merge_adjacent_user_turns(result: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Merge consecutive plain-text real user turns left by a supersede.
+
+        Dropping a superseded marker removes the assistant turn that separated
+        two real user messages.  Merging them here (``\\n\\n``-joined — the same
+        shape ``repair_message_sequence`` pass 2 applies) keeps every byte the
+        user typed while restoring alternation deliberately, so the marker and
+        cursor state are never collateral damage of the downstream repair.
+        Multimodal (list) content is left alone.
+        """
+        merged: List[Dict[str, Any]] = []
+        for msg in result:
+            prev = merged[-1] if merged else None
+            if (
+                isinstance(msg, dict)
+                and isinstance(prev, dict)
+                and msg.get("role") == "user"
+                and prev.get("role") == "user"
+                and not msg.get(COMPRESSED_SUMMARY_METADATA_KEY)
+                and not prev.get(COMPRESSED_SUMMARY_METADATA_KEY)
+                and isinstance(prev.get("content"), str)
+                and isinstance(msg.get("content"), str)
+            ):
+                prev_content = prev["content"]
+                new_content = msg["content"]
+                prev["content"] = (
+                    (prev_content + "\n\n" + new_content)
+                    if prev_content and new_content
+                    else (prev_content or new_content)
+                )
+                continue
+            merged.append(msg)
+        return merged
+
+    def _splice_micro_compact_result(
+        self,
+        messages: List[Dict[str, Any]],
+        splice_start: int,
+        splice_end: int,
+        supersede: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Replace ``messages[splice_start:splice_end]`` with a summary marker.
+
+        The marker carries the rolling summary and the ``_compressed_summary``
+        metadata flag so downstream consumers (resume, /compress) handle it like
+        a batch summary.  It is assistant-role: an exchange is a full agent turn
+        bounded by user messages on both sides, so the splice yields
+        ``user → marker(assistant) → user`` — valid alternation that the
+        pre-request ``repair_message_sequence`` pass leaves untouched.
+
+        The rolling summary is cumulative, so earlier micro markers are strictly
+        redundant; only the newest is kept.  Two containment gates before
+        dropping an earlier marker: (1) supersede — a pass that started from
+        nothing (a resume that could not rehydrate) covers one exchange and must
+        not drop the prior marker; (2) ``MICRO_COMPACT_MARKER_KEY`` on the
+        candidate — batch markers hold history NOT in the rolling summary and are
+        never touched.
+        """
+        summary_text = self._micro_compact_rolling_summary
+        if not summary_text.strip():
+            return messages
+
+        summary_msg = {
+            "role": "assistant",
+            "content": self._render_micro_marker_content(summary_text),
+            COMPRESSED_SUMMARY_METADATA_KEY: True,
+            MICRO_COMPACT_MARKER_KEY: True,
+            COMPRESSED_SUMMARY_HAS_USER_TURN_KEY: False,
+        }
+
+        result = messages[:splice_start] + [summary_msg] + messages[splice_end:]
+
+        if supersede:
+            marker_idxs = [
+                i for i, m in enumerate(result)
+                if isinstance(m, dict)
+                and m.get(COMPRESSED_SUMMARY_METADATA_KEY)
+                and m.get(MICRO_COMPACT_MARKER_KEY)
+            ]
+            if len(marker_idxs) > 1:
+                superseded = set(marker_idxs[:-1])
+                result = [m for i, m in enumerate(result) if i not in superseded]
+                result = self._merge_adjacent_user_turns(result)
+
+        return result
+
+    @staticmethod
+    def _cursor_after_splice(result: List[Dict[str, Any]], fallback: int) -> int:
+        """Cursor position just past the summary marker in *result*.
+
+        The cursor must be derived from the spliced list, never carried over from
+        pre-splice indices — a splice collapses an assistant + its tool results
+        into one marker and may drop a superseded marker further back, so every
+        later index shifts.  Reusing a stale index leaves the cursor inside a
+        later exchange's tool group and silently skips it.
+        """
+        for idx in range(len(result) - 1, -1, -1):
+            entry = result[idx]
+            if isinstance(entry, dict) and entry.get(COMPRESSED_SUMMARY_METADATA_KEY):
+                return idx + 1
+        return fallback
+
+    def _resolve_compact_cursor(
+        self,
+        messages: List[Dict[str, Any]],
+        head_end: int,
+        tail_start: int,
+    ) -> int:
+        """Derive the micro cursor from in-memory state or transcript scan."""
+        if self._micro_compact_cursor > head_end and self._micro_compact_cursor < tail_start:
+            return self._micro_compact_cursor
+        last_summary_idx = -1
+        for idx in range(head_end, tail_start):
+            if self._is_context_summary_message(messages[idx]):
+                last_summary_idx = idx
+        if last_summary_idx >= head_end:
+            cursor = last_summary_idx + 1
+            if not self._micro_compact_rolling_summary.strip():
+                recovered = self._rolling_summary_from_marker(
+                    messages[last_summary_idx].get("content")
+                )
+                if recovered:
+                    self._micro_compact_rolling_summary = recovered
+                    # Rehydration makes this marker's text live inside the
+                    # rolling summary, so it becomes supersede/defrag-eligible.
+                    # Both keys are required: the supersede drop and defrag
+                    # rewrite both gate on (COMPRESSED_SUMMARY_METADATA_KEY AND
+                    # MICRO_COMPACT_MARKER_KEY).  The metadata key was stripped
+                    # when the marker was re-persisted (replace_messages stores
+                    # only known columns), so it must be re-stamped here too.
+                    messages[last_summary_idx][COMPRESSED_SUMMARY_METADATA_KEY] = True
+                    messages[last_summary_idx][MICRO_COMPACT_MARKER_KEY] = True
+                    logger.info(
+                        "Micro-compaction: recovered rolling summary from "
+                        "transcript (%d chars)", len(recovered),
+                    )
+        else:
+            cursor = head_end
+        self._micro_compact_cursor = cursor
+        return cursor
+
+    def _find_one_exchange(
+        self,
+        messages: List[Dict[str, Any]],
+        start: int,
+        tail_start: int,
+    ) -> Optional[tuple[int, int]]:
+        """Find the next complete exchange starting at *start*.
+
+        An exchange is one full agent turn: the first real assistant message
+        after *start* plus everything through the end of that turn — tool results
+        and any follow-up assistant iterations — up to (exclusive) the next user
+        message.  User messages are deliberately NOT part of an exchange, so
+        what the user typed is never summarized.
+
+        Returns ``(exchange_start, exchange_end)`` or ``None`` when no complete,
+        safely-spliceable turn is available before *tail_start*.  The splice
+        boundary (``messages[exchange_end]``) must be a non-assistant/non-tool
+        message — normally user — so the assistant-role marker never lands
+        adjacent to the turn's remaining assistant/tool messages.
+        """
+        idx = start
+        n = len(messages)
+        if idx >= n or idx >= tail_start:
+            return None
+
+        while idx < tail_start and idx < n:
+            msg = messages[idx]
+            if msg.get("role") == "assistant" and not self._is_context_summary_message(msg):
+                break
+            idx += 1
+
+        if idx >= tail_start or idx >= n:
+            return None
+
+        exchange_start = idx
+        idx += 1
+        while idx < tail_start and idx < n:
+            msg = messages[idx]
+            role = msg.get("role")
+            if role not in ("assistant", "tool"):
+                break
+            if self._is_context_summary_message(msg):
+                break
+            idx += 1
+
+        if idx <= exchange_start:
+            return None
+
+        if idx >= n:
+            return None
+        boundary = messages[idx]
+        if not isinstance(boundary, dict) or boundary.get("role") in ("assistant", "tool"):
+            return None
+        return (exchange_start, idx)
+
+    def _serialize_one_exchange(
+        self,
+        messages: List[Dict[str, Any]],
+        start: int,
+        end: int,
+    ) -> str:
+        """Serialize a single exchange for the micro-summarizer (batch helper)."""
+        return self._serialize_for_summary(messages[start:end])
+
+    def _build_micro_summary_prompt(
+        self,
+        existing_summary: str,
+        exchange_text: str,
+    ) -> List[Dict[str, str]]:
+        """Build the prompt messages for a single-exchange micro-summary."""
+        summary_block = existing_summary if existing_summary.strip() else "(No previous summary yet.)"
+        user_prompt = (
+            "You are a summarization agent creating a compact record of an "
+            "ongoing conversation.  You are given a running summary and the "
+            "next exchange from the conversation.  Merge the exchange's key "
+            "decisions, requirements, file paths, and open questions into the "
+            "summary.  Preserve the summary's structure.  Drop resolved details "
+            "that are no longer relevant.  Add new decisions, file paths, and "
+            "open questions.\n\n"
+            "NEVER include API keys, tokens, passwords, secrets, credentials, "
+            "or connection strings in the summary — replace any that appear "
+            f"with [REDACTED].\n\n"
+            f"## Current Running Summary\n{summary_block}\n\n"
+            f"## Next Exchange to Merge\n{exchange_text}\n\n"
+            "Return ONLY the updated summary text, no preamble or explanation. "
+            "Do not include this instruction block in your output."
+        )
+        return [
+            {"role": "system", "content": "You are a conversation summarization assistant."},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _micro_summarize_one(self, exchange_text: str) -> Optional[str]:
+        """Micro-summarize one exchange into the rolling summary via aux LLM.
+
+        Returns the updated summary text, or ``None`` on failure (the caller
+        leaves the transcript untouched and counts the failure).
+        """
+        messages = self._build_micro_summary_prompt(
+            self._micro_compact_rolling_summary,
+            exchange_text,
+        )
+        call_kwargs = {
+            "task": "compression",
+            "messages": messages,
+            "max_tokens": min(1500, self.max_summary_tokens or 1500),
+            "temperature": 0.1,
+            "main_runtime": {
+                "model": self.model,
+                "provider": self.provider,
+                "base_url": self.base_url,
+                "api_key": self.api_key,
+                "api_mode": self.api_mode,
+            },
+        }
+        if self.summary_model:
+            call_kwargs["model"] = self.summary_model
+
+        try:
+            response = call_llm(**call_kwargs)
+        except Exception as exc:
+            logger.info("micro-summarization call failed: %s", exc)
+            return None
+
+        content = response.choices[0].message.content
+        if not isinstance(content, str):
+            content = str(content) if content else ""
+        content = redact_sensitive_text(content.strip())
+        if not content:
+            logger.info("micro-summarization returned empty content")
+            return None
+        return content
+
+    def _needs_defrag(self) -> bool:
+        """Return True when the rolling summary is large enough to defrag."""
+        content_tokens = estimate_tokens_rough(self._micro_compact_rolling_summary)
+        return content_tokens >= self._micro_compact_defrag_threshold_tokens
+
+    def _defrag_rolling_summary(self, messages: List[Dict[str, Any]]) -> bool:
+        """Re-summarize the rolling summary TEXT and rewrite the marker in place.
+
+        Merging exchange after exchange makes the rolling summary baggy.  Defrag
+        compacts the summary *itself*: one aux call over the accumulated summary
+        text, then the newest MICRO marker's content is rewritten in place.
+
+        Deliberately transcript-shape-neutral: no messages are spliced, no user
+        turns are touched, and the cursor does not move.  Only micro-tagged
+        markers are rewritten — a batch marker holds history the rolling summary
+        does not contain.
+        """
+        old_summary = self._micro_compact_rolling_summary
+        if not old_summary.strip():
+            return False
+        # Feed the old summary through the merge prompt with an empty base:
+        # "merge these decisions into (no previous summary)" is exactly a
+        # rewrite-compactly instruction for the accumulated text.
+        self._micro_compact_rolling_summary = ""
+        fresh_summary = self._micro_summarize_one(old_summary)
+        if not fresh_summary:
+            self._micro_compact_rolling_summary = old_summary
+            return False
+        self._micro_compact_rolling_summary = fresh_summary
+
+        for idx in range(len(messages) - 1, -1, -1):
+            entry = messages[idx]
+            if (
+                isinstance(entry, dict)
+                and entry.get(COMPRESSED_SUMMARY_METADATA_KEY)
+                and entry.get(MICRO_COMPACT_MARKER_KEY)
+            ):
+                entry["content"] = self._render_micro_marker_content(fresh_summary)
+                # Content changed after a possible flush — the rewritten marker
+                # row must be re-persisted.  The compressor holds no agent
+                # reference, so raise a flag the finalize_turn hook consumes to
+                # invalidate the bounded flush-scan cursor.
+                self._flush_scan_cursor_invalidated = True
+                break
+        logger.info(
+            "Micro-compaction defrag: rolling summary re-summarized "
+            "(%d -> %d chars)", len(old_summary), len(fresh_summary),
+        )
+        return True
+
+    def _emit_micro_compaction_telemetry(
+        self,
+        *,
+        outcome: str,
+        messages_before: int,
+        messages_after: int,
+        tokens_before: int,
+        tokens_after: int,
+        exchange_tokens: int = 0,
+        duration_ms: int = 0,
+    ) -> None:
+        """Emit one content-free JSON log line describing a micro-compaction pass.
+
+        Message counts move by one or two even when the saving is large, so the
+        token fields are the ones that answer "is this helping?".  ``tokens_delta``
+        is negative when the pass shrank the transcript; ``*_total`` accumulate
+        across the session.  Occupancy is read from the cached threshold only —
+        resolving it can fire a synchronous /models probe, and telemetry must
+        never be what blocks a turn.
+        """
+        try:
+            delta = tokens_after - tokens_before
+            self._micro_compact_tokens_saved_total -= delta
+            self._micro_compact_passes += 1
+            # intellect's ``threshold_tokens`` is a plain attribute resolved
+            # eagerly in __init__ (no lazy /models probe), so reading it here is
+            # always safe and never blocks a turn.
+            threshold = getattr(self, "threshold_tokens", None)
+            occupancy = None
+            if threshold and threshold > 0:
+                occupancy = round(tokens_after / threshold * 100, 1)
+            payload = {
+                "event": "micro_compaction",
+                "outcome": outcome,
+                "messages_before": messages_before,
+                "messages_after": messages_after,
+                "tokens_before": tokens_before,
+                "tokens_after": tokens_after,
+                "tokens_delta": delta,
+                "exchange_tokens": exchange_tokens,
+                "rolling_summary_tokens": estimate_tokens_rough(
+                    self._micro_compact_rolling_summary
+                ),
+                "cursor": self._micro_compact_cursor,
+                "passes_total": self._micro_compact_passes,
+                "tokens_saved_total": self._micro_compact_tokens_saved_total,
+                "duration_ms": duration_ms,
+                "threshold_tokens": threshold,
+                "occupancy_pct": occupancy,
+                "main_model": self.model or "",
+                "aux_model": self.summary_model or "",
+            }
+            logger.info(
+                "micro compaction telemetry: %s",
+                json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            )
+        except Exception as exc:
+            logger.debug("failed to emit micro-compaction telemetry: %s", exc)
+
+    def _micro_compact(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Run one round of per-turn micro-compaction.
+
+        Absorbs the oldest uncompacted exchange into the rolling summary and
+        returns the (possibly modified) message list.  Memory-only: the splice is
+        not persisted to the session DB (resume re-derives the cursor from the
+        surviving marker).  Best-effort throughout — any failure returns the
+        conversation unchanged.
+        """
+        if not self._micro_compact_enabled:
+            return messages
+
+        # Cadence gate.  A pass rewrites already-sent history (one prompt-cache
+        # break); ``every_n_turns`` trades reclaim frequency against that cost.
+        # Counted per invocation, not per committed pass, so a turn that finds
+        # nothing to absorb still advances the cadence and cannot wedge it.
+        every_n = max(1, int(self._micro_compact_every_n_turns or 1))
+        if every_n > 1:
+            self._micro_compact_turns_since_pass += 1
+            if self._micro_compact_turns_since_pass < every_n:
+                return messages
+            self._micro_compact_turns_since_pass = 0
+
+        n_messages = len(messages)
+        if n_messages < 4:
+            return messages
+
+        head_size = self._protect_head_size(messages)
+        compress_start = self._align_boundary_forward(messages, head_size)
+        compress_end = self._find_tail_cut_by_tokens(messages, compress_start)
+
+        if compress_start >= compress_end:
+            return messages
+
+        cursor = self._resolve_compact_cursor(messages, compress_start, compress_end)
+        if cursor >= compress_end:
+            return messages
+
+        exchange = self._find_one_exchange(messages, cursor, compress_end)
+        if exchange is None:
+            return messages
+
+        exchange_start, exchange_end = exchange
+
+        _started_at = time.monotonic()
+        _tokens_before = estimate_messages_tokens_rough(messages)
+
+        def _elapsed_ms() -> int:
+            return int((time.monotonic() - _started_at) * 1000)
+
+        # Defrag trigger: the rolling summary itself has grown baggy.  Defrag
+        # rewrites summary text and marker in place — no splice, no cursor
+        # movement — so this pass does not also absorb an exchange.
+        if self._needs_defrag():
+            defragged = self._defrag_rolling_summary(messages)
+            if defragged:
+                self._micro_compact_consecutive_failures = 0
+                self._micro_compact_last_failure_cursor = -1
+            self._emit_micro_compaction_telemetry(
+                outcome="defrag" if defragged else "defrag_failed",
+                messages_before=n_messages,
+                messages_after=len(messages),
+                tokens_before=_tokens_before,
+                tokens_after=estimate_messages_tokens_rough(messages),
+                duration_ms=_elapsed_ms(),
+            )
+            return messages
+
+        # Whether this pass's summary will be cumulative (subsumes any earlier
+        # marker).  Captured before summarizing.
+        _cumulative = bool(self._micro_compact_rolling_summary.strip())
+
+        exchange_text = self._serialize_one_exchange(messages, exchange_start, exchange_end)
+        _exchange_tokens = estimate_tokens_rough(exchange_text)
+        updated_summary = self._micro_summarize_one(exchange_text)
+        if updated_summary is None:
+            if exchange_start == self._micro_compact_last_failure_cursor:
+                self._micro_compact_consecutive_failures += 1
+            else:
+                self._micro_compact_consecutive_failures = 1
+                self._micro_compact_last_failure_cursor = exchange_start
+
+            if self._micro_compact_consecutive_failures >= _MICRO_COMPACT_MAX_CONSECUTIVE_FAILURES:
+                logger.info(
+                    "Micro-compaction: skipping exchange at cursor %d "
+                    "after %d consecutive failures",
+                    exchange_start, self._micro_compact_consecutive_failures,
+                )
+                self._micro_compact_cursor = exchange_end
+                self._micro_compact_consecutive_failures = 0
+                self._micro_compact_last_failure_cursor = -1
+                _outcome = "exchange_skipped"
+            else:
+                _outcome = "summarize_failed"
+            self._emit_micro_compaction_telemetry(
+                outcome=_outcome,
+                messages_before=n_messages,
+                messages_after=len(messages),
+                tokens_before=_tokens_before,
+                tokens_after=_tokens_before,
+                exchange_tokens=_exchange_tokens,
+                duration_ms=_elapsed_ms(),
+            )
+            return messages
+
+        self._micro_compact_rolling_summary = updated_summary
+        self._micro_compact_cursor = exchange_end
+        self._micro_compact_consecutive_failures = 0
+        self._micro_compact_last_failure_cursor = -1
+
+        result = self._splice_micro_compact_result(
+            messages, exchange_start, exchange_end, supersede=_cumulative,
+        )
+        self._micro_compact_cursor = self._cursor_after_splice(result, exchange_start + 1)
+        self._emit_micro_compaction_telemetry(
+            outcome="absorbed",
+            messages_before=n_messages,
+            messages_after=len(result),
+            tokens_before=_tokens_before,
+            tokens_after=estimate_messages_tokens_rough(result),
+            exchange_tokens=_exchange_tokens,
+            duration_ms=_elapsed_ms(),
+        )
+        return result
