@@ -214,6 +214,8 @@ from gateway.message_helpers import _prepare_gateway_status_message as _prepare_
 
 from gateway.message_helpers import _build_replay_entry as _build_replay_entry  # noqa: E402
 
+from gateway.turn_lease import SessionTurnLeaseRegistry, TurnLeaseTimeoutError  # noqa: E402
+
 
 
 
@@ -1323,6 +1325,8 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
         self._running_agents: Dict[str, Any] = {}
 
         self._running_agents_ts: Dict[str, float] = {}  # start timestamp per session
+
+        self._turn_leases = SessionTurnLeaseRegistry()
 
         self._pending_messages: Dict[str, str] = {}  # Queued messages during interrupt
 
@@ -6304,9 +6308,34 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
 
                 logger.warning("[Gateway] Failed to auto-load skill(s) %s: %s", _skill_names, e)
 
+        # Acquire the per-session turn lease BEFORE loading the transcript, so
+        # two routing keys mapped to one session_id cannot interleave their
+        # [load → run → flush] regions (the many-to-one key→id wedge that
+        # _running_agents — keyed by routing key — never sees).  Release is in
+        # the run-region finally below; the load is guarded separately so an
+        # early raise cannot leak the lease.
+        _turn_lease = None
+        try:
+            _turn_lease = await self._turn_leases.acquire(
+                session_entry.session_id,
+                owner_key=session_key,
+                generation=run_generation,
+            )
+        except TurnLeaseTimeoutError:
+            logger.warning(
+                "turn lease timeout on session %s; rejecting turn (busy)",
+                session_entry.session_id,
+            )
+            self._clear_session_env(_session_env_tokens)
+            return "⚠️ This session is busy finishing another message — please resend yours."
+
         # Load conversation history from transcript
 
-        history = self.session_store.load_transcript(session_entry.session_id)
+        try:
+            history = self.session_store.load_transcript(session_entry.session_id)
+        except BaseException:
+            self._turn_leases.release(_turn_lease)
+            raise
 
         # -----------------------------------------------------------------
 
@@ -7939,6 +7968,16 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
             )
 
         finally:
+
+            # Release the per-session turn lease on every exit path (normal,
+            # stale-discard, error).  A raise between the transcript load and
+            # this finally (the hygiene-compression block) is guarded by its
+            # own nested try/excepts; if one ever escapes, the lease is
+            # recovered by the 1800s fail-closed timeout rather than held
+            # forever.
+            if _turn_lease is not None:
+
+                self._turn_leases.release(_turn_lease)
 
             # Restore session context variables to their pre-handler state
 
