@@ -12,7 +12,35 @@ from typing import Any
 
 from agent.transports import register_transport
 from agent.transports.base import ProviderTransport
-from agent.transports.types import NormalizedResponse
+from agent.transports.types import NormalizedResponse, ToolCall
+
+
+def _normalize_tool_calls(raw) -> list[ToolCall] | None:
+    """Convert raw OpenAI tool_calls (objects or dicts) to ToolCall dataclasses.
+
+    The MoA aggregator's response carries tool_calls in the shape the backend
+    returned — OpenAI objects or plain dicts — while the agent loop expects
+    ``ToolCall`` semantics (``tc.function.name`` / ``tc.function.arguments``).
+    """
+    if not raw:
+        return None
+    out: list[ToolCall] = []
+    for tc in raw:
+        if isinstance(tc, dict):
+            fn = tc.get("function") or {}
+            out.append(ToolCall(
+                id=tc.get("id"),
+                name=fn.get("name", ""),
+                arguments=fn.get("arguments", ""),
+            ))
+        else:
+            fn = getattr(tc, "function", None)
+            out.append(ToolCall(
+                id=getattr(tc, "id", None),
+                name=getattr(fn, "name", "") if fn else "",
+                arguments=getattr(fn, "arguments", "") if fn else "",
+            ))
+    return out
 
 
 class MoaTransport(ProviderTransport):
@@ -52,6 +80,7 @@ class MoaTransport(ProviderTransport):
         """Normalize a MoA response into the standard form."""
         content = ""
         finish_reason = "stop"
+        tool_calls = None
 
         try:
             choices = getattr(response, "choices", [])
@@ -59,14 +88,15 @@ class MoaTransport(ProviderTransport):
                 msg = getattr(choices[0], "message", None)
                 if msg:
                     content = getattr(msg, "content", "") or ""
-                    if getattr(msg, "tool_calls", None):
+                    tool_calls = _normalize_tool_calls(getattr(msg, "tool_calls", None))
+                    if tool_calls:
                         finish_reason = "tool_calls"
         except Exception:
             content = str(response) if response else ""
 
         return NormalizedResponse(
             content=content,
-            tool_calls=[],
+            tool_calls=tool_calls,
             finish_reason=finish_reason,
             reasoning="",
             usage=None,

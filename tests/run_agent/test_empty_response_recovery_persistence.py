@@ -92,3 +92,29 @@ def test_persist_session_strips_marked_terminal_empty_sentinel():
     assert messages == [{"role": "user", "content": "continue"}]
     assert agent.flushed_session_db_messages[-1] == messages
     assert all(not msg.get("_empty_terminal_sentinel") for msg in messages)
+
+
+def test_persist_session_strips_run_budget_wrapup_nudge():
+    """The synthetic run-budget wrap-up nudge must never reach the durable
+    transcript — it's a mid-list role='user' message the agent injects to prompt
+    a graceful wrap-up, not a real user utterance."""
+    agent = _agent_with_stubbed_persistence()
+    messages = [
+        {"role": "user", "content": "do the task"},
+        {"role": "assistant", "content": "working on it"},
+        {
+            "role": "user",
+            "content": "You are approaching your run time budget. Please wrap up.",
+            "_run_budget_wrapup": True,
+        },
+        {"role": "assistant", "content": "wrapping up now"},
+    ]
+
+    AIAgent._persist_session(agent, messages, conversation_history=[])
+
+    assert messages == [
+        {"role": "user", "content": "do the task"},
+        {"role": "assistant", "content": "working on it"},
+        {"role": "assistant", "content": "wrapping up now"},
+    ]
+    assert agent.flushed_session_db_messages[-1] == messages

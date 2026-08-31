@@ -243,7 +243,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
                         f"Available: {', '.join(available) if available else 'default'}"
                     )
                 from agent.moa_loop import MoaRunner
-                runner = MoaRunner(preset)
+                runner = MoaRunner(preset, agent=agent)
                 import asyncio
                 loop = asyncio.new_event_loop()
                 try:
@@ -252,11 +252,15 @@ def interruptible_api_call(agent, api_kwargs: dict):
                     )
                 finally:
                     loop.close()
-                # Accumulate MoA's N+1 API calls on the token accumulator
+                # Accumulate MoA's reference API calls on the token accumulator.
+                # _moa_api_calls already includes the +1 aggregator call, which
+                # the normal accounting in conversation_loop.py also counts — so
+                # only the N reference calls are added here to avoid double-counting
+                # the aggregator.
                 moa_calls = getattr(result["response"], "_moa_api_calls", 1) if result["response"] else 1
                 if hasattr(agent, "_token_acc") and agent._token_acc is not None:
                     try:
-                        agent._token_acc.add(0, 0, 0, 0, 0, moa_calls, 0)
+                        agent._token_acc.add(0, 0, 0, 0, 0, max(0, moa_calls - 1), 0)
                     except Exception:
                         pass
             else:
@@ -1330,15 +1334,20 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
 
 
 
-def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
-    """Request a summary when max iterations are reached. Returns the final response text."""
-    print(f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary...")
+def handle_max_iterations(agent, messages: list, api_call_count: int, summary_request: str | None = None) -> str:
+    """Request a summary when the iteration budget is exhausted. Returns the final response text.
 
-    summary_request = (
-        "You've reached the maximum number of tool-calling iterations allowed. "
-        "Please provide a final response summarizing what you've found and accomplished so far, "
-        "without calling any more tools."
-    )
+    ``summary_request`` overrides the default nudge — the wall-clock run budget
+    passes a time-phrased nudge so the model is told it ran out of *time* rather
+    than *steps*.
+    """
+    if summary_request is None:
+        print(f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary...")
+        summary_request = (
+            "You've reached the maximum number of tool-calling iterations allowed. "
+            "Please provide a final response summarizing what you've found and accomplished so far, "
+            "without calling any more tools."
+        )
     messages.append({"role": "user", "content": summary_request})
 
     try:
@@ -2418,6 +2427,9 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
 
     # Provider-configured stale timeout takes priority over env default.
     _cfg_stale = get_provider_stale_timeout(agent.provider, agent.model)
+    _stream_stale_implicit = (
+        _cfg_stale is None and "intellect_STREAM_STALE_TIMEOUT" not in os.environ
+    )
     if _cfg_stale is not None:
         _stream_stale_timeout_base = _cfg_stale
     else:
@@ -2429,18 +2441,25 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         _stream_stale_timeout = float("inf")
         logger.debug("Local provider detected (%s) — stale stream timeout disabled", agent.base_url)
     else:
-        # Scale the stale timeout for large contexts: slow models (like Opus)
-        # can legitimately think for minutes before producing the first token
-        # when the context is large.  Without this, the stale detector kills
-        # healthy connections during the model's thinking phase, producing
-        # spurious RemoteProtocolError ("peer closed connection").
-        _est_tokens = estimate_request_context_tokens(api_kwargs)
-        if _est_tokens > 100_000:
+        # Reasoning models can legitimately think for minutes before producing
+        # the first token regardless of context size; apply the same floor as
+        # the >100k-context tier (mirrors Hermes 27c486e3b1).  Only when the
+        # stale timeout was NOT explicitly configured.
+        if _stream_stale_implicit and agent._is_reasoning_model():
             _stream_stale_timeout = max(_stream_stale_timeout_base, 300.0)
-        elif _est_tokens > 50_000:
-            _stream_stale_timeout = max(_stream_stale_timeout_base, 240.0)
         else:
-            _stream_stale_timeout = _stream_stale_timeout_base
+            # Scale the stale timeout for large contexts: slow models (like Opus)
+            # can legitimately think for minutes before producing the first token
+            # when the context is large.  Without this, the stale detector kills
+            # healthy connections during the model's thinking phase, producing
+            # spurious RemoteProtocolError ("peer closed connection").
+            _est_tokens = estimate_request_context_tokens(api_kwargs)
+            if _est_tokens > 100_000:
+                _stream_stale_timeout = max(_stream_stale_timeout_base, 300.0)
+            elif _est_tokens > 50_000:
+                _stream_stale_timeout = max(_stream_stale_timeout_base, 240.0)
+            else:
+                _stream_stale_timeout = _stream_stale_timeout_base
 
     t = threading.Thread(target=_call, daemon=True)
     t.start()

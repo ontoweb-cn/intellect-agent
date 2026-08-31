@@ -154,6 +154,95 @@ class TestMoaRunnerBasic:
         assert _extract_content(None) == ""
         assert _extract_content(42) == ""
 
+    def test_runner_short_circuits_when_interrupted_before_fanout(self, preset):
+        """A pre-existing interrupt aborts before spending N reference calls."""
+        from agent.moa_loop import MoaRunner
+
+        runner = MoaRunner(preset)
+        messages = [{"role": "user", "content": "test"}]
+
+        async def _run():
+            with patch("agent.moa_loop.is_interrupted", return_value=True):
+                return await runner.run(messages)
+
+        with pytest.raises(RuntimeError, match="interrupted before"):
+            asyncio.run(_run())
+
+    def test_runner_skips_aggregator_when_interrupted_during_fanout(self, preset):
+        """Interrupt arriving during the fan-out skips the +1 aggregator call."""
+        from agent.moa_loop import MoaRunner
+
+        runner = MoaRunner(preset)
+        messages = [{"role": "user", "content": "test"}]
+
+        mock_call = _make_mock_call_llm([
+            "Ref answer 1",
+            "Ref answer 2",
+            "Ref answer 3",
+            "Ref answer 4",
+            "Aggregator should not run",
+        ])
+
+        # False on the pre-fanout check, True on the post-fanout check.
+        states = iter([False, True])
+
+        async def _run():
+            with patch("agent.moa_loop.is_interrupted", side_effect=lambda: next(states)), \
+                 patch("agent.moa_loop.call_llm", side_effect=mock_call):
+                return await runner.run(messages)
+
+        response = asyncio.run(_run())
+        content = response.choices[0].message.content
+        assert "Interrupted" in content
+        assert "Ref answer 1" in content
+        # 4 reference calls only — the aggregator was skipped.
+        assert response._moa_api_calls == 4
+
+    def test_runner_short_circuits_via_agent_flag(self, preset):
+        """The thread-independent agent._interrupt_requested flag short-circuits."""
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            _interrupt_requested = True
+
+        runner = MoaRunner(preset, agent=_Agent())
+        messages = [{"role": "user", "content": "test"}]
+
+        async def _run():
+            return await runner.run(messages)
+
+        with pytest.raises(RuntimeError, match="interrupted before"):
+            asyncio.run(_run())
+
+    def test_runner_skips_aggregator_via_agent_flag_during_fanout(self, preset):
+        """Interrupt set on agent._interrupt_requested during the fan-out skips the aggregator."""
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            _interrupt_requested = False
+
+        agent = _Agent()
+        runner = MoaRunner(preset, agent=agent)
+        messages = [{"role": "user", "content": "test"}]
+
+        calls = 0
+
+        def _flip_interrupt(messages=None, provider=None, model=None, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                agent._interrupt_requested = True  # interrupt arrives mid-fan-out
+            return _fake_call_llm_result(f"Ref {calls}")
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_flip_interrupt):
+                return await runner.run(messages)
+
+        response = asyncio.run(_run())
+        content = response.choices[0].message.content
+        assert "Interrupted" in content
+        assert response._moa_api_calls == 4  # 4 refs, no aggregator
+
 
 class TestMoaPresetSwitching:
     """Test preset loading and model selection."""
@@ -222,3 +311,492 @@ class TestMoaToolCallError:
         )
         assert "_moa_preset_name" in kwargs
         assert kwargs["_moa_preset_name"] == "default"
+
+
+class TestReferenceMessages:
+    """Denoised advisory view (M2) — read-only, text-only, user-ending."""
+
+    def test_drops_system_and_has_no_tool_role(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "system", "content": "big system prompt"},
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi", "tool_calls": [
+                {"id": "c1", "type": "function",
+                 "function": {"name": "read_file", "arguments": '{"path": "x.py"}'}},
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": "file contents"},
+            {"role": "assistant", "content": "done"},
+        ])
+        assert all(m["role"] in ("user", "assistant") for m in view)
+        assert all("tool_calls" not in m for m in view)
+
+    def test_ends_with_user_turn(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi"},
+        ])
+        assert view[-1]["role"] == "user"
+
+    def test_renders_tool_calls_as_text(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "user", "content": "run it"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c1", "type": "function",
+                 "function": {"name": "read_file", "arguments": '{"path": "x.py"}'}},
+            ]},
+        ])
+        assert any(
+            "[called tool: read_file" in m["content"]
+            for m in view if m["role"] == "assistant"
+        )
+
+    def test_folds_tool_results_into_preceding_assistant(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "user", "content": "read it"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c1", "type": "function",
+                 "function": {"name": "read_file", "arguments": "{}"}},
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": "SECRET FILE CONTENT"},
+        ])
+        assert any("[tool result: SECRET FILE CONTENT" in m["content"] for m in view)
+        assert all(m["role"] != "tool" for m in view)
+
+    def test_multi_tool_turn_produces_alternating_roles(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c1", "type": "function",
+                 "function": {"name": "read_file", "arguments": "{}"}},
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": "file A"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c2", "type": "function",
+                 "function": {"name": "write_file", "arguments": "{}"}},
+            ]},
+            {"role": "tool", "tool_call_id": "c2", "content": "wrote B"},
+            {"role": "assistant", "content": "done"},
+        ])
+        roles = [m["role"] for m in view]
+        assert all(roles[i] != roles[i + 1] for i in range(len(roles) - 1))
+
+    def test_orphan_tool_result_dropped(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "tool", "tool_call_id": "c1", "content": "orphan result"},
+            {"role": "user", "content": "hi"},
+        ])
+        # The orphan tool result is dropped; the view must start with a user.
+        assert view[0]["role"] == "user"
+        assert all("[tool result" not in m["content"] for m in view)
+
+    def test_multimodal_content_flattened(self):
+        from agent.moa_loop import _content_to_text
+        out = _content_to_text([
+            {"type": "text", "text": "hello"},
+            {"type": "image_url", "image_url": {}},
+        ])
+        assert out == "hello [image]"
+
+    def test_run_single_reference_prepends_system_prompt(self):
+        from agent.moa_loop import MoaRunner, _REFERENCE_SYSTEM_PROMPT
+        runner = MoaRunner({"references": [], "aggregator": {}})
+
+        captured = {}
+
+        def _capture(messages=None, **kwargs):
+            captured["messages"] = messages
+            return {"content": "advice"}
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_capture):
+                return await runner._run_single_reference(
+                    {"provider": "x", "model": "y"},
+                    [{"role": "user", "content": "hi"}],
+                )
+
+        asyncio.run(_run())
+        msgs = captured["messages"]
+        assert msgs[0]["role"] == "system"
+        assert msgs[0]["content"] == _REFERENCE_SYSTEM_PROMPT
+        assert msgs[1] == {"role": "user", "content": "hi"}
+
+
+class TestMoaToolCalling:
+    """M1 — aggregator tool-call passthrough."""
+
+    _preset = {
+        "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+        "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+    }
+
+    def test_aggregator_receives_tools_and_returns_tool_calls(self):
+        from agent.moa_loop import MoaRunner
+
+        runner = MoaRunner(self._preset)
+        messages = [{"role": "user", "content": "read x.py"}]
+        tool_calls = [{"id": "c1", "type": "function",
+                       "function": {"name": "read_file", "arguments": '{"path":"x.py"}'}}]
+
+        class _Msg:
+            content = ""
+
+        _Msg.tool_calls = tool_calls
+
+        class _Choice:
+            message = _Msg()
+
+        class _Raw:
+            choices = [_Choice()]
+
+        captured = {}
+        calls = 0
+
+        def _mock(messages=None, provider=None, model=None, tools=None, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:  # the single reference
+                return {"content": "advice"}
+            captured["tools"] = tools  # aggregator call
+            return _Raw()
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await runner.run(
+                    messages,
+                    tools=[{"type": "function", "function": {"name": "read_file"}}],
+                )
+
+        response = asyncio.run(_run())
+        assert captured["tools"] == [{"type": "function", "function": {"name": "read_file"}}]
+        assert response.choices[0].message.tool_calls == tool_calls
+
+    def test_extract_tool_calls_dict_and_raw(self):
+        from agent.moa_loop import _extract_tool_calls
+        assert _extract_tool_calls({"content": "x", "tool_calls": ["a"]}) == ["a"]
+        assert _extract_tool_calls({"content": "x"}) is None
+
+        class _Msg:
+            tool_calls = ["raw"]
+
+        class _Choice:
+            message = _Msg()
+
+        class _Raw:
+            choices = [_Choice()]
+
+        assert _extract_tool_calls(_Raw()) == ["raw"]
+
+    def test_transport_normalize_passes_tool_calls(self):
+        from agent.transports.moa import MoaTransport
+
+        class _Msg:
+            content = ""
+            tool_calls = [{"id": "c1", "type": "function",
+                           "function": {"name": "read_file", "arguments": "{}"}}]
+
+        class _Choice:
+            message = _Msg()
+
+        class _Resp:
+            choices = [_Choice()]
+            _moa_total_ms = 0
+            _moa_ref_results = []
+
+        out = MoaTransport().normalize_response(_Resp())
+        assert out.finish_reason == "tool_calls"
+        assert len(out.tool_calls) == 1
+        assert out.tool_calls[0].id == "c1"
+        assert out.tool_calls[0].name == "read_file"
+        # ToolCall.function returns self, so tc.function.name works downstream.
+        assert out.tool_calls[0].function.name == "read_file"
+
+
+class TestMoaCostAndTrim:
+    """M5 — cost accounting + context trimming + fault markers."""
+
+    def test_extract_usage_dict_and_raw(self):
+        from agent.moa_loop import _extract_usage
+        assert _extract_usage({"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}) == {
+            "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        assert _extract_usage({"content": "x"}) == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+        class _Usage:
+            prompt_tokens = 20
+            completion_tokens = 8
+            total_tokens = 28
+
+        class _Raw:
+            usage = _Usage()
+
+        assert _extract_usage(_Raw()) == {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28}
+
+    def test_trim_drops_oldest_pairs_and_keeps_tail(self):
+        from agent.moa_loop import _trim_reference_messages
+        big = [
+            {"role": "user", "content": "a" * 4000},
+            {"role": "assistant", "content": "b" * 4000},
+            {"role": "user", "content": "c" * 4000},
+            {"role": "assistant", "content": "d" * 4000},
+            {"role": "user", "content": "tail"},
+        ]
+        trimmed = _trim_reference_messages(big, max_tokens=2000)
+        assert len(trimmed) < len(big)
+        assert trimmed[-1]["role"] == "user"
+        assert trimmed[-1]["content"] == "tail"
+        roles = [m["role"] for m in trimmed]
+        assert all(roles[i] != roles[i + 1] for i in range(len(roles) - 1))
+
+    def test_trim_noop_when_fits(self):
+        from agent.moa_loop import _trim_reference_messages
+        small = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}]
+        assert _trim_reference_messages(small) == small
+
+    def test_aggregator_surfaces_failed_refs(self):
+        from agent.moa_loop import MoaRunner
+        runner = MoaRunner({"references": [], "aggregator": {}})
+        msgs = runner._build_aggregator_messages(
+            [{"role": "user", "content": "q"}],
+            [
+                {"provider": "anthropic", "model": "claude", "success": True, "content": "ok"},
+                {"provider": "openai", "model": "gpt", "success": False, "failed_label": "openai/gpt"},
+            ],
+        )
+        guidance = msgs[-1]["content"]
+        assert "openai/gpt" in guidance
+        assert "unavailable" in guidance
+
+    def test_aggregator_includes_conversation_and_guidance_at_end(self):
+        from agent.moa_loop import MoaRunner
+        runner = MoaRunner({"references": [], "aggregator": {}})
+        msgs = runner._build_aggregator_messages(
+            [
+                {"role": "system", "content": "MAIN SYSTEM PROMPT"},
+                {"role": "user", "content": "read x.py"},
+                {"role": "assistant", "content": "", "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}},
+                ]},
+                {"role": "tool", "tool_call_id": "c1", "content": "FILE CONTENT"},
+            ],
+            [{"provider": "anthropic", "model": "claude", "success": True, "content": "advice"}],
+        )
+        # Main system prompt is dropped; the aggregator has its own.
+        assert "MAIN SYSTEM PROMPT" not in msgs[0]["content"]
+        # The tool result is preserved in the conversation.
+        assert any("FILE CONTENT" in m.get("content", "") for m in msgs)
+        # Guidance is appended at the end.
+        assert "advice" in msgs[-1]["content"]
+
+
+class TestMoaCadence:
+    """M4 — user_turn fan-out caching."""
+
+    _preset = {
+        "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+        "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+    }
+
+    def test_fanout_reused_across_tool_iterations(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        messages = [{"role": "user", "content": "do it"}]
+
+        call_count = 0
+
+        def _mock(messages=None, provider=None, model=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"content": "answer"}
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await MoaRunner(self._preset, agent=agent).run(messages)
+
+        r1 = asyncio.run(_run())
+        assert call_count == 2  # 1 reference + 1 aggregator
+
+        r2 = asyncio.run(_run())
+        assert call_count == 3  # +1 aggregator only (fan-out reused)
+        assert r2.choices[0].message.content == r1.choices[0].message.content
+
+    def test_turn_signature_stable(self):
+        from agent.moa_loop import _turn_signature
+        m1 = [{"role": "user", "content": "hello"}]
+        m2 = [{"role": "user", "content": "hello"}]
+        m3 = [{"role": "user", "content": "world"}]
+        assert _turn_signature(m1) == _turn_signature(m2)
+        assert _turn_signature(m1) != _turn_signature(m3)
+
+    def test_aggregator_applies_prompt_cache_for_anthropic(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        preset = {
+            "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+            "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+        }
+
+        captured = {}
+
+        def _mock_call_llm(messages=None, provider=None, model=None, **kwargs):
+            return {"content": "answer"}
+
+        def _mock_cache(messages, cache_ttl="5m", native_anthropic=False):
+            captured["called"] = True
+            captured["native_anthropic"] = native_anthropic
+            return [dict(m) for m in messages]
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_mock_call_llm), \
+                 patch("agent.prompt_caching.apply_anthropic_cache_control", side_effect=_mock_cache):
+                return await MoaRunner(preset, agent=agent).run(
+                    [{"role": "user", "content": "hi"}],
+                )
+
+        asyncio.run(_run())
+        assert captured.get("called") is True
+        assert captured.get("native_anthropic") is True
+
+    def test_turn_signature_ignores_tool_results(self):
+        from agent.moa_loop import _turn_signature
+        base = [{"role": "user", "content": "do it"}]
+        with_tool = [
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}},
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": "result"},
+        ]
+        # Signature is stable across tool iterations (tool results excluded).
+        assert _turn_signature(base) == _turn_signature(with_tool)
+
+    def test_peel_rebase_reuses_guidance_across_compression(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        preset = {
+            "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+            "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+        }
+
+        call_count = 0
+
+        def _mock(messages=None, provider=None, model=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"content": "answer"}
+
+        async def _run(msgs):
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await MoaRunner(preset, agent=agent).run(msgs)
+
+        # Turn 1: long transcript → fan-out (1 ref + 1 aggregator).
+        long_msgs = [
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "working on it"},
+            {"role": "user", "content": "do it"},
+        ]
+        asyncio.run(_run(long_msgs))
+        assert call_count == 2
+
+        # Compression: same task, shorter transcript → peel/rebase reuse (only
+        # aggregator, no re-fan-out).
+        short_msgs = [{"role": "user", "content": "do it"}]
+        asyncio.run(_run(short_msgs))
+        assert call_count == 3
+
+    def test_repeated_message_does_not_reuse_stale_guidance(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        preset = {
+            "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+            "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+        }
+
+        call_count = 0
+
+        def _mock(messages=None, provider=None, model=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"content": "answer"}
+
+        async def _run(msgs):
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await MoaRunner(preset, agent=agent).run(msgs)
+
+        # Turn 1.
+        asyncio.run(_run([{"role": "user", "content": "continue"}]))
+        assert call_count == 2
+
+        # New turn with the SAME message but a LONGER transcript (more history)
+        # must NOT reuse the stale guidance — the message-count heuristic blocks it.
+        longer = [
+            {"role": "user", "content": "continue"},
+            {"role": "assistant", "content": "did more work"},
+            {"role": "user", "content": "continue"},
+        ]
+        asyncio.run(_run(longer))
+        assert call_count == 4  # fan-out ran again (1 ref + 1 aggregator)
+
+    def test_peel_rebase_detects_mid_turn_compression(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        preset = {
+            "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+            "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+        }
+
+        call_count = 0
+
+        def _mock(messages=None, provider=None, model=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"content": "answer"}
+
+        async def _run(msgs):
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await MoaRunner(preset, agent=agent).run(msgs)
+
+        # 1. Turn start: fan-out (1 ref + 1 aggregator).
+        asyncio.run(_run([{"role": "user", "content": "do it"}]))
+        assert call_count == 2
+
+        # 2. Tool iteration: transcript grows, same turn (signature match) →
+        #    reuse, and the peak message-count is tracked.
+        asyncio.run(_run([
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "tool work"},
+            {"role": "tool", "tool_call_id": "c1", "content": "result"},
+        ]))
+        assert call_count == 3
+
+        # 3. Mid-turn compression: prior turns summarized (shorter transcript,
+        #    same task) → peel/rebase reuses guidance, no re-fan-out.
+        asyncio.run(_run([
+            {"role": "assistant", "content": "[summary of prior turns]"},
+            {"role": "user", "content": "do it"},
+        ]))
+        assert call_count == 4

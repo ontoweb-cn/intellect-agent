@@ -90,6 +90,7 @@ from agent.iteration_budget import IterationBudget
 from intellect_cli.env_loader import load_intellect_dotenv
 from intellect_cli.timeouts import (
     get_provider_request_timeout,
+    get_provider_run_budget,
     get_provider_stale_timeout,
 )
 
@@ -265,6 +266,34 @@ def _qwen_portal_headers() -> dict:
 
 
 from agent.errors import _StreamErrorEvent  # noqa: E402
+
+
+# Model-name prefixes for families that do extended reasoning/thinking.  Used by
+# ``_is_reasoning_model`` to avoid killing a long pre-first-token thinking phase
+# via the stale-call detector.  Deliberately a family-level proxy (see that
+# method's docstring for the over-match bias rationale).
+_REASONING_MODEL_PREFIXES = (
+    # OpenRouter / gateway provider-prefixed forms.
+    "deepseek/",
+    "anthropic/",
+    "openai/",
+    "x-ai/",
+    "google/gemini-2",
+    "google/gemma-4",
+    "qwen/qwen3",
+    "tencent/hy3-preview",
+    "xiaomi/",
+    # Bare model names on direct-provider routes (no gateway prefix).
+    # NB: "gpt-5" is intentionally omitted — it would prefix-match "gpt-5.5"
+    # etc., whose reasoning status varies by backend; those reach the floor via
+    # the "openai/" gateway alias on OpenRouter anyway.
+    "claude",                  # Anthropic — extended thinking
+    "o1", "o3", "o4", "o5",    # OpenAI o-series (reasoning)
+    "grok",                    # xAI reasoning
+    "gemini-2", "gemini-3",    # Google thinking models
+    "deepseek-reasoner", "deepseek-r1",  # DeepSeek reasoning (excludes chat)
+    "qwq",                     # Qwen reasoning
+)
 
 
 class AIAgent:
@@ -598,6 +627,10 @@ class AIAgent:
         self.session_cache_write_tokens = 0
         self.session_reasoning_tokens = 0
         self.session_api_calls = 0
+        # Per-model token/usage breakdown, keyed by ``agent.model`` at the time
+        # of each call, so a mid-session ``/model`` switch accumulates each
+        # model's usage separately.
+        self.session_tokens_by_model = {}
         self.session_estimated_cost_usd = 0.0
         self.session_cost_status = "unknown"
         self.session_cost_source = "none"
@@ -1083,6 +1116,24 @@ class AIAgent:
 
         return 90.0, True
 
+    def _resolved_run_budget_seconds(self) -> Optional[float]:
+        """Resolve the wall-clock run budget (seconds), if any.
+
+        Priority:
+          1. ``providers.<id>.models.<model>.run_budget_seconds``
+          2. ``providers.<id>.run_budget_seconds``
+          3. ``INTELLECT_RUN_BUDGET_SECONDS`` env var
+
+        Returns ``None`` (budget disabled) when unset.  Bounds a whole turn
+        by elapsed wall-clock time, independent of the iteration budget.
+        """
+        cfg = get_provider_run_budget(self.provider, self.model)
+        if cfg is not None:
+            return cfg
+
+        from intellect_cli.timeouts import _coerce_timeout
+        return _coerce_timeout(os.getenv("INTELLECT_RUN_BUDGET_SECONDS"))
+
     def _compute_non_stream_stale_timeout(self, api_payload: Any) -> float:
         """Compute the effective non-stream stale timeout for this request.
 
@@ -1095,6 +1146,15 @@ class AIAgent:
         base_url = getattr(self, "_base_url", None) or self.base_url or ""
         if uses_implicit_default and base_url and is_local_endpoint(base_url):
             return float("inf")
+
+        # Reasoning models can legitimately think for minutes before the first
+        # token regardless of context size.  Apply the same floor as the
+        # >100k-context tier so the stale detector doesn't kill a healthy
+        # thinking phase (mirrors Hermes 27c486e3b1).  Only when the stale
+        # timeout was NOT explicitly configured — an explicit value is respected
+        # as-is, so fast-failover users keep their short timeout.
+        if uses_implicit_default and self._is_reasoning_model():
+            return max(stale_base, 240.0)
 
         from agent.chat_completion_helpers import estimate_request_context_tokens
         est_tokens = estimate_request_context_tokens(api_payload)
@@ -1422,11 +1482,26 @@ class AIAgent:
 
         Ensures conversations are never lost, even on errors or early returns.
         """
+        self._strip_run_budget_wrapup_nudge(messages)
         self._drop_trailing_empty_response_scaffolding(messages)
         self._apply_persist_user_message_override(messages)
         self._session_messages = messages
         self._save_session_log(messages)
         self._flush_messages_to_session_db(messages, conversation_history)
+
+    def _strip_run_budget_wrapup_nudge(self, messages: List[Dict]) -> None:
+        """Drop the synthetic run-budget wrap-up nudge before persistence.
+
+        The nudge is a ``role="user"`` message injected mid-run to prompt a
+        graceful wrap-up when the wall-clock budget hits 80%.  It must remain
+        in the in-run ``messages`` context, but never reach the durable
+        transcript — otherwise a later "continue" turn replays a phantom user
+        utterance that the real user never sent.
+        """
+        messages[:] = [
+            m for m in messages
+            if not (isinstance(m, dict) and m.get("_run_budget_wrapup"))
+        ]
 
     def _drop_trailing_empty_response_scaffolding(self, messages: List[Dict]) -> None:
         """Remove private empty-response retry/failure scaffolding from transcript tails.
@@ -4230,6 +4305,24 @@ class AIAgent:
         from agent.chat_completion_helpers import build_api_kwargs
         return build_api_kwargs(self, api_messages)
 
+    def _is_reasoning_model(self) -> bool:
+        """Heuristic: does this model family do extended reasoning/thinking?
+
+        Route-independent — unlike ``_supports_reasoning_extra_body``, which
+        gates on whether it is *safe to send* the ``reasoning`` extra_body field
+        and so returns False for direct-provider routes (anthropic.com, custom
+        gateways) regardless of model.  Used by the stale-timeout floor to avoid
+        killing a long thinking phase before the first token.
+
+        The prefix list is a family-level proxy, so a non-reasoning member of a
+        reasoning family (e.g. ``openai/gpt-4o``) may also match.  That only
+        *extends* the stale timeout — a latency cost on genuine-stall failover —
+        never truncates a healthy response, so the bias is deliberately toward
+        over-matching.
+        """
+        model = (self.model or "").lower()
+        return any(model.startswith(prefix) for prefix in _REASONING_MODEL_PREFIXES)
+
     def _supports_reasoning_extra_body(self) -> bool:
         """Return True when reasoning extra_body is safe to send for this route/model.
 
@@ -4259,18 +4352,7 @@ class AIAgent:
             return False
 
         model = (self.model or "").lower()
-        reasoning_model_prefixes = (
-            "deepseek/",
-            "anthropic/",
-            "openai/",
-            "x-ai/",
-            "google/gemini-2",
-            "google/gemma-4",
-            "qwen/qwen3",
-            "tencent/hy3-preview",
-            "xiaomi/",
-        )
-        return any(model.startswith(prefix) for prefix in reasoning_model_prefixes)
+        return any(model.startswith(prefix) for prefix in _REASONING_MODEL_PREFIXES)
 
     def _lmstudio_reasoning_options_cached(self) -> list[str]:
         """Probe LM Studio's published reasoning ``allowed_options`` once per
@@ -4589,6 +4671,7 @@ class AIAgent:
             acp_args=function_args.get("acp_args"),
             role=function_args.get("role"),
             background=bool(function_args.get("background")),
+            response_schema=function_args.get("response_schema"),
             parent_agent=self,
         )
 
@@ -4635,10 +4718,10 @@ class AIAgent:
         from agent.tool_executor import execute_tool_calls_sequential
         return execute_tool_calls_sequential(self, assistant_message, messages, effective_task_id, api_call_count)
 
-    def _handle_max_iterations(self, messages: list, api_call_count: int) -> str:
+    def _handle_max_iterations(self, messages: list, api_call_count: int, summary_request: str | None = None) -> str:
         """Forwarder — see ``agent.chat_completion_helpers.handle_max_iterations``."""
         from agent.chat_completion_helpers import handle_max_iterations
-        return handle_max_iterations(self, messages, api_call_count)
+        return handle_max_iterations(self, messages, api_call_count, summary_request)
 
     @timed(label="run_conversation")
     def run_conversation(

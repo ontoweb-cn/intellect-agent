@@ -98,6 +98,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
                gateway_only=True),
     CommandDef("background", "Run a prompt in the background", "Session",
                aliases=("bg", "btw"), args_hint="<prompt>"),
+    CommandDef("review", "Launch a code-review subagent on recent work", "Session",
+               aliases=("rev",), args_hint="[topic]", cli_only=True),
     CommandDef("delegations", "List or manage background delegate_task handles", "Session",
                aliases=("dg", "dlgt", "delegation"),
                args_hint="[list|show <id>|cancel <id>]"),

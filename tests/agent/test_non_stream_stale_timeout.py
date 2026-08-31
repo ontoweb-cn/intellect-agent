@@ -171,6 +171,63 @@ def test_chat_completions_long_messages_bumps_tier(monkeypatch, tmp_path):
     assert agent._compute_non_stream_stale_timeout(payload) >= 150.0
 
 
+def test_reasoning_model_gets_floor_with_tiny_context(monkeypatch, tmp_path):
+    """Reasoning models get the 240s floor even when the context is tiny."""
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+    (tmp_path / ".env").write_text("", encoding="utf-8")
+    monkeypatch.delenv("INTELLECT_API_CALL_STALE_TIMEOUT", raising=False)
+    _write_config(tmp_path, "")
+
+    agent = _make_agent(
+        tmp_path,
+        provider="openrouter",
+        base_url="https://openrouter.ai/api/v1",
+        model="anthropic/claude-sonnet-4-6",
+    )
+    payload = {"model": "anthropic/claude-sonnet-4-6", "input": "hi", "instructions": ""}
+    assert agent._compute_non_stream_stale_timeout(payload) >= 240.0
+
+
+def test_reasoning_floor_applies_for_direct_route_bare_model(monkeypatch, tmp_path):
+    """Route-independent: a bare reasoning model on a direct-provider route
+    (api.anthropic.com, no OpenRouter alias) still gets the floor."""
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+    (tmp_path / ".env").write_text("", encoding="utf-8")
+    monkeypatch.delenv("INTELLECT_API_CALL_STALE_TIMEOUT", raising=False)
+    _write_config(tmp_path, "")
+
+    agent = _make_agent(
+        tmp_path,
+        provider="anthropic",
+        base_url="https://api.anthropic.com",
+        model="claude-opus-4-8",
+    )
+    payload = {"model": "claude-opus-4-8", "input": "hi", "instructions": ""}
+    assert agent._compute_non_stream_stale_timeout(payload) >= 240.0
+
+
+def test_reasoning_floor_respects_explicit_stale_timeout(monkeypatch, tmp_path):
+    """An explicitly configured stale timeout is not overridden by the
+    reasoning floor — fast-failover users keep their short timeout."""
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+    (tmp_path / ".env").write_text("", encoding="utf-8")
+    monkeypatch.delenv("INTELLECT_API_CALL_STALE_TIMEOUT", raising=False)
+    _write_config(tmp_path, """\
+providers:
+  anthropic:
+    stale_timeout_seconds: 60
+""")
+
+    agent = _make_agent(
+        tmp_path,
+        provider="anthropic",
+        base_url="https://api.anthropic.com",
+        model="claude-opus-4-8",
+    )
+    payload = {"model": "claude-opus-4-8", "input": "hi", "instructions": ""}
+    assert agent._compute_non_stream_stale_timeout(payload) == 60.0
+
+
 def test_explicit_user_config_overrides_default(monkeypatch, tmp_path):
     """If the user explicitly sets a stale_timeout, the new defaults don't apply."""
     monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
