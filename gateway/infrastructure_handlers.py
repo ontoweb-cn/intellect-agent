@@ -23,6 +23,7 @@ from intellect_cli.fallback_config import get_fallback_chain
 from gateway.config import Platform
 from gateway.helpers import _log_non_critical, _get_intellect_home, _get_pending_sentinel
 from gateway.platforms.base import MessageEvent, merge_pending_message_event
+from gateway.platforms.base import _reply_anchor_for_event as _base_reply_anchor_for_event
 from gateway.restart import DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT, parse_restart_drain_timeout
 from gateway.session import SessionSource, build_session_key
 from utils import is_truthy_value
@@ -3924,9 +3925,9 @@ class GatewayInfrastructureHandlers:
                 metadata["telegram_reply_to_message_id"] = str(reply_to_message_id)
         return metadata
 
-    def _reply_anchor_for_event(event: MessageEvent) -> Optional[str]:
+    def _reply_anchor_for_event(self, event: MessageEvent) -> Optional[str]:
         """Return the platform-specific reply anchor for GatewayRunner sends."""
-        return _reply_anchor_for_event(event)
+        return _base_reply_anchor_for_event(event)
 
     def _schedule_update_notification_watch(self) -> None:
         """Ensure a background task is watching for update completion."""

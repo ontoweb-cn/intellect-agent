@@ -66,6 +66,8 @@ def _make_runner():
     runner._busy_text_mode = "interrupt"
     runner.adapters = {}
     runner.config = MagicMock()
+    runner.config.group_sessions_per_user = True
+    runner.config.thread_sessions_per_user = False
     runner.session_store = None
     runner.hooks = MagicMock()
     runner.hooks.emit = AsyncMock()
@@ -228,7 +230,7 @@ class TestBusySessionAck:
         agent.steer = MagicMock(return_value=True)
         runner._running_agents[sk] = agent
 
-        with patch("gateway.run.merge_pending_message_event") as mock_merge:
+        with patch("gateway.infrastructure_handlers.merge_pending_message_event") as mock_merge:
             await runner._handle_active_session_busy_message(event, sk)
 
         # VERIFY: Agent was steered, NOT interrupted
@@ -260,7 +262,7 @@ class TestBusySessionAck:
         agent.steer = MagicMock(return_value=False)  # rejected
         runner._running_agents[sk] = agent
 
-        with patch("gateway.run.merge_pending_message_event") as mock_merge:
+        with patch("gateway.infrastructure_handlers.merge_pending_message_event") as mock_merge:
             await runner._handle_active_session_busy_message(event, sk)
 
         agent.steer.assert_called_once()
@@ -288,7 +290,7 @@ class TestBusySessionAck:
         # Agent is still being set up — sentinel in place
         runner._running_agents[sk] = sentinel
 
-        with patch("gateway.run.merge_pending_message_event") as mock_merge:
+        with patch("gateway.infrastructure_handlers.merge_pending_message_event") as mock_merge:
             await runner._handle_active_session_busy_message(event, sk)
 
         # Event was queued instead of steered
