@@ -311,3 +311,117 @@ class TestMoaToolCallError:
         )
         assert "_moa_preset_name" in kwargs
         assert kwargs["_moa_preset_name"] == "default"
+
+
+class TestReferenceMessages:
+    """Denoised advisory view (M2) — read-only, text-only, user-ending."""
+
+    def test_drops_system_and_has_no_tool_role(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "system", "content": "big system prompt"},
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi", "tool_calls": [
+                {"id": "c1", "type": "function",
+                 "function": {"name": "read_file", "arguments": '{"path": "x.py"}'}},
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": "file contents"},
+            {"role": "assistant", "content": "done"},
+        ])
+        assert all(m["role"] in ("user", "assistant") for m in view)
+        assert all("tool_calls" not in m for m in view)
+
+    def test_ends_with_user_turn(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi"},
+        ])
+        assert view[-1]["role"] == "user"
+
+    def test_renders_tool_calls_as_text(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "user", "content": "run it"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c1", "type": "function",
+                 "function": {"name": "read_file", "arguments": '{"path": "x.py"}'}},
+            ]},
+        ])
+        assert any(
+            "[called tool: read_file" in m["content"]
+            for m in view if m["role"] == "assistant"
+        )
+
+    def test_folds_tool_results_into_preceding_assistant(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "user", "content": "read it"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c1", "type": "function",
+                 "function": {"name": "read_file", "arguments": "{}"}},
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": "SECRET FILE CONTENT"},
+        ])
+        assert any("[tool result: SECRET FILE CONTENT" in m["content"] for m in view)
+        assert all(m["role"] != "tool" for m in view)
+
+    def test_multi_tool_turn_produces_alternating_roles(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c1", "type": "function",
+                 "function": {"name": "read_file", "arguments": "{}"}},
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": "file A"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c2", "type": "function",
+                 "function": {"name": "write_file", "arguments": "{}"}},
+            ]},
+            {"role": "tool", "tool_call_id": "c2", "content": "wrote B"},
+            {"role": "assistant", "content": "done"},
+        ])
+        roles = [m["role"] for m in view]
+        assert all(roles[i] != roles[i + 1] for i in range(len(roles) - 1))
+
+    def test_orphan_tool_result_dropped(self):
+        from agent.moa_loop import _reference_messages
+        view = _reference_messages([
+            {"role": "tool", "tool_call_id": "c1", "content": "orphan result"},
+            {"role": "user", "content": "hi"},
+        ])
+        # The orphan tool result is dropped; the view must start with a user.
+        assert view[0]["role"] == "user"
+        assert all("[tool result" not in m["content"] for m in view)
+
+    def test_multimodal_content_flattened(self):
+        from agent.moa_loop import _content_to_text
+        out = _content_to_text([
+            {"type": "text", "text": "hello"},
+            {"type": "image_url", "image_url": {}},
+        ])
+        assert out == "hello [image]"
+
+    def test_run_single_reference_prepends_system_prompt(self):
+        from agent.moa_loop import MoaRunner, _REFERENCE_SYSTEM_PROMPT
+        runner = MoaRunner({"references": [], "aggregator": {}})
+
+        captured = {}
+
+        def _capture(messages=None, **kwargs):
+            captured["messages"] = messages
+            return {"content": "advice"}
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_capture):
+                return await runner._run_single_reference(
+                    {"provider": "x", "model": "y"},
+                    [{"role": "user", "content": "hi"}],
+                )
+
+        asyncio.run(_run())
+        msgs = captured["messages"]
+        assert msgs[0]["role"] == "system"
+        assert msgs[0]["content"] == _REFERENCE_SYSTEM_PROMPT
+        assert msgs[1] == {"role": "user", "content": "hi"}

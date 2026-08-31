@@ -2757,6 +2757,7 @@ class IntellectCLI:
         "platforms": "_show_gateway_status",
         "profile": "_handle_profile_command",
         "reasoning": "_handle_reasoning_command",
+        "review": "_handle_review_command",
         "reload-mcp": "_confirm_and_reload_mcp",
         "resume": "_handle_resume_command",
         "rollback": "_handle_rollback_command",
@@ -8628,6 +8629,105 @@ class IntellectCLI:
                 _cprint(f"{_DIM}{_ACCENT}Type /help for available commands{_RST}")
 
         return True
+
+    def _handle_review_command(self, cmd: str):
+        """Handle /review [topic] — launch a code-review subagent on recent work.
+
+        Spawns a fresh AIAgent (inheriting the session's model/provider and
+        toolsets) with a code-review prompt, runs it synchronously, and prints
+        the review without touching the active session's conversation history.
+        """
+        parts = cmd.strip().split(maxsplit=1)
+        topic = parts[1].strip() if len(parts) >= 2 and parts[1].strip() else ""
+
+        if not self._ensure_runtime_credentials():
+            _cprint("  (>_<) Cannot start review: no valid credentials.")
+            return
+
+        _cprint("  🔍 Starting code review..." + (f" (focus: {topic})" if topic else ""))
+
+        turn_route = self._resolve_turn_agent_config(topic or "review recent changes")
+
+        review_prompt = (
+            "Perform a focused code review of the recent work in this project. "
+            "Use your tools to inspect what changed: run `git status` and `git diff`, "
+            "read the modified files, and run relevant tests. Report concrete findings "
+            "— correctness bugs, security concerns, and improvement suggestions — with "
+            "file/line references where possible. Be specific and actionable; skip "
+            "trivial or generic observations."
+        )
+        if topic:
+            review_prompt += f"\n\nFocus area requested by the user: {topic}"
+
+        review_task_id = f"review_{datetime.now().strftime('%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        review_agent = None
+        try:
+            set_sudo_password_callback(self._sudo_password_callback)
+            set_approval_callback(self._approval_callback)
+            try:
+                set_secret_capture_callback(self._secret_capture_callback)
+            except Exception:
+                pass
+
+            review_agent = AIAgent(
+                model=turn_route["model"],
+                api_key=turn_route["runtime"].get("api_key"),
+                base_url=turn_route["runtime"].get("base_url"),
+                provider=turn_route["runtime"].get("provider"),
+                api_mode=turn_route["runtime"].get("api_mode"),
+                acp_command=turn_route["runtime"].get("command"),
+                acp_args=turn_route["runtime"].get("args"),
+                max_iterations=self.max_turns,
+                enabled_toolsets=self.enabled_toolsets,
+                quiet_mode=True,
+                verbose_logging=False,
+                platform="cli",
+                session_db=self._session_db,
+                reasoning_config=self.reasoning_config,
+                request_overrides=turn_route.get("request_overrides"),
+                providers_allowed=self._providers_only,
+                providers_ignored=self._providers_ignore,
+                providers_order=self._providers_order,
+                provider_sort=self._provider_sort,
+                provider_require_parameters=self._provider_require_params,
+                provider_data_collection=self._provider_data_collection,
+                openrouter_min_coding_score=self._openrouter_min_coding_score,
+                fallback_model=self._fallback_model,
+                session_id=review_task_id,
+                skip_memory=True,
+                publish_session_context=False,
+                service_tier=self.service_tier,
+            )
+            review_agent._print_fn = lambda *_a, **_kw: None
+
+            result = review_agent.run_conversation(user_message=review_prompt)
+            response = result.get("final_response", "") if result else ""
+            if not response and result and result.get("error"):
+                response = f"Error: {result['error']}"
+
+            print()
+            _cprint("  📋 Code review:")
+            if response:
+                try:
+                    _cprint(_render_final_assistant_content(response, mode=self.final_response_markdown))
+                except Exception:
+                    _cprint(response)
+            else:
+                _cprint("  (No review generated)")
+        except Exception as exc:
+            _cprint(f"  ❌ Code review failed: {exc}")
+        finally:
+            try:
+                if review_agent is not None:
+                    review_agent.close()
+            except Exception:
+                pass
+            try:
+                set_sudo_password_callback(None)
+                set_approval_callback(None)
+                set_secret_capture_callback(None)
+            except Exception:
+                pass
 
     def _handle_background_command(self, cmd: str):
         """Handle /background <prompt> — run a prompt in a separate background session.

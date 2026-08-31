@@ -37,6 +37,119 @@ def _extract_content(result: Any) -> str:
     return ""
 
 
+# ── Advisory view (M2) ──────────────────────────────────────────────────────
+
+_REFERENCE_SYSTEM_PROMPT = (
+    "You are a reference advisor inside a Mixture-of-Agents (MoA) pipeline. "
+    "You are NOT the acting agent and must NOT execute anything.\n\n"
+    "You cannot and must not: call tools, run commands, browse, access files or "
+    "repositories, or fetch URLs. You only receive a read-only view of the "
+    "conversation so far.\n\n"
+    "CRITICAL — describe, do not fabricate. Say 'based on the error pattern, curl "
+    "would likely return 404' — never 'I ran curl and got 404' or 'I downloaded it'. "
+    "You have run nothing, so do not claim you did.\n\n"
+    "Give your judgment and a concrete recommendation directly — no preamble, no "
+    "tool disclaimer. Your reply is private guidance for the aggregator model, not "
+    "an answer shown to the user."
+)
+
+
+def _content_to_text(content: Any) -> str:
+    """Flatten message content (str or multimodal list) to plain text."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                _type = part.get("type")
+                if _type == "text":
+                    parts.append(str(part.get("text", "")))
+                elif _type == "image_url":
+                    parts.append("[image]")
+                elif _type:
+                    # Some other known block type (e.g. Anthropic tool_use) —
+                    # surface the type rather than the raw payload.
+                    parts.append(str(_type))
+                # else: type is None/empty — skip (not noise the advisor needs).
+            elif part is not None:
+                parts.append(str(part))
+        return " ".join(p for p in parts if p).strip()
+    if content is None:
+        return ""
+    return str(content)
+
+
+def _render_tool_calls(tool_calls: list) -> str:
+    """Render assistant tool_calls as '[called tool: name(args)]' text lines."""
+    lines = []
+    for tc in tool_calls or []:
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function") or {}
+        name = fn.get("name", "?")
+        args = fn.get("arguments", "")
+        if not isinstance(args, str):
+            args = str(args)
+        args_preview = args if len(args) <= 120 else args[:120] + "…"
+        lines.append(f"[called tool: {name}({args_preview})]")
+    return "\n".join(lines)
+
+
+def _reference_messages(messages: list) -> list[dict[str, str]]:
+    """Build a denoised, text-only view of the conversation for the advisors.
+
+    Drops the system prompt (boilerplate is noise to advisors), renders assistant
+    tool_calls as text lines, folds tool results into the preceding assistant turn
+    as short previews, and emits zero tool-role messages / tool_calls arrays (strict
+    providers 400 on orphan tool messages).  The returned view always ends with a
+    user turn (Anthropic treats a trailing assistant as a prefill).
+    """
+    view: list[dict[str, str]] = []
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        content = m.get("content")
+        tool_calls = m.get("tool_calls")
+        if role == "system":
+            continue
+        if role == "assistant":
+            text = _content_to_text(content)
+            if tool_calls:
+                rendered = _render_tool_calls(tool_calls)
+                text = f"{text}\n{rendered}" if text else rendered
+            if text:
+                if view and view[-1]["role"] == "assistant":
+                    view[-1]["content"] += f"\n{text}"
+                else:
+                    view.append({"role": "assistant", "content": text})
+        elif role == "user":
+            text = _content_to_text(content)
+            if text:
+                if view and view[-1]["role"] == "user":
+                    view[-1]["content"] += f"\n{text}"
+                else:
+                    view.append({"role": "user", "content": text})
+        elif role == "tool":
+            preview = _content_to_text(content)
+            preview = preview if len(preview) <= 400 else preview[:400] + "…"
+            if view and view[-1]["role"] == "assistant":
+                view[-1]["content"] += f"\n[tool result: {preview}]"
+            # else: orphan tool result (no preceding assistant) — drop it, so we
+            # never fabricate an assistant-first transcript that strict
+            # providers (Anthropic) reject.
+    if not view or view[-1]["role"] != "user":
+        view.append({
+            "role": "user",
+            "content": (
+                "Assess the current task state and give your recommendation on "
+                "how the acting agent should proceed."
+            ),
+        })
+    return view
+
+
 class MoaRunner:
     """Drop-in replacement for an OpenAI-compatible client when api_mode="moa".
 
@@ -72,16 +185,16 @@ class MoaRunner:
     # ── helpers ──────────────────────────────────────────────────────────
 
     async def _run_single_reference(
-        self, ref: dict[str, str], user_message: str
+        self, ref: dict[str, str], ref_messages: list[dict[str, str]]
     ) -> dict[str, Any]:
-        """Call one reference model via ``auxiliary_client.call_llm``.
+        """Call one reference model with the denoised advisory view.
 
         Returns ``{model, provider, content, latency_ms, success}``.
         """
         t0 = time.monotonic()
         provider = ref.get("provider", "")
         model = ref.get("model", "")
-        messages = [{"role": "user", "content": user_message}]
+        messages = [{"role": "system", "content": _REFERENCE_SYSTEM_PROMPT}, *ref_messages]
         try:
             result = await asyncio.to_thread(
                 call_llm,
@@ -150,7 +263,7 @@ class MoaRunner:
         if self._interrupted():
             raise RuntimeError("MoA interrupted before reference fan-out")
 
-        # Extract the last user message as the prompt for reference models
+        # Extract the last user message as the prompt for the aggregator.
         user_message = ""
         for m in reversed(messages):
             if m.get("role") == "user":
@@ -159,8 +272,13 @@ class MoaRunner:
         if not user_message:
             user_message = str(messages[-1].get("content", "")) if messages else ""
 
+        # Build the denoised advisory view once for all references — advisors see
+        # a clean read-only transcript (no system boilerplate, no tool-role
+        # messages), not just the last user message.
+        ref_messages = _reference_messages(messages)
+
         # Phase 1 — fan out to reference models
-        tasks = [self._run_single_reference(r, user_message) for r in self._references]
+        tasks = [self._run_single_reference(r, ref_messages) for r in self._references]
         ref_results = await asyncio.gather(*tasks)
 
         successful = [r for r in ref_results if r.get("success")]
