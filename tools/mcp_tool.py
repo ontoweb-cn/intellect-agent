@@ -257,7 +257,27 @@ if _MCP_AVAILABLE and not _MCP_MESSAGE_HANDLER_SUPPORTED:
 # Constants
 # ---------------------------------------------------------------------------
 
-_DEFAULT_TOOL_TIMEOUT = 120      # seconds for tool calls
+# seconds for tool calls — resolved via the unified deadline layer so
+# config.yaml `timeouts.mcp.tool_call` overrides it (env
+# INTELLECT_MCP_TOOL_TIMEOUT is the legacy escape hatch). The per-server
+# `mcp.timeout` config key still wins over everything (applied at run()).
+#
+# NOTE (freshness): the module constant below is only the LAST-RESORT
+# fallback (pre-loop construction). Both live consumers re-resolve at
+# construction/run time so `timeouts.mcp.tool_call` picks up config
+# reloads without a process restart.
+def _resolve_mcp_default_tool_timeout():
+    try:
+        from agent.deadline import resolve_timeout
+
+        return resolve_timeout(
+            "mcp.tool_call", default=120, env_var="INTELLECT_MCP_TOOL_TIMEOUT"
+        )
+    except Exception:  # deadline layer unavailable — keep the historical default
+        return 120
+
+
+_DEFAULT_TOOL_TIMEOUT = _resolve_mcp_default_tool_timeout()
 _DEFAULT_CONNECT_TIMEOUT = 60    # seconds for initial connection per server
 _MAX_RECONNECT_RETRIES = 5
 _MAX_INITIAL_CONNECT_RETRIES = 3 # retries for the very first connection attempt
@@ -1115,7 +1135,10 @@ class MCPServerTask:
     def __init__(self, name: str):
         self.name = name
         self.session: Optional[Any] = None
-        self.tool_timeout: float = _DEFAULT_TOOL_TIMEOUT
+        # Use-time resolution (P2-5): a config reload of
+        # `timeouts.mcp.tool_call` takes effect on the next server
+        # construction, no process restart needed.
+        self.tool_timeout = _resolve_mcp_default_tool_timeout()
         self._task: Optional[asyncio.Task] = None
         self._ready = asyncio.Event()
         self._shutdown_event = asyncio.Event()
@@ -1665,7 +1688,8 @@ class MCPServerTask:
         connection drops unexpectedly (unless shutdown was requested).
         """
         self._config = config
-        self.tool_timeout = config.get("timeout", _DEFAULT_TOOL_TIMEOUT)
+        # Use-time resolution; per-server `mcp.timeout` still wins.
+        self.tool_timeout = config.get("timeout") if config.get("timeout") is not None else _resolve_mcp_default_tool_timeout()
         self._auth_type = (config.get("auth") or "").lower().strip()
 
         # Set up sampling handler if enabled and SDK types are available

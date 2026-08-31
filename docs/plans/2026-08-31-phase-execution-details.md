@@ -68,11 +68,16 @@ environ（单 profile 行为不变）、multiplex_active + 无 scope → raise�
   `resolve_timeout(key, *, default, env_var)`（config `timeouts.<dotted>` → env → default，
   经 `load_config_readonly`）、`run_bounded_async`（daemon Timer + cancel+abandon +
   +5s faulthandler watchdog）、`run_bounded_sync`、`kill_process_tree`（psutil 已 pinned）。
-**修改** `agent/tool_executor.py`：并发/顺序批超时改走
-`resolve_timeout("tools.concurrent_batch"/"tools.sequential_call")`。
-**修改** `tools/mcp_tool.py`：`resolve_timeout("mcp.tool_call")`。
-**测试** `tests/agent/test_deadline.py`（移植 Hermes 同名 21 例：clamp/resolve 优先级/
-abandon/watchdog）+ `tests/agent/test_deadline_wiring.py`（接线点生效值与基线断言表对比）。
+**修改** `agent/tool_executor.py`：并发批超时改走
+`resolve_timeout("tools.concurrent_batch")`（默认无界=历史行为；到期 cancel 未启动 +
+abandon 运行中，结果收集处给出显式 deadline 文案）。
+**修改** `tools/mcp_tool.py`：`resolve_timeout("mcp.tool_call")`（模块常量仅为构造前
+回退；两个消费点在构造/run 时用时解析，config 热更新可生效）。
+**sequential_call 刻意不接线**（评审裁决，对齐 Hermes Phase 2a）：顺序执行器的人类审批
+窗口会动态拉长执行——固定 deadline 原语不适用；resolver 键保留，待审批感知的
+deadline 方案（审批窗口排除秒数）后再接。
+**测试** `tests/agent/test_deadline.py`（21 例 + 取消传播/完成优先）+
+`tests/agent/test_deadline_wiring.py`（接线点生效值与基线断言表对比）。
 **验收**：门-1 超时等价验收；`timeout=0` 语义不变（无界）。
 
 ### A1-2 · stall 断路器 + continue-intent（G-01）

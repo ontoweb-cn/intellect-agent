@@ -51,6 +51,27 @@ logger = logging.getLogger(__name__)
 # Maximum number of concurrent worker threads for parallel tool execution.
 
 
+def _resolve_concurrent_batch_timeout():
+    """Batch deadline for concurrent tool batches (G-02 / timeouts.tools.concurrent_batch).
+
+    Unbounded by default — this matches historical behaviour exactly: the
+    concurrent batch previously had NO timeout and relied on per-tool
+    interrupt checks + the gateway inactivity monitor. Only an explicit
+    ``timeouts.tools.concurrent_batch`` in config.yaml (or the legacy env
+    var) bounds the batch; 0/negative = unbounded again.
+    """
+    try:
+        from agent.deadline import resolve_timeout
+
+        return resolve_timeout(
+            "tools.concurrent_batch",
+            default=None,
+            env_var="INTELLECT_CONCURRENT_TOOL_TIMEOUT_S",
+        )
+    except Exception:
+        return None
+
+
 def _record_terminal_evidence(agent, function_args: dict, function_result: str) -> None:
     """HP-303d: record verification evidence for terminal commands.
 
@@ -314,6 +335,11 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
         if block_result is not None:
             results[i] = (name, args, block_result, 0.0, True, True)
 
+    # Set when the G-02 batch deadline fires mid-batch — post-processing
+    # uses it to report abandoned tools with an explicit deadline message
+    # instead of the generic "thread did not return" error.
+    _batch_deadline_fired = False
+
     # Touch activity before launching workers so the gateway knows
     # we're executing tools (not stuck).
     agent._current_tool = tool_names_str
@@ -414,6 +440,13 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                 # concurrent tool batches. Also check for user interrupts
                 # so we don't block indefinitely when the user sends /stop
                 # or a new message during concurrent tool execution.
+                #
+                # Batch deadline (G-02): unbounded by default — historical
+                # behaviour — and only bounded when the operator configures
+                # `timeouts.tools.concurrent_batch` (0/negative = unbounded).
+                # Expiry cancels not-yet-started futures and abandons running
+                # ones with a DeadlineExpired-style marker per tool.
+                _batch_timeout = _resolve_concurrent_batch_timeout()
                 _conc_start = time.time()
                 _interrupt_logged = False
                 while True:
@@ -443,6 +476,27 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                         concurrent.futures.wait(not_done, timeout=3.0)
                         break
 
+                    if (
+                        _batch_timeout is not None
+                        and (time.time() - _conc_start) >= _batch_timeout
+                    ):
+                        # DeadlineExpired semantics (G-02): unstarted futures
+                        # cancelled; running ones abandoned with a marker so
+                        # results collection reports them as deadline-expired
+                        # rather than silent cancellations.
+                        logger.error(
+                            "Concurrent tool batch exceeded "
+                            "timeouts.tools.concurrent_batch (%.0fs) — "
+                            "cancelling %d unstarted, abandoning %d running",
+                            _batch_timeout,
+                            sum(1 for f in not_done if not f.running()),
+                            sum(1 for f in not_done if f.running()),
+                        )
+                        for f in not_done:
+                            f.cancel()
+                        _batch_deadline_fired = True
+                        break
+
                     _conc_elapsed = int(time.time() - _conc_start)
                     # Heartbeat every ~30s (6 × 5s poll intervals)
                     if _conc_elapsed > 0 and _conc_elapsed % 30 < 6:
@@ -467,9 +521,19 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
         r = results[i]
         blocked = False
         if r is None:
-            # Tool was cancelled (interrupt) or thread didn't return
+            # Tool was cancelled (interrupt / batch deadline) or thread
+            # didn't return — the message must tell the model WHICH, because
+            # "retry" is the right response to a deadline but not to an
+            # interrupt, and a generic thread error invites blind retries.
             if agent._interrupt_requested:
                 function_result = f"[Tool execution cancelled — {name} was skipped due to user interrupt]"
+            elif _batch_deadline_fired:
+                function_result = (
+                    f"[Tool abandoned — the concurrent batch deadline "
+                    f"(timeouts.tools.concurrent_batch) expired before {name} "
+                    f"returned. Do not blindly retry; batch the remaining work "
+                    f"differently or continue without it.]"
+                )
             else:
                 function_result = f"Error executing tool '{name}': thread did not return a result"
             tool_duration = 0.0
