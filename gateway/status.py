@@ -123,12 +123,25 @@ def _get_scope_lock_path(scope: str, identity: str) -> Path:
 
 
 def _get_process_start_time(pid: int) -> Optional[int]:
-    """Return the kernel start time for a process when available."""
+    """Return a stable per-process start-time fingerprint when available.
+
+    Used by the delivery ledger's owner-liveness check: the value only needs
+    to be stable for a process and distinct across PID reuse (never compared
+    across machines), so /proc clock-ticks and psutil epoch-seconds are both
+    acceptable fingerprints.
+    """
     stat_path = Path(f"/proc/{pid}/stat")
     try:
         # Field 22 in /proc/<pid>/stat is process start time (clock ticks).
         return int(stat_path.read_text(encoding="utf-8").split()[21])
     except (FileNotFoundError, IndexError, PermissionError, ValueError, OSError):
+        pass
+    # Non-/proc platforms (macOS, BSD): psutil.create_time() is epoch seconds,
+    # stable for a process and distinct across PID reuse.
+    try:
+        import psutil  # type: ignore
+        return int(psutil.Process(int(pid)).create_time())
+    except Exception:
         return None
 
 
