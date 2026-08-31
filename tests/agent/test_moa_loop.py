@@ -497,7 +497,8 @@ class TestMoaToolCalling:
 
         class _Msg:
             content = ""
-            tool_calls = ["tc"]
+            tool_calls = [{"id": "c1", "type": "function",
+                           "function": {"name": "read_file", "arguments": "{}"}}]
 
         class _Choice:
             message = _Msg()
@@ -508,8 +509,12 @@ class TestMoaToolCalling:
             _moa_ref_results = []
 
         out = MoaTransport().normalize_response(_Resp())
-        assert out.tool_calls == ["tc"]
         assert out.finish_reason == "tool_calls"
+        assert len(out.tool_calls) == 1
+        assert out.tool_calls[0].id == "c1"
+        assert out.tool_calls[0].name == "read_file"
+        # ToolCall.function returns self, so tc.function.name works downstream.
+        assert out.tool_calls[0].function.name == "read_file"
 
 
 class TestMoaCostAndTrim:
@@ -630,6 +635,39 @@ class TestMoaCadence:
         m3 = [{"role": "user", "content": "world"}]
         assert _turn_signature(m1) == _turn_signature(m2)
         assert _turn_signature(m1) != _turn_signature(m3)
+
+    def test_aggregator_applies_prompt_cache_for_anthropic(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        preset = {
+            "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+            "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+        }
+
+        captured = {}
+
+        def _mock_call_llm(messages=None, provider=None, model=None, **kwargs):
+            return {"content": "answer"}
+
+        def _mock_cache(messages, cache_ttl="5m", native_anthropic=False):
+            captured["called"] = True
+            captured["native_anthropic"] = native_anthropic
+            return [dict(m) for m in messages]
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_mock_call_llm), \
+                 patch("agent.prompt_caching.apply_anthropic_cache_control", side_effect=_mock_cache):
+                return await MoaRunner(preset, agent=agent).run(
+                    [{"role": "user", "content": "hi"}],
+                )
+
+        asyncio.run(_run())
+        assert captured.get("called") is True
+        assert captured.get("native_anthropic") is True
 
     def test_turn_signature_ignores_tool_results(self):
         from agent.moa_loop import _turn_signature

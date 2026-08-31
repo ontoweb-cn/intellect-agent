@@ -463,6 +463,20 @@ class MoaRunner:
             api_calls = _ref_calls  # references actually called, no aggregator
         else:
             agg_messages = self._build_aggregator_messages(messages, ref_results)
+            # M3 — apply Anthropic prompt caching.  The conversation prefix is
+            # stable across tool iterations (guidance is appended at the end), so
+            # cache_control breakpoints make the prefix reusable and cut input
+            # cost ~75% for Anthropic aggregators.
+            if agg_provider == "anthropic" or (agg_model or "").lower().startswith("claude"):
+                try:
+                    from agent.prompt_caching import apply_anthropic_cache_control
+                    agg_messages = apply_anthropic_cache_control(
+                        agg_messages,
+                        cache_ttl=getattr(self._agent, "_cache_ttl", "5m"),
+                        native_anthropic=(agg_provider == "anthropic"),
+                    )
+                except Exception:
+                    pass
             # The aggregator is the action model — forward the full tool schema
             # so it can emit tool_calls, which the normal agent loop executes.
             tools = kwargs.get("tools")

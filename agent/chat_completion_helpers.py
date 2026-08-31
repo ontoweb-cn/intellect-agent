@@ -252,11 +252,15 @@ def interruptible_api_call(agent, api_kwargs: dict):
                     )
                 finally:
                     loop.close()
-                # Accumulate MoA's N+1 API calls on the token accumulator
+                # Accumulate MoA's reference API calls on the token accumulator.
+                # _moa_api_calls already includes the +1 aggregator call, which
+                # the normal accounting in conversation_loop.py also counts — so
+                # only the N reference calls are added here to avoid double-counting
+                # the aggregator.
                 moa_calls = getattr(result["response"], "_moa_api_calls", 1) if result["response"] else 1
                 if hasattr(agent, "_token_acc") and agent._token_acc is not None:
                     try:
-                        agent._token_acc.add(0, 0, 0, 0, 0, moa_calls, 0)
+                        agent._token_acc.add(0, 0, 0, 0, 0, max(0, moa_calls - 1), 0)
                     except Exception:
                         pass
             else:
