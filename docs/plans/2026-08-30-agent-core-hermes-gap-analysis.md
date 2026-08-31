@@ -1,10 +1,12 @@
 # Agent Core 改进方案 — 基于 Hermes 更新分析（2026-06-15 → 2026-08-30）
 
-> **日期**：2026-08-30
-> **状态**：**分析完成 + 已评审**；建议按 P0 → P1 → P2 分批落地
+> **日期**：2026-08-30 分析 → 2026-08-31 实施完成
+> **状态**：**已实施完成**——P0/P1/P2 主体 + MoA M1–M5 均已落地（PR #107 + #121）；仅 P2-2、MoA M3/M4 后置优化留 spec（见第六/九节）
 > **数据来源**：`../hermes-agent/docs/update-summary-2026-06-15-to-2026-08-30-agent-core.md`（HEAD `4209d371aa`）
-> **本仓 HEAD**：分析时 `e9546dd`；实施分支 `feat/agent-core-hermes-gap-p0`（HEAD `67497a3`，PR #107）
+> **本仓 HEAD**：分析时 `e9546dd`；实施分支 `feat/agent-core-hermes-gap-p0`（PR #107）+ `feat/agent-core-hermes-gap-p1`（PR #121）
 > **关联**：既有 `2026-07-08-hermes-v0.16-v0.18-port-todo.md` 已覆盖 v0.16→v0.18 阶段；本文覆盖其后的 v0.18→v0.2x 窗口，**无重复跟踪**
+
+> ⚠️ **阅读提示**：第二/三节与第七节「实况对照」是**分析时**（实施前）的差距快照；第六/七节第四节/九节是**实施后**结果。两者并存，前者仅作历史依据，以「实施结果」节为准。
 
 ---
 
@@ -23,7 +25,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | 墙钟运行预算 `run_budget` | **完全缺失**（全仓 grep 零命中） | 无 `--run-budget`、无 80% wrap-up 注入、无 deadline 比例缩放 stale | **P0** |
 | Reasoning 模型 stale 下限 | 只按上下文缩放（`run_agent.py:1086/1101/1103`、`chat_completion_helpers.py:2437`），不识别 reasoning 模型 | `_is_reasoning_model`（`run_agent.py:4273`）未接 stale 下限 | **P0** |
 | 确定性空响应不重复计费 | 空响应重试存在（`conversation_loop.py:3885`），计费无条件执行（`:1544-1626`） | 缺"确定性空"标记，会双计费 | **P0** |
-| SessionDB 读锁分离 | 单一 `threading.Lock` 同守读写（`intellect_state.py:1362/1478/1487/1508/1539`） | 39 个纯读方法未脱离写锁（Hermes 已做） | **P0** |
+| SessionDB 读锁分离 | 单一 `threading.Lock` 同守读写（`intellect_state.py:1362/1478/1487/1508/1539`） | 29 个纯读方法未脱离写锁（Hermes 已做） | **P0** |
 | 并发/迭代上限 | 3 / 50（`delegate_tool.py:132/512`） | Hermes 已上调 3→10、50→250；但配额机制已收敛（HP-202e） | **P1（门控）** |
 | Micro-compaction per-turn | 仅一次性全量 `compress()`（`context_compressor.py:1827`） | 缺摊薄到每 turn 的微压缩 + 节奏 + 遥测 | **P1** |
 | Per-model token 聚合 | 仅 per-call DB 记录（`conversation_loop.py:1626`），`TokenAccumulator` 扁平无 model 维度 | 中途换模不区分用量 | **P1** |
@@ -115,7 +117,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 
 ---
 
-## 六、实施结果（2026-08-30，分支 `feat/agent-core-hermes-gap-p0`）
+## 六、实施结果（2026-08-30 → 08-31，分支 `feat/agent-core-hermes-gap-p0` + `feat/agent-core-hermes-gap-p1`）
 
 **已完成并测试（P0-1/2/3 + 1 项顺带修复）**：
 
@@ -126,7 +128,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | P0-1 墙钟运行预算 | ✅ `get_provider_run_budget` + `_resolved_run_budget_seconds` + loop 内 80% wrap-up 注入 + 100% hard-stop；config schema 加 `run_budget_seconds`；env `INTELLECT_RUN_BUDGET_SECONDS` | `test_timeouts.py` 15 passed |
 | **顺带修复** | ⚠️ `timeouts.py` 三个函数用 `isinstance(config, dict)` 判断，但 `load_config_readonly()` 返回 `MappingProxyType`（非 dict 子类）→ config 级超时/预算配置**全部失效**（预存 bug）。改为 `collections.abc.Mapping` | 修复后 `test_timeouts.py` 15/15（base commit 上配置类测试全挂） |
 
-**P0-4 已评估并回退（发现跨后端可见性缺陷）**：
+**P0-4 首次尝试已回退（发现跨后端可见性缺陷，后于收尾批成功落地，见下表 `P0-4 读锁分离`）**：
 
 - 尝试：新增专用 Python `_read_conn` + `_query_conn` 返回它 + 转换 10 个热点纯读方法脱离写锁。
 - **失败原因**：当 `SESSIONDB_USE_RUST_RW=1`（本环境默认）时，主连接 `_conn` 是 **RustConnection**（rusqlite），写入走 Rust 后端；专用 Python `sqlite3` 读连接**看不到 rusqlite 的提交**（`_conn` 读 = 2 行，`_read_conn` 读 = 1 行），引入 1 个新测试失败。
@@ -140,7 +142,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | P1-3 per-model token 聚合 | ✅ `session_tokens_by_model`（归一化 key `normalize_model_name`）+ turn 结果 `tokens_by_model` 快照；`reset_session_state`/`agent_init` 双站点初始化 |
 | P1-4（中断子项） | ✅ MoA 读线程无关的 `agent._interrupt_requested` 短路 fan-out（修了原 `is_interrupted` 线程错配）；其余子项重分析并入 M |
 | P1-5 delegate schema | ✅ `response_schema`（解码级 `response_format` + prompt 级回退）+ `max_iterations` 放宽（int 强制转换）；穿透 `_dispatch_delegate_task` |
-| P1-6（项目上下文子项） | ✅ 子代理 prompt 注入 workspace 项目上下文（每批解析一次）；`/review` 子项本次完成 |
+| P1-6（项目上下文子项） | ✅ 子代理 prompt 注入 workspace 项目上下文（每批解析一次）；`/review` 三界面见下表 |
 
 **P1/P2 批实施结果（本次：micro-compaction + /review + tool_call_id 变体）**：
 
@@ -172,7 +174,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 
 > 本节**取代**原 P1-4 的「cadence + 鲁棒性 + 可见性」定位。原方案把 cadence 当独立优化项，对照 Hermes 机制后判定是**对差距性质的误判**。
 
-### 1. 实况对照
+### 1. 实况对照（分析时快照，M1–M5 实施前）
 
 | 维度 | Hermes | intellect-agent 现状（`agent/moa_loop.py`） | 差距 |
 |---|---|---|---|
@@ -203,7 +205,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | **M4** | **cadence + SHA-256 签名缓存**（此时才有意义） | 依赖 M1–M3 |
 | **M5** | 每顾问成本核算 + `_trim_messages_for_reference` + 单顾问失败标记 | 成本/鲁棒性收尾 |
 
-这是一个**独立大 feature**（Hermes 用 feat 15 / fix 63 才做完），不是 P1 的 3 个 bullet。**P2 的「MoA facade」依赖其实也卡在 M1 上**——当前 MoA 连工具都发不出，谈何多后端协议兼容。
+这是一个**独立大 feature**（Hermes 用 feat 15 / fix 63 才做完），不是 P1 的 3 个 bullet。**P2 的「MoA facade」依赖其实也卡在 M1 上**（M1 已落地，见第四节；原「连工具都发不出」的定位已过时）。
 
 ### 4. 实施结果（M1–M5 已完成并测试）
 
@@ -334,9 +336,9 @@ micro-compaction = 把一次性全量压缩摊薄成**每 turn 吸收一个 exch
 
 ---
 
-## 九、剩余项细化（spec-only，依赖未满足）
+## 九、剩余项细化
 
-> 本节的 P1-2 阶段 C、P2-2、P2-3 均**不写代码**，仅细化到可执行 spec。三者依赖「rust-core 第二读连接」或「多后端」等尚未落地的前置（MoA M1 已完成，不再构成阻塞）。
+> 本节原为 spec-only 预置，现多数已落地：**P1-2 阶段 C ✅ 已完成**（复用 `replace_messages`）、**P2-3 大半已完成**（env scrub + git worktree；独立 SessionDB 由 `parent_session_id` 隔离达成）。**当前仅 P2-2 仍是 spec-only**（阻塞于多后端）。
 
 ### 1. P1-2 阶段 C —— DB 同步（✅ 已完成，复用 `replace_messages`）
 
