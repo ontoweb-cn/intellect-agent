@@ -29,6 +29,16 @@ use pyo3::prelude::*;
 /// Python module: `import intellect_community_core`
 #[pymodule]
 fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // ── Build identity (P0-1 binding handshake) ─────────────────────────
+    // Lets the Python wrapper detect a stale/missing extension build: the
+    // wrapper reports this version and warns when it diverges from the
+    // expected Cargo version tracked alongside the wrapper.
+    #[pyfunction]
+    fn rust_core_version() -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+    m.add_function(wrap_pyfunction!(rust_core_version, m)?)?;
+
     // ── Standalone functions (Stage 1b compat — pass db_path) ────────────
     m.add_function(wrap_pyfunction!(fts::is_fts5_unavailable_error, m)?)?;
     m.add_function(wrap_pyfunction!(fts::drop_fts_triggers_rs, m)?)?;

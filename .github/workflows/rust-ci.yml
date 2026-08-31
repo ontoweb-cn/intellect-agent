@@ -148,6 +148,21 @@ jobs:
           cd rust-core
           maturin develop
 
+      - name: Binding handshake smoke test (P0-1)
+        run: |
+          source .venv/bin/activate
+          cd rust-core/..
+          python -c "
+          import warnings
+          with warnings.catch_warnings():
+              warnings.simplefilter('error')  # any mismatch warning fails the build
+              import intellect_community_core as c
+          v = c.RUST_CORE_VERSION
+          expected = open('rust-core/Cargo.toml').read().split('version = \"', 1)[1].split('\"', 1)[0]
+          assert v == expected, f'binding handshake mismatch: ext={v!r} cargo={expected!r}'
+          print(f'binding handshake OK: {v}')
+          "
+
       - name: Run Rust parity tests
         run: |
           source .venv/bin/activate

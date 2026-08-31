@@ -201,6 +201,15 @@ jobs:
       - name: Run footgun checker
         run: python scripts/check-windows-footguns.py --all
 
+  credential-read-gate:
+    name: credential raw-read gate (MP-01)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Fail on new credential-shaped raw env reads
+        run: python scripts/audit_credential_reads.py --check
+
   uv-lock-check:
     name: uv lock freshness
     runs-on: ubuntu-latest

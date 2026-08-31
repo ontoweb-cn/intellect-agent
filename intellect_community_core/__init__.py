@@ -58,3 +58,42 @@ from .intellect_community_core import *  # noqa: E402, F403
 __doc__ = intellect_community_core.__doc__  # noqa: F405
 if hasattr(intellect_community_core, "__all__"):  # noqa: F405
     __all__ = intellect_community_core.__all__  # noqa: F405
+
+# ---- Build-identity handshake (P0-1) ------------------------------------
+# The extension reports its Cargo version via rust_core_version(); compare
+# against the version this wrapper was written for so a stale local build
+# (site-packages vs rust-core source drift) fails loud instead of surfacing
+# as mysterious AttributeError/segfault behaviour later.
+# Keep in sync with rust-core/Cargo.toml `version`.
+_EXPECTED_RUST_CORE_VERSION = "0.6.7"
+
+try:
+    # Pre-handshake builds simply don't export rust_core_version (star-import
+    # skips missing names -> NameError). Any other failure is a real defect
+    # in the installed extension and must surface, not be swallowed here.
+    RUST_CORE_VERSION = rust_core_version()  # noqa: F405
+except NameError:  # pragma: no cover - pre-handshake builds
+    RUST_CORE_VERSION = None
+
+if RUST_CORE_VERSION is None:
+    # Extension predates the handshake export — rebuild to regain parity.
+    import warnings
+
+    warnings.warn(
+        "intellect_community_core: compiled extension does not expose "
+        "rust_core_version() — it was built from an older rust-core. "
+        "Run `maturin develop --release -m rust-core/Cargo.toml` to rebuild.",
+        UserWarning,
+        stacklevel=1,
+    )
+elif RUST_CORE_VERSION != _EXPECTED_RUST_CORE_VERSION:
+    import warnings
+
+    warnings.warn(
+        f"intellect_community_core: compiled extension version mismatch — "
+        f"extension reports {RUST_CORE_VERSION!r} but the Python wrapper "
+        f"expects {_EXPECTED_RUST_CORE_VERSION!r} (rust-core/Cargo.toml). "
+        f"Run `maturin develop --release -m rust-core/Cargo.toml` to rebuild.",
+        UserWarning,
+        stacklevel=1,
+    )

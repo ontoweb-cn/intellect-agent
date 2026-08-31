@@ -1,0 +1,38 @@
+{
+  "generated": "2026-08-31",
+  "note": "Phase 0 baseline (pre G-14 rust migration)",
+  "benches": [
+    {
+      "bench": "list_sessions_rich",
+      "sessions": 10000,
+      "msgs_per_session": 4,
+      "seed_seconds": 5.756,
+      "limit": 200,
+      "iters": 20,
+      "p50_ms": 35.725,
+      "p95_ms": 36.961,
+      "rows_returned": 200
+    },
+    {
+      "bench": "stream_parse",
+      "chunks": 2000,
+      "total_bytes": 898000,
+      "iters": 10,
+      "rust_available": true,
+      "mode": "rust",
+      "p50_ms": 0.219,
+      "p95_ms": 0.286,
+      "mb_per_s": 4103.6
+    },
+    {
+      "bench": "token_estimate",
+      "turns": 200,
+      "messages": 601,
+      "iters": 10,
+      "estimated_tokens": 103590,
+      "p50_ms": 0.507,
+      "p95_ms": 0.53,
+      "note": "measures estimate_request_tokens_rough only (not compression itself)"
+    }
+  ]
+}

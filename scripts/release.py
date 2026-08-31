@@ -1508,6 +1508,31 @@ def update_version_files(semver: str, calver_date: str):
     )
     PYPROJECT_FILE.write_text(pyproject)
 
+    # Keep the rust-core Cargo version + the P0-1 binding-handshake constant
+    # in lockstep — drift makes every import emit a mismatch warning
+    # (intellect_community_core/__init__.py handshake).
+    cargo = REPO_ROOT / "rust-core" / "Cargo.toml"
+    if cargo.exists():
+        cargo_text = cargo.read_text()
+        cargo_text = re.sub(
+            r'^(version\s*=\s*")[^"]+(")',
+            rf"\g<1>{semver}\g<2>",
+            cargo_text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        cargo.write_text(cargo_text)
+    core_init = REPO_ROOT / "intellect_community_core" / "__init__.py"
+    if core_init.exists():
+        init_text = core_init.read_text()
+        init_text = re.sub(
+            r'(_EXPECTED_RUST_CORE_VERSION\s*=\s*")[^"]+(")',
+            rf"\g<1>{semver}\g<2>",
+            init_text,
+            count=1,
+        )
+        core_init.write_text(init_text)
+
     # Update ACP Registry manifest + npm launcher (must stay version-locked
     # with pyproject — enforced by tests/acp/test_registry_manifest.py).
     _update_acp_registry_versions(semver)
