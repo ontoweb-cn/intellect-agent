@@ -68,6 +68,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 
 **P1-2 Micro-compaction per-turn**
 把 `context_compressor.py:1827 compress()` 拆成可摊薄的 per-turn 增量压缩（先做"阈值内每 turn 压缩最旧 N 条"最小版本），配节奏配置 + token 遥测，避免长会话一次性全量压缩卡顿。
+**详细分析见第八节**——移植障碍不在 summarizer 逻辑（intellect 已具备），而在四个结构性差异：持久化模型（append-only + session-rotation，无 `archive_and_compact`）、marker 身份（无 metadata key）、summary role 动态选择、无 `finalize_turn` 汇聚点。
 
 **P1-3 Per-model token 聚合**
 给 Rust `TokenAccumulator`（`rust-core/src/usage.rs`）加 model 维度，或在 Python 侧 `run_agent.py:605` 的 `session_*` 计数旁加 `per_model` dict，支撑 `switch_model`（`agent_runtime_helpers.py:1342`）时的用量区分。
@@ -145,7 +146,7 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 - [ ] P0-4：rust-core 暴露独立读连接后，按 `SESSIONDB_USE_RUST_RW` 分支选择同库读连接。
 - [ ] P0-1 的 `--run-budget` CLI flag（当前 config + env 已覆盖能力，flag 为薄封装）。
 - [ ] MoA 架构 M1–M5（见第七节）。
-- [ ] P1-2 micro-compaction（高风险压缩重构，独立专项）。
+- [ ] P1-2 micro-compaction（高风险压缩重构，独立专项，见第八节）。
 - [ ] P1-6 `/review` 子代理（三界面泛化）。
 - [ ] P2 协议变体/隔离（依赖多后端 + M1 的 MoA facade）。
 
@@ -187,3 +188,113 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | **M5** | 每顾问成本核算 + `_trim_messages_for_reference` + 单顾问失败标记 | 成本/鲁棒性收尾 |
 
 这是一个**独立大 feature**（Hermes 用 feat 15 / fix 63 才做完），不是 P1 的 3 个 bullet。**P2 的「MoA facade」依赖其实也卡在 M1 上**——当前 MoA 连工具都发不出，谈何多后端协议兼容。
+
+---
+
+## 八、P1-2 Micro-compaction 详细分析
+
+> 依据 `../hermes-agent/docs/micro-compaction.md`、`../hermes-agent/agent/context_compressor.py`（`_micro_compact` 等）、`../hermes-agent/tests/agent/test_micro_compaction.py` 逐条比对。数据来源目录名是 `hermes-agent`（原计划标题「hermes-agebt」为笔误，本节引用均以 `hermes-agent` 为准）。
+
+### 0. 结论摘要
+
+micro-compaction = 把一次性全量压缩摊薄成**每 turn 吸收一个 exchange** 的增量压缩。Hermes 已做成完整子系统（~700 行实现 + 900 行测试 + 独立设计文档 `docs/micro-compaction.md`）。
+
+对 intellect-agent 不是"加个 per-turn 循环"这么简单。summarizer 逻辑已具备（serialize/redact/aux model 全在），真正障碍是四个结构性差异：
+
+| # | 障碍 | 严重度 | intellect 现状 |
+|---|---|---|---|
+| 1 | 持久化模型：append-only + session-rotation vs 原位软归档 | 🔴 根本性 | `_flush_messages_to_session_db` 只追加；压缩靠 `end_session("compression")` + 新建子会话；SessionDB **无 `archive_and_compact`** |
+| 2 | summary marker 身份：无 metadata key，纯 content-prefix | 🟠 高 | `_is_context_summary_content` 只认 `SUMMARY_PREFIX` 前缀，无 `COMPRESSED_SUMMARY_METADATA_KEY` / `MICRO_COMPACT_MARKER_KEY` |
+| 3 | summary role 动态选择 | 🟠 高 | 批量 summary 角色动态选（user/assistant/merged-into-tail），micro 需固定 assistant-role |
+| 4 | 无 finalize_turn 汇聚点 | 🟡 中 | ~30 处 `_persist_session` 散落 `conversation_loop.py`，无单一 turn 收尾函数 |
+
+### 1. Hermes 设计本质
+
+要解决的不是"省 token"，而是**把一次大停顿摊成多次小停顿** + **让上下文占用率保持低水位**（而非锯齿上升到阈值）。两条产品性质：
+
+1. 一次 pass 只吸收一个 **exchange**（完整 agent turn：assistant + 其 tool results + 后续 assistant 迭代，到下一个 user 消息）。
+2. **user 消息永不压缩**（最核心性质：assistant 输出是"做了什么"、可无损压缩；user 指令是"意图之源"、不可重构）。
+
+三个保护区：**head**（system prompt + 开场）、**tail**（token 预算内最近消息）、**所有 user 消息**。micro 只在中间动。
+
+它是 **opt-in**（`compression.micro_compact: true`），因为每次 pass 改写已发送历史 = 每 turn 破一次 prompt-cache 前缀（`docs/micro-compaction.md:202-240`）。
+
+### 2. Hermes 实现全貌
+
+入口 `_micro_compact()`（`agent/context_compressor.py:7056`），由 `turn_finalizer.py:405-462` 的 `finalize_turn()` 在每 turn 收尾（`_persist_session` 之前）调用。
+
+| 机制 | 位置 | 要点 |
+|---|---|---|
+| cursor | `_resolve_compact_cursor` `:6744` | 内存 cursor 失效（resume）时从 transcript 扫最后 marker 恢复 |
+| 找 exchange | `_find_one_exchange` `:6793` | 跳过 user + 已有 marker，消费整 turn；splice 边界必须是 user（保证 assistant marker 不产生同角色相邻） |
+| 串行化 | `_serialize_one_exchange` `:6883` | 委托批量路径 `_serialize_for_summary` |
+| rolling summary | `_micro_summarize_one` `:6930` | 单个累积摘要，**merge** 新 exchange 进去，不堆 per-exchange 摘要 |
+| supersede | `_splice_micro_compact_result` `:7353` | 只留最新 marker（累积性使旧 marker 冗余）；双重 containment 门防误删 batch marker |
+| defrag | `_needs_defrag` `:6987` / `_defrag_rolling_summary` `:6992` | rolling summary 超阈值自摘要；shape-neutral（不动 cursor/splice/user） |
+| 失败跳过 | `:7159` | 同 exchange 连败 3 次跳过，防毒 exchange 每 turn 卡死 |
+| DB 同步 | `_sync_micro_compact_to_db` `:7321` | `archive_and_compact` 原子软归档 + 重插，同 session id 原位 |
+| 遥测 | `_emit_micro_compaction_telemetry` `:7253` | content-free JSON，含 `occupancy_pct`；只读缓存阈值，绝不触发 `/models` 探测 |
+| reset | `:8352` | batch `compress()` 成功后清空 rolling summary + cursor |
+
+配置（`config_defaults.py:871-890`）：`micro_compact` / `micro_compact_every_n_turns` / `micro_compact_defrag_threshold_tokens`，默认关。
+
+### 3. intellect 现状对照
+
+**已具备、可直接复用**（批量压缩路径本就是 Hermes 移植物）：
+`_serialize_for_summary`（`:946`，含 `redact_sensitive_text`）、`summary_model`/`call_llm`（`_generate_summary` `:1217`）、`_prune_old_tool_results`（`:754`）、`_find_tail_cut_by_tokens`（`:1745`）、`_align_boundary_forward`（`:1631`）、`_protect_head_size`（`:1641`）、`_strip_summary_prefix`/`_with_summary_prefix`（`:1518/1534`）、token 估算、`_repair_message_sequence`。
+
+**缺失、需新增**：micro 状态机（cursor/rolling_summary/cadence/连败计数/passes 计数）、`_find_one_exchange`、`_build_micro_summary_prompt`、`_splice_micro_compact_result`、`_emit_micro_compaction_telemetry`、配置三项、每 turn 调用钩子。
+
+### 4. 四个根本性移植障碍
+
+**障碍 1 — 持久化模型（最大风险，决定工作量量级）**：Hermes micro 依赖 `archive_and_compact`（**同 session id 下**软归档 active rows + 插入 compacted set + 打 `_DB_PERSISTED_MARKER` 让 append-only flush 跳过）。intellect 是 append-only（`run_agent.py:1564`，`_last_flushed_db_idx` 游标去重）+ session rotation（`conversation_compression.py:500-560`：`end_session(old, "compression")` + 新 `session_id` + `create_session(..., parent_session_id=old)`）。`intellect_state.py` 无 `archive_and_compact`（grep 全仓仅 `kanban_repository.archive_task` 命中）。选项：
+
+- (a) 加 `archive_and_compact` 到 SessionDB——最忠实，但撞上 P0-4 已暴露的墙（`SESSIONDB_USE_RUST_RW=1` 时写走 Rust 单连接，Python 读连接看不到 rusqlite 提交，需 rust-core 第二读连接）。
+- (b) micro-rotation——语义错（每 turn 一个子会话，lineage 爆炸 + title 自动编号爆炸），**不可取**。
+- (c) **最小可行 = 纯内存 splice + 容忍 resume 双载**（Hermes `:7338-7351` 失败降级即如此）。阶段 A 起步，DB 同步留阶段 C。
+
+**障碍 2 — summary marker 身份**：Hermes 的 supersede/defrag/cursor-recovery 全依赖 metadata key——`COMPRESSED_SUMMARY_METADATA_KEY`（通用 marker）、`MICRO_COMPACT_MARKER_KEY`（**区分 micro vs batch**，防止 defrag/supersede 误改 batch marker 持有的额外历史）、`COMPRESSED_SUMMARY_HAS_USER_TURN_KEY`（provenance）。intellect 只有 content-prefix 识别（`_is_context_summary_content` `:1540`）。batch 靠 rotation 避开新旧 marker 共存，micro 一旦原位运行，必须引入 key 体系，否则 resume 恢复和 supersede 都出错。
+
+**障碍 3 — summary role 动态选择**：intellect 批量 summary 角色动态挑（`compress` `:1992-2027`，极端时 merge 进 tail 首条）。Hermes micro marker **恒为 assistant-role**，依赖"exchange 完整、两侧是 user"保证 alternation 合法。必须严格实现 `_find_one_exchange` 的边界约束，否则 `user→user→user` 被 `_repair_message_sequence` 合并、marker 元数据丢失（Hermes 测试 `test_spliced_transcript_survives_repair_message_sequence` 钉死）。
+
+**障碍 4 — 无 finalize_turn 汇聚点**：intellect 正常完成 turn 的落点是 `conversation_loop.py:3747-3756` 的 final-response 分支（`should_compress` + `_persist_session`），但全程 ~30 处 `_persist_session` 散落各 exit path。micro 只需挂 final-response 一处，但建议**抽一个 `_finalize_turn` helper**（micro + persist），顺带归位 P0 批的 `_drop_trailing_empty_response_scaffolding` 等逻辑。
+
+### 5. 推荐落地路径（对齐 P1-2 "最小版本"）
+
+**阶段 A（最小可行 ~1d，纯内存，不碰 DB）**
+1. `ContextCompressor.__init__` 加 micro 状态机字段（`_micro_compact_cursor` / `_micro_compact_rolling_summary` / `_micro_compact_enabled` / `_micro_compact_every_n_turns` / `_micro_compact_defrag_threshold_tokens` / `_micro_compact_consecutive_failures` / `_micro_compact_last_failure_cursor` / `_micro_compact_passes` / `_micro_compact_tokens_saved_total`）。
+2. 移植 `_find_one_exchange` + `_serialize_one_exchange`（委托 `_serialize_for_summary`）+ `_build_micro_summary_prompt` + `_micro_summarize_one`（复用 `summary_model`/`call_llm`，merge prompt 而非结构化 JSON）。
+3. 移植 `_splice_micro_compact_result`（**引入 `COMPRESSED_SUMMARY_METADATA_KEY` + `MICRO_COMPACT_MARKER_KEY`**，assistant-role marker）。
+4. final-response 分支、`_persist_session` 前加调用（`_micro_compact_enabled is True` + `not _persist_disabled` 等 gate）。
+5. `compress()` 成功后 reset micro 状态（Hermes `:8352` 语义）。
+6. 配置三态 + 默认关。
+
+**阶段 B（正确性补全 ~1-1.5d）**
+7. `_resolve_compact_cursor` + `_rolling_summary_from_marker`（resume rehydration）。
+8. defrag（`_needs_defrag`/`_defrag_rolling_summary`），否则 rolling summary 无界增长。
+9. 连败跳过 + 遥测 `_emit_micro_compaction_telemetry`（含 `occupancy_pct`）。
+
+**阶段 C（DB 同步 ~1-2d，依赖 rust-core）**
+10. 加 `archive_and_compact`：RW=0 用 Python 读连接即可；RW=1 需 rust-core 第二读连接（与 P0-4 同根因，一并解）。
+11. `_sync_micro_compact_to_db` + `_flush_scan_cursor_invalidated` 标志（defrag 改 marker 后失效 flush 游标）。
+
+### 6. 风险与权衡
+
+1. **prompt-cache 打破**：intellect 无 Hermes 级 cache 治理，故"每 turn 破 cache"代价可能更低；但后续补 cache 会直接冲突，需在文档显式标注交互。
+2. **每 turn 延迟**：pass 是真实 aux 调用，串行阻塞 turn 末尾。核心经验（`docs/micro-compaction.md:242-283`）：compression model 用**小的非 reasoning instruct 模型**（reasoning 纯浪费）。`summary_model` 已支持独立配置，沿用即可。
+3. **首 pass 负收益**：marker scaffolding ~400-450 token，首 pass 常 `tokens_delta > 0`（测试 `test_first_pass_costs_marker_overhead_then_pays_it_back`）。看会话轨迹，不判单条。
+4. **user 消息永不压缩 → 有下限**：常年贴 10-20K prompt 则 middle 下不去，by design（`docs/micro-compaction.md:63-85`）。
+5. **与 batch 交互**：micro 原位 + batch rotation，marker 共存时 supersede 必须靠 `MICRO_COMPACT_MARKER_KEY` 隔离（障碍 2 必做），否则吞 batch marker 额外历史。
+
+### 7. 验收标准
+
+- [ ] 默认关：`micro_compact` unset/false 时 `_micro_compact()` no-op，行为与现在完全一致
+- [ ] 一次 pass 只吸收一个 exchange；assistant + tool results 整组被单个 assistant-role marker 替换
+- [ ] user 消息全 session verbatim 存活（含 defrag 路径）
+- [ ] head / tail 保护区不动
+- [ ] cursor 连续推进；resume 后从 transcript 恢复、不重复摘要
+- [ ] 毒 exchange 连败 3 次跳过，不每 turn 卡死
+- [ ] defrag 只重写 summary 文本，shape-neutral（不动 cursor/splice/user）
+- [ ] 遥测 content-free，`occupancy_pct` 只读缓存阈值
+- [ ] 无 DB 绑定时 splice 不破坏 `_db_persisted` stamp（对照 `test_splice_preserves_db_persisted_stamps`）
+- [ ] batch `compress()` 成功后 reset micro 状态
