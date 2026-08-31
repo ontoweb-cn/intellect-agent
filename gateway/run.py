@@ -9497,7 +9497,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
                     break  # Process is gone
 
-                time.sleep(0.5)
+                await asyncio.sleep(0.5)
 
             else:
 
@@ -9515,7 +9515,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
                     terminate_pid(existing_pid, force=True)
 
-                    time.sleep(0.5)
+                    await asyncio.sleep(0.5)
 
                 except (ProcessLookupError, PermissionError, OSError):
 

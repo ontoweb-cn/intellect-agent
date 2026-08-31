@@ -213,8 +213,8 @@ def format_voice_record_key_for_status(raw: Any) -> str:
     return prefix + key[0].upper() + key[1:]
 
 
-from tools.voice_mode import (
 from agent.safe_print import safe_print
+from tools.voice_mode import (
     create_audio_recorder,
     is_whisper_hallucination,
     play_audio_file,

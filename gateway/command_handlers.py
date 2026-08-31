@@ -3651,7 +3651,7 @@ class GatewayCommandHandlers:
                         f.write(str(rc))
                     """
                 ).strip()
-                subprocess.Popen(
+                subprocess.Popen(  # noqa: ASYNC220 — detached update watcher (non-blocking fork/exec)
                     [
                         sys.executable, "-c", helper,
                         str(output_path), str(exit_code_path),
@@ -3675,7 +3675,7 @@ class GatewayCommandHandlers:
                 setsid_bin = shutil.which("setsid")
                 if setsid_bin:
                     # Preferred: setsid creates a new session, fully detached
-                    subprocess.Popen(
+                    subprocess.Popen(  # noqa: ASYNC220 — detached update watcher (non-blocking fork/exec)
                         [setsid_bin, "bash", "-c", update_cmd],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
@@ -3683,7 +3683,7 @@ class GatewayCommandHandlers:
                     )
                 else:
                     # Fallback: start_new_session=True calls os.setsid() in child
-                    subprocess.Popen(
+                    subprocess.Popen(  # noqa: ASYNC220 — detached update watcher (non-blocking fork/exec)
                         ["bash", "-c", update_cmd],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,

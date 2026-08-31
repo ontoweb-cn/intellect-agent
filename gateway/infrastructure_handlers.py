@@ -1091,7 +1091,7 @@ class GatewayInfrastructureHandlers:
                 )
                 """
             ).strip()
-            subprocess.Popen(
+            subprocess.Popen(  # noqa: ASYNC220 — detached restart watcher (non-blocking fork/exec)
                 [sys.executable, "-c", watcher, str(current_pid), *cmd_argv],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -1106,14 +1106,14 @@ class GatewayInfrastructureHandlers:
         )
         setsid_bin = shutil.which("setsid")
         if setsid_bin:
-            subprocess.Popen(
+            subprocess.Popen(  # noqa: ASYNC220 — detached restart watcher (non-blocking fork/exec)
                 [setsid_bin, "bash", "-lc", shell_cmd],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
         else:
-            subprocess.Popen(
+            subprocess.Popen(  # noqa: ASYNC220 — detached restart watcher (non-blocking fork/exec)
                 ["bash", "-lc", shell_cmd],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

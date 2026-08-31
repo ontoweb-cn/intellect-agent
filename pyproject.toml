@@ -318,6 +318,10 @@ preview = true  # required for PLW1514 (unspecified-encoding) — preview rule
 select = [
     "PLW1514",  # unspecified-encoding: enforce explicit encoding on open()
     "F",         # PyFlakes: unused imports, undefined names, redefinitions
+    "ASYNC210",  # blocking HTTP call in async def
+    "ASYNC220",  # blocking subprocess/Popen in async def
+    "ASYNC221",  # blocking subprocess wait in async def
+    "ASYNC251",  # time.sleep in async def
 ]
 
 [tool.ruff.lint.per-file-ignores]
