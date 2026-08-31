@@ -425,3 +425,221 @@ class TestReferenceMessages:
         assert msgs[0]["role"] == "system"
         assert msgs[0]["content"] == _REFERENCE_SYSTEM_PROMPT
         assert msgs[1] == {"role": "user", "content": "hi"}
+
+
+class TestMoaToolCalling:
+    """M1 — aggregator tool-call passthrough."""
+
+    _preset = {
+        "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+        "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+    }
+
+    def test_aggregator_receives_tools_and_returns_tool_calls(self):
+        from agent.moa_loop import MoaRunner
+
+        runner = MoaRunner(self._preset)
+        messages = [{"role": "user", "content": "read x.py"}]
+        tool_calls = [{"id": "c1", "type": "function",
+                       "function": {"name": "read_file", "arguments": '{"path":"x.py"}'}}]
+
+        class _Msg:
+            content = ""
+
+        _Msg.tool_calls = tool_calls
+
+        class _Choice:
+            message = _Msg()
+
+        class _Raw:
+            choices = [_Choice()]
+
+        captured = {}
+        calls = 0
+
+        def _mock(messages=None, provider=None, model=None, tools=None, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:  # the single reference
+                return {"content": "advice"}
+            captured["tools"] = tools  # aggregator call
+            return _Raw()
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await runner.run(
+                    messages,
+                    tools=[{"type": "function", "function": {"name": "read_file"}}],
+                )
+
+        response = asyncio.run(_run())
+        assert captured["tools"] == [{"type": "function", "function": {"name": "read_file"}}]
+        assert response.choices[0].message.tool_calls == tool_calls
+
+    def test_extract_tool_calls_dict_and_raw(self):
+        from agent.moa_loop import _extract_tool_calls
+        assert _extract_tool_calls({"content": "x", "tool_calls": ["a"]}) == ["a"]
+        assert _extract_tool_calls({"content": "x"}) is None
+
+        class _Msg:
+            tool_calls = ["raw"]
+
+        class _Choice:
+            message = _Msg()
+
+        class _Raw:
+            choices = [_Choice()]
+
+        assert _extract_tool_calls(_Raw()) == ["raw"]
+
+    def test_transport_normalize_passes_tool_calls(self):
+        from agent.transports.moa import MoaTransport
+
+        class _Msg:
+            content = ""
+            tool_calls = ["tc"]
+
+        class _Choice:
+            message = _Msg()
+
+        class _Resp:
+            choices = [_Choice()]
+            _moa_total_ms = 0
+            _moa_ref_results = []
+
+        out = MoaTransport().normalize_response(_Resp())
+        assert out.tool_calls == ["tc"]
+        assert out.finish_reason == "tool_calls"
+
+
+class TestMoaCostAndTrim:
+    """M5 — cost accounting + context trimming + fault markers."""
+
+    def test_extract_usage_dict_and_raw(self):
+        from agent.moa_loop import _extract_usage
+        assert _extract_usage({"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}) == {
+            "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        assert _extract_usage({"content": "x"}) == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+        class _Usage:
+            prompt_tokens = 20
+            completion_tokens = 8
+            total_tokens = 28
+
+        class _Raw:
+            usage = _Usage()
+
+        assert _extract_usage(_Raw()) == {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28}
+
+    def test_trim_drops_oldest_pairs_and_keeps_tail(self):
+        from agent.moa_loop import _trim_reference_messages
+        big = [
+            {"role": "user", "content": "a" * 4000},
+            {"role": "assistant", "content": "b" * 4000},
+            {"role": "user", "content": "c" * 4000},
+            {"role": "assistant", "content": "d" * 4000},
+            {"role": "user", "content": "tail"},
+        ]
+        trimmed = _trim_reference_messages(big, max_tokens=2000)
+        assert len(trimmed) < len(big)
+        assert trimmed[-1]["role"] == "user"
+        assert trimmed[-1]["content"] == "tail"
+        roles = [m["role"] for m in trimmed]
+        assert all(roles[i] != roles[i + 1] for i in range(len(roles) - 1))
+
+    def test_trim_noop_when_fits(self):
+        from agent.moa_loop import _trim_reference_messages
+        small = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}]
+        assert _trim_reference_messages(small) == small
+
+    def test_aggregator_surfaces_failed_refs(self):
+        from agent.moa_loop import MoaRunner
+        runner = MoaRunner({"references": [], "aggregator": {}})
+        msgs = runner._build_aggregator_messages(
+            [{"role": "user", "content": "q"}],
+            [
+                {"provider": "anthropic", "model": "claude", "success": True, "content": "ok"},
+                {"provider": "openai", "model": "gpt", "success": False, "failed_label": "openai/gpt"},
+            ],
+        )
+        guidance = msgs[-1]["content"]
+        assert "openai/gpt" in guidance
+        assert "unavailable" in guidance
+
+    def test_aggregator_includes_conversation_and_guidance_at_end(self):
+        from agent.moa_loop import MoaRunner
+        runner = MoaRunner({"references": [], "aggregator": {}})
+        msgs = runner._build_aggregator_messages(
+            [
+                {"role": "system", "content": "MAIN SYSTEM PROMPT"},
+                {"role": "user", "content": "read x.py"},
+                {"role": "assistant", "content": "", "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}},
+                ]},
+                {"role": "tool", "tool_call_id": "c1", "content": "FILE CONTENT"},
+            ],
+            [{"provider": "anthropic", "model": "claude", "success": True, "content": "advice"}],
+        )
+        # Main system prompt is dropped; the aggregator has its own.
+        assert "MAIN SYSTEM PROMPT" not in msgs[0]["content"]
+        # The tool result is preserved in the conversation.
+        assert any("FILE CONTENT" in m.get("content", "") for m in msgs)
+        # Guidance is appended at the end.
+        assert "advice" in msgs[-1]["content"]
+
+
+class TestMoaCadence:
+    """M4 — user_turn fan-out caching."""
+
+    _preset = {
+        "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+        "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+    }
+
+    def test_fanout_reused_across_tool_iterations(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        messages = [{"role": "user", "content": "do it"}]
+
+        call_count = 0
+
+        def _mock(messages=None, provider=None, model=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"content": "answer"}
+
+        async def _run():
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await MoaRunner(self._preset, agent=agent).run(messages)
+
+        r1 = asyncio.run(_run())
+        assert call_count == 2  # 1 reference + 1 aggregator
+
+        r2 = asyncio.run(_run())
+        assert call_count == 3  # +1 aggregator only (fan-out reused)
+        assert r2.choices[0].message.content == r1.choices[0].message.content
+
+    def test_turn_signature_stable(self):
+        from agent.moa_loop import _turn_signature
+        m1 = [{"role": "user", "content": "hello"}]
+        m2 = [{"role": "user", "content": "hello"}]
+        m3 = [{"role": "user", "content": "world"}]
+        assert _turn_signature(m1) == _turn_signature(m2)
+        assert _turn_signature(m1) != _turn_signature(m3)
+
+    def test_turn_signature_ignores_tool_results(self):
+        from agent.moa_loop import _turn_signature
+        base = [{"role": "user", "content": "do it"}]
+        with_tool = [
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}},
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": "result"},
+        ]
+        # Signature is stable across tool iterations (tool results excluded).
+        assert _turn_signature(base) == _turn_signature(with_tool)

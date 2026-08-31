@@ -10,6 +10,7 @@ reference responses.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 from typing import Any, Optional
@@ -29,12 +30,124 @@ MIN_SUCCESSFUL_REFERENCES = 1
 
 
 def _extract_content(result: Any) -> str:
-    """Extract text content from a call_llm result, handling both dict and str."""
+    """Extract text content from a call_llm result (dict, str, or raw response)."""
     if isinstance(result, dict):
         return str(result.get("content") or result.get("text") or "")
     if isinstance(result, str):
         return result
+    # Raw OpenAI-style response object.
+    try:
+        choices = getattr(result, "choices", None)
+        if choices:
+            msg = getattr(choices[0], "message", None)
+            return str(getattr(msg, "content", "") or "")
+    except (IndexError, TypeError, AttributeError):
+        pass
     return ""
+
+
+def _extract_tool_calls(result: Any):
+    """Extract tool_calls from a call_llm result (dict or raw response)."""
+    if isinstance(result, dict):
+        return result.get("tool_calls") or None
+    try:
+        choices = getattr(result, "choices", None)
+        if choices:
+            msg = getattr(choices[0], "message", None)
+            return getattr(msg, "tool_calls", None) or None
+    except (IndexError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def _extract_usage(result: Any) -> dict:
+    """Best-effort token usage from a call_llm result (dict or raw response).
+
+    Returns ``{prompt_tokens, completion_tokens, total_tokens}``, all-zero when
+    the backend reported no usage.
+    """
+    usage = None
+    if isinstance(result, dict):
+        usage = result.get("usage")
+    else:
+        try:
+            usage = getattr(result, "usage", None)
+        except Exception:
+            usage = None
+    if usage is None:
+        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    def _tok(obj, *keys):
+        for k in keys:
+            v = obj.get(k) if isinstance(obj, dict) else getattr(obj, k, None)
+            if v is not None:
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    return 0
+        return 0
+
+    prompt = _tok(usage, "prompt_tokens", "input_tokens")
+    completion = _tok(usage, "completion_tokens", "output_tokens")
+    total = _tok(usage, "total_tokens") or (prompt + completion)
+    return {"prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": total}
+
+
+# Conservative default context window for reference models whose window we can't
+# resolve (per-model resolution is a future refinement).  Output reserve keeps
+# room for the advisor's own reply.
+_REFERENCE_DEFAULT_CONTEXT = 128_000
+_REFERENCE_OUTPUT_RESERVE = 8192
+
+
+def _trim_reference_messages(
+    messages: list[dict[str, str]], max_tokens: int | None = None
+) -> list[dict[str, str]]:
+    """Drop the oldest (user, assistant) pairs from the front to fit a reference
+    model's context budget.  No-op when the view already fits."""
+    if not messages:
+        return messages
+    budget = (max_tokens or _REFERENCE_DEFAULT_CONTEXT) - _REFERENCE_OUTPUT_RESERVE
+    budget = max(budget, 1024)  # floor: always allow at least ~1k tokens
+    try:
+        from agent.model_metadata import estimate_messages_tokens_rough
+        if estimate_messages_tokens_rough(messages) <= budget:
+            return messages
+    except Exception:
+        return messages
+
+    trimmed = list(messages)
+    while len(trimmed) > 2:
+        try:
+            if estimate_messages_tokens_rough(trimmed) <= budget:
+                break
+        except Exception:
+            break
+        # Drop the oldest user + its assistant partner (preserve user-first +
+        # strict alternation + the user-ending tail).
+        trimmed.pop(0)
+        if trimmed and trimmed[0]["role"] == "assistant":
+            trimmed.pop(0)
+    return trimmed
+
+
+def _turn_signature(messages: list) -> str:
+    """Stable per-user-turn signature for fan-out cadence caching.
+
+    Hashes the conversation prefix up to (and including) the last user message —
+    the Hermes "turn_prefix" — so two turns sharing the same final text but with
+    different prior history do not collide.  Tool results appended after the last
+    user message are excluded, keeping the signature stable across the tool
+    iterations of a single turn.
+    """
+    import json
+    last_user_idx = -1
+    for i, m in enumerate(messages):
+        if isinstance(m, dict) and m.get("role") == "user":
+            last_user_idx = i
+    prefix = messages[:last_user_idx + 1] if last_user_idx >= 0 else messages
+    payload = json.dumps(prefix, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8", "replace")).hexdigest()
 
 
 # ── Advisory view (M2) ──────────────────────────────────────────────────────
@@ -189,12 +302,14 @@ class MoaRunner:
     ) -> dict[str, Any]:
         """Call one reference model with the denoised advisory view.
 
-        Returns ``{model, provider, content, latency_ms, success}``.
+        Returns ``{model, provider, content, latency_ms, success, usage}`` (plus
+        ``failed_label``/``error`` on failure).
         """
         t0 = time.monotonic()
         provider = ref.get("provider", "")
         model = ref.get("model", "")
-        messages = [{"role": "system", "content": _REFERENCE_SYSTEM_PROMPT}, *ref_messages]
+        _view = _trim_reference_messages(ref_messages)
+        messages = [{"role": "system", "content": _REFERENCE_SYSTEM_PROMPT}, *_view]
         try:
             result = await asyncio.to_thread(
                 call_llm,
@@ -212,6 +327,7 @@ class MoaRunner:
                 "content": content,
                 "latency_ms": round(latency, 1),
                 "success": bool(content),
+                "usage": _extract_usage(result),
             }
         except Exception as exc:
             latency = (time.monotonic() - t0) * 1000
@@ -222,19 +338,27 @@ class MoaRunner:
                 "content": "",
                 "latency_ms": round(latency, 1),
                 "success": False,
+                "failed_label": f"{provider}/{model}",
                 "error": str(exc),
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             }
 
     def _build_aggregator_messages(
-        self, user_message: str, ref_results: list[dict[str, Any]]
+        self, messages: list[dict[str, Any]], ref_results: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Build the aggregator prompt: system + per-ref context + user."""
+        """Build the aggregator prompt: system + conversation + guidance-at-end.
+
+        The aggregator is the acting agent — it sees its own system prompt, the
+        full conversation (user turns + its prior tool calls/results, minus the
+        main agent's system prompt), and the reference guidance appended at the
+        END (so the conversation prefix stays stable across tool iterations).
+        """
         system = (
-            "You are an expert synthesizer. Below are responses from multiple "
-            "AI models to the same user question. Synthesize a comprehensive, "
-            "accurate answer that combines the best insights from all responses. "
-            "Resolve any contradictions. Do not mention the models by name — "
-            "just produce the best possible answer."
+            "You are the acting agent in a Mixture-of-Agents (MoA) pipeline. "
+            "Complete the user's task using the tools available to you. "
+            "Reference-model advice is appended at the end of the conversation — "
+            "use it to inform your actions, but do the work yourself. Do not "
+            "mention the reference models by name."
         )
         ref_blocks = []
         for i, rr in enumerate(ref_results, 1):
@@ -243,10 +367,35 @@ class MoaRunner:
                     f"--- Reference Model {i} ---\n{rr['content']}\n"
                 )
         context = "\n".join(ref_blocks) if ref_blocks else "(no reference responses)"
-        return [
-            {"role": "system", "content": system},
-            {"role": "user", "content": f"Reference responses:\n\n{context}\n\nUser question: {user_message}\n\nSynthesize the best answer:"},
+        # Surface unavailable advisors (loud policy) so the aggregator knows
+        # which reference models contributed nothing.
+        failed = [
+            rr.get("failed_label") or f"{rr.get('provider')}/{rr.get('model')}"
+            for rr in ref_results if not rr.get("success")
         ]
+        if failed:
+            context += (
+                f"\n\nNote: the following reference models were unavailable and "
+                f"provided no input: {', '.join(failed)}."
+            )
+
+        conversation = [
+            m for m in messages
+            if isinstance(m, dict) and m.get("role") != "system"
+        ]
+        guidance = f"Reference responses:\n\n{context}\n\nSynthesize the best answer:"
+
+        out = [{"role": "system", "content": system}, *conversation]
+        if out and out[-1]["role"] == "user":
+            # Merge guidance into the trailing user turn to avoid consecutive
+            # same-role messages (strict providers reject them).
+            out[-1] = {
+                "role": "user",
+                "content": f"{out[-1].get('content', '')}\n\n{guidance}",
+            }
+        else:
+            out.append({"role": "user", "content": guidance})
+        return out
 
     # ── main entry ───────────────────────────────────────────────────────
 
@@ -263,23 +412,31 @@ class MoaRunner:
         if self._interrupted():
             raise RuntimeError("MoA interrupted before reference fan-out")
 
-        # Extract the last user message as the prompt for the aggregator.
-        user_message = ""
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                user_message = str(m.get("content", ""))
-                break
-        if not user_message:
-            user_message = str(messages[-1].get("content", "")) if messages else ""
-
         # Build the denoised advisory view once for all references — advisors see
         # a clean read-only transcript (no system boilerplate, no tool-role
         # messages), not just the last user message.
         ref_messages = _reference_messages(messages)
 
-        # Phase 1 — fan out to reference models
-        tasks = [self._run_single_reference(r, ref_messages) for r in self._references]
-        ref_results = await asyncio.gather(*tasks)
+        # Phase 1 — fan out to reference models (user_turn cadence: reuse the
+        # previous turn's results across tool iterations of the same user turn,
+        # saving N reference calls each subsequent iteration).  The cache lives
+        # on the agent so it persists across the fresh MoaRunner created per API
+        # call.
+        signature = _turn_signature(messages)
+        _cache = getattr(self._agent, "_moa_fanout_cache", None) if self._agent is not None else None
+        _fanout_cached = False
+        if (
+            _cache is not None
+            and _cache.get("signature") == signature
+            and _cache.get("ref_results") is not None
+        ):
+            ref_results = _cache["ref_results"]
+            _fanout_cached = True
+        else:
+            tasks = [self._run_single_reference(r, ref_messages) for r in self._references]
+            ref_results = await asyncio.gather(*tasks)
+            if self._agent is not None:
+                self._agent._moa_fanout_cache = {"signature": signature, "ref_results": ref_results}
 
         successful = [r for r in ref_results if r.get("success")]
         if len(successful) < MIN_SUCCESSFUL_REFERENCES:
@@ -290,6 +447,10 @@ class MoaRunner:
 
         agg_provider = self._aggregator.get("provider", "")
         agg_model = self._aggregator.get("model", "")
+        agg_tool_calls = None
+        agg_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        # Reference calls actually made this turn (0 when the fan-out was reused).
+        _ref_calls = 0 if _fanout_cached else len(ref_results)
 
         # Phase 2 — aggregator (skipped when the user interrupted during the
         # fan-out: its +1 call is wasted on a turn that's being abandoned).
@@ -299,9 +460,12 @@ class MoaRunner:
                 "[Interrupted — showing best reference response]\n\n"
                 f"{best['content']}"
             )
-            api_calls = len(ref_results)  # N references, no aggregator
+            api_calls = _ref_calls  # references actually called, no aggregator
         else:
-            agg_messages = self._build_aggregator_messages(user_message, successful)
+            agg_messages = self._build_aggregator_messages(messages, ref_results)
+            # The aggregator is the action model — forward the full tool schema
+            # so it can emit tool_calls, which the normal agent loop executes.
+            tools = kwargs.get("tools")
             try:
                 agg_result = await asyncio.to_thread(
                     call_llm,
@@ -309,15 +473,18 @@ class MoaRunner:
                     provider=agg_provider,
                     model=agg_model,
                     temperature=self._agg_temp,
+                    tools=tools,
                     task="moa_aggregator",
                 )
                 content = _extract_content(agg_result)
+                agg_tool_calls = _extract_tool_calls(agg_result)
+                agg_usage = _extract_usage(agg_result)
             except Exception as exc:
                 logger.warning("moa_loop: aggregator failed: %s", exc)
                 # Fall back to best reference response
                 best = successful[0]
                 content = f"[Aggregator unavailable — showing best reference response]\n\n{best['content']}"
-            api_calls = len(ref_results) + 1  # N references + 1 aggregator
+            api_calls = _ref_calls + 1  # references actually called + 1 aggregator
 
         total_ms = round((time.monotonic() - t0) * 1000, 1)
 
@@ -336,8 +503,23 @@ class MoaRunner:
             except Exception:
                 logger.debug("moa_loop: trace save failed", exc_info=True)
 
+        # Aggregate token usage across all slots (references + aggregator) so the
+        # MoA turn's token accounting is visible instead of all-zero.  When the
+        # fan-out was reused from the cache, the references made no calls this
+        # turn, so their (already-counted) usage must NOT be re-summed.
+        total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        if not _fanout_cached:
+            for rr in ref_results:
+                u = rr.get("usage") or {}
+                total_usage["prompt_tokens"] += u.get("prompt_tokens", 0)
+                total_usage["completion_tokens"] += u.get("completion_tokens", 0)
+                total_usage["total_tokens"] += u.get("total_tokens", 0)
+        total_usage["prompt_tokens"] += agg_usage.get("prompt_tokens", 0)
+        total_usage["completion_tokens"] += agg_usage.get("completion_tokens", 0)
+        total_usage["total_tokens"] += agg_usage.get("total_tokens", 0)
+
         # Build an OpenAI-response-shaped result
-        return _FakeResponse(content, ref_results, total_ms, api_calls)
+        return _FakeResponse(content, ref_results, total_ms, api_calls, tool_calls=agg_tool_calls, usage=total_usage)
 
 
 class _ChatNamespace:
@@ -359,25 +541,29 @@ class _CompletionsNamespace:
 class _FakeResponse:
     """A minimal object that the response normalizer can read."""
 
-    def __init__(self, content: str, ref_results: list, total_ms: float, api_calls: int = 1):
-        self.choices = [_FakeChoice(content)]
+    def __init__(self, content: str, ref_results: list, total_ms: float, api_calls: int = 1, tool_calls=None, usage=None):
+        self.choices = [_FakeChoice(content, tool_calls)]
         self._moa_ref_results = ref_results
         self._moa_total_ms = total_ms
         self._moa_api_calls = api_calls
-        # Minimal usage info so the token tracker sees N+1 calls
+        # Aggregated token usage across all slots so the token tracker sees the
+        # real MoA turn cost instead of all-zero.
+        usage = usage or {}
         self.usage = type("_Usage", (), {
-            "total_tokens": 0,
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
+            "total_tokens": usage.get("total_tokens", 0),
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "input_tokens": usage.get("prompt_tokens", 0),
+            "output_tokens": usage.get("completion_tokens", 0),
         })()
 
 
 class _FakeChoice:
-    def __init__(self, content: str):
-        self.message = _FakeMessage(content)
+    def __init__(self, content: str, tool_calls=None):
+        self.message = _FakeMessage(content, tool_calls)
 
 
 class _FakeMessage:
-    def __init__(self, content: str):
+    def __init__(self, content: str, tool_calls=None):
         self.content = content
-        self.tool_calls = None
+        self.tool_calls = tool_calls

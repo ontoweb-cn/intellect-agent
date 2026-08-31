@@ -52,6 +52,7 @@ class MoaTransport(ProviderTransport):
         """Normalize a MoA response into the standard form."""
         content = ""
         finish_reason = "stop"
+        tool_calls = []
 
         try:
             choices = getattr(response, "choices", [])
@@ -59,14 +60,15 @@ class MoaTransport(ProviderTransport):
                 msg = getattr(choices[0], "message", None)
                 if msg:
                     content = getattr(msg, "content", "") or ""
-                    if getattr(msg, "tool_calls", None):
+                    tool_calls = getattr(msg, "tool_calls", None) or []
+                    if tool_calls:
                         finish_reason = "tool_calls"
         except Exception:
             content = str(response) if response else ""
 
         return NormalizedResponse(
             content=content,
-            tool_calls=[],
+            tool_calls=tool_calls,
             finish_reason=finish_reason,
             reasoning="",
             usage=None,
