@@ -1879,22 +1879,35 @@ DEFAULT_CONFIG = {
     # openclaw-tool-search-report PDF in this PR for the rationale.
     "tools": {
         "tool_search": {
-            # "auto" (default) — activate only when deferrable tool schemas
-            #   exceed ``threshold_pct`` of the active model's context length,
-            #   so small toolsets pay no overhead.
+            # "auto" (default) — alias of "on" (常开): activate whenever there
+            #   is at least one deferrable (MCP / non-core plugin) tool.
             # "on"  — always activate when there is at least one deferrable
             #   tool. Use when you have many MCP servers and want maximum
             #   token reduction unconditionally.
             # "off" — disable entirely. Tools-array assembly is a pass-through.
             "enabled": "auto",
-            # Percentage of context length at which "auto" mode kicks in.
-            # 10 matches the Claude Code default. Range 0..100.
-            "threshold_pct": 10,
+            # Listing budget percent: how much of the active model's context
+            # window the tiered catalog listing may consume (capped by
+            # listing_max_tokens). No longer gates activation. Range 0..100.
+            # Default 5.
+            "threshold_pct": 5,
+            # Catalog listing: when enabled, a grouped name + short-description
+            # manifest of every deferred tool is embedded in the tool_search
+            # bridge description so capabilities stay discoverable while full
+            # schemas stay deferred. "auto" = include when it fits the listing
+            # budget (degrades full → names → mixed → groups → none); "on" =
+            # same rendering, explicit intent; "off" = always bare bridge.
+            "listing": "auto",
+            # Absolute cap on the embedded catalog listing regardless of
+            # context size. Effective budget =
+            # min(listing_max_tokens, threshold_pct% of context).
+            "listing_max_tokens": 4000,
             # When the model calls tool_search without a ``limit`` argument,
-            # how many hits to return. Range 1..max_search_limit.
+            # how many hits to return per query. Range 1..max_search_limit.
             "search_default_limit": 5,
-            # Hard upper bound the model can request via ``limit``. Range 1..50.
-            "max_search_limit": 20,
+            # Hard upper bound the model can request per query via ``limit``.
+            # Range 1..50. Default 25.
+            "max_search_limit": 25,
         },
     },
 

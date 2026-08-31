@@ -206,6 +206,14 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                     if _underlying in _tool_search_scoped_names(agent):
                         function_name = _underlying
                         function_args = _underlying_args
+                        # Blind-call probe: a deferred tool's schema is
+                        # invisible until tool_describe, so models routinely
+                        # omit required args. Return the schema instead of
+                        # dispatching into an opaque downstream failure
+                        # (nearai/ironclaw#5149).
+                        _probe_err = _ts.validate_deferred_call_args(_underlying, _underlying_args)
+                        if _probe_err is not None:
+                            _ts_scope_block = _probe_err
                     else:
                         _ts_scope_block = json.dumps({
                             "error": (
@@ -614,6 +622,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
         # rationale, including the scope gate (the unwrap dispatches the
         # underlying tool directly, so session toolset scope is enforced here).
         _ts_scope_block: Optional[str] = None
+        _ts_probe_result: Optional[str] = None
         try:
             from tools import tool_search as _ts
             if function_name == _ts.TOOL_CALL_NAME:
@@ -622,6 +631,10 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     if _underlying in _tool_search_scoped_names(agent):
                         function_name = _underlying
                         function_args = _underlying_args
+                        # Blind-call probe — matches the concurrent path.
+                        _probe_err = _ts.validate_deferred_call_args(_underlying, _underlying_args)
+                        if _probe_err is not None:
+                            _ts_probe_result = _probe_err
                     else:
                         _ts_scope_block = (
                             f"'{_underlying}' is not available in this session. "
@@ -649,7 +662,11 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             if not guardrail_decision.allows_execution:
                 _guardrail_block_decision = guardrail_decision
 
-        _execution_blocked = _block_msg is not None or _guardrail_block_decision is not None
+        _execution_blocked = (
+            _block_msg is not None
+            or _guardrail_block_decision is not None
+            or _ts_probe_result is not None
+        )
 
         if _execution_blocked:
             # Tool blocked by plugin or guardrail policy — skip counters,
@@ -725,7 +742,12 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
 
         tool_start_time = time.time()
 
-        if _block_msg is not None:
+        if _ts_probe_result is not None:
+            # Blind-call probe: return the schema verbatim (already a JSON
+            # tool result) instead of executing with missing required args.
+            function_result = _ts_probe_result
+            tool_duration = 0.0
+        elif _block_msg is not None:
             # Tool blocked by plugin policy — return error without executing.
             function_result = json.dumps({"error": _block_msg}, ensure_ascii=False)
             tool_duration = 0.0

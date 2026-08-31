@@ -492,10 +492,11 @@ def _compute_tool_definitions(
 
     # ── Tool Search (progressive disclosure) ────────────────────────────
     # Conditionally replace MCP + plugin (non-core) tools with three bridge
-    # tools (tool_search / tool_describe / tool_call) when the deferrable
-    # surface exceeds the configured threshold (default 10% of context
-    # window). Core Intellect tools (toolsets._INTELLECT_CORE_TOOLS) are NEVER
-    # deferred. See tools/tool_search.py for full design notes.
+    # tools (tool_search / tool_describe / tool_call). Activation is
+    # always-on ("常开"): any deferrable tool turns the bridge on;
+    # ``enabled: auto`` is an alias of ``on``. Core Intellect tools
+    # (toolsets._INTELLECT_CORE_TOOLS) are NEVER deferred.
+    # See tools/tool_search.py for full design notes.
     #
     # This is deliberately the last step before returning — sanitization
     # has already normalized schemas, and the assembly is idempotent in
@@ -514,7 +515,7 @@ def _compute_tool_definitions(
                 print(
                     f"🔎 Tool Search: {assembly.deferred_count} MCP/plugin tools deferred "
                     f"(~{assembly.deferred_tokens} tokens) behind tool_search/describe/call. "
-                    f"Threshold ~{assembly.threshold_tokens} tokens."
+                    f"Listing budget ~{assembly.listing_budget} tokens."
                 )
             filtered_tools = assembly.tool_defs
     except Exception as e:  # pragma: no cover — never break tool loading
@@ -898,6 +899,13 @@ def handle_function_call(
                         "Use tool_search to find tools you can call."
                     ),
                 }, ensure_ascii=False)
+            # Blind-call probe: a deferred tool's schema is invisible until
+            # tool_describe, so models routinely omit required args. Return
+            # the schema instead of dispatching into an opaque downstream
+            # failure (nearai/ironclaw#5149).
+            _probe_err = _ts_mod.validate_deferred_call_args(underlying_name, underlying_args)
+            if _probe_err is not None:
+                return _probe_err
             # Recurse with the underlying tool. All hooks fire against the
             # real tool name. The bridge is invisible to hooks by design.
             return handle_function_call(
