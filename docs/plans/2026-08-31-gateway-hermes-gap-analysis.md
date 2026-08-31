@@ -73,13 +73,13 @@
 **P0-3 可靠投递账本（主题 D）**
 - **问题**：最终 agent 回复经 `await adapter.send(...)` 一次性发送，finalize 与平台 ACK 之间崩溃 → 回复无痕丢失（token 已烧）。
 - **动作**：新增 `gateway/delivery_ledger.py`，**接线目标不是 `gateway/delivery.py`**（那是 cron 输出的 `DeliveryRouter`，另一条路径），而是 `run.py` 的最终回复 `adapter.send(...)` 站点 + `stream_consumer.py` finalize：复用 `state.db`（`get_intellect_home()` / `state.db`，`intellect_constants.py:43`）+ 已有 WAL 写重试；三条检查点 `record_obligation` / `mark_attempting` / `mark_delivered|failed`；启动 `sweep_recoverable`（owner pid+进程启动时间判死 + `deliverable_platforms` 限定避免烧预算）；reconnect 后 `sweep_failed_for_runtime` 只认领 allowlist 瞬时错误；`attempting/failed` 重投带 `♻️ Recovered reply` 可见标记（诚实 at-least-once，绝不静默重复）；attempts cap + stale 兜底 → `abandoned`。所有调用 try/except，账本失败**绝不阻塞真实发送**。
-- **评审标注（本节最关键的评审修正）**：初稿把问题锚定在 `delivery.py:195 deliver()`，**有误**——那是 cron 输出路由。Hermes `delivery_ledger` 包裹的是「最终回复 → 平台发送」路径，两者是不同的 delivery 域。已核实最终回复发送点为 `run.py:3689/3709/5849/6221/7805` 等 `await adapter.send(...)`。
+- **评审标注（本节最关键的评审修正，二轮更正）**：初稿把问题锚定在 `delivery.py:195 deliver()`，**有误**——那是 cron 输出路由。二轮深挖又发现：`run.py:3689/3709/5849/6221/7805` 等 `adapter.send()` 也**不是最终回复**（全是 pairing/notice/hygiene/footer），最终回复走两条互斥路径——**流式**：`stream_consumer.py` `_send_or_edit`(1115)/`_send_fallback_final`(743)；**非流式**：`run.py:7821` return response → adapter 消息处理器包装器（`run.py:2384`）发送。账本接线目标应是这三处。
 
 ### P1 —— 可观测 + 开库恢复 + 断连重放（第二批）
 
 **P1-1 SessionDB 开库恢复（主题 G）**
-- **动作**：新增 `gateway/session_db_recovery.py`：`RecoverableHandleCache` 单飞 + 指数退避（1s→60s）打开失败句柄；把 `ok/retrying/unavailable` 发布进 `write_runtime_status`（`status.py:518`）。
-- **评审标注**：与 agent-core 篇 P0-4「SessionDB 读方法脱离写锁」**是两件事**（读锁分离已实施完成，本项是「开库」维度），勿混淆。
+- **动作**：在 `intellect_state.py` `SessionDB.__init__`（`intellect_state.py:303`）内加**有界重试 + 退避**（如 3 次、20ms→150ms 抖动，复用既有 `_WRITE_RETRY_*` 风格），失败仍置 `_last_init_error` 后抛。这样 ~20 处构造点（`run.py:1544`/`cli.py:3056`/`session.py:681`/`tui_gateway/server.py:362` 等）**零改动继承**。
+- **评审标注（二轮更正）**：原方案「移植 `session_db_recovery.py` 的 `RecoverableHandleCache`」不适合——intellect 没有按路径的 handle-cache 层，构造点分散且各自降级；`__init__` 内重试是更小、覆盖更全的切法。Hermes 的健康发布（`ok/retrying/unavailable`→runtime_status）作为可选后置，需先给 `write_runtime_status`（`status.py:518`）加 `session_store` kwarg。
 
 **P1-2 循环存活看门狗 + systemd 通知（主题 B）**
 - **动作**：新增 `gateway/shutdown_watchdog.py` + `gateway/systemd_notify.py`：OS 线程关停看门狗（drain 超时 + grace 后 `faulthandler` 转储 → `os._exit`，退出码复用 `GATEWAY_SERVICE_RESTART_EXIT_CODE=75`，`restart.py:7`）；心跳文件；带 strikes 的 loop 存活探测线程；floor timer；`READY=1`/`WATCHDOG=1` 仅在 loop 滞后预算内喂。
