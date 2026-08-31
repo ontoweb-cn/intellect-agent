@@ -363,6 +363,20 @@ def _trajectory_normalize_msg(msg: Dict[str, Any]) -> Dict[str, Any]:
     return msg
 
 
+def _normalize_tool_call_id(tool_call_id: Any) -> Any:
+    """Normalize a tool_call_id to its canonical form for result pairing.
+
+    Some backends (and merged tool-call carriers) emit ids of the form
+    ``call_abc|def`` where the segment after the ``|`` is a per-batch or
+    per-item discriminator.  Result rows must pair against the leading
+    segment so the dispatcher matches them to the originating call.  Non-``|``
+    ids and non-string ids are returned unchanged.
+    """
+    if isinstance(tool_call_id, str) and "|" in tool_call_id:
+        return tool_call_id.split("|", 1)[0].strip()
+    return tool_call_id
+
+
 def make_tool_result_message(name: str, content: Any, tool_call_id: str) -> dict:
     """Build a tool-result message dict with both the OpenAI-format ``name``
     field (required by the wire format and provider adapters) and the internal
@@ -385,7 +399,7 @@ def make_tool_result_message(name: str, content: Any, tool_call_id: str) -> dict
         "name": name,
         "tool_name": name,
         "content": wrapped,
-        "tool_call_id": tool_call_id,
+        "tool_call_id": _normalize_tool_call_id(tool_call_id),
     }
 
 
@@ -459,5 +473,6 @@ __all__ = [
     "_extract_file_mutation_targets",
     "_extract_error_preview",
     "_trajectory_normalize_msg",
+    "_normalize_tool_call_id",
     "make_tool_result_message",
 ]
