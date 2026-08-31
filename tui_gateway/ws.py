@@ -37,6 +37,42 @@ _log = logging.getLogger(__name__)
 # threads from a wedged socket.
 _WS_WRITE_TIMEOUT_S = 10.0
 
+
+def _enable_tcp_keepalive(ws: Any) -> None:
+    """Best-effort SO_KEEPALIVE on the accepted connection.
+
+    Starlette doesn't expose the socket portably; we probe the transports
+    uvicorn/other servers commonly attach. Failure is silent — keepalive is
+    an optimization, and ``gateway.ping`` provides the app-level fallback.
+    """
+    sock = None
+    for candidate in (
+        getattr(ws, "_socket", None),
+        (getattr(ws, "scope", {}) or {}).get("socket"),
+    ):
+        if candidate is not None:
+            sock = candidate
+            break
+    if sock is None:
+        transport = getattr(ws, "_transport", None) or (getattr(ws, "scope", {}) or {}).get(
+            "transport"
+        )
+        if transport is not None:
+            try:
+                sock = transport.get_extra_info("socket")
+            except Exception:
+                sock = None
+    if sock is None:
+        return
+    try:
+        import socket as _socket
+
+        if isinstance(sock, _socket.socket):
+            sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, 1)
+            _log.debug("TCP keepalive enabled for WS connection")
+    except Exception as exc:
+        _log.debug("TCP keepalive setup failed: %s", exc)
+
 # Keep starlette optional at import time; handle_ws uses the real class when
 # it's available and falls back to a generic Exception sentinel otherwise.
 try:
@@ -115,7 +151,34 @@ class WSTransport:
 
 async def handle_ws(ws: Any) -> None:
     """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``."""
+    # Fail-closed profile routing guard: multi-profile URL routing
+    # (``/p/<profile>``) is NOT implemented. Reject explicitly instead of
+    # silently serving the gateway's owner profile under a foreign path.
+    _path = ""
+    try:
+        _scope = getattr(ws, "scope", {}) or {}
+        _path = str(_scope.get("path") or "")
+    except Exception:
+        _path = ""
+    import re as _re
+
+    # Anchored to the path PREFIX: Hermes-style profile multiplexing is
+    # ``/p/<profile>/...``. An unanchored match would also reject unrelated
+    # future routes that merely contain a "/p/" segment.
+    if _re.match(r"^/p/", _path):
+        _log.warning("Rejected multi-profile route (not implemented): %s", _path)
+        # Accept first so the rejection reaches the client as a real WS
+        # close frame with the diagnostic code (closing pre-accept would
+        # surface only as an HTTP-level denial without the reason).
+        await ws.accept()
+        await ws.close(code=4404, reason="profile routing not implemented")
+        return
+
     await ws.accept()
+
+    # Best-effort TCP keepalive so dead client connections (mobile sleep,
+    # NAT timeout) surface as socket errors instead of silent half-opens.
+    _enable_tcp_keepalive(ws)
 
     # ── Auth guard: TUI_AUTH_TOKEN ──────────────────────────────────────
     # When set, the client MUST pass ?token=<value> in the query string or
@@ -145,7 +208,13 @@ async def handle_ws(ws: Any) -> None:
             "method": "event",
             "params": {
                 "type": "gateway.ready",
-                "payload": {"skin": server.resolve_skin()},
+                "payload": {
+                    "skin": server.resolve_skin(),
+                    # Process epoch: changes on every server restart. A
+                    # reconnecting client that sees a different epoch must
+                    # reset its event watermarks (see event_replay).
+                    "epoch": server.event_epoch(),
+                },
             },
         }
     )

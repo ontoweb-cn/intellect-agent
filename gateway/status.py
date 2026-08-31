@@ -236,6 +236,15 @@ def _build_pid_record() -> dict:
     }
 
 
+def build_pid_record() -> dict:
+    """Public pid-record builder for consumers like gateway.control_socket.
+
+    Returns a fresh dict including ``argv``; callers serving untrusted
+    local sockets may strip fields they don't want to disclose.
+    """
+    return _build_pid_record()
+
+
 def _build_runtime_status_record() -> dict[str, Any]:
     payload = _build_pid_record()
     payload.update({

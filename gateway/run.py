@@ -70,7 +70,13 @@ from pathlib import Path
 
 from datetime import datetime
 
-from typing import Dict, Optional, Any, List
+from typing import TYPE_CHECKING, Dict, Optional, Any, List
+
+if TYPE_CHECKING:
+
+    from gateway.control_socket import ControlSocketServer
+
+    from gateway.shutdown_watchdog import GatewayWatchdog
 
 # account_usage imports the OpenAI SDK chain (~230 ms). Only needed by
 
@@ -1005,6 +1011,10 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
     _restart_via_service: bool = False
 
     _stop_task: Optional[asyncio.Task] = None
+
+    _watchdog: Optional["GatewayWatchdog"] = None
+
+    _control_socket: Optional["ControlSocketServer"] = None
 
     _session_model_overrides: Dict[str, Dict[str, str]] = {}
 
@@ -2946,6 +2956,26 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
 
             return
 
+        # Graceful shutdown started: tell the service manager, and arm the
+
+        # watchdog's shutdown floor (drain budget + grace) so a wedged
+
+        # teardown hard-exits into systemd's restart instead of hanging.
+
+        try:
+
+            from gateway.systemd_notify import notify_stopping
+
+            notify_stopping()
+
+            if self._watchdog is not None:
+
+                self._watchdog.arm_shutdown(self._restart_drain_timeout)
+
+        except Exception as _e:
+
+            logger.debug("shutdown notify/watchdog arm failed: %s", _e)
+
         async def _stop_impl() -> None:
 
             def _kill_tool_subprocesses(phase: str) -> None:
@@ -3517,6 +3547,19 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
         self._stop_task = asyncio.create_task(_stop_impl())
 
         await self._stop_task
+
+        # Teardown completed inside the drain window — disarm the watchdog's
+
+        # shutdown floor so it cannot fire between here and process exit.
+
+        if self._watchdog is not None:
+
+            try:
+
+                self._watchdog.disarm_shutdown()
+
+            except Exception:
+                pass
 
     async def wait_for_shutdown(self) -> None:
 
@@ -10071,11 +10114,63 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
         return False
 
+    # Loop-liveness watchdog + systemd READY notification. Best-effort: a
+
+    # monitoring failure must never take down the gateway (start() itself
+
+    # is gated by INTELLECT_GATEWAY_WATCHDOG and no-ops when disabled).
+
+    try:
+
+        from gateway.shutdown_watchdog import GatewayWatchdog
+
+        from gateway.systemd_notify import notify_ready
+
+        _wd_home = get_intellect_home()
+
+        runner._watchdog = GatewayWatchdog(
+
+            asyncio.get_running_loop(),
+
+            heartbeat_file=str(_wd_home / "gateway.heartbeat"),
+
+        )
+
+        runner._watchdog.start()
+
+        # One tiny local datagram on the loop — exempt from the "no
+
+        # blocking IO in async def" discipline by cost/benefit (same as
+
+        # notify_stopping in stop()); sd_notify has no async surface.
+
+        notify_ready()
+
+        # Local control socket (identify/status) for CLI/updater tooling —
+
+        # best-effort; consumers fall back to the PID-file scan layer.
+
+        try:
+
+            from gateway.control_socket import start_control_socket
+
+            runner._control_socket = start_control_socket()
+
+        except Exception as _cs_e:
+
+            logger.debug("control socket startup failed: %s", _cs_e)
+
+    except Exception as _e:
+
+        logger.debug("gateway watchdog/systemd notify startup failed: %s", _e)
+
     if runner.should_exit_cleanly:
 
         if runner.exit_reason:
 
             logger.error("Gateway exiting cleanly: %s", runner.exit_reason)
+
+        _stop_watchdog(runner)
 
         return True
 
@@ -10110,6 +10205,8 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
         if runner.exit_reason:
 
             logger.error("Gateway exiting with failure: %s", runner.exit_reason)
+
+        _stop_watchdog(runner)
 
         return False
 
@@ -10207,9 +10304,42 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
         )
 
+        # Skips _stop_watchdog(): the process exits immediately and daemon
+
+        # threads die with it. The control-socket file may linger on disk —
+
+        # the next start's liveness probe reclaims it (see control_socket).
+
         raise SystemExit(75)
 
+    _stop_watchdog(runner)
+
     return True
+
+
+def _stop_watchdog(runner: "GatewayRunner") -> None:
+
+    """Best-effort watchdog + control-socket teardown on exit paths."""
+
+    try:
+
+        if runner._watchdog is not None:
+
+            runner._watchdog.stop()
+
+    except Exception:
+
+        pass
+
+    try:
+
+        if runner._control_socket is not None:
+
+            runner._control_socket.stop()
+
+    except Exception:
+
+        pass
 
 def main():
 

@@ -401,6 +401,15 @@ def _emit(event: str, sid: str, payload: dict | None = None):
     params = {"type": event, "session_id": sid}
     if payload is not None:
         params["payload"] = payload
+    # Stamp a per-session monotonic seq and buffer the frame so a
+    # reconnected WS client can catch up via ``session.events.since``.
+    # Best-effort: replay bookkeeping must never break delivery.
+    try:
+        from tui_gateway.event_replay import event_log
+
+        event_log().note_event(sid, params)
+    except Exception:
+        pass
     write_json({"jsonrpc": "2.0", "method": "event", "params": params})
 
 
@@ -770,6 +779,13 @@ def _clear_pending(sid: str | None = None) -> None:
 
 
 # ── Agent factory ────────────────────────────────────────────────────
+
+
+def event_epoch() -> str:
+    """Process epoch for event replay watermarking (see event_replay)."""
+    from tui_gateway.event_replay import epoch
+
+    return epoch()
 
 
 def resolve_skin() -> dict:
@@ -2382,6 +2398,56 @@ def _(rid, params: dict) -> dict:
     )
 
 
+@method("gateway.ping")
+def _(rid, params: dict) -> dict:
+    """Liveness + watermark probe for reconnecting WS clients."""
+    from tui_gateway.event_replay import epoch, event_log
+
+    log = event_log()
+    return _ok(
+        rid,
+        {
+            "epoch": epoch(),
+            "server_time": time.time(),
+            "sessions": {sid: log.last_seq(sid) for sid in list(_sessions.keys())},
+        },
+    )
+
+
+@method("session.events.since")
+def _(rid, params: dict) -> dict:
+    """Replay buffered events with ``seq > since`` for one session.
+
+    Clients call this after a reconnect, comparing the returned ``epoch``
+    to the one they saw at connect: a changed epoch means the server
+    restarted and watermarks are void — full resync instead of replay.
+    ``is_truncated`` means the requested watermark predates the replay
+    ring; the gap cannot be filled and the client should also full-resync.
+    """
+    from tui_gateway.event_replay import epoch, event_log
+
+    sid = str(params.get("session_id") or "")
+    if not sid:
+        return _err(rid, -32602, "session_id required")
+    try:
+        since = int(params.get("since", 0) or 0)
+    except (TypeError, ValueError):
+        return _err(rid, -32602, "since must be an integer")
+
+    events, truncated = event_log().events_since(sid, since)
+    return _ok(
+        rid,
+        {
+            "epoch": epoch(),
+            "session_id": sid,
+            "since": since,
+            "next_seq": event_log().last_seq(sid),
+            "is_truncated": truncated,
+            "events": events,
+        },
+    )
+
+
 @method("session.list")
 def _(rid, params: dict) -> dict:
     db = _get_db()
@@ -3024,6 +3090,16 @@ def _(rid, params: dict) -> dict:
         worker = session.get("slash_worker")
         if worker:
             worker.close()
+    except Exception:
+        pass
+    # The session is terminal: release its replay ring + seq counter so
+    # long-lived servers don't accumulate buffers for every session ever
+    # opened. WS-reconnect replay must survive transport teardown, but not
+    # session close.
+    try:
+        from tui_gateway.event_replay import event_log
+
+        event_log().drop_session(sid)
     except Exception:
         pass
     return _ok(rid, {"closed": True})

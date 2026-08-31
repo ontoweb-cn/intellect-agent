@@ -64,6 +64,16 @@
 
 ## 🟢 P2 — 跟进
 
+### [TODO-013] Gateway 看门狗参数 config.yaml 化
+
+**状态**: 📋 待办 (2026-08-31)
+**背景**: `gateway/shutdown_watchdog.py`（GW-201）当前仅支持 env 开关
+`INTELLECT_GATEWAY_WATCHDOG=0`；心跳间隔/停滞阈值/strikes/关停 grace 为模块常量。
+按 AGENTS.md 惯例，非敏感阈值类设置应放 `config.yaml`（如 `gateway.watchdog.*`），
+env 仅保留总开关。接线点：`gateway/run.py::start_gateway` 构造 `GatewayWatchdog` 处。
+
+---
+
 ### [TODO-005] ~~把 v0.6.2 bug fix 提交到云端~~ ✅ 已提交
 
 **状态**: 已提交 (2026-06-13)
