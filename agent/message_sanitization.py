@@ -329,3 +329,22 @@ __all__ = [
     "_strip_images_from_messages",
     "_sanitize_structure_non_ascii",
 ]
+
+def serialized_messages_bytes(messages: list) -> int:
+    """Exact wire-size of *messages* in bytes (G-05 413 recovery metric).
+
+    Providers reject on serialized request size, not token estimates — a
+    vision-heavy history can stay flat on token counts while its base64
+    payloads blow the byte budget. Exact measurement, not an estimate:
+    unserializable objects fall back to ``len(str(...))`` per item.
+    """
+    try:
+        import json as _json
+
+        return len(
+            _json.dumps(
+                messages, ensure_ascii=False, separators=(",", ":"), default=str
+            ).encode("utf-8", errors="replace")
+        )
+    except Exception:
+        return sum(len(str(m)) for m in messages or ())

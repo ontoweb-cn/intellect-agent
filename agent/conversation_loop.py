@@ -2519,6 +2519,14 @@ def run_conversation(
                     compression_attempts += 1
                     if compression_attempts <= max_compression_attempts:
                         original_len = len(messages)
+                        # G-05: providers reject on serialized BYTES, not token
+                        # estimates — a vision-heavy history can stay flat on
+                        # tokens while its base64 payloads blow the byte limit.
+                        from agent.message_sanitization import (
+                            serialized_messages_bytes,
+                        )
+
+                        original_bytes = serialized_messages_bytes(messages)
                         messages, active_system_prompt = agent._compress_context(
                             messages, system_message,
                             approx_tokens=approx_tokens,
@@ -2528,14 +2536,31 @@ def run_conversation(
                         # so _flush_messages_to_session_db writes compressed
                         # messages to the new session, not skipping them.
                         conversation_history = None
-                        if len(messages) < original_len or old_ctx > _reduced_ctx:
+                        new_bytes = serialized_messages_bytes(messages)
+                        # Progress = fewer messages, OR >=5% byte reduction.
+                        # The byte leg catches image-heavy payloads that
+                        # shrink bytes without changing message counts.
+                        progressed = (
+                            len(messages) < original_len
+                            or (0 < new_bytes < original_bytes * 0.95)
+                        )
+                        if progressed or old_ctx > _reduced_ctx:
                             agent._buffer_status(
                                 f"🗜️ Context reduced to {_reduced_ctx:,} tokens "
-                                f"(was {old_ctx:,}), retrying..."
+                                f"(was {old_ctx:,}; payload "
+                                f"{original_bytes:,} → {new_bytes:,} bytes), "
+                                f"retrying..."
                             )
                             time.sleep(2)
                             restart_with_compressed_messages = True
                             break
+                        logger.warning(
+                            "413 recovery: compression made no byte progress "
+                            "(%d → %d bytes, %d → %d messages) — attempt %d/%d",
+                            original_bytes, new_bytes,
+                            original_len, len(messages),
+                            compression_attempts, max_compression_attempts,
+                        )
                     # Fall through to normal error handling if compression
                     # is exhausted or didn't help.
 

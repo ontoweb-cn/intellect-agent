@@ -8,7 +8,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Callable, TypeVar
 
 from agent.storage.cursor import CursorProxy
 from intellect_constants import get_intellect_home
@@ -21,6 +21,23 @@ WRITE_MAX_RETRIES = 15
 WRITE_RETRY_MIN_S = 0.020
 WRITE_RETRY_MAX_S = 0.150
 CHECKPOINT_EVERY_N_WRITES = 50
+
+
+
+def _read_pool_config_enabled(sqlite_cfg: dict) -> bool:
+    """`storage.sqlite.read_pool` kill-switch (default on)."""
+    import os as _os
+
+    if str(_os.environ.get("INTELLECT_STATE_READ_POOL", "")).strip().lower() in {
+        "0", "false", "no", "off"
+    }:
+        return False
+    value = sqlite_cfg.get("read_pool")
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in {"0", "false", "no", "off"}
 
 
 class SQLiteBackend:
@@ -46,6 +63,16 @@ class SQLiteBackend:
         self._conn: sqlite3.Connection | None = None
         self._write_count = 0
         self._fts_enabled = False
+        # G-14 read pool (A1-6): per-thread read-only connections so reads
+        # run off the single write connection/lock (WAL concurrency).
+        # Gated: pool lives ONLY in WAL mode (DELETE journal + concurrent
+        # readers = "database is locked" storms on NFS/SMB fallbacks), and
+        # the operator kill-switch `storage.sqlite.read_pool` (default on)
+        # drops back to the historical single-lock path entirely.
+        self._read_pool_enabled = _read_pool_config_enabled(sqlite_cfg)
+        self._journal_mode: str = ""
+        self._read_conns: dict[int, sqlite3.Connection] = {}
+        self._read_conns_lock = threading.Lock()
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -74,7 +101,9 @@ class SQLiteBackend:
             if self._wal:
                 from intellect_state import apply_wal_with_fallback
 
-                apply_wal_with_fallback(conn, db_label="state.db")
+                self._journal_mode = apply_wal_with_fallback(
+                    conn, db_label="state.db"
+                )
             conn.execute("PRAGMA foreign_keys=ON")
             self._conn = conn
         except Exception:
@@ -82,6 +111,14 @@ class SQLiteBackend:
             raise
 
     def close(self) -> None:
+        with self._read_conns_lock:
+            pooled = list(self._read_conns.values())
+            self._read_conns.clear()
+        for conn in pooled:
+            try:
+                conn.close()
+            except Exception:
+                pass  # intentionally silent — cleanup/teardown path
         with self._lock:
             if not self._conn:
                 return
@@ -99,6 +136,61 @@ class SQLiteBackend:
             cursor = self.connection.cursor()
             cursor.execute(sql, params)
             return CursorProxy(cursor)
+
+    # ── G-14 read pool ──────────────────────────────────────────────
+
+    @property
+    def read_pool_active(self) -> bool:
+        """True when per-thread read connections may be handed out."""
+        return (
+            self._read_pool_enabled
+            and self._journal_mode == "wal"
+            and self._conn is not None
+        )
+
+    def _get_read_conn(self) -> sqlite3.Connection:
+        tid = threading.get_ident()
+        with self._read_conns_lock:
+            conn = self._read_conns.get(tid)
+            if conn is not None:
+                return conn
+            uri = f"file:{self.db_path}?mode=ro"
+            conn = sqlite3.connect(
+                uri,
+                uri=True,
+                check_same_thread=False,
+                timeout=5.0,
+                isolation_level=None,
+            )
+            conn.row_factory = sqlite3.Row
+            self._read_conns[tid] = conn
+            return conn
+
+    def execute_read(self, fn: Callable[[sqlite3.Connection], T]) -> T:
+        """Run *fn* on this thread's read-only connection (no write lock).
+
+        Falls back to the shared write connection whenever the pool is not
+        active (kill-switch off, DELETE journal, or before initialize()).
+        Read errors on pooled connections retry once on the write connection
+        — a torn read-pool is never worth failing a read over.
+        """
+        if not self.read_pool_active:
+            with self._lock:
+                return fn(self.connection)
+        conn = self._get_read_conn()
+        try:
+            return fn(conn)
+        except sqlite3.OperationalError:
+            # Stale pooled connection (e.g. db replaced under us) — drop and
+            # retry once on the write connection.
+            with self._read_conns_lock:
+                old = self._read_conns.pop(threading.get_ident(), None)
+            try:
+                old.close()
+            except Exception:
+                pass
+            with self._lock:
+                return fn(self.connection)
 
     def execute_write(self, fn: Callable[[sqlite3.Connection], T]) -> T:
         last_err: Exception | None = None
@@ -195,6 +287,10 @@ class RustSQLiteBackend:
         self._backend = None
         self._python_conn = None
         self._read_conn = None
+        self._read_pool_enabled = _read_pool_config_enabled(sqlite_cfg)
+        self._journal_mode: str = ""
+        self._read_conns: dict[int, sqlite3.Connection] = {}
+        self._read_conns_lock = threading.Lock()
         try:
             self._backend = _RustSQLiteBackend(db_path)
 
@@ -211,7 +307,9 @@ class RustSQLiteBackend:
             self._python_conn.row_factory = sqlite3.Row
             # Apply WAL and FK pragmas on the Python connection too
             from intellect_state import apply_wal_with_fallback
-            apply_wal_with_fallback(self._python_conn, db_label="state.db")
+            self._journal_mode = apply_wal_with_fallback(
+                self._python_conn, db_label="state.db"
+            )
             self._python_conn.execute("PRAGMA foreign_keys=ON")
             # A dedicated read connection for lock-free reads (RW=0 fallback).
             # Under WAL, readers do not block the writer, so read methods can
@@ -282,6 +380,14 @@ class RustSQLiteBackend:
 
     def close(self) -> None:
         self._backend.close()
+        with self._read_conns_lock:
+            pooled = list(self._read_conns.values())
+            self._read_conns.clear()
+        for conn in pooled:
+            try:
+                conn.close()
+            except Exception:
+                pass  # intentionally silent — cleanup/teardown path
         try:
             self._python_conn.close()
         except Exception:
@@ -297,6 +403,51 @@ class RustSQLiteBackend:
             cursor = self._python_conn.cursor()
             cursor.execute(sql, params)
             return CursorProxy(cursor)
+
+    # ── G-14 read pool (same contract as SQLiteBackend) ─────────────
+
+    @property
+    def read_pool_active(self) -> bool:
+        return (
+            self._read_pool_enabled
+            and self._journal_mode == "wal"
+            and self._python_conn is not None
+        )
+
+    def _get_read_conn(self):
+        tid = threading.get_ident()
+        with self._read_conns_lock:
+            conn = self._read_conns.get(tid)
+            if conn is not None:
+                return conn
+            uri = f"file:{self.db_path}?mode=ro"
+            conn = sqlite3.connect(
+                uri,
+                uri=True,
+                check_same_thread=False,
+                timeout=5.0,
+                isolation_level=None,
+            )
+            conn.row_factory = sqlite3.Row
+            self._read_conns[tid] = conn
+            return conn
+
+    def execute_read(self, fn):
+        if not self.read_pool_active:
+            with self._lock:
+                return fn(self._python_conn)
+        conn = self._get_read_conn()
+        try:
+            return fn(conn)
+        except sqlite3.OperationalError:
+            with self._read_conns_lock:
+                old = self._read_conns.pop(threading.get_ident(), None)
+            try:
+                old.close()
+            except Exception:
+                pass
+            with self._lock:
+                return fn(self._python_conn)
 
     def execute_write(self, fn):
         """Execute a write with BEGIN IMMEDIATE / COMMIT / ROLLBACK + retry.

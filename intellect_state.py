@@ -479,6 +479,21 @@ class SessionDB:
             return self._storage_backend.execute_write(fn)
         raise RuntimeError("SessionDB storage backend is not initialized")
 
+    def _execute_read(self, fn: Callable[[sqlite3.Connection], T]) -> T:
+        """Run a read on the backend's per-thread read-only connection (G-14).
+
+        Falls back to the shared write connection whenever the backend read
+        pool is inactive (kill-switch, DELETE journal fallback, pre-init).
+        Only hot reads route here today; wider migration is incremental.
+        """
+        backend = self._storage_backend
+        if backend is not None and hasattr(backend, "execute_read"):
+            return backend.execute_read(fn)
+        with self._lock:
+            if self._storage_backend is not None:
+                return fn(self._storage_backend.connection)
+            return fn(self._conn)
+
     def _try_wal_checkpoint(self) -> None:
         """Best-effort PASSIVE WAL checkpoint.  Never blocks, never raises."""
         if self._storage_backend is not None:
@@ -1778,8 +1793,9 @@ class SessionDB:
             if tip_targets:
                 unique_tips = list(set(tip_targets.values()))
                 placeholders = ",".join("?" for _ in unique_tips)
-                cursor = self._conn.execute(
-                    f"""SELECT s.*,
+                cursor = self._execute_read(
+                    lambda conn: conn.execute(
+                        f"""SELECT s.*,
                         COALESCE(
                             (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
                              FROM messages m WHERE m.session_id = s.id
@@ -1791,7 +1807,8 @@ class SessionDB:
                             s.started_at
                         ) AS last_active
                     FROM sessions s WHERE s.id IN ({placeholders})""",
-                    unique_tips,
+                        unique_tips,
+                    )
                 )
                 for row in cursor.fetchall():
                     r = dict(row)
@@ -2168,9 +2185,11 @@ class SessionDB:
 
     def get_messages(self, session_id: str) -> List[Dict[str, Any]]:
         """Load all messages for a session, ordered by insertion order."""
-        cursor = self._conn.execute(
-            "SELECT * FROM messages WHERE session_id = ? ORDER BY id",
-            (session_id,),
+        cursor = self._execute_read(
+            lambda conn: conn.execute(
+                "SELECT * FROM messages WHERE session_id = ? ORDER BY id",
+                (session_id,),
+            )
         )
         rows = cursor.fetchall()
         result = []

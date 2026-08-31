@@ -950,6 +950,9 @@ def restore_primary_runtime(agent) -> bool:
             "Primary runtime restored for new turn: %s (%s)",
             agent.model, agent.provider,
         )
+        # Healthy primary back: clear any cross-turn stale streak (G-03).
+        from agent.chat_completion_helpers import _reset_stale_streak
+        _reset_stale_streak(agent)
         return True
     except Exception as e:
         logger.warning("Failed to restore primary runtime: %s", e)
@@ -1603,6 +1606,9 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
         "Model switched in-place: %s (%s) -> %s (%s)",
         old_model, old_provider, new_model, new_provider,
     )
+    # Healthy new model/provider: clear any cross-turn stale streak (G-03).
+    from agent.chat_completion_helpers import _reset_stale_streak
+    _reset_stale_streak(agent)
 
 
 def invoke_tool(agent, function_name: str, function_args: dict, effective_task_id: str,
@@ -1848,23 +1854,40 @@ def sanitize_api_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]
         filtered.append(msg)
     messages = filtered
 
-    surviving_call_ids: set = set()
+    # G-08: pairing is VARIANT-AWARE. Providers mint the same logical id in
+    # different shapes across the call side and the result side (call_X vs
+    # X, toolu_ prefixes, case flips). Exact-set arithmetic used to
+    # misclassify such pairs as orphans — dropping the REAL result and
+    # injecting a stub in its place. Matching now goes through
+    # agent.tool_call_id.ids_match (canonical form + uuid fallback).
+    from agent.tool_call_id import (
+        find_matching_call_id,
+        result_matches_any,
+    )
+
+    surviving_call_ids: list = []
     for msg in messages:
         if msg.get("role") == "assistant":
             for tc in msg.get("tool_calls") or []:
                 cid = _ra().AIAgent._get_tool_call_id_static(tc)
-                if cid:
-                    surviving_call_ids.add(cid)
+                if cid and cid not in surviving_call_ids:
+                    surviving_call_ids.append(cid)
 
-    result_call_ids: set = set()
+    result_ids: list = []
+    orphaned_results: list = []
     for msg in messages:
-        if msg.get("role") == "tool":
-            cid = msg.get("tool_call_id")
-            if cid:
-                result_call_ids.add(cid)
+        if msg.get("role") != "tool":
+            continue
+        cid = msg.get("tool_call_id")
+        if not cid or cid in result_ids:
+            continue
+        matched = find_matching_call_id(cid, surviving_call_ids)
+        if matched:
+            result_ids.append(cid)
+        else:
+            orphaned_results.append(cid)
 
     # 1. Drop tool results with no matching assistant call
-    orphaned_results = result_call_ids - surviving_call_ids
     if orphaned_results:
         messages = [
             m for m in messages
@@ -1875,8 +1898,12 @@ def sanitize_api_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]
             len(orphaned_results),
         )
 
-    # 2. Inject stub results for calls whose result was dropped
-    missing_results = surviving_call_ids - result_call_ids
+    # 2. Inject stub results for calls whose result was dropped (or never
+    # arrived). A call is "missing" only when NO result pairs with it.
+    missing_results = [
+        cid for cid in surviving_call_ids
+        if not result_matches_any(cid, result_ids)
+    ]
     if missing_results:
         patched: List[Dict[str, Any]] = []
         for msg in messages:

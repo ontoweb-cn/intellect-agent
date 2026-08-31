@@ -126,6 +126,73 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+# ── Cross-turn stream-stale circuit breaker (G-03) ───────────────────────
+# One provider request that hangs is handled by the single-call stale
+# detectors below; a provider that goes DARK for a whole session turns
+# those detectors into an infinite kill-retry-kill loop (observed: 494
+# consecutive stale kills over 3 days). The streak below lives on the
+# agent instance so it survives across turns: every stale kill bumps it,
+# any evidence of life (a response, a first chunk, a completed stream)
+# resets it, and after _giveup consecutive kills the NEXT request aborts
+# before touching the network. Provider swaps reset it — a healthy new
+# provider must never be short-circuited by the old one's streak.
+_STREAK_ATTR = "_consecutive_stale_streams"
+
+
+def _stale_streak(agent) -> int:
+    try:
+        return max(0, int(getattr(agent, _STREAK_ATTR, 0) or 0))
+    except Exception:
+        return 0
+
+
+def _bump_stale_streak(agent, reason: str = "") -> int:
+    try:
+        current = _stale_streak(agent) + 1
+        setattr(agent, _STREAK_ATTR, current)
+        logger.warning(
+            "Cross-turn stale streak: %d consecutive provider stalls%s",
+            current, f" ({reason})" if reason else "",
+        )
+        return current
+    except Exception:
+        return 0
+
+
+def _reset_stale_streak(agent) -> None:
+    try:
+        if getattr(agent, _STREAK_ATTR, 0):
+            setattr(agent, _STREAK_ATTR, 0)
+    except Exception:
+        pass
+
+
+def _stream_stale_giveup_limit(agent) -> int:
+    try:
+        return max(0, int(os.getenv("INTELLECT_STREAM_STALE_GIVEUP", "5")))
+    except (TypeError, ValueError):
+        return 5
+
+
+def _check_stale_giveup(agent, api_kwargs: dict | None = None) -> None:
+    """Abort BEFORE any network attempt once the give-up streak is reached.
+
+    Raises RuntimeError (not TimeoutError) so the retry loop treats this as
+    terminal guidance rather than another transient failure to retry.
+    """
+    giveup = _stream_stale_giveup_limit(agent)
+    if giveup <= 0:
+        return  # 0 disables the breaker
+    streak = _stale_streak(agent)
+    if streak >= giveup:
+        raise RuntimeError(
+            f"Provider has been unresponsive for {streak} consecutive stale "
+            f"attempts (give-up limit {giveup}) — aborting this call to avoid "
+            "an indefinite stall. Switch models (`/model`) or start a new "
+            "session, then retry."
+        )
+
+
 def interruptible_api_call(agent, api_kwargs: dict):
     """
     Run the API call in a background thread so the main conversation loop
@@ -140,6 +207,9 @@ def interruptible_api_call(agent, api_kwargs: dict):
     the main retry loop can try again with backoff / credential rotation /
     provider fallback.
     """
+    # Cross-turn breaker (G-03): after N consecutive stale kills, refuse to
+    # burn another connection on a provably dark provider.
+    _check_stale_giveup(agent, api_kwargs)
     result = {"response": None, "error": None}
     request_client_holder = {"client": None, "owner_tid": None}
     request_client_lock = threading.Lock()
@@ -293,6 +363,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
         except Exception as e:
             result["error"] = e
         finally:
+            _reset_stale_streak(agent)  # response arrived: provider is alive
             _close_request_client_once("request_complete")
 
     # ── Stale-call timeout (mirrors streaming stale detector) ────────
@@ -457,6 +528,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
             agent._touch_activity(
                 f"codex stream killed after {int(_elapsed)}s with no first byte"
             )
+            _bump_stale_streak(agent, "codex ttfb kill")
             # Wait briefly for the worker to notice the closed connection.
             t.join(timeout=2.0)
             if result["error"] is None and result["response"] is None:
@@ -503,6 +575,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
             agent._touch_activity(
                 f"codex stream killed after {int(_event_stale_elapsed)}s with no SSE events"
             )
+            _bump_stale_streak(agent, "codex event-stale kill")
             t.join(timeout=2.0)
             if result["error"] is None and result["response"] is None:
                 result["error"] = TimeoutError(
@@ -551,6 +624,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
             agent._touch_activity(
                 f"stale non-streaming call killed after {int(_elapsed)}s"
             )
+            _bump_stale_streak(agent, "non-streaming stale kill")
             # Wait briefly for the thread to notice the closed connection.
             t.join(timeout=2.0)
             if result["error"] is None and result["response"] is None:
@@ -1327,6 +1401,9 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
             "Fallback activated: %s → %s (%s)",
             old_model, fb_model, fb_provider,
         )
+        # Healthy new provider: the old provider's stale streak must not
+        # short-circuit it (G-03 cross-turn breaker).
+        _reset_stale_streak(agent)
         return True
     except Exception as e:
         logger.error("Failed to activate fallback %s: %s", fb_model, e)
@@ -1639,6 +1716,8 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
     Falls back to _interruptible_api_call on provider errors indicating
     streaming is not supported.
     """
+    # Cross-turn breaker (G-03) — same give-up contract as non-streaming.
+    _check_stale_giveup(agent, api_kwargs)
     if agent._interrupt_requested:
         raise InterruptedError("Agent interrupted before streaming API call")
 
@@ -1871,11 +1950,17 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         role = "assistant"
         reasoning_parts: list = []
         usage_obj = None
+        _first_stream_chunk_seen = False
 
         # ── Rust StreamAccumulator (parallel accumulation) ──────────────
         _rust_acc = _StreamAccumulator()
         for chunk in stream:
             last_chunk_time["t"] = time.time()
+            # First chunk = provider is alive: clear the cross-turn streak
+            # (G-03). `_first_stream_chunk_seen` scopes it to this attempt.
+            if not _first_stream_chunk_seen:
+                _first_stream_chunk_seen = True
+                _reset_stale_streak(agent)
             agent._touch_activity("receiving stream response")
 
             # Update per-attempt diagnostic counters.  Best-effort —
@@ -2512,6 +2597,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 agent._replace_primary_openai_client(reason="stale_stream_pool_cleanup")
             except Exception:
                 pass  # intentionally silent — cleanup/teardown path
+            _bump_stale_streak(agent, "streaming stale kill")
             # Reset the timer so we don't kill repeatedly while
             # the inner thread processes the closure.
             last_chunk_time["t"] = time.time()
