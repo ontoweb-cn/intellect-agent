@@ -158,11 +158,13 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | P1-2 阶段 C（DB 同步） | ✅ **复用既有 `SessionDB.replace_messages`**（`intellect_state.py:1997`，原子 delete+reinsert，`/retry`/`/undo`/`/compress` 同款），无需新加 `archive_and_compact`；钩子在 micro 吸收/defrag 后调 `replace_messages` + `_last_flushed_db_idx=len(messages)`，失败回退 index-shift | `test_micro_compaction.py` 25 passed；`test_context_compressor.py` 91 passed |
 | P2-3 env scrub | ✅ `copilot_acp_client.py:_build_subprocess_env` 从全量 `os.environ.copy()` 改为 allowlist（HOME/PATH/终端 + INTELLECT_HOME），不再向 ACP 子进程泄漏密钥 | `test_copilot_acp_client.py` 21 passed |
 | P0-4 读锁分离 | ✅ 29 个纯读方法脱离写锁：`sqlite_backend.py` 加独立 `_read_conn`（RW=0 回退）+ `connection` 返回锁免读连接（RW=1 用 Rust `read_conn`）；`intellect_state.py` 29 个 `with self._lock:` 读块移除（`optimize_fts`/`vacuum` 两个写方法保留锁） | `test_intellect_state.py` 20 failed / 213 passed（与 base 一致，预存 `KeyError:0`）；`test_intellect_state_compression_locks.py` 12 passed |
+| P2-3 git worktree | ✅ `delegate_task` 加 `worktree` 参数 + schema 字段；复用 `intellect_cli/worktree_helpers.py`（`_setup_worktree`/`_cleanup_worktree`），子代理在 `<repo>/.worktrees/` 隔离工作区运行，`TERMINAL_CWD` 指向 worktree + `finally` 恢复清理；`background=True` 明确拒绝（worktree 需 outlive 子代理） | `test_delegate.py` 143 passed（含 `test_worktree_rejected_with_background`）；worktree 创建/清理冒烟通过 |
 
 **待办（剩余）**：
 - [ ] P2-2 merged tool-call carrier（依赖多后端，见第九节）。
-- [ ] P2-3 剩余子项：git worktree + 独立 SessionDB（env scrub 已完成）。
 - [ ] **MoA 后置优化**：M3「三路缓存策略统一」（现仅 Anthropic 一路，见第七节第四节）；M4「per_iteration / every_n cadence」（现仅 user_turn）。
+
+> 注：P2-3 的「独立 SessionDB」已达成——`delegate_tool.py` 子代理经 `parent_session_id` 隔离（写自己的 `session_id`，不污染父会话），无需另开独立 DB（会破坏 lineage 查询）。
 
 ---
 

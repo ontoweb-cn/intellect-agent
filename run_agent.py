@@ -4673,6 +4673,7 @@ class AIAgent:
             role=function_args.get("role"),
             background=bool(function_args.get("background")),
             response_schema=function_args.get("response_schema"),
+            worktree=bool(function_args.get("worktree")),
             parent_agent=self,
         )
 

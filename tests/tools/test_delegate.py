@@ -73,6 +73,8 @@ class TestDelegateRequirements(unittest.TestCase):
         # predictable budgets.
         self.assertNotIn("max_iterations", props)
         self.assertNotIn("maxItems", props["tasks"])  # removed — limit is now runtime-configurable
+        self.assertIn("worktree", props)
+        self.assertEqual(props["worktree"]["type"], "boolean")
 
     def test_schema_description_advertises_runtime_limits(self):
         """The model must see the user's actual concurrency / spawn-depth caps,
@@ -211,6 +213,14 @@ class TestDelegateTask(unittest.TestCase):
         parent = _make_mock_parent()
         result = json.loads(delegate_task(tasks=[{"context": "no goal here"}], parent_agent=parent))
         self.assertIn("error", result)
+
+    def test_worktree_rejected_with_background(self):
+        parent = _make_mock_parent()
+        result = json.loads(delegate_task(
+            goal="test", parent_agent=parent, background=True, worktree=True,
+        ))
+        self.assertIn("error", result)
+        self.assertIn("background", result["error"].lower())
 
     @patch("tools.delegate_tool._run_single_child")
     def test_single_task_mode(self, mock_run):

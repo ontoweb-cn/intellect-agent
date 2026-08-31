@@ -2039,6 +2039,7 @@ def delegate_task(
     role: Optional[str] = None,
     background: bool = False,
     response_schema: Optional[Dict[str, Any]] = None,
+    worktree: bool = False,
     parent_agent=None,
 ) -> str:
     """
@@ -2156,6 +2157,31 @@ def delegate_task(
     ]
     overall_start = time.monotonic()
     results = []
+
+    # ── Isolated git worktree (sync-only) ────────────────────────────────
+    # When worktree=True, the child agents run in a fresh `git worktree add`
+    # under <repo>/.worktrees/, so their file edits never touch the parent's
+    # working tree.  TERMINAL_CWD drives the child's cwd (tool_executor reads
+    # it per tool call); we point it at the worktree for the run and restore it
+    # after.  Background is rejected: the worktree must outlive the child, and
+    # the sync return boundary is where we can safely clean it up.
+    _wt_info = None
+    _prev_terminal_cwd = None
+    if worktree:
+        if background:
+            return tool_error("worktree=True is not supported with background=True.")
+        try:
+            from intellect_cli.worktree_helpers import _setup_worktree, _cleanup_worktree
+        except Exception:
+            return tool_error("worktree support is unavailable in this install.")
+        _wt_info = _setup_worktree()
+        if _wt_info is None:
+            return tool_error(
+                "worktree=True requires being inside a git repository."
+            )
+        _prev_terminal_cwd = os.environ.get("TERMINAL_CWD")
+        os.environ["TERMINAL_CWD"] = _wt_info["path"]
+
     try:
         return _delegate_task_execute(
             parent_agent=parent_agent,
@@ -2175,6 +2201,15 @@ def delegate_task(
             response_schema=response_schema,
         )
     finally:
+        if _wt_info is not None:
+            if _prev_terminal_cwd is not None:
+                os.environ["TERMINAL_CWD"] = _prev_terminal_cwd
+            else:
+                os.environ.pop("TERMINAL_CWD", None)
+            try:
+                _cleanup_worktree(_wt_info)
+            except Exception:
+                logger.debug("delegate_tool: worktree cleanup failed", exc_info=True)
         _restore_parent_session_context(parent_session_sid)
 
 
@@ -2999,6 +3034,15 @@ DELEGATE_TASK_SCHEMA = {
                     "this schema instead of a free-text summary."
                 ),
             },
+            "worktree": {
+                "type": "boolean",
+                "description": (
+                    "When true, run the subagent(s) in an isolated git worktree "
+                    "(<repo>/.worktrees/) so their file edits never touch the parent's "
+                    "working tree. Requires a git repository. Not supported with "
+                    "background=True."
+                ),
+            },
         },
         "required": [],
     },
@@ -3023,6 +3067,7 @@ registry.register(
         role=args.get("role"),
         background=args.get("background", False),
         response_schema=args.get("response_schema"),
+        worktree=args.get("worktree", False),
         parent_agent=kw.get("parent_agent"),
     ),
     check_fn=check_delegate_requirements,
