@@ -16,6 +16,7 @@ Key design decisions:
 
 import json
 import logging
+import random
 import re
 import sqlite3
 import threading
@@ -299,6 +300,14 @@ class SessionDB:
     _WRITE_RETRY_MAX_S = 0.150   # 150ms
     # Attempt a PASSIVE WAL checkpoint every N successful writes.
     _CHECKPOINT_EVERY_N_WRITES = 50
+    # Transient-open retry.  A single state.db open can fail transiently (WAL
+    # mid-checkpoint, a sibling process holding the lock during a boot race, a
+    # flaky mount) — that should not take the whole gateway down on one
+    # attempt.  Bounded + jittered like the write path so a genuinely-broken DB
+    # still fails fast instead of hanging the boot.
+    _INIT_MAX_RETRIES = 3
+    _INIT_RETRY_MIN_S = 0.020   # 20ms
+    _INIT_RETRY_MAX_S = 0.150   # 150ms
 
     def __init__(self, db_path: Path = None):
         self.db_path = db_path or (get_intellect_home() / "state.db")
@@ -308,40 +317,60 @@ class SessionDB:
         self._fts_enabled = False
         self._fts_unavailable_warned = False
         self._storage_backend = None
-        try:
-            from agent.storage.sqlite_backend import create_backend
+        self._conn = None
 
-            self._storage_backend = create_backend(self.db_path)
-            self._storage_backend.initialize()
-            self._conn = self._storage_backend.connection
-            self._lock = getattr(
-                self._storage_backend, "_lock", threading.Lock()
-            )
+        for attempt in range(self._INIT_MAX_RETRIES):
+            try:
+                self._open()
+                return
+            except Exception as exc:
+                # Close a partially-initialized backend to avoid leaking WAL
+                # file handles when init fails after the backend was created.
+                if self._storage_backend is not None:
+                    try:
+                        self._storage_backend.close()
+                    except Exception:
+                        pass  # intentionally silent — cleanup/teardown path
+                    self._storage_backend = None
+                self._conn = None
 
-            self._init_schema()
-        except Exception as exc:
-            # Capture the cause so /resume and friends can surface WHY the
-            # session DB is unavailable instead of a bare "Session database
-            # not available."  Callers that catch this exception keep their
-            # existing ``self._session_db = None`` degradation path.
-            #
-            # Note: we deliberately do NOT clear _last_init_error on the
-            # success path (no else branch).  In multi-threaded callers
-            # (gateway, web_server per-request SessionDB()), a concurrent
-            # successful open racing past this failure would erase the
-            # cause that another thread's /resume is about to format.
-            # Tests that need to reset the state can call
-            # ``intellect_state._set_last_init_error(None)`` explicitly.
-            _set_last_init_error(f"{type(exc).__name__}: {exc}")
-            # Close partially-initialized backend to avoid leaking WAL
-            # file handles when init fails after SQLiteBackend was created.
-            if self._storage_backend is not None:
-                try:
-                    self._storage_backend.close()
-                except Exception:
-                    pass  # intentionally silent — cleanup/teardown path
-            self._conn = None
-            raise
+                if attempt >= self._INIT_MAX_RETRIES - 1:
+                    # Exhausted retries.  Capture the cause so /resume and
+                    # friends can surface WHY the session DB is unavailable
+                    # instead of a bare "Session database not available."
+                    # Callers that catch this exception keep their existing
+                    # ``self._session_db = None`` degradation path.
+                    #
+                    # Note: we deliberately do NOT clear _last_init_error on
+                    # the success path (the ``return`` above).  In
+                    # multi-threaded callers (gateway, web_server per-request
+                    # SessionDB()), a concurrent successful open racing past
+                    # this failure would erase the cause that another thread's
+                    # /resume is about to format.  Tests that need to reset the
+                    # state can call
+                    # ``intellect_state._set_last_init_error(None)`` explicitly.
+                    _set_last_init_error(f"{type(exc).__name__}: {exc}")
+                    raise
+
+                # Transient open failure — jittered backoff then retry,
+                # mirroring the write-path convoy-avoidance rationale above.
+                time.sleep(
+                    random.uniform(
+                        self._INIT_RETRY_MIN_S, self._INIT_RETRY_MAX_S
+                    )
+                )
+
+    def _open(self) -> None:
+        """Open the storage backend and initialize schema (one attempt)."""
+        from agent.storage.sqlite_backend import create_backend
+
+        self._storage_backend = create_backend(self.db_path)
+        self._storage_backend.initialize()
+        self._conn = self._storage_backend.connection
+        self._lock = getattr(
+            self._storage_backend, "_lock", threading.Lock()
+        )
+        self._init_schema()
 
     @property
     def _query_conn(self):

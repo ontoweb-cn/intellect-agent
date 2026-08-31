@@ -192,39 +192,66 @@ class RustSQLiteBackend:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
         self.db_path = db_path
-        self._backend = _RustSQLiteBackend(db_path)
+        self._backend = None
+        self._python_conn = None
+        self._read_conn = None
+        try:
+            self._backend = _RustSQLiteBackend(db_path)
 
-        # Open a Python sqlite3 connection for read compatibility.
-        # SessionDB reads use conn.execute(), conn.cursor(), etc. which
-        # RustConnection doesn't fully support yet.  The Rust backend is
-        # used for execute_write + FTS/compression acceleration.
-        self._python_conn = sqlite3.connect(
-            db_path,
-            check_same_thread=False,
-            timeout=1.0,
-            isolation_level=None,
-        )
-        self._python_conn.row_factory = sqlite3.Row
-        # Apply WAL and FK pragmas on the Python connection too
-        from intellect_state import apply_wal_with_fallback
-        apply_wal_with_fallback(self._python_conn, db_label="state.db")
-        self._python_conn.execute("PRAGMA foreign_keys=ON")
-        # A dedicated read connection for lock-free reads (RW=0 fallback). Under
-        # WAL, readers do not block the writer, so read methods can query this
-        # without holding the write lock.  RW=1 already has a Rust read_conn.
-        self._read_conn = sqlite3.connect(
-            db_path,
-            check_same_thread=False,
-            timeout=1.0,
-            isolation_level=None,
-        )
-        self._read_conn.row_factory = sqlite3.Row
-        self._read_conn.execute("PRAGMA foreign_keys=ON")
-        self._lock = threading.Lock()
-        self._write_count = 0
-        self._checkpoint_every = int(
-            sqlite_cfg.get("checkpoint_every_n_writes", CHECKPOINT_EVERY_N_WRITES)
-        )
+            # Open a Python sqlite3 connection for read compatibility.
+            # SessionDB reads use conn.execute(), conn.cursor(), etc. which
+            # RustConnection doesn't fully support yet.  The Rust backend is
+            # used for execute_write + FTS/compression acceleration.
+            self._python_conn = sqlite3.connect(
+                db_path,
+                check_same_thread=False,
+                timeout=1.0,
+                isolation_level=None,
+            )
+            self._python_conn.row_factory = sqlite3.Row
+            # Apply WAL and FK pragmas on the Python connection too
+            from intellect_state import apply_wal_with_fallback
+            apply_wal_with_fallback(self._python_conn, db_label="state.db")
+            self._python_conn.execute("PRAGMA foreign_keys=ON")
+            # A dedicated read connection for lock-free reads (RW=0 fallback).
+            # Under WAL, readers do not block the writer, so read methods can
+            # query this without holding the write lock.  RW=1 already has a
+            # Rust read_conn.
+            self._read_conn = sqlite3.connect(
+                db_path,
+                check_same_thread=False,
+                timeout=1.0,
+                isolation_level=None,
+            )
+            self._read_conn.row_factory = sqlite3.Row
+            self._read_conn.execute("PRAGMA foreign_keys=ON")
+            self._lock = threading.Lock()
+            self._write_count = 0
+            self._checkpoint_every = int(
+                sqlite_cfg.get("checkpoint_every_n_writes", CHECKPOINT_EVERY_N_WRITES)
+            )
+        except Exception:
+            # Close whatever we already opened so a partially-constructed
+            # backend never leaks fds (Rust handle + Python conns) to the GC.
+            # Matters under RLIMIT_NOFILE pressure: SessionDB's open-retry
+            # re-attempts the open and would otherwise leak one handle set per
+            # attempt.  Mirror the close() ordering (backend, python, read).
+            if self._backend is not None:
+                try:
+                    self._backend.close()
+                except Exception:
+                    pass  # intentionally silent — cleanup/teardown path
+            if self._python_conn is not None:
+                try:
+                    self._python_conn.close()
+                except Exception:
+                    pass  # intentionally silent — cleanup/teardown path
+            if self._read_conn is not None:
+                try:
+                    self._read_conn.close()
+                except Exception:
+                    pass  # intentionally silent — cleanup/teardown path
+            raise
 
     @property
     def connection(self):

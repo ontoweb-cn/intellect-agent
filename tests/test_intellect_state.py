@@ -61,6 +61,76 @@ def db(tmp_path):
 
 
 # =========================================================================
+# Open recovery (transient open failure retry)
+# =========================================================================
+
+def test_sessiondb_open_retries_then_succeeds(tmp_path, monkeypatch):
+    """A transient open failure (locked/WAL race) retries then succeeds."""
+    real_open = SessionDB._open
+    calls = {"n": 0}
+
+    def flaky_open(self):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise sqlite3.OperationalError("database is locked")
+        return real_open(self)
+
+    monkeypatch.setattr(SessionDB, "_open", flaky_open)
+    SessionDB.reset_process_caches()
+    db = SessionDB(db_path=tmp_path / "state.db")
+    try:
+        assert calls["n"] == 3
+    finally:
+        db.close()
+
+
+def test_sessiondb_open_exhausts_retries_and_raises(tmp_path, monkeypatch):
+    """Sustained open failure still raises and records the last cause."""
+    import intellect_state
+
+    intellect_state._set_last_init_error(None)
+
+    def always_fail(self):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(SessionDB, "_open", always_fail)
+    SessionDB.reset_process_caches()
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        SessionDB(db_path=tmp_path / "state.db")
+
+    cause = intellect_state.get_last_init_error() or ""
+    assert "OperationalError" in cause
+
+
+def test_rust_backend_partial_init_closes_opened_connections(tmp_path, monkeypatch):
+    """A backend that fails to open its 2nd connection closes the 1st."""
+    from agent.storage import sqlite_backend
+
+    real_connect = sqlite3.connect
+    opened = []
+    calls = {"n": 0}
+
+    def connect_fail_second(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:  # fail the read_conn open
+            raise sqlite3.OperationalError("unable to open database file")
+        conn = real_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr("sqlite3.connect", connect_fail_second)
+
+    with pytest.raises(sqlite3.OperationalError, match="unable to open"):
+        sqlite_backend.RustSQLiteBackend(db_path=str(tmp_path / "state.db"))
+
+    # Only _python_conn was opened before the read_conn open failed; cleanup
+    # must have closed it.  A closed connection raises ProgrammingError on use.
+    assert len(opened) == 1
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened[0].execute("SELECT 1")
+
+
+# =========================================================================
 # Session lifecycle
 # =========================================================================
 
