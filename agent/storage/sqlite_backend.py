@@ -209,6 +209,17 @@ class RustSQLiteBackend:
         from intellect_state import apply_wal_with_fallback
         apply_wal_with_fallback(self._python_conn, db_label="state.db")
         self._python_conn.execute("PRAGMA foreign_keys=ON")
+        # A dedicated read connection for lock-free reads (RW=0 fallback). Under
+        # WAL, readers do not block the writer, so read methods can query this
+        # without holding the write lock.  RW=1 already has a Rust read_conn.
+        self._read_conn = sqlite3.connect(
+            db_path,
+            check_same_thread=False,
+            timeout=1.0,
+            isolation_level=None,
+        )
+        self._read_conn.row_factory = sqlite3.Row
+        self._read_conn.execute("PRAGMA foreign_keys=ON")
         self._lock = threading.Lock()
         self._write_count = 0
         self._checkpoint_every = int(
@@ -217,16 +228,18 @@ class RustSQLiteBackend:
 
     @property
     def connection(self):
-        """Return a connection for read operations.
+        """Return a lock-free read connection.
 
-        When ``SESSIONDB_USE_RUST_RW=1`` in ``intellect_state``, returns
-        a ``RustConnection`` sharing the same underlying rusqlite connection
-        as the write path.  Otherwise falls back to Python sqlite3.
+        When ``SESSIONDB_USE_RUST_RW=1`` in ``intellect_state``, returns a
+        ``RustConnection`` backed by the backend's dedicated ``read_conn``.
+        Otherwise returns the dedicated Python read connection (``_read_conn``),
+        never the write connection — so read methods can query without holding
+        the write lock under WAL.
         """
         from intellect_state import SESSIONDB_USE_RUST_RW
         if SESSIONDB_USE_RUST_RW:
             return self._backend.connection()
-        return self._python_conn
+        return self._read_conn
 
     @property
     def dialect(self) -> str:
@@ -244,6 +257,10 @@ class RustSQLiteBackend:
         self._backend.close()
         try:
             self._python_conn.close()
+        except Exception:
+            pass  # intentionally silent — cleanup/teardown path
+        try:
+            self._read_conn.close()
         except Exception:
             pass  # intentionally silent — cleanup/teardown path
 

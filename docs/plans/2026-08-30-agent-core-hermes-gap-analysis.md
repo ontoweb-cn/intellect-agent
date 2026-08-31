@@ -157,9 +157,9 @@ intellect-agent 的 agent core 已高度收敛到 Hermes 架构：上下文 usag
 | P0-1 `--run-budget` flag | ✅ `_parser.py` 顶层 + chat 子命令双注册；`main.py` `_TOP_LEVEL_VALUE_FLAGS` + env 透传 | argparse 手动验证：`--run-budget 300` 顶层/chat 均解析 |
 | P1-2 阶段 C（DB 同步） | ✅ **复用既有 `SessionDB.replace_messages`**（`intellect_state.py:1997`，原子 delete+reinsert，`/retry`/`/undo`/`/compress` 同款），无需新加 `archive_and_compact`；钩子在 micro 吸收/defrag 后调 `replace_messages` + `_last_flushed_db_idx=len(messages)`，失败回退 index-shift | `test_micro_compaction.py` 25 passed；`test_context_compressor.py` 91 passed |
 | P2-3 env scrub | ✅ `copilot_acp_client.py:_build_subprocess_env` 从全量 `os.environ.copy()` 改为 allowlist（HOME/PATH/终端 + INTELLECT_HOME），不再向 ACP 子进程泄漏密钥 | `test_copilot_acp_client.py` 21 passed |
+| P0-4 读锁分离 | ✅ 29 个纯读方法脱离写锁：`sqlite_backend.py` 加独立 `_read_conn`（RW=0 回退）+ `connection` 返回锁免读连接（RW=1 用 Rust `read_conn`）；`intellect_state.py` 29 个 `with self._lock:` 读块移除（`optimize_fts`/`vacuum` 两个写方法保留锁） | `test_intellect_state.py` 20 failed / 213 passed（与 base 一致，预存 `KeyError:0`）；`test_intellect_state_compression_locks.py` 12 passed |
 
 **待办（剩余）**：
-- [ ] P0-4 读锁分离：rust-core `read_conn` **已存在**（`rust-core/src/backend.rs:43`，独立 WAL 读连接），剩余为 Python 侧 31 个读方法脱离写锁（RW=1 用 `connection()` 的 Rust read_conn；RW=0 需另开 Python 读连接）。纯性能优化，非正确性。
 - [ ] P2-2 merged tool-call carrier（依赖多后端，见第九节）。
 - [ ] P2-3 剩余子项：git worktree + 独立 SessionDB（env scrub 已完成）。
 - [ ] **MoA 后置优化**：M3「三路缓存策略统一」（现仅 Anthropic 一路，见第七节第四节）；M4「per_iteration / every_n cadence」（现仅 user_turn）。

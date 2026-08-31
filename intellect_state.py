@@ -1359,11 +1359,10 @@ class SessionDB:
             if include_system_prompt
             else self._GET_SESSION_BASE_COLS
         )
-        with self._lock:
-            cursor = self._conn.execute(
-                f"SELECT {cols} FROM sessions WHERE id = ?", (session_id,)
-            )
-            row = cursor.fetchone()
+        cursor = self._conn.execute(
+            f"SELECT {cols} FROM sessions WHERE id = ?", (session_id,)
+        )
+        row = cursor.fetchone()
         if row is None:
             return None
         session = dict(row)
@@ -1387,12 +1386,11 @@ class SessionDB:
             .replace("%", "\\%")
             .replace("_", "\\_")
         )
-        with self._lock:
-            cursor = self._conn.execute(
-                "SELECT id FROM sessions WHERE id LIKE ? ESCAPE '\\' ORDER BY started_at DESC LIMIT 2",
-                (f"{escaped}%",),
-            )
-            matches = [row["id"] for row in cursor.fetchall()]
+        cursor = self._conn.execute(
+            "SELECT id FROM sessions WHERE id LIKE ? ESCAPE '\\' ORDER BY started_at DESC LIMIT 2",
+            (f"{escaped}%",),
+        )
+        matches = [row["id"] for row in cursor.fetchall()]
         if len(matches) == 1:
             return matches[0]
         return None
@@ -1475,20 +1473,18 @@ class SessionDB:
 
     def get_session_title(self, session_id: str) -> Optional[str]:
         """Get the title for a session, or None."""
-        with self._lock:
-            cursor = self._conn.execute(
-                "SELECT title FROM sessions WHERE id = ?", (session_id,)
-            )
-            row = cursor.fetchone()
+        cursor = self._conn.execute(
+            "SELECT title FROM sessions WHERE id = ?", (session_id,)
+        )
+        row = cursor.fetchone()
         return row["title"] if row else None
 
     def get_session_by_title(self, title: str) -> Optional[Dict[str, Any]]:
         """Look up a session by exact title. Returns session dict or None."""
-        with self._lock:
-            cursor = self._conn.execute(
-                "SELECT * FROM sessions WHERE title = ?", (title,)
-            )
-            row = cursor.fetchone()
+        cursor = self._conn.execute(
+            "SELECT * FROM sessions WHERE title = ?", (title,)
+        )
+        row = cursor.fetchone()
         return dict(row) if row else None
 
     def resolve_session_by_title(self, title: str) -> Optional[str]:
@@ -1505,13 +1501,12 @@ class SessionDB:
         # Also search for numbered variants: "title #2", "title #3", etc.
         # Escape SQL LIKE wildcards (%, _) in the title to prevent false matches
         escaped = title.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        with self._lock:
-            cursor = self._conn.execute(
-                "SELECT id, title, started_at FROM sessions "
-                "WHERE title LIKE ? ESCAPE '\\' ORDER BY started_at DESC",
-                (f"{escaped} #%",),
-            )
-            numbered = cursor.fetchall()
+        cursor = self._conn.execute(
+            "SELECT id, title, started_at FROM sessions "
+            "WHERE title LIKE ? ESCAPE '\\' ORDER BY started_at DESC",
+            (f"{escaped} #%",),
+        )
+        numbered = cursor.fetchall()
 
         if numbered:
             # Return the most recent numbered variant
@@ -1536,12 +1531,11 @@ class SessionDB:
         # Find all existing numbered variants
         # Escape SQL LIKE wildcards (%, _) in the base to prevent false matches
         escaped = base.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        with self._lock:
-            cursor = self._conn.execute(
-                "SELECT title FROM sessions WHERE title = ? OR title LIKE ? ESCAPE '\\'",
-                (base, f"{escaped} #%"),
-            )
-            existing = [row["title"] for row in cursor.fetchall()]
+        cursor = self._conn.execute(
+            "SELECT title FROM sessions WHERE title = ? OR title LIKE ? ESCAPE '\\'",
+            (base, f"{escaped} #%"),
+        )
+        existing = [row["title"] for row in cursor.fetchall()]
 
         if not existing:
             return base  # No conflict, use the base name as-is
@@ -1719,9 +1713,8 @@ class SessionDB:
                 LIMIT ? OFFSET ?
             """
             params.extend([limit, offset])
-        with self._lock:
-            cursor = self._query_conn.execute(query, params)
-            rows = cursor.fetchall()
+        cursor = self._query_conn.execute(query, params)
+        rows = cursor.fetchall()
         sessions = []
         for row in rows:
             s = dict(row)
@@ -1754,27 +1747,26 @@ class SessionDB:
             if tip_targets:
                 unique_tips = list(set(tip_targets.values()))
                 placeholders = ",".join("?" for _ in unique_tips)
-                with self._lock:
-                    cursor = self._conn.execute(
-                        f"""SELECT s.*,
-                            COALESCE(
-                                (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
-                                 FROM messages m WHERE m.session_id = s.id
-                                 AND m.role = 'user' AND m.content IS NOT NULL
-                                 ORDER BY m.timestamp, m.id LIMIT 1), ''
-                            ) AS _preview_raw,
-                            COALESCE(
-                                (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.session_id = s.id),
-                                s.started_at
-                            ) AS last_active
-                        FROM sessions s WHERE s.id IN ({placeholders})""",
-                        unique_tips,
-                    )
-                    for row in cursor.fetchall():
-                        r = dict(row)
-                        raw = r.pop("_preview_raw", "").strip()
-                        r["preview"] = (raw[:60] + "...") if len(raw) > 60 else raw
-                        tip_rows[r["id"]] = r
+                cursor = self._conn.execute(
+                    f"""SELECT s.*,
+                        COALESCE(
+                            (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
+                             FROM messages m WHERE m.session_id = s.id
+                             AND m.role = 'user' AND m.content IS NOT NULL
+                             ORDER BY m.timestamp, m.id LIMIT 1), ''
+                        ) AS _preview_raw,
+                        COALESCE(
+                            (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.session_id = s.id),
+                            s.started_at
+                        ) AS last_active
+                    FROM sessions s WHERE s.id IN ({placeholders})""",
+                    unique_tips,
+                )
+                for row in cursor.fetchall():
+                    r = dict(row)
+                    raw = r.pop("_preview_raw", "").strip()
+                    r["preview"] = (raw[:60] + "...") if len(raw) > 60 else raw
+                    tip_rows[r["id"]] = r
 
             projected = []
             for s in sessions:
@@ -1821,9 +1813,8 @@ class SessionDB:
             FROM sessions s
             WHERE s.id = ?
         """
-        with self._lock:
-            cursor = self._conn.execute(query, (session_id,))
-            row = cursor.fetchone()
+        cursor = self._conn.execute(query, (session_id,))
+        row = cursor.fetchone()
         if not row:
             return None
         s = dict(row)
@@ -2146,12 +2137,11 @@ class SessionDB:
 
     def get_messages(self, session_id: str) -> List[Dict[str, Any]]:
         """Load all messages for a session, ordered by insertion order."""
-        with self._lock:
-            cursor = self._conn.execute(
-                "SELECT * FROM messages WHERE session_id = ? ORDER BY id",
-                (session_id,),
-            )
-            rows = cursor.fetchall()
+        cursor = self._conn.execute(
+            "SELECT * FROM messages WHERE session_id = ? ORDER BY id",
+            (session_id,),
+        )
+        rows = cursor.fetchall()
         result = []
         for row in rows:
             msg = dict(row)
@@ -2193,29 +2183,28 @@ class SessionDB:
         """
         if window < 0:
             window = 0
-        with self._lock:
-            # Confirm the anchor exists in this session.
-            anchor_exists = self._conn.execute(
-                "SELECT 1 FROM messages WHERE id = ? AND session_id = ? LIMIT 1",
-                (around_message_id, session_id),
-            ).fetchone()
-            if not anchor_exists:
-                return {"window": [], "messages_before": 0, "messages_after": 0}
+        # Confirm the anchor exists in this session.
+        anchor_exists = self._conn.execute(
+            "SELECT 1 FROM messages WHERE id = ? AND session_id = ? LIMIT 1",
+            (around_message_id, session_id),
+        ).fetchone()
+        if not anchor_exists:
+            return {"window": [], "messages_before": 0, "messages_after": 0}
 
-            # Two queries: anchor + before (DESC, take window+1), and after
-            # (ASC, take window). Final order is id ASC.
-            before_rows = self._conn.execute(
-                "SELECT * FROM messages "
-                "WHERE session_id = ? AND id <= ? "
-                "ORDER BY id DESC LIMIT ?",
-                (session_id, around_message_id, window + 1),
-            ).fetchall()
-            after_rows = self._conn.execute(
-                "SELECT * FROM messages "
-                "WHERE session_id = ? AND id > ? "
-                "ORDER BY id ASC LIMIT ?",
-                (session_id, around_message_id, window),
-            ).fetchall()
+        # Two queries: anchor + before (DESC, take window+1), and after
+        # (ASC, take window). Final order is id ASC.
+        before_rows = self._conn.execute(
+            "SELECT * FROM messages "
+            "WHERE session_id = ? AND id <= ? "
+            "ORDER BY id DESC LIMIT ?",
+            (session_id, around_message_id, window + 1),
+        ).fetchall()
+        after_rows = self._conn.execute(
+            "SELECT * FROM messages "
+            "WHERE session_id = ? AND id > ? "
+            "ORDER BY id ASC LIMIT ?",
+            (session_id, around_message_id, window),
+        ).fetchall()
 
         # before_rows is DESC; reverse so it's ASC, then concatenate after_rows.
         rows = list(reversed(before_rows)) + list(after_rows)
@@ -2316,31 +2305,30 @@ class SessionDB:
         bookend_start_rows: List[Any] = []
         bookend_end_rows: List[Any] = []
         if bookend > 0:
-            with self._lock:
-                role_clause = ""
-                role_params: list = []
-                if keep_roles is not None:
-                    role_placeholders = ",".join("?" for _ in keep_roles)
-                    role_clause = f" AND role IN ({role_placeholders})"
-                    role_params = list(keep_roles)
+            role_clause = ""
+            role_params: list = []
+            if keep_roles is not None:
+                role_placeholders = ",".join("?" for _ in keep_roles)
+                role_clause = f" AND role IN ({role_placeholders})"
+                role_params = list(keep_roles)
 
-                bookend_start_rows = self._conn.execute(
-                    f"SELECT * FROM messages "
-                    f"WHERE session_id = ? AND id < ?{role_clause} "
-                    f"AND length(content) > 0 "
-                    f"ORDER BY id ASC LIMIT ?",
-                    (session_id, window_min_id, *role_params, bookend),
-                ).fetchall()
+            bookend_start_rows = self._conn.execute(
+                f"SELECT * FROM messages "
+                f"WHERE session_id = ? AND id < ?{role_clause} "
+                f"AND length(content) > 0 "
+                f"ORDER BY id ASC LIMIT ?",
+                (session_id, window_min_id, *role_params, bookend),
+            ).fetchall()
 
-                bookend_end_rows = self._conn.execute(
-                    f"SELECT * FROM messages "
-                    f"WHERE session_id = ? AND id > ?{role_clause} "
-                    f"AND length(content) > 0 "
-                    f"ORDER BY id DESC LIMIT ?",
-                    (session_id, window_max_id, *role_params, bookend),
-                ).fetchall()
-                # End rows came back DESC for the LIMIT cap; flip to ASC.
-                bookend_end_rows = list(reversed(bookend_end_rows))
+            bookend_end_rows = self._conn.execute(
+                f"SELECT * FROM messages "
+                f"WHERE session_id = ? AND id > ?{role_clause} "
+                f"AND length(content) > 0 "
+                f"ORDER BY id DESC LIMIT ?",
+                (session_id, window_max_id, *role_params, bookend),
+            ).fetchall()
+            # End rows came back DESC for the LIMIT cap; flip to ASC.
+            bookend_end_rows = list(reversed(bookend_end_rows))
 
         def _hydrate(row) -> Dict[str, Any]:
             msg = dict(row)
@@ -2385,48 +2373,47 @@ class SessionDB:
         if not session_id:
             return session_id
 
-        with self._lock:
-            # If this session already has messages, nothing to redirect.
+        # If this session already has messages, nothing to redirect.
+        try:
+            row = self._conn.execute(
+                "SELECT 1 FROM messages WHERE session_id = ? LIMIT 1",
+                (session_id,),
+            ).fetchone()
+        except Exception:
+            return session_id
+        if row is not None:
+            return session_id
+
+        # Walk descendants: at each step, pick the most-recently-started
+            # child session; stop once we find one with messages.
+        current = session_id
+        seen = {current}
+        for _ in range(32):
             try:
-                row = self._conn.execute(
-                    "SELECT 1 FROM messages WHERE session_id = ? LIMIT 1",
-                    (session_id,),
+                child_row = self._conn.execute(
+                    "SELECT id FROM sessions "
+                    "WHERE parent_session_id = ? "
+                    "ORDER BY started_at DESC, id DESC LIMIT 1",
+                    (current,),
                 ).fetchone()
             except Exception:
                 return session_id
-            if row is not None:
+            if child_row is None:
                 return session_id
-
-            # Walk descendants: at each step, pick the most-recently-started
-                # child session; stop once we find one with messages.
-            current = session_id
-            seen = {current}
-            for _ in range(32):
-                try:
-                    child_row = self._conn.execute(
-                        "SELECT id FROM sessions "
-                        "WHERE parent_session_id = ? "
-                        "ORDER BY started_at DESC, id DESC LIMIT 1",
-                        (current,),
-                    ).fetchone()
-                except Exception:
-                    return session_id
-                if child_row is None:
-                    return session_id
-                child_id = child_row["id"] if hasattr(child_row, "keys") else child_row[0]
-                if not child_id or child_id in seen:
-                    return session_id
-                seen.add(child_id)
-                try:
-                    msg_row = self._conn.execute(
-                        "SELECT 1 FROM messages WHERE session_id = ? LIMIT 1",
-                        (child_id,),
-                    ).fetchone()
-                except Exception:
-                    return session_id
-                if msg_row is not None:
-                    return child_id
-                current = child_id
+            child_id = child_row["id"] if hasattr(child_row, "keys") else child_row[0]
+            if not child_id or child_id in seen:
+                return session_id
+            seen.add(child_id)
+            try:
+                msg_row = self._conn.execute(
+                    "SELECT 1 FROM messages WHERE session_id = ? LIMIT 1",
+                    (child_id,),
+                ).fetchone()
+            except Exception:
+                return session_id
+            if msg_row is not None:
+                return child_id
+            current = child_id
         return session_id
 
     def get_messages_as_conversation(
@@ -2440,15 +2427,14 @@ class SessionDB:
         if include_ancestors:
             session_ids = self._session_lineage_root_to_tip(session_id)
 
-        with self._lock:
-            placeholders = ",".join("?" for _ in session_ids)
-            rows = self._conn.execute(
-                "SELECT role, content, tool_call_id, tool_calls, tool_name, "
-                "finish_reason, reasoning, reasoning_content, reasoning_details, "
-                "codex_reasoning_items, codex_message_items, platform_message_id, observed "
-                f"FROM messages WHERE session_id IN ({placeholders}) ORDER BY id",
-                tuple(session_ids),
-            ).fetchall()
+        placeholders = ",".join("?" for _ in session_ids)
+        rows = self._conn.execute(
+            "SELECT role, content, tool_call_id, tool_calls, tool_name, "
+            "finish_reason, reasoning, reasoning_content, reasoning_details, "
+            "codex_reasoning_items, codex_message_items, platform_message_id, observed "
+            f"FROM messages WHERE session_id IN ({placeholders}) ORDER BY id",
+            tuple(session_ids),
+        ).fetchall()
 
         messages = []
         for row in rows:
@@ -2515,19 +2501,18 @@ class SessionDB:
         chain = []
         current = session_id
         seen = set()
-        with self._lock:
-            for _ in range(100):
-                if not current or current in seen:
-                    break
-                seen.add(current)
-                chain.append(current)
-                row = self._conn.execute(
-                    "SELECT parent_session_id FROM sessions WHERE id = ?",
-                    (current,),
-                ).fetchone()
-                if row is None:
-                    break
-                current = row["parent_session_id"] if hasattr(row, "keys") else row[0]
+        for _ in range(100):
+            if not current or current in seen:
+                break
+            seen.add(current)
+            chain.append(current)
+            row = self._conn.execute(
+                "SELECT parent_session_id FROM sessions WHERE id = ?",
+                (current,),
+            ).fetchone()
+            if row is None:
+                break
+            current = row["parent_session_id"] if hasattr(row, "keys") else row[0]
         return list(reversed(chain)) or [session_id]
 
     @staticmethod
@@ -2829,13 +2814,12 @@ class SessionDB:
                     LIMIT ? OFFSET ?
                 """
                 tri_params.extend([limit, offset])
-                with self._lock:
-                    try:
-                        tri_cursor = self._query_conn.execute(tri_sql, tri_params)
-                    except sqlite3.OperationalError:
-                        matches = []
-                    else:
-                        matches = [dict(row) for row in tri_cursor.fetchall()]
+                try:
+                    tri_cursor = self._query_conn.execute(tri_sql, tri_params)
+                except sqlite3.OperationalError:
+                    matches = []
+                else:
+                    matches = [dict(row) for row in tri_cursor.fetchall()]
             else:
                 # Short / mixed CJK query: trigram cannot match tokens with
                 # <3 CJK chars. Fall back to LIKE substring search.
@@ -2880,18 +2864,16 @@ class SessionDB:
                 like_params.extend([limit, offset])
                 # instr() for snippet uses first search token
                 like_params = [non_op_tokens[0]] + like_params
-                with self._lock:
-                    like_cursor = self._query_conn.execute(like_sql, like_params)
-                    matches = [dict(row) for row in like_cursor.fetchall()]
+                like_cursor = self._query_conn.execute(like_sql, like_params)
+                matches = [dict(row) for row in like_cursor.fetchall()]
         else:
-            with self._lock:
-                try:
-                    cursor = self._query_conn.execute(sql, params)
-                except sqlite3.OperationalError:
-                    # FTS5 query syntax error despite sanitization — return empty
-                    return []
-                else:
-                    matches = [dict(row) for row in cursor.fetchall()]
+            try:
+                cursor = self._query_conn.execute(sql, params)
+            except sqlite3.OperationalError:
+                # FTS5 query syntax error despite sanitization — return empty
+                return []
+            else:
+                matches = [dict(row) for row in cursor.fetchall()]
 
         # ── Context window extraction ────────────────────────────────────
         # Stage 1e: Rust batch context replaces N+1 CTE queries.
@@ -2928,58 +2910,57 @@ class SessionDB:
             # ── Python fallback: N+1 CTE context queries ──────────────────
             for match in matches:
                 try:
-                    with self._lock:
-                        ctx_cursor = self._query_conn.execute(
-                            """WITH target AS (
-                                   SELECT session_id, timestamp, id
-                                   FROM messages
-                                   WHERE id = ?
-                               )
-                               SELECT role, content
-                               FROM (
-                                   SELECT m.id, m.timestamp, m.role, m.content
-                                   FROM messages m
-                                   JOIN target t ON t.session_id = m.session_id
-                                   WHERE (m.timestamp < t.timestamp)
-                                      OR (m.timestamp = t.timestamp AND m.id < t.id)
-                                   ORDER BY m.timestamp DESC, m.id DESC
-                                   LIMIT 1
-                               )
-                               UNION ALL
-                               SELECT role, content
+                    ctx_cursor = self._query_conn.execute(
+                        """WITH target AS (
+                               SELECT session_id, timestamp, id
                                FROM messages
                                WHERE id = ?
-                               UNION ALL
-                               SELECT role, content
-                               FROM (
-                                   SELECT m.id, m.timestamp, m.role, m.content
-                                   FROM messages m
-                                   JOIN target t ON t.session_id = m.session_id
-                                   WHERE (m.timestamp > t.timestamp)
-                                      OR (m.timestamp = t.timestamp AND m.id > t.id)
-                                   ORDER BY m.timestamp ASC, m.id ASC
-                                   LIMIT 1
-                               )""",
-                            (match["id"], match["id"]),
+                           )
+                           SELECT role, content
+                           FROM (
+                               SELECT m.id, m.timestamp, m.role, m.content
+                               FROM messages m
+                               JOIN target t ON t.session_id = m.session_id
+                               WHERE (m.timestamp < t.timestamp)
+                                  OR (m.timestamp = t.timestamp AND m.id < t.id)
+                               ORDER BY m.timestamp DESC, m.id DESC
+                               LIMIT 1
+                           )
+                           UNION ALL
+                           SELECT role, content
+                           FROM messages
+                           WHERE id = ?
+                           UNION ALL
+                           SELECT role, content
+                           FROM (
+                               SELECT m.id, m.timestamp, m.role, m.content
+                               FROM messages m
+                               JOIN target t ON t.session_id = m.session_id
+                               WHERE (m.timestamp > t.timestamp)
+                                  OR (m.timestamp = t.timestamp AND m.id > t.id)
+                               ORDER BY m.timestamp ASC, m.id ASC
+                               LIMIT 1
+                           )""",
+                        (match["id"], match["id"]),
+                    )
+                    context_msgs = []
+                    for r in ctx_cursor.fetchall():
+                        raw = r["content"]
+                        decoded = self._decode_content(raw)
+                        if isinstance(decoded, list):
+                            text_parts = [
+                                p.get("text", "") for p in decoded
+                                if isinstance(p, dict) and p.get("type") == "text"
+                            ]
+                            text = " ".join(t for t in text_parts if t).strip()
+                            preview = text or "[multimodal content]"
+                        elif isinstance(decoded, str):
+                            preview = decoded
+                        else:
+                            preview = ""
+                        context_msgs.append(
+                            {"role": r["role"], "content": preview[:200]}
                         )
-                        context_msgs = []
-                        for r in ctx_cursor.fetchall():
-                            raw = r["content"]
-                            decoded = self._decode_content(raw)
-                            if isinstance(decoded, list):
-                                text_parts = [
-                                    p.get("text", "") for p in decoded
-                                    if isinstance(p, dict) and p.get("type") == "text"
-                                ]
-                                text = " ".join(t for t in text_parts if t).strip()
-                                preview = text or "[multimodal content]"
-                            elif isinstance(decoded, str):
-                                preview = decoded
-                            else:
-                                preview = ""
-                            context_msgs.append(
-                                {"role": r["role"], "content": preview[:200]}
-                            )
                     match["context"] = context_msgs
                 except Exception:
                     match["context"] = []
@@ -3010,21 +2991,20 @@ class SessionDB:
             "FROM messages GROUP BY session_id"
             ") m ON m.session_id = s.id "
         )
-        with self._lock:
-            if source:
-                cursor = self._conn.execute(
-                    f"{select_with_last_active}"
-                    "WHERE s.source = ? "
-                    "ORDER BY last_active DESC, s.started_at DESC, s.id DESC LIMIT ? OFFSET ?",
-                    (source, limit, offset),
-                )
-            else:
-                cursor = self._conn.execute(
-                    f"{select_with_last_active}"
-                    "ORDER BY last_active DESC, s.started_at DESC, s.id DESC LIMIT ? OFFSET ?",
-                    (limit, offset),
-                )
-            return [dict(row) for row in cursor.fetchall()]
+        if source:
+            cursor = self._conn.execute(
+                f"{select_with_last_active}"
+                "WHERE s.source = ? "
+                "ORDER BY last_active DESC, s.started_at DESC, s.id DESC LIMIT ? OFFSET ?",
+                (source, limit, offset),
+            )
+        else:
+            cursor = self._conn.execute(
+                f"{select_with_last_active}"
+                "ORDER BY last_active DESC, s.started_at DESC, s.id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
+        return [dict(row) for row in cursor.fetchall()]
 
     # =========================================================================
     # Utility
@@ -3032,27 +3012,25 @@ class SessionDB:
 
     def session_count(self, source: str = None) -> int:
         """Count sessions, optionally filtered by source."""
-        with self._lock:
-            if source:
-                cursor = self._conn.execute(
-                    "SELECT COUNT(*) AS cnt FROM sessions WHERE source = ?", (source,)
-                )
-            else:
-                cursor = self._conn.execute("SELECT COUNT(*) AS cnt FROM sessions")
-            row = cursor.fetchone()
-            return row["cnt"] if row else 0
+        if source:
+            cursor = self._conn.execute(
+                "SELECT COUNT(*) AS cnt FROM sessions WHERE source = ?", (source,)
+            )
+        else:
+            cursor = self._conn.execute("SELECT COUNT(*) AS cnt FROM sessions")
+        row = cursor.fetchone()
+        return row["cnt"] if row else 0
 
     def message_count(self, session_id: str = None) -> int:
         """Count messages, optionally for a specific session."""
-        with self._lock:
-            if session_id:
-                cursor = self._conn.execute(
-                    "SELECT COUNT(*) AS cnt FROM messages WHERE session_id = ?", (session_id,)
-                )
-            else:
-                cursor = self._conn.execute("SELECT COUNT(*) AS cnt FROM messages")
-            row = cursor.fetchone()
-            return row["cnt"] if row else 0
+        if session_id:
+            cursor = self._conn.execute(
+                "SELECT COUNT(*) AS cnt FROM messages WHERE session_id = ?", (session_id,)
+            )
+        else:
+            cursor = self._conn.execute("SELECT COUNT(*) AS cnt FROM messages")
+        row = cursor.fetchone()
+        return row["cnt"] if row else 0
 
     # =========================================================================
     # Export and cleanup
@@ -3211,10 +3189,9 @@ class SessionDB:
 
     def get_meta(self, key: str) -> Optional[str]:
         """Read a value from the state_meta key/value store."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT value FROM state_meta WHERE key = ?", (key,)
-            ).fetchone()
+        row = self._conn.execute(
+            "SELECT value FROM state_meta WHERE key = ?", (key,)
+        ).fetchone()
         if row is None:
             return None
         return row["value"] if isinstance(row, (sqlite3.Row, dict)) else row[0]
@@ -3414,17 +3391,16 @@ class SessionDB:
 
     def is_telegram_topic_mode_enabled(self, *, chat_id: str, user_id: str) -> bool:
         """Return whether Telegram DM topic mode is enabled for this chat/user."""
-        with self._lock:
-            try:
-                row = self._conn.execute(
-                    """
-                    SELECT enabled FROM telegram_dm_topic_mode
-                    WHERE chat_id = ? AND user_id = ?
-                    """,
-                    (str(chat_id), str(user_id)),
-                ).fetchone()
-            except sqlite3.OperationalError:
-                return False
+        try:
+            row = self._conn.execute(
+                """
+                SELECT enabled FROM telegram_dm_topic_mode
+                WHERE chat_id = ? AND user_id = ?
+                """,
+                (str(chat_id), str(user_id)),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return False
         if row is None:
             return False
         enabled = row["enabled"] if isinstance(row, (sqlite3.Row, dict)) else row[0]
@@ -3437,17 +3413,16 @@ class SessionDB:
         thread_id: str,
     ) -> Optional[Dict[str, Any]]:
         """Return the session binding for a Telegram DM topic, if present."""
-        with self._lock:
-            try:
-                row = self._conn.execute(
-                    """
-                    SELECT * FROM telegram_dm_topic_bindings
-                    WHERE chat_id = ? AND thread_id = ?
-                    """,
-                    (str(chat_id), str(thread_id)),
-                ).fetchone()
-            except sqlite3.OperationalError:
-                return None
+        try:
+            row = self._conn.execute(
+                """
+                SELECT * FROM telegram_dm_topic_bindings
+                WHERE chat_id = ? AND thread_id = ?
+                """,
+                (str(chat_id), str(thread_id)),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
         return dict(row) if row else None
 
     def list_telegram_topic_bindings_for_chat(
@@ -3460,15 +3435,14 @@ class SessionDB:
         Read-only; returns [] if the bindings table doesn't exist yet
         (does not trigger the topic-mode migration).
         """
-        with self._lock:
-            try:
-                rows = self._conn.execute(
-                    "SELECT * FROM telegram_dm_topic_bindings "
-                    "WHERE chat_id = ? ORDER BY updated_at DESC",
-                    (str(chat_id),),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return []
+        try:
+            rows = self._conn.execute(
+                "SELECT * FROM telegram_dm_topic_bindings "
+                "WHERE chat_id = ? ORDER BY updated_at DESC",
+                (str(chat_id),),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
         return [dict(row) for row in rows]
 
     def get_telegram_topic_binding_by_session(
@@ -3482,17 +3456,16 @@ class SessionDB:
         efficient reverse lookup. Returns None when the session has no binding or
         the table does not exist yet.
         """
-        with self._lock:
-            try:
-                row = self._conn.execute(
-                    """
-                    SELECT * FROM telegram_dm_topic_bindings
-                    WHERE session_id = ?
-                    """,
-                    (str(session_id),),
-                ).fetchone()
-            except sqlite3.OperationalError:
-                return None
+        try:
+            row = self._conn.execute(
+                """
+                SELECT * FROM telegram_dm_topic_bindings
+                WHERE session_id = ?
+                """,
+                (str(session_id),),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
         return dict(row) if row else None
 
     def bind_telegram_topic(
@@ -3567,18 +3540,17 @@ class SessionDB:
         ``/topic`` in this profile), the session is by definition unbound
         and we return False.
         """
-        with self._lock:
-            try:
-                row = self._conn.execute(
-                    """
-                    SELECT 1 FROM telegram_dm_topic_bindings
-                    WHERE session_id = ?
-                    LIMIT 1
-                    """,
-                    (str(session_id),),
-                ).fetchone()
-            except sqlite3.OperationalError:
-                return False
+        try:
+            row = self._conn.execute(
+                """
+                SELECT 1 FROM telegram_dm_topic_bindings
+                WHERE session_id = ?
+                LIMIT 1
+                """,
+                (str(session_id),),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return False
         return row is not None
 
     def list_unlinked_telegram_sessions_for_user(
@@ -3595,59 +3567,58 @@ class SessionDB:
         just returns this user's Telegram sessions — there can't be any
         bindings yet.
         """
-        with self._lock:
-            try:
-                rows = self._conn.execute(
-                    """
-                    SELECT s.*,
-                        COALESCE(
-                            (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
-                             FROM messages m
-                             WHERE m.session_id = s.id AND m.role = 'user' AND m.content IS NOT NULL
-                             ORDER BY m.timestamp, m.id LIMIT 1),
-                            ''
-                        ) AS _preview_raw,
-                        COALESCE(
-                            (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.session_id = s.id),
-                            s.started_at
-                        ) AS last_active
-                    FROM sessions s
-                    WHERE s.source = 'telegram'
-                      AND s.user_id = ?
-                      AND NOT EXISTS (
-                          SELECT 1 FROM telegram_dm_topic_bindings b
-                          WHERE b.session_id = s.id
-                      )
-                    ORDER BY last_active DESC, s.started_at DESC
-                    LIMIT ?
-                    """,
-                    (str(user_id), int(limit)),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                # telegram_dm_topic_bindings doesn't exist yet — no bindings
-                # means every telegram session for this user is "unlinked".
-                rows = self._conn.execute(
-                    """
-                    SELECT s.*,
-                        COALESCE(
-                            (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
-                             FROM messages m
-                             WHERE m.session_id = s.id AND m.role = 'user' AND m.content IS NOT NULL
-                             ORDER BY m.timestamp, m.id LIMIT 1),
-                            ''
-                        ) AS _preview_raw,
-                        COALESCE(
-                            (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.session_id = s.id),
-                            s.started_at
-                        ) AS last_active
-                    FROM sessions s
-                    WHERE s.source = 'telegram'
-                      AND s.user_id = ?
-                    ORDER BY last_active DESC, s.started_at DESC
-                    LIMIT ?
-                    """,
-                    (str(user_id), int(limit)),
-                ).fetchall()
+        try:
+            rows = self._conn.execute(
+                """
+                SELECT s.*,
+                    COALESCE(
+                        (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
+                         FROM messages m
+                         WHERE m.session_id = s.id AND m.role = 'user' AND m.content IS NOT NULL
+                         ORDER BY m.timestamp, m.id LIMIT 1),
+                        ''
+                    ) AS _preview_raw,
+                    COALESCE(
+                        (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.session_id = s.id),
+                        s.started_at
+                    ) AS last_active
+                FROM sessions s
+                WHERE s.source = 'telegram'
+                  AND s.user_id = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM telegram_dm_topic_bindings b
+                      WHERE b.session_id = s.id
+                  )
+                ORDER BY last_active DESC, s.started_at DESC
+                LIMIT ?
+                """,
+                (str(user_id), int(limit)),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # telegram_dm_topic_bindings doesn't exist yet — no bindings
+            # means every telegram session for this user is "unlinked".
+            rows = self._conn.execute(
+                """
+                SELECT s.*,
+                    COALESCE(
+                        (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
+                         FROM messages m
+                         WHERE m.session_id = s.id AND m.role = 'user' AND m.content IS NOT NULL
+                         ORDER BY m.timestamp, m.id LIMIT 1),
+                        ''
+                    ) AS _preview_raw,
+                    COALESCE(
+                        (SELECT MAX(m2.timestamp) FROM messages m2 WHERE m2.session_id = s.id),
+                        s.started_at
+                    ) AS last_active
+                FROM sessions s
+                WHERE s.source = 'telegram'
+                  AND s.user_id = ?
+                ORDER BY last_active DESC, s.started_at DESC
+                LIMIT ?
+                """,
+                (str(user_id), int(limit)),
+            ).fetchall()
 
         sessions: List[Dict[str, Any]] = []
         for row in rows:
