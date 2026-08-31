@@ -681,3 +681,122 @@ class TestMoaCadence:
         ]
         # Signature is stable across tool iterations (tool results excluded).
         assert _turn_signature(base) == _turn_signature(with_tool)
+
+    def test_peel_rebase_reuses_guidance_across_compression(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        preset = {
+            "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+            "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+        }
+
+        call_count = 0
+
+        def _mock(messages=None, provider=None, model=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"content": "answer"}
+
+        async def _run(msgs):
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await MoaRunner(preset, agent=agent).run(msgs)
+
+        # Turn 1: long transcript → fan-out (1 ref + 1 aggregator).
+        long_msgs = [
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "working on it"},
+            {"role": "user", "content": "do it"},
+        ]
+        asyncio.run(_run(long_msgs))
+        assert call_count == 2
+
+        # Compression: same task, shorter transcript → peel/rebase reuse (only
+        # aggregator, no re-fan-out).
+        short_msgs = [{"role": "user", "content": "do it"}]
+        asyncio.run(_run(short_msgs))
+        assert call_count == 3
+
+    def test_repeated_message_does_not_reuse_stale_guidance(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        preset = {
+            "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+            "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+        }
+
+        call_count = 0
+
+        def _mock(messages=None, provider=None, model=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"content": "answer"}
+
+        async def _run(msgs):
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await MoaRunner(preset, agent=agent).run(msgs)
+
+        # Turn 1.
+        asyncio.run(_run([{"role": "user", "content": "continue"}]))
+        assert call_count == 2
+
+        # New turn with the SAME message but a LONGER transcript (more history)
+        # must NOT reuse the stale guidance — the message-count heuristic blocks it.
+        longer = [
+            {"role": "user", "content": "continue"},
+            {"role": "assistant", "content": "did more work"},
+            {"role": "user", "content": "continue"},
+        ]
+        asyncio.run(_run(longer))
+        assert call_count == 4  # fan-out ran again (1 ref + 1 aggregator)
+
+    def test_peel_rebase_detects_mid_turn_compression(self):
+        from agent.moa_loop import MoaRunner
+
+        class _Agent:
+            pass
+
+        agent = _Agent()
+        preset = {
+            "references": [{"provider": "anthropic", "model": "claude-sonnet-4-6"}],
+            "aggregator": {"provider": "anthropic", "model": "claude-opus-4-8"},
+        }
+
+        call_count = 0
+
+        def _mock(messages=None, provider=None, model=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"content": "answer"}
+
+        async def _run(msgs):
+            with patch("agent.moa_loop.call_llm", side_effect=_mock):
+                return await MoaRunner(preset, agent=agent).run(msgs)
+
+        # 1. Turn start: fan-out (1 ref + 1 aggregator).
+        asyncio.run(_run([{"role": "user", "content": "do it"}]))
+        assert call_count == 2
+
+        # 2. Tool iteration: transcript grows, same turn (signature match) →
+        #    reuse, and the peak message-count is tracked.
+        asyncio.run(_run([
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "tool work"},
+            {"role": "tool", "tool_call_id": "c1", "content": "result"},
+        ]))
+        assert call_count == 3
+
+        # 3. Mid-turn compression: prior turns summarized (shorter transcript,
+        #    same task) → peel/rebase reuses guidance, no re-fan-out.
+        asyncio.run(_run([
+            {"role": "assistant", "content": "[summary of prior turns]"},
+            {"role": "user", "content": "do it"},
+        ]))
+        assert call_count == 4

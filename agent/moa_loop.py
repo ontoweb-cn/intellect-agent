@@ -150,6 +150,21 @@ def _turn_signature(messages: list) -> str:
     return hashlib.sha256(payload.encode("utf-8", "replace")).hexdigest()
 
 
+def _task_signature(messages: list) -> str:
+    """Compression-stable key: hash of the last user message's content.
+
+    Context compression summarizes the older turns but preserves the last user
+    message (the task), so this key survives compression — used for peel/rebase to
+    reuse advisor guidance across a compression boundary.
+    """
+    content = ""
+    for m in reversed(messages):
+        if isinstance(m, dict) and m.get("role") == "user":
+            content = _content_to_text(m.get("content"))
+            break
+    return hashlib.sha256(content.encode("utf-8", "replace")).hexdigest()
+
+
 # ── Advisory view (M2) ──────────────────────────────────────────────────────
 
 _REFERENCE_SYSTEM_PROMPT = (
@@ -423,6 +438,7 @@ class MoaRunner:
         # on the agent so it persists across the fresh MoaRunner created per API
         # call.
         signature = _turn_signature(messages)
+        task_signature = _task_signature(messages)
         _cache = getattr(self._agent, "_moa_fanout_cache", None) if self._agent is not None else None
         _fanout_cached = False
         if (
@@ -432,11 +448,32 @@ class MoaRunner:
         ):
             ref_results = _cache["ref_results"]
             _fanout_cached = True
+            # Track the peak transcript size so a later compression (which
+            # shrinks the transcript below this peak) stays detectable.
+            _cache["message_count"] = max(_cache.get("message_count", 0), len(messages))
+        elif (
+            _cache is not None
+            and _cache.get("task_signature") == task_signature
+            and _cache.get("ref_results") is not None
+            and len(messages) <= _cache.get("message_count", 0)
+        ):
+            # peel/rebase: compression shrank the transcript but kept the task,
+            # so reuse the advisor guidance and rebase the cache onto the
+            # compressed transcript (compression doesn't change advisor results).
+            ref_results = _cache["ref_results"]
+            _fanout_cached = True
+            _cache["signature"] = signature
+            _cache["message_count"] = len(messages)
         else:
             tasks = [self._run_single_reference(r, ref_messages) for r in self._references]
             ref_results = await asyncio.gather(*tasks)
             if self._agent is not None:
-                self._agent._moa_fanout_cache = {"signature": signature, "ref_results": ref_results}
+                self._agent._moa_fanout_cache = {
+                    "signature": signature,
+                    "task_signature": task_signature,
+                    "message_count": len(messages),
+                    "ref_results": ref_results,
+                }
 
         successful = [r for r in ref_results if r.get("success")]
         if len(successful) < MIN_SUCCESSFUL_REFERENCES:
