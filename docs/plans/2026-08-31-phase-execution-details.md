@@ -187,7 +187,14 @@ home；roster 校验；深度预算；attribution 前缀；spawn_local 后台 + 
 `intellect bots` CLI（roster + 在线态 + 头像）。**裁决**：房间预算改造为 DM 链深度预算
 （`max_dm_depth`，回环安全必需）；群房间本体无承载面，延后。**测试** `tests/agent/test_avatar.py`（5）。
 
-### B2-4 · peer-URL relay（BT-03）⏸ 按计划可选项，本批不做（不阻塞 M4）。
+### B2-4 · peer-URL relay（BT-03）✅ 已落地（裁剪版，2026-09-02）
+**新建** `tools/bot_relay.py`（relay_delivery：ensure 目标 Bot Chat 会话 → 后台线程
+POST `/p/<profile>/…/chat`（Bearer + attribution，600s 超时）→ 回复/失败写回发送方
+会话）；**修改** bot_mode_dm 解析（roster → peers → unknown）、DEFAULT_CONFIG
+`bot_mode.peers`、intellect bots 远端行。**范围记录**：outbox/claimed/replies 队列
+不做（直连 HTTP 无需 Desktop 中转——与 BT-03 原案的主要分歧）；鉴权用 peer API key
+（文档原文 TUI_AUTH_TOKEN 为撰写时点判断）；跨机链路深度无机械上限（依赖 owner
+拓扑 + bot 行为，文档写死）。**测试** tests/tools/test_bot_relay.py 5 例。
 
 ### 门-4 ✅
 E2E（`tests/gateway/test_bot_mode_e2e.py`，env 门控 INTELLECT_BOT_MODE_E2E=1）：roster

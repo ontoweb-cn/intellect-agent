@@ -55,6 +55,34 @@ message_agent(target="coder", message="please review PR #123")
 - `max_dm_depth` caps chained bot→bot DMs (depth 3 = A→B→C, who may not
   DM further) so two bots can never loop forever.
 
+## Cross-machine relay (B2-4)
+
+A bot can DM bots on OTHER machines you control. Declare peers in the
+sender's config:
+
+```yaml
+bot_mode:
+  enabled: true
+  peers:
+    beta:
+      url: https://peer-host        # peer gateway front end
+      profile: beta                  # remote profile name (default = key)
+      api_key_env: BETA_PEER_KEY    # the peer profile's API server key
+```
+
+Delivery is fire-and-forget HTTP to the peer's `/p/<profile>/` surface
+(B1-4 routing + B1-5 per-profile auth): the attributed message lands in
+the peer's Bot Chat session, the peer runs its turn, and its reply is
+written back into YOUR Bot Chat session — arriving as a later turn.
+
+**Trust boundary (read before enabling):** a peer entry hands the peer's
+API key to this machine and lets this machine write sessions on the peer
+— cross-machine Bot Mode is an owner-managed shared-secret arrangement
+between machines YOU control. It is still not multi-user. Prefer
+`api_key_env` over inline keys, use HTTPS URLs, and note that
+cross-machine reply loops are bounded by bot behavior and your
+topology, not mechanically — keep peer bot personas non-auto-reactive.
+
 ## Security model
 
 - Profiles are isolated from each other (own home, own keys, own sessions);

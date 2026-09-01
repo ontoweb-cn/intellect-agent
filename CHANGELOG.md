@@ -60,6 +60,16 @@ roadmap.
   capability epoch) injected into their system prompt, byte-stable per
   process.
 
+### B2-4 — cross-gateway DM relay (BT-03, trimmed)
+
+- `bot_mode.peers` (default {} — owner-declared only) lets Bot Chat
+  sessions DM bots on OTHER machines: fire-and-forget HTTP delivery to
+  the peer's `/p/<profile>/` surface, reply written back into the
+  sender's Bot Chat session with attribution. Auth = the peer profile's
+  API key as a shared secret (`api_key_env` indirection supported).
+- Known limitation (documented): cross-machine reply chains are bounded
+  by owner topology and bot behavior, not mechanically.
+
 ### M2 closeout — A2-2 (G-07) history sanitation closed out
 
 - **Duplicate tool-result dedup** in the pre-call sanitizer
