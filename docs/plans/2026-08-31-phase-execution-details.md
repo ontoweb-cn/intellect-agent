@@ -178,10 +178,59 @@ per-line redact、append-per-write、manifest）+ delegate dispatch 接线 + `/a
 
 ## Phase B1（M3）/ B2（M4）/ A3+PT（M5）
 
-B1/B2 按 MP-00 裁决形态细化（B1-2 的文件面在 ADR 定稿后补本节）；A3 各包均为单点小改
+A3 各包均为单点小改
 （error_classifier.rs 匹配表、usage.rs per-key、keyless_mcp.py 移植、skill_utils 项目发现、
 foreign_sessions 直搬、mcp doctor、release.py 增量、stream_consumer 迁移门控），
 不再逐包展开——每包开工前按本模板补 5 行工作项即可。
+
+### B1-2 · supervisor（MP-00a）✅ 已落地（commit b1c62eb + 9dc7ef9）
+
+**新建** `gateway/supervisor.py`（ProfileChild/Supervisor/resolve_serve_set/
+precheck_port_conflicts，spawn→wait-for-ready→monitor/restart，start_new_session 隔离）；
+**修改** `intellect_cli/profiles.py`（profiles_to_serve）、`intellect_cli/gateway.py` +
+`intellect_cli/main.py`（`gateway run --multiplex`）。
+**测试** `tests/gateway/test_supervisor.py`（13）。
+**验收** 集成验证另跑（真实 child spawn→probe→stop→terminate，沿 spike）。
+
+### B1-4 · 前端 + 前缀路由（MP-04）✅ 已落地
+
+**决策记录**：ADR (a) 下 B1-2 未含前端 listener——B1-4 新建 `gateway/multiplex_front.py`
+（aiohttp 反代，零新依赖）；child 以 `INTELLECT_MULTIPLEX_CHILD=1` 门控重绑内部环回临时
+端口，端口经 runtime status 上报（`write_runtime_status` 补 `platform_extra` 参数）+ supervisor
+经 control socket `status` 轮询发现；precheck 演进为「仅钉死 port/非环回 host 拒，
+未钉死的 listener 平台按前缀服务」（降级无 aiohttp 时保留旧严格规则）。
+**测试** `tests/gateway/test_multiplex_front.py`（14）+ supervisor 套件更新。
+**验收** 两 profile 同端口不同前缀各收回调（webhook 站点测试）；冲突端口启动即拒
+（precheck 三例）。
+
+### B1-5 · WS 路由 + per-profile token（MP-05）✅ 已落地
+
+**决策记录**：(a) 下「路由器」落在前端 WS 泵（`_proxy_ws`/`_pump_ws`，双向 text/binary，
+上游关闭码经 `up_ws.close_code` 透传——aiohttp 迭代器吞 CLOSE 帧）；`ws.py` 守卫原样保留
+= off 默认行为；per-profile token 在 **child 侧**解析（`_expected_auth_token`：
+`TUI_AUTH_TOKEN_<PROFILE>` → 全局回退），前端保持 secret-free 纯转发；event_replay
+epoch/seq 分片由进程边界结构性成立。
+**测试** 前端 WS 路由/泵/关码 3 例 + `test_event_replay.py` token 链 4 例（4404 旧用例零改动）。
+**验收** off 旧行为不变（既有测试直通）；on 时 A 的 token 访问不了 B 的前缀（child 侧拒绝）。
+
+### B1-6 · 可观测与运维（MP-06）✅ 已落地
+
+**修改** `gateway/status.py`（`served_profiles`/`platform_extra` 参数）、
+`gateway/control_socket.py`（identify/status 增 `profile` 字段 + `extra_provider`
+逐请求合并）、`gateway/supervisor.py`（pid 认领/拒活/收陈 + `gateway_state="multiplex"`
+status 变更时写 + 自有 control socket `role=supervisor` + 退出清场）、
+`intellect_cli/gateway.py`（status 拓扑渲染）、`intellect_cli/doctor.py`
+（`_check_gateway_multiplex`：serve 集/钉死/跨 profile 凭据冲突）。
+**测试** control_socket 3 例、supervisor 4 例、`test_doctor_multiplex.py`（6）、status 渲染 2 例。
+**验收** `gateway status` 拓扑 + `/multiplex/status` + doctor 三类告警。
+
+### B1-3 · 政策与文档（MP-07）✅ 已落地
+
+AGENTS.md `## Gateway Multiplex` 节（单 owner 边界 + env 契约 + 规则 3 前提修订：
+模块级缓存成立前提是「每进程单 profile」，(b) 路线复活即禁）+ website 指南
+`user-guide/multiplex-gateways.md`（含鉴权取舍显式记录）+ sidebars + GW-302 状态注记 +
+CHANGELOG。**鉴权取舍**：HTTP 由各 child 自鉴权（per-profile key），WS per-profile token
+默认 + 全局回退；单 owner 信任模型明示（token 隔离 profile，不隔离人）。
 
 ---
 

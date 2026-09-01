@@ -6,6 +6,30 @@ roadmap.
 
 ## Unreleased
 
+### M3 — Gateway Multiplex (B1): one supervisor, many isolated profiles
+
+- **`intellect gateway run --multiplex`** serves the default profile plus
+  secondaries (`gateway.multiplex_profile_allowlist` filters) from one
+  supervisor process — one gateway child per profile, each fully isolated in
+  its own `INTELLECT_HOME`; dead children restart with exponential backoff
+  and a child's death never touches the others.
+- **Front end with a single listener (B1-4).** The supervisor owns the only
+  external HTTP listener: unprefixed paths go to the default profile,
+  `/p/<name>/...` routes to that profile's child (prefix stripped). Children
+  bind internal loopback ephemeral ports only; a secondary pinning its own
+  port/host is rejected at startup. Webhook providers for different profiles
+  share one port via prefixes. `GET /multiplex/status` exposes the topology.
+- **WebSocket profile routing (B1-5).** WS upgrades route by the same
+  prefixes (fail-closed 4404 close frames on routing failures); per-profile
+  tokens (`TUI_AUTH_TOKEN_<PROFILE>`, global fallback) mean profile A's
+  token cannot open profile B's endpoint. Multiplex-off behavior is
+  unchanged byte-for-byte (the `/p/` 4404 guard remains the default).
+- **Observability (B1-6).** `gateway status` renders the multiplex
+  topology; the supervisor's control socket identifies with
+  `role: "supervisor"` + live `served_profiles`; child `identify` responses
+  carry their `profile`; `intellect doctor` checks serve-set pinning and
+  cross-profile credential conflicts.
+
 ### W15 — Tool Search L2: progressive disclosure aligned to Hermes
 
 - **Activation is now always-on (常开).** `enabled: auto` is an alias of `on`:

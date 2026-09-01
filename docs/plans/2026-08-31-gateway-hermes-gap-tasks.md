@@ -84,6 +84,11 @@
 
 ### GW-302 · P2-2 profile 路由 fail-closed
 - 复用安全：未实现多 profile 时 `/p/<profile>` 显式拒；再按需移植 `profile_routing.py`。
+- **状态（2026-09-01，B1-5 落地后）**：fail-closed 已实现并保留为 **multiplex off 时的默认
+  行为**（`tui_gateway/ws.py` 的 `^/p/` → WS close 4404 守卫不变，既有测试零改动复用）。
+  multiplex on 时路由由 supervisor 前端（`gateway/multiplex_front.py`）解锁：`/p/<name>/`
+  经前缀剥离反代至对应 child，路由失败以 4404 关闭帧可见拒绝；child 永远不会收到带前缀
+  的路径。`gateway/profile_routing.py`（B1-1）已按需落地。
 
 ---
 

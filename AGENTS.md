@@ -1070,6 +1070,50 @@ automatically scope to the active profile.
    This is intentional — it lets `intellect -p coder profile list` see all profiles regardless
    of which one is active.
 
+## Gateway Multiplex
+
+Multiplex (`intellect gateway run --multiplex`) serves MULTIPLE profiles from one
+supervisor process. Per the multiplex ADR (`docs/plans/2026-08-31-adr-multiplex-architecture.md`,
+verdict **(a)**): the supervisor hosts zero gateways — it spawns one gateway child per
+profile (`INTELLECT_HOME=<home> INTELLECT_MULTIPLEX_CHILD=1 python -m gateway.run`),
+monitors/restarts them independently, and its **front end owns the ONLY external
+listener**, routing by profile URL prefix.
+
+**Single-owner boundary (permanent):** multiplex is a multi-PROFILE isolation extension
+for one owner. It is NOT multi-user — `members`/`teams`/`projects` remain WONTFIX and
+must not be reintroduced "because multiplex now exists". Auth is per-owner trust:
+profile keys/tokens isolate profiles from each other, not users from each other.
+
+Key contracts (B1-2..B1-6):
+
+- **`INTELLECT_MULTIPLEX_CHILD=1`** is set ONLY by the supervisor. A child under this flag
+  rebinds listener platforms (`api_server`, `webhook`) to an internal loopback ephemeral
+  port and reports the resolved port through runtime status; standalone gateways never
+  see the flag, so every behavior gated on it is a no-op when multiplex is off.
+- **Precheck:** a secondary that merely ENABLES a listener platform is served under the
+  front end's `/p/<name>/` prefix; one that PINS a port or a non-loopback host is
+  rejected at supervisor startup (`PortConflictError`, readable message).
+- **Front end** (`gateway/multiplex_front.py`) is a secret-free byte pump: unprefixed
+  paths → default child, `/p/<name>/…` → that child (prefix stripped). HTTP keys, webhook
+  HMAC secrets and WS tokens are enforced by each child from its own home.
+- **Per-profile WS tokens (MP-05):** `tui_gateway/ws.py` resolves `TUI_AUTH_TOKEN_<PROFILE>`
+  (uppercased, `-`→`_`) first, falling back to global `TUI_AUTH_TOKEN`. The `^/p/` → WS
+  close 4404 guard is the fail-closed default and stays: children under the supervisor
+  never see prefixed paths (the front end strips them), and direct `/p/` hits stay rejected.
+- **Observability:** the supervisor writes `gateway_state="multiplex"` + `served_profiles`
+  runtime status, claims the home pid file, serves a control socket with
+  `role: supervisor` + live topology, and child `identify` responses carry a `profile`
+  field. `intellect gateway status` renders the topology; `intellect doctor` checks
+  serve-set pinning/credential conflicts.
+
+**Rule 3 precondition (revised for multiplex):** module-level caching of
+`get_intellect_home()` is safe *because each PROCESS serves exactly one profile* —
+`_apply_profile_override()` runs before imports, and under multiplex (a) the process
+boundary IS the profile boundary. This assumption breaks for a hypothetical in-process
+(b) multiplexer (one process serving many homes): if that route is ever revived, the
+module-level-cache pattern is FORBIDDEN there and per-request scope resolution becomes
+mandatory (see ADR §(b) checklist).
+
 ## Known Pitfalls
 
 ### DO NOT hardcode `~/.intellect` paths
