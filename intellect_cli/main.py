@@ -13934,6 +13934,26 @@ Examples:
     sessions_export.add_argument("--source", help="Filter by source")
     sessions_export.add_argument("--session-id", help="Export a specific session")
 
+    sessions_import = sessions_subparsers.add_parser(
+        "import",
+        help="Import a foreign session file (Claude Code / Codex CLI JSONL)",
+    )
+    sessions_import.add_argument(
+        "path",
+        nargs="?",
+        help=(
+            "Foreign session file (.jsonl) — format auto-detected; with "
+            "--scan, import every recognized session under the standard "
+            "Claude Code / Codex storage locations"
+        ),
+    )
+    sessions_import.add_argument(
+        "--scan",
+        action="store_true",
+        default=False,
+        help="Scan the standard Claude Code / Codex storage dirs for sessions",
+    )
+
     sessions_delete = sessions_subparsers.add_parser(
         "delete", help="Delete a specific session"
     )
@@ -14130,6 +14150,44 @@ Examples:
 
             relaunch(["--resume", selected_id])
             return  # won't reach here after execvp
+
+        elif action == "import":
+            # G-17 / A3-5: import foreign sessions (Claude Code / Codex).
+            from agent.foreign_sessions import (
+                discover_foreign_sessions,
+                import_foreign_session,
+            )
+
+            scan = getattr(args, "scan", False)
+            path_val = getattr(args, "path", None)
+            targets = (
+                discover_foreign_sessions()
+                if scan
+                else ([Path(path_val)] if path_val else [])
+            )
+            if not targets:
+                print("No foreign session file specified (or none found).")
+                print(
+                    "Usage: intellect sessions import <file.jsonl> "
+                    "— or --scan for the standard Claude Code / Codex dirs."
+                )
+                return 1
+            imported = skipped = 0
+            for fpath in targets:
+                try:
+                    sid = import_foreign_session(db, fpath)
+                except Exception as exc:
+                    print(f"  ⚠ {fpath}: import failed ({exc})")
+                    skipped += 1
+                    continue
+                if sid:
+                    print(f"  ✓ imported {fpath.name} → {sid}")
+                    imported += 1
+                else:
+                    print(f"  ⚠ {fpath}: unrecognized or empty — skipped")
+                    skipped += 1
+            print(f"\nImported {imported} session(s); skipped {skipped}.")
+            return 0
 
         elif action == "optimize":
             db_path = db.db_path
