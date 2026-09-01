@@ -375,6 +375,86 @@ class FirecrawlWebSearchProvider(WebSearchProvider):
     def display_name(self) -> str:
         return "Firecrawl"
 
+    def is_keyless_available(self) -> bool:
+        """G-15: Firecrawl's public API serves keyless scrape/search
+        without a key (live-probed 2026-09-02, HTTP 200 on both
+        /v1/scrape and /v1/search). Subject to anonymous rate limits —
+        the keyless walk's "advance on rate-limit error" handles those."""
+        return True
+
+    def search_keyless(self, query: str, limit: int = 5) -> Dict[str, Any]:
+        """Anonymous search via raw REST (no key, no SDK).
+
+        Returns the standard ``{"success", "data": {"web": [...]}}`` shape.
+        """
+        import httpx
+
+        base = os.getenv(
+            "FIRECRAWL_KEYLESS_API_URL", "https://api.firecrawl.dev"
+        ).rstrip("/")
+        response = httpx.post(
+            f"{base}/v1/search",
+            json={"query": query, "limit": min(max(limit, 1), 10)},
+            headers={"Content-Type": "application/json"},
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json().get("data") or []
+        web = []
+        for i, r in enumerate(data if isinstance(data, list) else []):
+            web.append(
+                {
+                    "url": r.get("url", ""),
+                    "title": r.get("title", ""),
+                    "description": (r.get("description") or r.get("markdown") or "")[:400],
+                    "position": i + 1,
+                }
+            )
+        return {"success": True, "data": {"web": web}}
+
+    async def extract_keyless(self, urls: List[str], **kwargs: Any) -> List[Dict[str, Any]]:
+        """Anonymous scrape via raw REST, one URL at a time.
+
+        Returns the legacy per-URL list-of-results shape (markdown goes to
+        content/raw_content). Per-URL failures become ``error`` entries.
+        """
+        import asyncio
+
+        import httpx
+
+        base = os.getenv(
+            "FIRECRAWL_KEYLESS_API_URL", "https://api.firecrawl.dev"
+        ).rstrip("/")
+        results: List[Dict[str, Any]] = []
+
+        async def _scrape_one(url: str) -> Dict[str, Any]:
+            try:
+                response = await asyncio.to_thread(
+                    lambda: httpx.post(
+                        f"{base}/v1/scrape",
+                        json={"url": url, "formats": ["markdown"]},
+                        headers={"Content-Type": "application/json"},
+                        timeout=60,
+                    )
+                )
+                response.raise_for_status()
+                payload = (response.json() or {}).get("data") or {}
+                markdown = payload.get("markdown") or ""
+                return {
+                    "url": url,
+                    "title": (payload.get("metadata") or {}).get("title", ""),
+                    "content": markdown,
+                    "raw_content": markdown,
+                    "metadata": {"sourceURL": url,
+                                 "title": (payload.get("metadata") or {}).get("title", "")},
+                }
+            except Exception as exc:
+                return {"url": url, "error": str(exc)}
+
+        for url in urls:
+            results.append(await _scrape_one(url))
+        return results
+
     def is_available(self) -> bool:
         """Return True when direct Firecrawl OR managed-gateway path is configured."""
         return check_firecrawl_api_key()
