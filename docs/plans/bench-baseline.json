@@ -43,9 +43,22 @@
       "python_assembly_ms": 2.3,
       "sql_share": "92%"
     },
-    "verdict": "CLOSED \u2014 rust migration rejected",
+    "verdict": "CLOSED — rust migration rejected",
     "rationale": "SQL runs in sqlite C layer already; a Rust port can only reclaim the ~8% python assembly while paying FFI Row/dict rebuild costs. If this query ever needs real optimization, the lever is the SQL shape itself (correlated preview subquery -> JOIN/index), not the language.",
     "baseline_p50_ms": 35.725,
     "read_pool_p50_ms": 30.81
+  },
+  "g21_verdict": {
+    "verdict": "CLOSED — rust migration rejected",
+    "date": "2026-09-02",
+    "rationale": "G-21 门控程序（先 benchmark 后迁移，无收益即关闭）：scripts/bench/bench_stream_consumer.py 实测 stream_consumer 的 Python 热路径（think-block 状态机 + 缓冲）为 24.96 MB/s、每 delta p50 16µs；在 20 delta/s × 450 字符的现实网关工作负载下估算 CPU 占用 0.036%。平台 edit API 调用（秒级、限速主导）才是循环瓶颈；SSE 解析热环已在 rust StreamAccumulator 覆盖（P0-2 基线 4103.6 MB/s）。迁移可移除的 CPU 份额不可测量——按 G-14 先例显式关闭。delivery.py 路由纯函数 p50 1.3µs，同裁决。",
+    "numbers": {
+      "filter_accumulate_mb_per_s": 24.96,
+      "filter_accumulate_p50_us_per_delta": 15.96,
+      "on_delta_enqueue_us_per_delta": 0.44,
+      "delivery_parse_p50_us": 1.29,
+      "estimated_cpu_share_pct_at_20_delta_s": 0.0361,
+      "rust_baseline_stream_parse_mb_per_s": 4103.6
+    }
   }
 }
