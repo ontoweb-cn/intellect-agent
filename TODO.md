@@ -64,9 +64,15 @@
 
 ## 🟢 P2 — 跟进
 
-### [TODO-013] Gateway 看门狗参数 config.yaml 化
+### [TODO-013] Gateway 看门狗参数 config.yaml 化 ✅ 已完成
 
-**状态**: 📋 待办 (2026-08-31)
+**状态**: ✅ 已完成 (2026-09-02)
+**实施**: `gateway.watchdog.*` config section (enabled / heartbeat_interval_s /
+stall_threshold_s / max_strikes / shutdown_grace_s) wired into
+GatewayWatchdog construction in gateway/run.py start_gateway. Defaults
+mirror the module constants exactly. enabled=false (or the
+INTELLECT_GATEWAY_WATCHDOG=0 env) keeps the watchdog from supervising.
+Commit: see feat(todo-013) on feat/phase0-foundations.
 **背景**: `gateway/shutdown_watchdog.py`（GW-201）当前仅支持 env 开关
 `INTELLECT_GATEWAY_WATCHDOG=0`；心跳间隔/停滞阈值/strikes/关停 grace 为模块常量。
 按 AGENTS.md 惯例，非敏感阈值类设置应放 `config.yaml`（如 `gateway.watchdog.*`），
@@ -111,9 +117,14 @@ env 仅保留总开关。接线点：`gateway/run.py::start_gateway` 构造 `Gat
 
 ---
 
-### [TODO-010] Gateway 模块 Rust 迁移 — 后续
+### [TODO-010] Gateway 模块 Rust 迁移 — 后续 ✅ 已关账 (2026-09-02)
 
-**状态**: 📋 已分析 (2026-06-22)
+**状态**: ✅ 已关账 — 三待迁项全有基准裁决，迁移无收益（G-14/G-21 门控纪律）：
+- `session.py` list_sessions_rich SQL → G-14 CLOSED (SQL 占 92%)
+- `stream_consumer.py` → G-21 CLOSED (0.036% estimated CPU)
+- `delivery.py` routing → G-21 同批实测 p50 1.3µs, 无收益
+裁决 + 数字详见 `docs/plans/bench-baseline.json` (g21_verdict) 及
+`docs/plans/2026-09-02-a3-3-keyless-endpoints-analysis.md` 相关注记。
 **详情**: 当前 Rust 已覆盖 15 个模块（session DB、token、sandbox、crypto、stream 等），但 gateway 层仍有 3 个模块可迁。
 
 **已迁至 Rust (✅)**:
@@ -172,7 +183,7 @@ env 仅保留总开关。接线点：`gateway/run.py::start_gateway` 构造 `Gat
 | 🟡 | GPG 签名 SHA256SUMS | 中 | ✅ 代码就绪, 待配置 Secrets |
 | 🟢 | 国内 PyPI 镜像 (阿里云/清华) | 中 | ✅ 被动同步, 已文档化 |
 | 🟢 | 产物命名统一 | 低 | ✅ `intellect-agent-{ver}-{platform}-{arch}.{ext}` |
-| 🟢 | Docker 发布与 tag 联动 | 中 | ⬜ |
+| 🟢 | Docker 发布与 tag 联动 | 中 | ✅ docker-publish.yml 增 v* tag 触发 (2026-09-02) |
 
 **不适合改进**:
 - ❌ Gitee macOS/Windows 独立构建 — Gitee Go 无对应 runner
@@ -348,7 +359,7 @@ run_conversation() — 4,546 行
 | C1 | Phase 1 + Phase 5 提取 | `conversation_helpers.py` (3 函数) | ✅ 已完成 |
 | C2 | Phase 2 提取 (消息构建) | `conversation_helpers.py` (2 函数) | ✅ 已完成 |
 | C3 | Phase 3 提取 (API 调用) | `conversation_helpers.py` (1 函数) | ✅ 已完成 |
-| C4 | Phase 4 拆分 (9 错误路径) | ⏸️ 收益递减, 嵌套控制流深 |
+| C4 | Phase 4 拆分 (9 错误路径) | ⏸️ 收益递减, 嵌套控制流深 (2026-09-02 复核: A1/A3 改动继续累积, 拆分更贵, 维持延后) |
 | C5 | 主函数编排层简化 | `conversation_loop.py` 结构化文档 + Phase 标记 | ✅ 已完成 |
 
 **保障机制**:
