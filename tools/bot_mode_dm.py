@@ -22,7 +22,12 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from typing import Optional
+
+try:
+    import fcntl
+except ImportError:  # Windows — the turn-lock wrapper degrades to unlocked
+    fcntl = None
+from typing import List, Optional
 from pathlib import Path
 
 from tools.bot_mode_roster import BOT_CHAT_SESSION_TITLE
@@ -140,8 +145,9 @@ FORGED_CALL_ERROR = {
 }
 
 
-def MESSAGE_AGENT_SCHEMA() -> dict:
-    """Fresh schema copy per injection (agents must not share dicts)."""
+def message_agent_schema() -> dict:
+    """One fresh schema copy per injection — agents must never share the
+    same dict object (copy-on-write injection)."""
     return {
         "type": "function",
         "function": {
@@ -245,11 +251,16 @@ def ensure_message_agent_tool(agent) -> bool:
     ):
         return True
     # Copy-on-write: agent.tools may be the memoized shared list object.
-    agent.tools = [*tools, MESSAGE_AGENT_SCHEMA()]
+    agent.tools = [*tools, message_agent_schema()]
     valid = getattr(agent, "valid_tool_names", None)
     if valid is not None:
         valid.add(MESSAGE_AGENT_TOOL_NAME)
     return True
+
+
+def turn_lock_path(target_home: Path) -> Path:
+    """Per-profile turn lock — serialized bot turns, no interleaving."""
+    return Path(target_home) / "bot_chat.lock"
 
 
 def handle_message_agent_call(agent, function_args) -> str:
@@ -313,15 +324,25 @@ def handle_message_agent_call(agent, function_args) -> str:
     env_vars = dict(os.environ)
     env_vars[DM_DEPTH_ENV] = str(depth + 1)
     env_vars[QUERY_FILE_DELETE_ENV] = "1"
+    # The child runs from the TARGET's home (neutral context — never the
+    # sender's cwd) and needs the repo importable from there.
+    repo_root = str(Path(__file__).resolve().parents[1])
+    existing_pp = env_vars.get("PYTHONPATH")
+    env_vars["PYTHONPATH"] = (
+        repo_root + (os.pathsep + existing_pp if existing_pp else "")
+    )
+    turn_lock = turn_lock_path(target_home)
     command = (
-        f"{_sys.executable} -m intellect_cli.main -p {target} chat -Q "
+        f"{_shlex.quote(_sys.executable)} -m tools.bot_mode_dm "
+        f"--turn-lock {_shlex.quote(str(turn_lock))} -- "
+        f"-p {target} chat -Q "
         f"--continue {_shlex.quote(BOT_CHAT_SESSION_TITLE)} "
         f"--query-file {_shlex.quote(str(query_file))}"
     )
     try:
         proc_session = process_registry.spawn_local(
             command=command,
-            cwd=None,
+            cwd=str(target_home),
             task_id="",
             session_key=get_current_session_key(default=""),
             env_vars=env_vars,
@@ -354,3 +375,46 @@ def _same_path(a: str, b: Path) -> bool:
         return Path(a).resolve() == b.resolve()
     except Exception:
         return False
+
+
+# ── turn-lock wrapper entry (P2-1) ──────────────────────────────────────
+
+def _turn_lock_entry(argv: List[str]) -> int:
+    """``python -m tools.bot_mode_dm --turn-lock PATH -- <chat argv…>``
+
+    Holds an exclusive flock on PATH for the child chat's whole run, so
+    concurrent DMs to one profile SERIALIZE instead of interleaving turns
+    (WAL protects the database; this protects the turn semantics). The lock
+    releases automatically when the process exits.
+    """
+    import runpy
+
+    if "--turn-lock" not in argv or "--" not in argv:
+        print("usage: -m tools.bot_mode_dm --turn-lock PATH -- <chat argv...>")
+        return 2
+    lock_path = Path(argv[argv.index("--turn-lock") + 1])
+    chat_argv = argv[argv.index("--") + 1:]
+
+    if fcntl is not None:
+        handle = open(lock_path, "a+", encoding="utf-8")
+        # Blocking acquire: queued deliveries process one at a time, in order.
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            _sys.argv = ["intellect"] + chat_argv
+            runpy.run_module("intellect_cli.main", run_name="__main__")
+        finally:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            except Exception:
+                pass
+        return 0
+
+    # No fcntl (Windows): degrade to unlocked delivery — single-owner V1
+    # accepted limitation; database integrity stays WAL-guaranteed.
+    _sys.argv = ["intellect"] + chat_argv
+    runpy.run_module("intellect_cli.main", run_name="__main__")
+    return 0
+
+
+if __name__ == "__main__":
+    _sys.exit(_turn_lock_entry(_sys.argv[1:]))

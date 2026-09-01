@@ -2,6 +2,8 @@
 double title-gate dispatch, attribution, depth budget."""
 
 import json
+import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -64,6 +66,7 @@ def bot_env(tmp_path, monkeypatch):
 
     def _fake_spawn(command, cwd=None, task_id="", session_key="", env_vars=None, use_pty=False):
         spawned["command"] = command
+        spawned["cwd"] = cwd
         spawned["env"] = env_vars
         spawned["session_key"] = session_key
         session = _Session()
@@ -157,6 +160,10 @@ def test_delivery_attribution_and_transport(tmp_path, bot_env):
     assert "status report" in body
 
     command = bot_env.spawned["command"]
+    # Delivery runs through the turn-lock wrapper (P2-1), from the TARGET's
+    # home (P2-2), with every variable part shell-quoted.
+    assert "-m tools.bot_mode_dm" in command
+    assert "--turn-lock" in command
     assert "-p alpha" in command
     assert "--continue" in command and "'Bot Chat'" in command
     assert "--query-file" in command
@@ -164,6 +171,10 @@ def test_delivery_attribution_and_transport(tmp_path, bot_env):
     assert bot_env.spawned["env"]["INTELLECT_BOT_DM_DEPTH"] == "1"
     assert bot_env.spawned["env"]["INTELLECT_QUERY_FILE_DELETE"] == "1"
     assert bot_env.spawned["session"].notify_on_complete is True
+    assert bot_env.spawned["cwd"] == str(tmp_path / "alpha")  # P2-2: target home
+    assert bot_env.spawned["env"]["PYTHONPATH"].split(os.pathsep)[0] == (
+        str(Path(__file__).resolve().parents[2])
+    )
 
 
 def test_unknown_target_rejected(tmp_path, bot_env):

@@ -2,11 +2,14 @@
 
 from agent.avatar import (
     avatar_params,
-    distinct_count,
     fnv1a32,
     render_ansi,
     render_svg,
 )
+
+
+def _distinct_count(names):
+    return len({render_svg(n) for n in names})
 
 
 def test_fnv1a32_standard_vectors():
@@ -29,7 +32,7 @@ def test_different_names_render_differently():
     names = [f"bot-{i}" for i in range(20)]
     # 20 names must produce mostly-distinct blobs (collision odds are
     # ~(1/360)^2 per pair — full uniqueness is not asserted, breadth is).
-    assert distinct_count(names) >= 15
+    assert _distinct_count(names) >= 15
 
 
 def test_render_svg_stable_and_structured():

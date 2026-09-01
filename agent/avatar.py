@@ -10,7 +10,7 @@ Renders as SVG (embedding/UI) or ANSI-256 (terminal roster)."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 _FNV_OFFSET = 0x811C9DC5
 _FNV_PRIME = 0x01000193
@@ -87,7 +87,3 @@ def render_ansi(name: str, *, color: bool = True) -> str:
         return f"{face} {name}"
     return f"\x1b[38;5;{color_code}m{face}\x1b[0m {name}"
 
-
-def distinct_count(names: List[str]) -> int:
-    """How many of the given names render distinct SVGs (test helper)."""
-    return len({render_svg(n) for n in names})
