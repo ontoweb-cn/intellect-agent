@@ -141,8 +141,20 @@ class ExaWebSearchProvider(WebSearchProvider):
         if current.get("url"):
             results.append(dict(current))
         if not results:
-            results = [{"url": "", "title": "", "description": text,
-                        "note": "text-only result"}]
+            # Format-drift signal: the blob still carries Title/URL markers
+            # but none survived parsing — the vendor changed its text shape.
+            drifted = "Title: " in text or "URL: " in text
+            if drifted:
+                logger.warning(
+                    "exa keyless blob shape drift — %s Title/URL markers "
+                    "parsed to 0 results; returning raw text entry",
+                    text.count("Title: "),
+                )
+            fallback = {"url": "", "title": "", "description": text,
+                        "note": "text-only result"}
+            if drifted:
+                fallback["format_drift"] = True
+            results = [fallback]
         for i, r in enumerate(results[:limit]):
             r["position"] = i + 1
         return {"success": True, "data": {"web": results}}

@@ -99,9 +99,14 @@ class KeenableWebSearchProvider(WebSearchProvider):
         return True
 
     def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
+        """Param note (live-probed 2026-09-02): the API takes
+        ``max_results`` — a ``limit`` field makes the endpoint return ZERO
+        results, so the caller-side limit is translated before sending."""
         try:
-            payload = _post("v1/search/public",
-                            {"query": query, "limit": min(max(limit, 1), 20)})
+            payload = _post(
+                "v1/search/public",
+                {"query": query, "max_results": min(max(limit, 1), 20)},
+            )
         except Exception as exc:
             return {"success": False, "error": str(exc)}
         web = []
