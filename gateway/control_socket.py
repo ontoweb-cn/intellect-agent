@@ -9,9 +9,13 @@ fall back to the disk scan when the socket is absent.
 Protocol (v1): connect, send one line of JSON ``{"op": "identify"|"status"}``,
 receive one line of JSON, close.
 
-- ``identify`` → ``{"ok": true, "kind", "pid", "start_time", "version"}``
+- ``identify`` → ``{"ok": true, "kind", "pid", "start_time", "version", "profile"}``
 - ``status``   → identify fields plus the persisted runtime-status payload
-  (gateway_state, platforms, exit_reason, …).
+  (gateway_state, platforms, served_profiles, exit_reason, …).
+
+Every response also merges ``extra_provider()`` when the server was built
+with one — the multiplex supervisor uses this to aggregate its per-profile
+children (``role: supervisor`` + live served_profiles snapshot, MP-06).
 
 Everything is best-effort and fail-closed to the existing scan layer: bind
 failures disable the socket with a debug log, request errors return an
@@ -57,7 +61,17 @@ def _try_version() -> str:
         return ""
 
 
-def _handle_request(req: Any) -> dict:
+def _active_profile_name_safe() -> str:
+    """Profile this process serves (MP-06 identify field). Never raises."""
+    try:
+        from intellect_cli.profiles import get_active_profile_name
+
+        return get_active_profile_name() or "default"
+    except Exception:
+        return "default"
+
+
+def _handle_request(req: Any, extra_provider: Any = None) -> dict:
     """Build the response payload for one decoded request object."""
     if not isinstance(req, dict):
         return {"ok": False, "error": "invalid request"}
@@ -68,6 +82,14 @@ def _handle_request(req: Any) -> dict:
     base["ok"] = True
     base["op"] = op
     base["version"] = _try_version()
+    base["profile"] = _active_profile_name_safe()
+    if extra_provider is not None:
+        try:
+            extra = extra_provider()
+            if isinstance(extra, dict):
+                base.update(extra)
+        except Exception:
+            pass
     if op == "identify":
         return base
     if op == "status":
@@ -76,7 +98,7 @@ def _handle_request(req: Any) -> dict:
     return {"ok": False, "error": f"unknown op: {op!r}"}
 
 
-def _serve_connection(conn: socket.socket) -> None:
+def _serve_connection(conn: socket.socket, extra_provider: Any = None) -> None:
     try:
         with conn:
             conn.settimeout(_REQUEST_TIMEOUT_S)
@@ -91,7 +113,7 @@ def _serve_connection(conn: socket.socket) -> None:
             line = chunks.split(b"\n", 1)[0].strip()
             try:
                 req = json.loads(line.decode("utf-8")) if line else {}
-                resp = _handle_request(req)
+                resp = _handle_request(req, extra_provider)
             except (ValueError, UnicodeDecodeError):
                 resp = {"ok": False, "error": "invalid json"}
             conn.sendall(json.dumps(resp, ensure_ascii=False).encode("utf-8") + b"\n")
@@ -102,8 +124,12 @@ def _serve_connection(conn: socket.socket) -> None:
 class ControlSocketServer:
     """Background thread serving the control socket. Best-effort."""
 
-    def __init__(self, path=None) -> None:
+    def __init__(self, path=None, extra_provider: Any = None) -> None:
+        """``extra_provider``: optional zero-arg callable merged into every
+        response (evaluated per request — the supervisor uses it to expose a
+        live served_profiles snapshot, MP-06)."""
         self._path = path or control_socket_path()
+        self._extra_provider = extra_provider
         self._sock: Optional[socket.socket] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -171,7 +197,7 @@ class ControlSocketServer:
 
             def _serve_with_slot(c=conn):
                 try:
-                    _serve_connection(c)
+                    _serve_connection(c, self._extra_provider)
                 finally:
                     slots.release()
 

@@ -3880,6 +3880,29 @@ def _runtime_health_lines() -> list[str]:
             message = pdata.get("error_message") or "unknown error"
             lines.append(f"⚠ {platform}: {message}")
 
+    served = state.get("served_profiles")
+    if gateway_state == "multiplex" and isinstance(served, list) and served:
+        lines.append("Multiplex supervisor topology:")
+        for entry in served:
+            if not isinstance(entry, dict) or not entry.get("name"):
+                continue
+            name = str(entry["name"])
+            pstate = str(entry.get("state") or "unknown")
+            detail = []
+            if entry.get("pid"):
+                detail.append(f"pid {entry['pid']}")
+            listeners = entry.get("listeners") or {}
+            if isinstance(listeners, dict) and listeners:
+                detail.append(
+                    " ".join(
+                        f"{key}:{port}" for key, port in sorted(listeners.items())
+                    )
+                )
+            if entry.get("restarts"):
+                detail.append(f"restarts {entry['restarts']}")
+            suffix = f" ({'; '.join(detail)})" if detail else ""
+            lines.append(f"  • {name}: {pstate}{suffix}")
+
     if gateway_state == "startup_failed" and exit_reason:
         lines.append(f"⚠ Last startup issue: {exit_reason}")
     elif gateway_state == "draining":

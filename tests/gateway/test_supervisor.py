@@ -332,6 +332,8 @@ def test_stop_is_nonblocking_no_wait_in_handler_path(tmp_path):
 class _LiveProc:
     """A proc stub that reports as still running."""
 
+    pid = 4242
+
     def poll(self):
         return None
 
@@ -418,3 +420,99 @@ def test_start_precheck_relaxes_with_front_end(tmp_path):
 
     spawned, rejected = _start_with(None)
     assert spawned == [] and rejected is True
+
+
+# ── observability (MP-06) ──────────────────────────────────────────────
+
+def test_observability_snapshot_states(tmp_path):
+    sup = _make_supervisor(tmp_path, [("a", "a"), ("b", "b")])
+    a = sup.children["a"]
+    b = sup.children["b"]
+    b.skipped_own_home = True
+
+    snap = {entry["name"]: entry for entry in sup.observability_snapshot()}
+    assert snap["a"]["state"] == "pending"
+    assert snap["b"]["state"] == "own-home"
+
+    a.proc = _LiveProc()
+    a.ready = True
+    a.listeners = {"api_server": 5000}
+    a.restarts = 2
+    snap = {entry["name"]: entry for entry in sup.observability_snapshot()}
+    assert snap["a"]["state"] == "ready"
+    assert snap["a"]["pid"] == a.proc.pid
+    assert snap["a"]["listeners"] == {"api_server": 5000}
+    assert snap["a"]["restarts"] == 2
+
+    a.port_rejected = True
+    assert sup.observability_snapshot()[0]["state"] == "rejected"
+
+
+def test_write_observability_persists_multiplex_status(tmp_path, monkeypatch):
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path / "sup-home"))
+    (tmp_path / "sup-home").mkdir()
+    sup = _make_supervisor(tmp_path, [("a", "a")])
+    child = sup.children["a"]
+    child.proc = _LiveProc()
+    child.ready = True
+    child.listeners = {"api_server": 5000}
+
+    sup._write_observability()
+
+    from gateway.status import read_runtime_status
+
+    state = read_runtime_status()
+    assert state["gateway_state"] == "multiplex"
+    assert state["served_profiles"][0]["name"] == "a"
+    assert state["served_profiles"][0]["listeners"] == {"api_server": 5000}
+
+
+def test_write_supervisor_pid_refuses_live_gateway(tmp_path, monkeypatch):
+    import json
+    import os
+
+    from gateway.status import _get_process_start_time
+    from gateway.supervisor import _write_supervisor_pid
+
+    fcntl = pytest.importorskip("fcntl")  # lock semantics are POSIX
+
+    home = tmp_path / ".intellect"
+    home.mkdir()
+    monkeypatch.setenv("INTELLECT_HOME", str(home))
+    # A live gateway holds the runtime lock — get_running_pid only trusts
+    # the pid record when that lock is held.
+    lock_handle = open(home / "gateway.lock", "a+", encoding="utf-8")
+    fcntl.flock(lock_handle, fcntl.LOCK_EX)
+    try:
+        record = {
+            "pid": os.getpid(),  # this test process is alive
+            "kind": "intellect-gateway",
+            "argv": ["intellect", "gateway", "run"],
+            "start_time": _get_process_start_time(os.getpid()),
+        }
+        (home / "gateway.pid").write_text(json.dumps(record))
+
+        assert _write_supervisor_pid() is False
+        # The foreign record is left untouched.
+        assert json.loads((home / "gateway.pid").read_text())["pid"] == os.getpid()
+    finally:
+        fcntl.flock(lock_handle, fcntl.LOCK_UN)
+        lock_handle.close()
+
+
+def test_write_supervisor_pid_reclaims_stale(tmp_path, monkeypatch):
+    import subprocess
+
+    from gateway.supervisor import _write_supervisor_pid
+
+    home = tmp_path / ".intellect"
+    home.mkdir()
+    monkeypatch.setenv("INTELLECT_HOME", str(home))
+    dead = subprocess.Popen(["true"])
+    dead.wait()  # guaranteed-dead pid
+    (home / "gateway.pid").write_text(str(dead.pid))
+
+    assert _write_supervisor_pid() is True
+    from gateway.status import remove_pid_file
+
+    remove_pid_file()

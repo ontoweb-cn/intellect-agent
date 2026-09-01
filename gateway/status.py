@@ -548,6 +548,7 @@ def write_runtime_status(
     error_code: Any = _UNSET,
     error_message: Any = _UNSET,
     platform_extra: Any = _UNSET,
+    served_profiles: Any = _UNSET,
 ) -> None:
     """Persist gateway runtime health information for diagnostics/status."""
     path = _get_runtime_status_path()
@@ -568,6 +569,9 @@ def write_runtime_status(
         payload["restart_requested"] = bool(restart_requested)
     if active_agents is not _UNSET:
         payload["active_agents"] = max(0, int(active_agents))
+    if served_profiles is not _UNSET:
+        # Multiplex supervisor topology (MP-06): one entry per served child.
+        payload["served_profiles"] = served_profiles
 
     if platform is not _UNSET:
         platform_payload = payload["platforms"].get(platform, {})

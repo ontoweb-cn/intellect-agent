@@ -109,6 +109,10 @@ class ProfileChild:
     last_exit_at: float = 0.0
     desired: bool = True  # False while we are shutting it down
     port_rejected: bool = False
+    # True when start() skipped this profile because the supervisor itself
+    # runs inside its home (the common default-profile deployment) — NOT a
+    # config conflict.
+    skipped_own_home: bool = False
     control_sock: Path = field(default_factory=Path)
     # Listener ports the child reported via its control socket `status`
     # (B1-4): {"api_server": 41234, "webhook": 41235}. The front end
@@ -182,6 +186,18 @@ def listener_binding(home: Path, platform: str) -> Tuple[Optional[str], Optional
         return (None, None)
 
 
+def listener_is_pinned(home: Path, platform: str) -> bool:
+    """True when a profile's config pins a listener platform to its own
+    external binding (explicit port, or a non-loopback host).
+
+    Shared by the B1-4 precheck and ``intellect doctor``'s multiplex check.
+    """
+    host, port = listener_binding(home, platform)
+    return port is not None or (
+        host is not None and host.lower() not in _LOOPBACK_HOSTS
+    )
+
+
 def precheck_port_conflicts(home: Path, name: str) -> None:
     """Raise :class:`PortConflictError` when a SECONDARY pins its own binding.
 
@@ -193,11 +209,8 @@ def precheck_port_conflicts(home: Path, name: str) -> None:
     """
     enabled = child_platforms(home)
     for platform in sorted(enabled & PORT_BINDING_PLATFORMS):
-        host, port = listener_binding(home, platform)
-        pinned = port is not None or (
-            host is not None and host.lower() not in _LOOPBACK_HOSTS
-        )
-        if pinned:
+        if listener_is_pinned(home, platform):
+            host, port = listener_binding(home, platform)
             detail = f"port {port}" if port is not None else f"host {host!r}"
             raise PortConflictError(
                 f"profile {name!r} pins platform {platform!r} to {detail} — "
@@ -264,7 +277,7 @@ class Supervisor:
                         "Skipping default profile: supervisor runs inside it"
                     )
                     child.desired = False
-                    child.port_rejected = True  # mark as not-managed
+                    child.skipped_own_home = True
                     continue
             try:
                 if self.front_end is not None:
@@ -409,6 +422,7 @@ class Supervisor:
             # Small-step sleep so signal-handler stop() is honored promptly
             # even during long backoff waits.
             self._sleep_interruptible(MONITOR_POLL_S)
+            self._write_observability()
             for child in self.children.values():
                 if self._stop or not child.desired:
                     continue
@@ -455,6 +469,63 @@ class Supervisor:
             except (OSError, ProcessLookupError):
                 pass
 
+    # ── observability (MP-06) ──────────────────────────────────────────
+
+    @staticmethod
+    def _profile_state(child: "ProfileChild") -> str:
+        if child.skipped_own_home:
+            return "own-home"
+        if child.port_rejected:
+            return "rejected"
+        if not child.desired:
+            return "stopping"
+        if child.proc is not None and not child.ready:
+            return "starting"
+        if child.proc is None:
+            return "backoff" if child.restarts else "pending"
+        if not child.ready:
+            return "starting"
+        return "ready"
+
+    def observability_snapshot(self) -> List[dict]:
+        """Per-profile summary for runtime status / control socket / CLI."""
+        return [
+            {
+                "name": child.name,
+                "pid": child.proc.pid if child.proc is not None else None,
+                "state": self._profile_state(child),
+                "restarts": child.restarts,
+                "port_rejected": child.port_rejected,
+                "listeners": dict(child.listeners),
+            }
+            for child in self.children.values()
+        ]
+
+    def _write_observability(self, *, force: bool = False) -> None:
+        """Persist served_profiles into this home's runtime status.
+
+        Written on change only (monitor-loop cadence is 2s — writing every
+        cycle would churn the status file for no reader benefit).
+        """
+        snapshot = self.observability_snapshot()
+        try:
+            import json as _json
+
+            payload = _json.dumps(snapshot, sort_keys=True)
+        except Exception:
+            payload = ""
+        if not force and payload == getattr(self, "_last_observe_payload", None):
+            return
+        self._last_observe_payload = payload
+        try:
+            from gateway.status import write_runtime_status
+
+            write_runtime_status(
+                gateway_state="multiplex", served_profiles=snapshot
+            )
+        except Exception as exc:
+            logger.debug("served_profiles status write failed: %s", exc)
+
     # ── termination ────────────────────────────────────────────────────
 
     def _sleep_interruptible(self, seconds: float) -> None:
@@ -473,6 +544,36 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def _write_supervisor_pid() -> bool:
+    """Claim this home's gateway.pid for the supervisor (MP-06).
+
+    Returns False (with a logged, readable error) when a LIVE gateway or
+    supervisor already owns the home; stale records are cleaned by
+    ``get_running_pid`` and the write retried.
+    """
+    try:
+        from gateway.status import get_running_pid, write_pid_file
+
+        try:
+            write_pid_file()
+            return True
+        except FileExistsError:
+            live = get_running_pid()
+            if live:
+                logger.error(
+                    "PID %s already runs a gateway under this home — "
+                    "refusing to start a second multiplex supervisor "
+                    "(stop it first or use a different profile)",
+                    live,
+                )
+                return False
+            write_pid_file()  # stale record — get_running_pid cleaned it
+            return True
+    except OSError as exc:
+        logger.warning("Supervisor pid-file write failed: %s", exc)
+        return True  # observability loss must not block supervision
+
+
 def run_supervisor(allowlist: Optional[List[str]] = None) -> int:
     """CLI entry: run the supervisor (and front end) until signalled.
 
@@ -485,6 +586,8 @@ def run_supervisor(allowlist: Optional[List[str]] = None) -> int:
         "Supervisor serving %d profile(s): %s",
         len(serve_set), ", ".join(name for name, _ in serve_set),
     )
+    if not _write_supervisor_pid():
+        return 1
     sup = Supervisor(serve_set)
 
     # Front end (B1-4) is optional: without aiohttp the supervisor keeps
@@ -502,6 +605,27 @@ def run_supervisor(allowlist: Optional[List[str]] = None) -> int:
     else:
         front = MultiplexFront(sup)
         sup.front_end = front
+
+    # Supervisor control socket (MP-06): identifies with role=supervisor
+    # and a live served_profiles snapshot. The own-home child never runs,
+    # so this home's socket path is free by construction.
+    control = None
+    try:
+        from gateway.control_socket import ControlSocketServer
+
+        control = ControlSocketServer(
+            extra_provider=lambda: {
+                "role": "supervisor",
+                "served_profiles": sup.observability_snapshot(),
+            }
+        )
+        if not control.start():
+            control = None
+    except Exception as exc:
+        logger.debug("Supervisor control socket unavailable: %s", exc)
+        control = None
+
+    sup._write_observability(force=True)
 
     thread_error: List[BaseException] = []
 
@@ -523,24 +647,47 @@ def run_supervisor(allowlist: Optional[List[str]] = None) -> int:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    if front is None:
-        # Degraded mode: monitor loop runs inline exactly as in B1-2.
-        sup.start()
-        return 0
-
-    import asyncio
-    import threading
-
-    monitor = threading.Thread(
-        target=_monitor_body, name="gateway-supervisor-monitor", daemon=True
-    )
-    monitor.start()
     exit_code = 0
     try:
-        exit_code = asyncio.run(front.run())
+        if front is None:
+            # Degraded mode: monitor loop runs inline exactly as in B1-2.
+            sup.start()
+        else:
+            import asyncio
+            import threading
+
+            monitor = threading.Thread(
+                target=_monitor_body,
+                name="gateway-supervisor-monitor",
+                daemon=True,
+            )
+            monitor.start()
+            try:
+                exit_code = asyncio.run(front.run())
+            finally:
+                sup.stop()
+                monitor.join(timeout=15)
+            if thread_error:
+                exit_code = exit_code or 1
+        return exit_code
     finally:
-        sup.stop()
-        monitor.join(timeout=15)
-    if thread_error:
-        exit_code = exit_code or 1
-    return exit_code
+        if control is not None:
+            try:
+                control.stop()
+            except Exception:
+                pass
+        # Post-mortem hygiene: the topology snapshot describes dead children
+        # once this process exits — clear it so status readers don't infer
+        # a live multiplex from a stale file.
+        try:
+            from gateway.status import remove_pid_file, write_runtime_status
+
+            sup.stop()
+            write_runtime_status(
+                gateway_state="stopped",
+                exit_reason="supervisor shutdown",
+                served_profiles=[],
+            )
+            remove_pid_file()
+        except Exception:
+            pass

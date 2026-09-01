@@ -633,3 +633,43 @@ async def test_post_delivery_callback_generation_snapshot_happens_after_bind():
     assert fired == []
     assert session_key in adapter._post_delivery_callbacks
     assert adapter._post_delivery_callbacks[session_key][0] == 2
+
+
+# ── MP-06: multiplex topology in gateway status ────────────────────────
+
+def test_runtime_health_lines_render_multiplex_topology(tmp_path, monkeypatch):
+    from gateway import status as gw_status
+    from intellect_cli.gateway import _runtime_health_lines
+
+    home = tmp_path / ".intellect"
+    home.mkdir()
+    monkeypatch.setenv("INTELLECT_HOME", str(home))
+    gw_status.write_runtime_status(
+        gateway_state="multiplex",
+        served_profiles=[
+            {"name": "default", "pid": None, "state": "own-home",
+             "restarts": 0, "port_rejected": False, "listeners": {}},
+            {"name": "alpha", "pid": 4242, "state": "ready",
+             "restarts": 1, "port_rejected": False,
+             "listeners": {"api_server": 5000}},
+        ],
+    )
+
+    lines = _runtime_health_lines()
+    joined = "\n".join(lines)
+    assert "Multiplex supervisor topology:" in joined
+    assert "default: own-home" in joined
+    assert "alpha: ready (pid 4242; api_server:5000; restarts 1)" in joined
+
+
+def test_runtime_health_lines_no_topology_without_multiplex(tmp_path, monkeypatch):
+    from gateway import status as gw_status
+    from intellect_cli.gateway import _runtime_health_lines
+
+    home = tmp_path / ".intellect"
+    home.mkdir()
+    monkeypatch.setenv("INTELLECT_HOME", str(home))
+    gw_status.write_runtime_status(gateway_state="running")
+
+    lines = _runtime_health_lines()
+    assert not any("Multiplex" in line for line in lines)

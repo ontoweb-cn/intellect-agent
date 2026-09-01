@@ -118,3 +118,50 @@ def test_connection_cap_sheds_excess(tmp_path):
         for c in held:
             c.close()
         server.stop()
+
+
+# ── MP-06: profile field + supervisor extra_provider ───────────────────
+
+def test_identify_includes_profile_field(tmp_path, monkeypatch):
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path / ".intellect"))
+    (tmp_path / ".intellect").mkdir()
+    server = ControlSocketServer(path=tmp_path / "p.sock")
+    assert server.start()
+    try:
+        ident = query_control_socket("identify", timeout=2, path=server.path)
+        assert ident["ok"] is True
+        assert ident["profile"] == "default"
+    finally:
+        server.stop()
+
+
+def test_extra_provider_merged_live(tmp_path):
+    state = {"role": "supervisor", "served_profiles": [{"name": "a"}]}
+    server = ControlSocketServer(
+        path=tmp_path / "x.sock", extra_provider=lambda: state
+    )
+    assert server.start()
+    try:
+        ident = query_control_socket("identify", timeout=2, path=server.path)
+        assert ident["role"] == "supervisor"
+        assert ident["served_profiles"] == [{"name": "a"}]
+        # Evaluated per request — a live snapshot, not a frozen copy.
+        state["served_profiles"] = [{"name": "a"}, {"name": "b"}]
+        ident = query_control_socket("identify", timeout=2, path=server.path)
+        assert len(ident["served_profiles"]) == 2
+    finally:
+        server.stop()
+
+
+def test_extra_provider_exception_is_swallowed(tmp_path):
+    def _boom():
+        raise RuntimeError("monitor is down")
+
+    server = ControlSocketServer(path=tmp_path / "e.sock", extra_provider=_boom)
+    assert server.start()
+    try:
+        ident = query_control_socket("identify", timeout=2, path=server.path)
+        assert ident["ok"] is True
+        assert "served_profiles" not in ident
+    finally:
+        server.stop()

@@ -385,6 +385,100 @@ def _check_gateway_model_overrides(issues: list[str]) -> None:
     )
 
 
+def _check_gateway_multiplex(issues: list[str]) -> None:
+    """Multiplex readiness (MP-06): serve-set resolution, listener pinning,
+    and cross-profile platform-credential conflicts a supervisor would hit
+    at runtime (scoped token locks reject the second adapter)."""
+    try:
+        from gateway.supervisor import (
+            PORT_BINDING_PLATFORMS,
+            child_platforms,
+            listener_is_pinned,
+        )
+        from intellect_cli.config import load_config
+        from intellect_cli.profiles import profiles_to_serve
+
+        cfg = load_config() or {}
+        gateway_cfg = cfg.get("gateway") if isinstance(cfg, dict) else None
+        allowlist = None
+        if isinstance(gateway_cfg, dict):
+            allowlist = gateway_cfg.get("multiplex_profile_allowlist") or None
+        serve_set = profiles_to_serve(
+            multiplex=True, profile_allowlist=allowlist
+        )
+    except Exception as exc:
+        check_warn("Multiplex check skipped", f"(serve-set resolution failed: {exc})")
+        return
+
+    if len(serve_set) <= 1:
+        check_info("Multiplex: single profile — nothing to check")
+        return
+
+    _section("Gateway Multiplex")
+    names = ", ".join(name for name, _ in serve_set)
+    check_ok(f"Serve set ({len(serve_set)} profiles)", f"({names})")
+
+    # Listener-platform pinning — pinned secondaries are rejected at
+    # supervisor startup (B1-4 precheck).
+    for name, home in serve_set:
+        if name == "default":
+            continue
+        for platform in sorted(child_platforms(home) & PORT_BINDING_PLATFORMS):
+            if listener_is_pinned(home, platform):
+                check_warn(
+                    f"Profile {name!r} pins {platform} host/port",
+                    "(the multiplex supervisor owns the only listener — this "
+                    "profile will be REJECTED at startup)",
+                )
+                issues.append(
+                    f"Remove the explicit host/port for platforms.{platform} "
+                    f"in profile {name}'s config.yaml so the multiplex front "
+                    f"end can serve it under /p/{name}/."
+                )
+
+    # Cross-profile credential conflicts: two profiles claiming the same
+    # platform identity (token/secret/key) cannot both connect — the
+    # machine-local scoped lock rejects the second adapter.
+    import yaml as _yaml
+
+    seen: dict[tuple[str, str, str], str] = {}
+    cred_keys = ("token", "secret", "key")
+    for name, home in serve_set:
+        try:
+            cfg_path = home / "config.yaml"
+            if not cfg_path.exists():
+                continue
+            data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            platforms = data.get("platforms") or {}
+            if not isinstance(platforms, dict):
+                continue
+            for platform, pcfg in platforms.items():
+                if not isinstance(pcfg, dict):
+                    continue
+                for key in cred_keys:
+                    value = str(pcfg.get(key) or "").strip()
+                    if not value or value.startswith("${"):
+                        continue
+                    ident = (str(platform).lower(), key, value)
+                    if ident in seen and seen[ident] != name:
+                        check_warn(
+                            "Duplicate platform credential across profiles",
+                            f"({seen[ident]} and {name} share platforms."
+                            f"{platform}.{key} — only one can connect; the "
+                            "scoped lock will reject the other)",
+                        )
+                        issues.append(
+                            f"Profiles {seen[ident]} and {name} configure the "
+                            f"same platforms.{platform}.{key}. Give each "
+                            "profile its own credential (or a dedicated bot "
+                            "identity) before running the multiplex supervisor."
+                        )
+                    else:
+                        seen.setdefault(ident, name)
+        except Exception:
+            continue
+
+
 def _check_project_health(issues: list[str]) -> None:
     """Check multi-project configuration health (spec §31).
 
@@ -1557,6 +1651,7 @@ def run_doctor(args):
     _check_gateway_service_linger(issues)
     _check_gateway_model_overrides(issues)
     _check_s6_supervision(issues)
+    _check_gateway_multiplex(issues)
 
     if sys.platform != "win32":
         _section("Command Installation")
