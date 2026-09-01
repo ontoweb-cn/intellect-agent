@@ -10128,15 +10128,31 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
         _wd_home = get_intellect_home()
 
+        _wd_cfg = getattr(getattr(config, "watchdog", None), "to_dict", lambda: {})()
+        _wd_enabled = _wd_cfg.get("enabled", True)
         runner._watchdog = GatewayWatchdog(
 
             asyncio.get_running_loop(),
 
             heartbeat_file=str(_wd_home / "gateway.heartbeat"),
 
-        )
+            heartbeat_interval_s=_wd_cfg.get("heartbeat_interval_s", 5.0),
 
-        runner._watchdog.start()
+            stall_threshold_s=_wd_cfg.get("stall_threshold_s", 30.0),
+
+            max_strikes=_wd_cfg.get("max_strikes", 3),
+
+            shutdown_grace_s=_wd_cfg.get("shutdown_grace_s", 30.0),
+
+        ) if _wd_enabled else None
+
+        if runner._watchdog is None:
+
+            logger.info("Gateway watchdog disabled (gateway.watchdog.enabled=false)")
+
+        else:
+
+            runner._watchdog.start()
 
         # One tiny local datagram on the loop — exempt from the "no
 

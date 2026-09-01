@@ -430,6 +430,56 @@ DEFAULT_CRON_TRIGGER_PORT: int = 8722
 
 
 @dataclass
+class WatchdogConfig:
+    """Loop-liveness watchdog tuning (GW-201 / TODO-013).
+
+    Defaults mirror the module constants in ``gateway/shutdown_watchdog.py``
+    exactly — a default-config gateway behaves byte-identically to before.
+    ``enabled=False`` (or the INTELLECT_GATEWAY_WATCHDOG=0 env) keeps the
+    watchdog from supervising the loop. TODO-013.
+    """
+    enabled: bool = True
+    heartbeat_interval_s: float = 5.0
+    stall_threshold_s: float = 30.0
+    max_strikes: int = 3
+    shutdown_grace_s: float = 30.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "heartbeat_interval_s": self.heartbeat_interval_s,
+            "stall_threshold_s": self.stall_threshold_s,
+            "max_strikes": self.max_strikes,
+            "shutdown_grace_s": self.shutdown_grace_s,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WatchdogConfig":
+        if not data:
+            return cls()
+
+        def _f(key: str, default: float) -> float:
+            # explicit None check — `value or default` would also swallow a
+            # legitimate 0 (e.g. shutdown_grace_s=0 → floor 1.0).
+            v = data.get(key)
+            try:
+                return float(v) if v is not None else default
+            except (TypeError, ValueError):
+                return default
+
+        heartbeat = _f("heartbeat_interval_s", 5.0)
+        stall = _f("stall_threshold_s", 30.0)
+        strikes = int(data.get("max_strikes") or 3)
+        grace = _f("shutdown_grace_s", 30.0)
+        return cls(
+            enabled=bool(data.get("enabled", True)),
+            heartbeat_interval_s=max(0.1, heartbeat),
+            stall_threshold_s=max(heartbeat, stall),
+            max_strikes=max(1, strikes),
+            shutdown_grace_s=max(1.0, grace),
+        )
+
+
 class ScaleToZeroConfig:
     """Gateway idle self-stop + socket-activation wake (HP-406).
 
@@ -586,6 +636,7 @@ class GatewayConfig:
 
     # Gateway scale-to-zero (HP-406): idle self-stop + socket-activation wake.
     scale_to_zero: ScaleToZeroConfig = field(default_factory=ScaleToZeroConfig)
+    watchdog: WatchdogConfig = field(default_factory=WatchdogConfig)
 
     def get_connected_platforms(self) -> List[Platform]:
         """Return list of platforms that are enabled and configured."""
@@ -683,6 +734,7 @@ class GatewayConfig:
             "streaming": self.streaming.to_dict(),
             "session_store_max_age_days": self.session_store_max_age_days,
             "scale_to_zero": self.scale_to_zero.to_dict(),
+            "watchdog": self.watchdog.to_dict(),
         }
     
     @classmethod
@@ -755,6 +807,7 @@ class GatewayConfig:
             streaming=StreamingConfig.from_dict(data.get("streaming", {})),
             session_store_max_age_days=session_store_max_age_days,
             scale_to_zero=ScaleToZeroConfig.from_dict(data.get("scale_to_zero", {})),
+            watchdog=WatchdogConfig.from_dict(data.get("watchdog", {})),
         )
 
     def get_unauthorized_dm_behavior(self, platform: Optional[Platform] = None) -> str:
@@ -865,6 +918,10 @@ def load_gateway_config() -> GatewayConfig:
             scale_to_zero_cfg = _yaml_section("scale_to_zero")  # HP-406
             if scale_to_zero_cfg is not None:
                 gw_data["scale_to_zero"] = scale_to_zero_cfg
+
+            watchdog_cfg = _yaml_section("watchdog")  # TODO-013
+            if watchdog_cfg is not None:
+                gw_data["watchdog"] = watchdog_cfg
 
             if "reset_triggers" in yaml_cfg:
                 gw_data["reset_triggers"] = yaml_cfg["reset_triggers"]

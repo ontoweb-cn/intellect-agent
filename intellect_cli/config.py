@@ -2064,6 +2064,18 @@ DEFAULT_CONFIG = {
             # cron.provider="chronos". Listed in the systemd .socket unit.
             "cron_trigger_port": 8722,
         },
+        # TODO-013: loop-liveness watchdog tuning. Defaults must match
+        # gateway/shutdown_watchdog.py module constants (source of truth for
+        # the runtime dataclass). enabled=false (or the
+        # INTELLECT_GATEWAY_WATCHDOG=0 env) keeps the watchdog from
+        # supervising the loop.
+        "watchdog": {
+            "enabled": True,
+            "heartbeat_interval_s": 5.0,
+            "stall_threshold_s": 30.0,
+            "max_strikes": 3,
+            "shutdown_grace_s": 30.0,
+        },
     },
 
     # Pluggable storage / cache / event backends.
