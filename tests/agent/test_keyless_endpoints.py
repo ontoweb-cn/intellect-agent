@@ -186,3 +186,89 @@ def test_mcp_session_call_handshake_sequence(monkeypatch):
     assert calls[1][0] == "notifications/initialized" and calls[1][1] == "sess-123"
     assert calls[2][0] == "tools/call" and calls[2][1] == "sess-123"
     assert calls[2][1] is not None or calls[1][1] == "sess-123"
+
+
+# ── exa (session MCP, keyless) ──────────────────────────────────────────
+
+@pytest.fixture
+def exa_provider():
+    from plugins.web.exa.provider import ExaWebSearchProvider
+
+    return ExaWebSearchProvider()
+
+
+def test_exa_is_keyless_available(exa_provider):
+    assert exa_provider.is_keyless_available() is True
+
+
+def test_exa_search_keyless_parses_text_blob(exa_provider, monkeypatch):
+    import agent.web_keyless_mcp as wk
+
+    blob = (
+        "Title: First Result\n"
+        "URL: https://first.example\n"
+        "Published: 2026-09-01\n"
+        "Author: N/A\n"
+        "Highlights:\n"
+        "some highlights here\n"
+        "Title: Second Result\n"
+        "URL: https://second.example\n"
+        "Highlights:\n"
+        "other\n"
+    )
+    captured = {}
+
+    def _fake_call(endpoint, tool, arguments, timeout=60.0):
+        captured["endpoint"] = endpoint
+        captured["tool"] = tool
+        captured["arguments"] = arguments
+        return blob
+
+    monkeypatch.setattr(wk, "mcp_session_call", _fake_call)
+
+    out = exa_provider.search_keyless("intellect agent", limit=5)
+    assert out["success"] is True
+    web = out["data"]["web"]
+    assert [w["url"] for w in web] == [
+        "https://first.example", "https://second.example"]
+    assert web[0]["position"] == 1
+    assert "some highlights here" in web[0]["description"]
+    assert captured["tool"] == "web_search_exa"
+    assert captured["arguments"]["numResults"] == 5
+
+
+def test_exa_search_keyless_unparseable_blob_falls_back(exa_provider, monkeypatch):
+    import agent.web_keyless_mcp as wk
+
+    monkeypatch.setattr(
+        wk, "mcp_session_call",
+        lambda *a, **kw: "completely unstructured response body")
+
+    out = exa_provider.search_keyless("q")
+    assert out["success"] is True
+    web = out["data"]["web"]
+    assert len(web) == 1
+    assert web[0]["note"] == "text-only result"
+    assert "unstructured" in web[0]["description"]
+
+
+@pytest.mark.asyncio
+async def test_exa_extract_keyless(exa_provider, monkeypatch):
+    from plugins.web.exa import provider as exa_prov
+
+    captured = {}
+
+    def _fake_call(endpoint, tool, arguments, timeout=60.0):
+        captured["tool"] = tool
+        captured["arguments"] = arguments
+        return "page body"
+
+    monkeypatch.setattr(wk := __import__(
+        "agent.web_keyless_mcp", fromlist=["mcp_session_call"]),
+        "mcp_session_call", _fake_call)
+    _ = wk
+
+    out = await exa_prov.ExaWebSearchProvider.extract_keyless(
+        exa_provider, ["https://example.com"])
+    assert out[0]["content"] == "page body"
+    assert captured["tool"] == "web_fetch_exa"

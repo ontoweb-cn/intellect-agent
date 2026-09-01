@@ -386,6 +386,8 @@ class FirecrawlWebSearchProvider(WebSearchProvider):
         """Anonymous search via raw REST (no key, no SDK).
 
         Returns the standard ``{"success", "data": {"web": [...]}}`` shape.
+        Limit is clamped to 1–10 — the anonymous tier's constraint (keyed
+        API allows more); not a bug, vendor-side throttling.
         """
         import httpx
 

@@ -98,6 +98,75 @@ class ExaWebSearchProvider(WebSearchProvider):
     def display_name(self) -> str:
         return "Exa"
 
+    def is_keyless_available(self) -> bool:
+        """G-15: Exa's hosted MCP server (mcp.exa.ai/mcp) serves keyless
+        search/fetch over session-based streamable HTTP (live-probed
+        2026-09-02 — initialize handshake HTTP 200, no credentials)."""
+        return True
+
+    def search_keyless(self, query: str, limit: int = 5) -> Dict[str, Any]:
+        """Anonymous search via the session MCP client (``web_search_exa``).
+
+        The tool returns a structured TEXT blob ("Title:/URL:/…Highlights:"
+        per result) — parsed back into the standard data.web shape. If the
+        blob shape ever changes, falls through to a single text-only entry
+        so the caller still gets the content.
+        """
+        import os as _os
+
+        from agent.web_keyless_mcp import mcp_session_call
+
+        endpoint = _os.getenv("EXA_KEYLESS_MCP_URL", "https://mcp.exa.ai/mcp")
+        text = mcp_session_call(
+            endpoint, "web_search_exa",
+            {"query": query, "numResults": min(max(limit, 1), 20)},
+        )
+        results: List[Dict[str, Any]] = []
+        current: Dict[str, Any] = {}
+        for line in text.splitlines():
+            if line.startswith("Title: "):
+                if current.get("url"):
+                    results.append(dict(current))
+                current = {"url": "", "title": line[len("Title: "):],
+                           "description": ""}
+                continue
+            if not current:
+                # text before any Title block — preamble, not a result
+                continue
+            if line.startswith("URL: "):
+                current["url"] = line[len("URL: "):]
+            elif line.strip():
+                current["description"] = (
+                    current["description"] + " " + line).strip()
+        if current.get("url"):
+            results.append(dict(current))
+        if not results:
+            results = [{"url": "", "title": "", "description": text,
+                        "note": "text-only result"}]
+        for i, r in enumerate(results[:limit]):
+            r["position"] = i + 1
+        return {"success": True, "data": {"web": results}}
+
+    async def extract_keyless(self, urls: List[str], **kwargs: Any) -> List[Dict[str, Any]]:
+        """Anonymous page fetch via the session MCP client (``web_fetch_exa``)."""
+        import asyncio
+
+        from agent.web_keyless_mcp import mcp_session_call
+
+        endpoint = os.getenv("EXA_KEYLESS_MCP_URL", "https://mcp.exa.ai/mcp")
+
+        async def _fetch_one(url: str) -> Dict[str, Any]:
+            try:
+                text = await asyncio.to_thread(
+                    mcp_session_call, endpoint, "web_fetch_exa", {"url": url},
+                )
+                return {"url": url, "title": "", "content": text,
+                        "raw_content": text, "metadata": {"sourceURL": url}}
+            except Exception as exc:
+                return {"url": url, "error": str(exc)}
+
+        return list(await asyncio.gather(*(_fetch_one(u) for u in urls)))
+
     def is_available(self) -> bool:
         """Return True when ``EXA_API_KEY`` is set to a non-empty value."""
         return bool(os.getenv("EXA_API_KEY", "").strip())

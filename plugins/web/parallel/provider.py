@@ -170,7 +170,8 @@ class ParallelWebSearchProvider(WebSearchProvider):
         web = []
         for i, line in enumerate(line for line in text.splitlines() if line.strip()):
             web.append({"url": "", "title": line[:200],
-                        "description": line, "position": i + 1})
+                        "description": line, "position": i + 1,
+                        "note": "text-only result"})
         return {"success": True, "data": {"web": web}}
 
     async def extract_keyless(self, urls: List[str], **kwargs: Any) -> List[Dict[str, Any]]:
