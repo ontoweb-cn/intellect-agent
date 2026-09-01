@@ -482,6 +482,14 @@ class Supervisor:
             # even during long backoff waits.
             self._sleep_interruptible(MONITOR_POLL_S)
             self._write_observability()
+            # Bot Mode roster maintenance (BT-01): the supervisor is the
+            # gateway-side writer of bot_mode/roster.json (change-detected).
+            try:
+                from tools.bot_mode_roster import persist_roster
+
+                persist_roster()
+            except Exception as exc:
+                logger.debug("roster persist unavailable: %s", exc)
             for child in self.children.values():
                 if self._stop or not child.desired:
                     continue

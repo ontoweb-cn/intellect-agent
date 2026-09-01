@@ -1736,6 +1736,22 @@ def cmd_chat(args):
     """Run interactive chat CLI."""
     use_tui = getattr(args, "tui", False) or os.environ.get("intellect_TUI") == "1"
 
+    # Programmatic query file (Bot Mode DM transport): body travels via the
+    # filesystem, never argv. Delete-after-read is opt-in via env — the
+    # deliverer sets it; user-passed files are never removed.
+    query_file = getattr(args, "query_file", None)
+    if query_file:
+        from tools.bot_mode_dm import QUERY_FILE_DELETE_ENV, read_query_file
+
+        delete_after = os.environ.get(QUERY_FILE_DELETE_ENV) == "1"
+        try:
+            args.query = read_query_file(
+                Path(query_file).expanduser(), delete_after=delete_after
+            )
+        except OSError as exc:
+            print(f"Cannot read --query-file {query_file}: {exc}")
+            sys.exit(2)
+
     # Resolve --continue into --resume with the latest session or by name
     continue_val = getattr(args, "continue_last", None)
     if continue_val and not getattr(args, "resume", None):

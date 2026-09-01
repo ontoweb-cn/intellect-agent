@@ -256,6 +256,16 @@ def build_top_level_parser():
         "-q", "--query", help="Single query (non-interactive mode)"
     )
     chat_parser.add_argument(
+        "--query-file",
+        metavar="PATH",
+        default=argparse.SUPPRESS,
+        help=(
+            "Read the single query from a file instead of argv (programmatic "
+            "use; with INTELLECT_QUERY_FILE_DELETE=1 the file is deleted "
+            "after reading)"
+        ),
+    )
+    chat_parser.add_argument(
         "--image", help="Optional local image path to attach to a single query"
     )
     _inherited_flag(

@@ -325,6 +325,7 @@ def test_stop_is_nonblocking_no_wait_in_handler_path(tmp_path):
 
     src = inspect.getsource(S._monitor_loop)
     assert "_finalize_terminate" in src
+    assert "persist_roster" in src  # Bot Mode roster maintenance (BT-01)
 
 
 # ── listener discovery (B1-4) ──────────────────────────────────────────
