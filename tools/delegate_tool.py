@@ -155,6 +155,53 @@ _active_subagents_lock = threading.Lock()
 _active_subagents: Dict[str, Dict[str, Any]] = {}
 
 
+def steer_subagent(
+    subagent_id: str,
+    text: str,
+    *,
+    owner_agent=None,
+) -> dict:
+    """Inject a guidance message into a RUNNING subagent (G-12 / A2-3).
+
+    Validated inside the registry lock: the child must still be running and
+    accepting steer. The caller identity check is intentionally light here
+    (single-owner product): any live in-process caller may steer any child;
+    cross-process steering arrives via a later control surface.
+
+    Returns ``{"ok": True}`` or ``{"ok": False, "error": ...}`` — structured
+    so tool/RPC callers can surface it without exception handling.
+    """
+    text = (text or "").strip()
+    if not text:
+        return {"ok": False, "error": "steer text is empty"}
+    if len(text) > 16000:
+        return {"ok": False, "error": "steer text exceeds 16000 chars"}
+    with _active_subagents_lock:
+        record = _active_subagents.get(subagent_id)
+        if record is None:
+            return {"ok": False, "error": f"unknown or finished subagent: {subagent_id}"}
+        if not record.get("accepting_steer", True):
+            return {"ok": False, "error": "subagent is no longer accepting steer"}
+        child = record.get("agent")
+        steer = getattr(child, "steer", None)
+        if not callable(steer):
+            return {"ok": False, "error": "subagent does not support steering"}
+        try:
+            steer(text)
+        except Exception as exc:
+            return {"ok": False, "error": f"steer failed: {exc}"}
+        record["steered"] = True
+        return {"ok": True, "subagent_id": subagent_id}
+
+
+def close_subagent_steering(subagent_id: str) -> None:
+    """Atomically stop accepting steer for a finished subagent (registry lock)."""
+    with _active_subagents_lock:
+        record = _active_subagents.get(subagent_id)
+        if record is not None:
+            record["accepting_steer"] = False
+
+
 def set_spawn_paused(paused: bool) -> bool:
     """Globally block/unblock new delegate_task spawns.
 
@@ -1572,6 +1619,7 @@ def _run_single_child(
                 "status": "running",
                 "tool_count": 0,
                 "agent": child,
+                "accepting_steer": True,
             }
         )
 

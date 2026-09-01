@@ -2336,7 +2336,17 @@ def apply_pending_steer_to_tool_results(agent, messages: list, num_tool_msgs: in
             existing = getattr(agent, "_pending_steer", None)
             agent._pending_steer = (existing + "\n" + steer_text) if existing else steer_text
         return
-    marker = f"\n\nUser guidance: {steer_text}"
+    # Out-of-band marker (G-12): provenance + replay semantics are part of
+    # the contract — a bare "User guidance:" was historically rejected by
+    # models as tool noise. The marker tells the model this is a direct
+    # user message delivered once at this position, NOT tool output, and
+    # that replaying it from history is not a new delivery.
+    marker = (
+        "\n\n[OUT-OF-BAND USER MESSAGE — a direct message from the user, "
+        "delivered once at this position; not tool output and not a new "
+        f"delivery when replayed from conversation history]\n{steer_text}\n"
+        "[/OUT-OF-BAND USER MESSAGE]"
+    )
     existing_content = messages[target_idx].get("content", "")
     if not isinstance(existing_content, str):
         # Anthropic multimodal content blocks — preserve them and append

@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -214,13 +214,35 @@ def drain_gateway_completions(parent_session_key: str) -> Tuple[Optional[str], L
         ids = drain(parent_session_key, limit)
     else:
         ids = registry.drain_completions(parent_session_key)[:limit]
-    if not ids:
-        return None, []
     entries = []
     for hid in ids:
         raw = registry.get(hid)
         if raw:
             entries.append(dict(raw))
+
+    # A2-3③: merge durable rows for this session — covers completions whose
+    # gateway died before draining (restart recovery, transparent).
+    persisted: List[str] = []
+    try:
+        from tools.delegation_persistence import pop_for_session
+
+        persisted = pop_for_session(parent_session_key, limit=limit)
+    except Exception:
+        logger.debug("persisted completion merge failed", exc_info=True)
+
+    if not ids and not persisted:
+        return None, []
+
+    if persisted:
+        entries.extend({"summary": t, "source": "recovered"} for t in persisted)
+
+    if not ids:
+        # Persisted-only batch: no registry handles to return — the text
+        # carries the recovery; empty id list tells the caller not to
+        # requeue registry handles (put_back below guards the text).
+        text = format_completion_synthesis(entries)
+        return (text or None), []
+
     text = format_completion_synthesis(entries)
     return (text or None), ids
 
@@ -312,6 +334,20 @@ def _complete_handle(
     registry = get_registry()
     registry.complete(handle_id, status, summary or "", error or "")
     if gateway_meta:
+        # A2-3③ durable backstop: persist the synthesis BEFORE the watcher
+        # can drain it. The row merges back in drain_gateway_completions, so
+        # a gateway crash pre-drain recovers transparently; successful
+        # injection deletes it.
+        try:
+            entry = get_delegation(handle_id)
+            if entry:
+                synth = format_completion_synthesis([entry])
+                if synth:
+                    from tools.delegation_persistence import persist
+
+                    persist(parent_session_key, synth)
+        except Exception:
+            logger.debug("completion persist failed", exc_info=True)
         return  # gateway watcher will drain and inject
     entry = get_delegation(handle_id)
     if entry:
@@ -400,3 +436,15 @@ def build_background_tool_response(handles: List[dict]) -> str:
             f"Use /delegations list to check status."
         ),
     })
+
+def put_back_persisted_completions(parent_session_key: str, texts: List[str]) -> None:
+    """Re-persist synths whose injection failed (attempts-capped, G-12③)."""
+    if not parent_session_key or not texts:
+        return
+    try:
+        from tools.delegation_persistence import put_back
+
+        for t in texts:
+            put_back(parent_session_key, t)
+    except Exception:
+        logger.debug("put_back persisted completions failed", exc_info=True)

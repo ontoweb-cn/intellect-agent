@@ -36,6 +36,23 @@ def _get_evict_executor():
     return _run._AGENT_EVICT_EXECUTOR
 
 
+def _put_back_persisted(session_key: str, synth_text: str, drained_ids) -> None:
+    """Re-persist the durable share of a failed synthesis injection.
+
+    Registry handles go back through requeue_gateway_completions; the
+    A2-3③ persisted rows (restart-recovery synths) carry their text in
+    synth_text directly, so failure recovery must put the TEXT back too —
+    otherwise a persisted-only batch (drained_ids == []) is lost.
+    """
+    try:
+        if synth_text and not drained_ids:
+            from tools.delegation_persistence import put_back
+
+            put_back(session_key, synth_text)
+    except Exception:
+        logger.debug("put_back_persisted failed", exc_info=True)
+
+
 class GatewayAgentRunner:
     """Mixin providing agent lifecycle methods for GatewayRunner.
 
@@ -979,6 +996,7 @@ class GatewayAgentRunner:
                         parent_session_key,
                     )
                     requeue_gateway_completions(parent_session_key, drained_ids)
+                    _put_back_persisted(parent_session_key, synth_text, drained_ids)
                     continue
 
                 adapter = None
@@ -988,6 +1006,7 @@ class GatewayAgentRunner:
                         break
                 if not adapter or not source.chat_id:
                     requeue_gateway_completions(parent_session_key, drained_ids)
+                    _put_back_persisted(parent_session_key, synth_text, drained_ids)
                     continue
                 try:
                     synth_event = MessageEvent(

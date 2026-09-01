@@ -13,7 +13,7 @@ import asyncio
 import hashlib
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 from agent.auxiliary_client import call_llm
 from tools.interrupt import is_interrupted
@@ -182,6 +182,31 @@ _REFERENCE_SYSTEM_PROMPT = (
 )
 
 
+def _coerce_fanout(mode: Any) -> tuple[str, int]:
+    """Normalize a preset ``fanout`` value to (mode, n).
+
+    Accepts "user_turn" (default), "per_iteration", "every_n:<N>", or
+    {"mode": "every_n", "n": N}. N=1 folds to per_iteration; garbage falls
+    back to user_turn.
+    """
+    try:
+        if isinstance(mode, dict):
+            n = int(mode.get("n", 1) or 1)
+            return ("per_iteration", 0) if n <= 1 else ("every_n", n)
+        text = str(mode or "user_turn").strip().lower()
+        if text == "per_iteration":
+            return ("per_iteration", 0)
+        if text.startswith("every_n"):
+            n_part = text.split(":", 1)[1] if ":" in text else ""
+            if not n_part.strip().isdigit():
+                return ("user_turn", 0)  # garbage N falls back to default
+            n = int(n_part)
+            return ("per_iteration", 0) if n <= 1 else ("every_n", n)
+    except (TypeError, ValueError):
+        pass
+    return ("user_turn", 0)
+
+
 def _content_to_text(content: Any) -> str:
     """Flatten message content (str or multimodal list) to plain text."""
     if isinstance(content, str):
@@ -289,7 +314,11 @@ class MoaRunner:
     def __init__(self, preset: dict[str, Any], *, agent: Any = None):
         self._preset = preset
         self._agent = agent  # optional AIAgent — enables interrupt-aware short-circuit
-        self._references: list[dict[str, str]] = preset.get("references", [])
+        # G-13/A2-4: enabled:false advisors are filtered at construction so
+        # they never fan out and never appear in unavailable-advisor notes.
+        self._references: list[dict[str, str]] = [
+            r for r in preset.get("references", []) if r.get("enabled", True)
+        ]
         self._aggregator: dict[str, str] = preset.get("aggregator", {})
         self._ref_temp: float = float(preset.get("reference_temperature", 0.6))
         self._agg_temp: float = float(preset.get("aggregator_temperature", 0.4))
@@ -357,6 +386,39 @@ class MoaRunner:
                 "error": str(exc),
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             }
+
+    def _emit_moa_progress(self, done: int, total: int) -> None:
+        """Emit ``moa.progress`` + per-advisor ``moa.reference`` events.
+
+        Display-only side channel (tool_progress_callback) — nothing here
+        enters the message history or touches the prompt cache. Best-effort.
+        """
+        agent = self._agent
+        if agent is None:
+            return
+        cb = getattr(agent, "tool_progress_callback", None)
+        if not callable(cb):
+            return
+
+        def _emit(payload: dict) -> None:
+            try:
+                cb("moa", payload)
+            except Exception:
+                logger.debug("moa progress emit failed", exc_info=True)
+
+        for i, rr in enumerate(getattr(self, "_last_ref_results", None) or [], 1):
+            label = (
+                f"{rr.get('provider', '?')}/{rr.get('model', '?')}"
+                if isinstance(rr, dict) else "?"
+            )
+            _emit({
+                "event": "moa.reference",
+                "index": i,
+                "count": total,
+                "label": label,
+                "ok": bool(rr.get("success")),
+            })
+        _emit({"event": "moa.progress", "refs_done": done, "refs_total": total})
 
     def _build_aggregator_messages(
         self, messages: list[dict[str, Any]], ref_results: list[dict[str, Any]]
@@ -441,12 +503,54 @@ class MoaRunner:
         task_signature = _task_signature(messages)
         _cache = getattr(self._agent, "_moa_fanout_cache", None) if self._agent is not None else None
         _fanout_cached = False
+
+        # ── Cadence state machine (G-13/A2-4 every_n) ───────────────────
+        # Modes: user_turn (default — cache hit while the turn signature is
+        # unchanged), per_iteration (never reuse), every_n:N (re-fan-out
+        # only every N *state advances*; an advance is the advisory view
+        # actually growing — stream retries don't count). Off-cadence calls
+        # pin the cache key to the last on-cadence signature so they REUSE
+        # that guidance instead of re-running advisors or re-billing.
+        _fanout_mode, _fanout_n = _coerce_fanout(self._preset.get("fanout"))
+        _cadence = getattr(self._agent, "_moa_fanout_cadence", None) if self._agent is not None else None
+        if _fanout_mode == "every_n" and _cadence is not None:
+            if _cadence.get("turn_sig") != signature:
+                # New user turn: reset the cadence counter; this call IS the
+                # turn's first fan-out (on-cadence by definition).
+                _cadence["turn_sig"] = signature
+                _cadence["count"] = 0
+                _cadence["state_sig"] = task_signature
+                _cadence.pop("pinned_key", None)
+            elif _cadence.get("state_sig") != task_signature:
+                # Advisory state actually advanced (tool results landed).
+                _cadence["state_sig"] = task_signature
+                _cadence["count"] = _cadence.get("count", 0) + 1
+            _cadence["count"] = _cadence.get("count", 0)
+            on_cadence = (_cadence["count"] % max(1, _fanout_n)) == 0
+            if not on_cadence:
+                pinned = _cadence.get("pinned_key")
+                if (
+                    pinned is not None
+                    and _cache is not None
+                    and _cache.get("signature") == pinned
+                    and _cache.get("ref_results") is not None
+                ):
+                    ref_results = _cache["ref_results"]
+                    _fanout_cached = True
+                    _cache["message_count"] = max(
+                        _cache.get("message_count", 0), len(messages)
+                    )
+                    # Fall through to guidance assembly with cached results.
+
         if (
-            _cache is not None
-            and _cache.get("signature") == signature
-            and _cache.get("ref_results") is not None
+            _fanout_cached
+            or (
+                _cache is not None
+                and _cache.get("signature") == signature
+                and _cache.get("ref_results") is not None
+            )
         ):
-            ref_results = _cache["ref_results"]
+            ref_results = ref_results if _fanout_cached else _cache["ref_results"]
             _fanout_cached = True
             # Track the peak transcript size so a later compression (which
             # shrinks the transcript below this peak) stays detectable.
@@ -474,8 +578,14 @@ class MoaRunner:
                     "message_count": len(messages),
                     "ref_results": ref_results,
                 }
+                # every_n: this was an on-cadence fan-out — future off-cadence
+                # calls pin to THIS cache entry for guidance reuse.
+                if _fanout_mode == "every_n" and _cadence is not None:
+                    _cadence["pinned_key"] = signature
+            self._last_ref_results = ref_results
 
         successful = [r for r in ref_results if r.get("success")]
+        self._emit_moa_progress(len(successful), len(self._references))
         if len(successful) < MIN_SUCCESSFUL_REFERENCES:
             raise RuntimeError(
                 f"MoA: only {len(successful)}/{len(self._references)} reference "
