@@ -131,6 +131,7 @@ import shlex as _shlex
 import sys as _sys
 
 from tools.bot_mode_roster import build_roster
+from tools.bot_relay import peers_config, resolve_peer
 
 MESSAGE_AGENT_TOOL_NAME = "message_agent"
 MAX_DM_CHARS = 16000
@@ -287,11 +288,13 @@ def handle_message_agent_call(agent, function_args) -> str:
         )
 
     roster = {e["name"]: e for e in build_roster()}
-    if target not in roster:
+    peer = resolve_peer(target)
+    peer_names = set(peers_config())
+    if target not in roster and peer is None:
         return _json.dumps(
             {"error": f"Unknown target agent: {target!r}",
              "code": "unknown_target",
-             "roster": sorted(roster)}
+             "roster": sorted(set(roster) | peer_names)}
         )
     # Depth budget (BT-04 budget, DM-only form): no infinite bot↔bot loops.
     depth = current_dm_depth()
@@ -300,13 +303,34 @@ def handle_message_agent_call(agent, function_args) -> str:
             {"error": f"DM depth budget exhausted ({max_dm_depth()})",
              "code": "depth_exhausted"}
         )
-    # Roster homes are resolved paths; the sending agent's home may differ
-    # in spelling (symlinks) — resolve both sides.
+    # Sending identity: the home-matched roster entry. Local delivery
+    # requires it (error below); relayed delivery falls back to the active
+    # profile name (a peer target has no local roster entry).
     sender = next(
         (e["name"] for e in roster.values()
          if _same_path(e["home"], home)),
         None,
     )
+
+    if peer is not None:
+        # ── B2-4: cross-gateway relayed delivery (fire-and-forget) ──
+        peer_name, peer_cfg = peer
+        import threading as _threading
+        from tools.bot_relay import relay_delivery
+
+        _threading.Thread(
+            target=relay_delivery,
+            args=(peer_name, peer_cfg, sender or "default", message, home),
+            kwargs={"timeout": 600.0},
+            name=f"bot-relay-{peer_name}", daemon=True,
+        ).start()
+        return _json.dumps(
+            {"delivered": True, "relayed": True, "target": peer_name,
+             "note": ("queued for cross-gateway delivery to the peer's "
+                      "Bot Chat session; the peer's reply arrives as a "
+                      "later turn — do not claim it already arrived.")}
+        )
+
     if sender is None:
         return _json.dumps(
             {"error": "sending profile is not in the roster",

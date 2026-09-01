@@ -6440,6 +6440,12 @@ def cmd_bots(args):
         status = "online" if entry.get("online") else "offline"
         model = f" · {entry['model']}" if entry.get("model") else ""
         print(f"  {render_ansi(entry['name'])}  {status}{model}")
+    from tools.bot_relay import peers_config
+
+    peers = peers_config()
+    if peers:
+        print(f"  Remote peers: {', '.join(sorted(peers))}")
+
     print(
         "\nDM: each bot receives messages in its 'Bot Chat' session "
         "(fire-and-forget). Enable bot_mode.enabled to let Bot Chat "

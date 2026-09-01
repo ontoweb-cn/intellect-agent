@@ -1495,6 +1495,18 @@ DEFAULT_CONFIG = {
         # Max chained bot→bot DM hops (depth 3 = A→B→C, who may not DM
         # further). Prevents infinite bot↔bot reply loops.
         "max_dm_depth": 3,
+        # B2-4: cross-gateway peers — remote intellect gateways whose bots
+        # are DM-able by name. Default empty = nothing is cross-machine
+        # unless the owner explicitly declares it. Each entry:
+        #   peers:
+        #     beta:
+        #       url: https://peer-host          # peer gateway (MP-04 front end)
+        #       profile: beta                    # remote profile name (default = key)
+        #       api_key: <peer profile's API_SERVER_KEY>   # shared secret…
+        #       api_key_env: BETA_API_KEY       # …or env indirection (recommended)
+        # NOTE: api_key is stored in plaintext — prefer api_key_env. The
+        # key is the PEER profile's own API server key (shared secret).
+        "peers": {},
     },
     "delegation": {
         "model": "",       # e.g. "google/gemini-3-flash-preview" (empty = inherit parent model)
