@@ -1494,6 +1494,11 @@ class SessionDB:
         Used by flows that persist per-session tuning state (e.g. the
         proactive-prune rearm watermark) without touching other keys.
         Best-effort callers may ignore the return value.
+
+        NOTE: read-merge-write is not transactional (the read happens
+        outside the write transaction) — safe under the single-writer
+        per-session turn model, but concurrent updaters of the SAME key
+        would race. Callers are low-frequency by design.
         """
         import json as _json
 

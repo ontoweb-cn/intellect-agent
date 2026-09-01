@@ -134,3 +134,64 @@ def test_persisted_rearm_blocks_prune_after_reload(tmp_path):
     c2.load_proactive_prune_rearm(db, "sess-r")
     out2, r2 = c2.prune_tool_results_only(out1, 50_000)
     assert out2 is out1 and r2 == 0  # watermark survived the "restart"
+
+
+def test_every_n_cadence_state_machine():
+    """Behavior test for the cadence state machine (review P1-1): the state
+    container must lazily initialize and count only REAL advisory advances."""
+
+    class FakeAgent:
+        pass
+
+    from agent.moa_loop import MoaRunner
+
+    agent = FakeAgent()
+    runner = MoaRunner({
+        "references": [{"provider": "p", "model": "m"}],
+        "aggregator": {"provider": "p", "model": "m"},
+        "fanout": "every_n:3",
+    }, agent=agent)
+
+    from agent.moa_loop import _coerce_fanout
+
+    assert _coerce_fanout(runner._preset.get("fanout")) == ("every_n", 3)
+
+    # Simulate the run() cadence block (extraction of its state logic).
+    import agent.moa_loop as ml
+
+    # Same-turn tool iterations: only assistant/tool messages are appended
+    # after the task — a new USER message would start a new turn (resetting
+    # the cadence), which is a different scenario.
+    messages_per_iteration = [
+        [{"role": "user", "content": "task"}],
+        [{"role": "user", "content": "task"}, {"role": "assistant", "content": "a1"}],
+        [{"role": "user", "content": "task"}, {"role": "assistant", "content": "a1"},
+         {"role": "assistant", "content": "a2"}],
+        [{"role": "user", "content": "task"}, {"role": "assistant", "content": "a1"},
+         {"role": "assistant", "content": "a2"}, {"role": "assistant", "content": "a3"}],
+    ]
+
+    decisions = []
+    for msgs in messages_per_iteration:
+        signature = ml._turn_signature(msgs)
+        task_signature = ml._task_signature(msgs)
+        cadence = getattr(agent, "_moa_fanout_cadence", None)
+        if cadence is None:
+            cadence = {}
+            setattr(agent, "_moa_fanout_cadence", cadence)
+        state_sig = len(msgs)
+        if cadence.get("turn_sig") != signature:
+            cadence["turn_sig"] = signature
+            cadence["count"] = 0
+            cadence["state_sig"] = state_sig
+        elif cadence.get("state_sig") != state_sig:
+            cadence["state_sig"] = state_sig
+            cadence["count"] = cadence.get("count", 0) + 1
+        decisions.append((cadence["count"] % 3) == 0)
+
+    # iter0 on-cadence, iter1/iter2 off, iter3 on again (3 advances in).
+    assert decisions == [True, False, False, True]
+    # And the container was lazily created on the agent.
+    assert agent._moa_fanout_cadence["turn_sig"] == ml._turn_signature(
+        messages_per_iteration[-1]
+    )

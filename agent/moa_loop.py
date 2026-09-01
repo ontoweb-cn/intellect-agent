@@ -512,18 +512,29 @@ class MoaRunner:
         # pin the cache key to the last on-cadence signature so they REUSE
         # that guidance instead of re-running advisors or re-billing.
         _fanout_mode, _fanout_n = _coerce_fanout(self._preset.get("fanout"))
-        _cadence = getattr(self._agent, "_moa_fanout_cadence", None) if self._agent is not None else None
+        _cadence = None
+        if self._agent is not None:
+            # The cadence state lives on the agent (which outlives the
+            # per-call runner). Lazily initialize — without this the
+            # every_n branch silently never runs (review P1-1).
+            _cadence = getattr(self._agent, "_moa_fanout_cadence", None)
+            if _cadence is None:
+                _cadence = {}
+                setattr(self._agent, "_moa_fanout_cadence", _cadence)
         if _fanout_mode == "every_n" and _cadence is not None:
+            _state_sig = len(messages)  # transcript growth = advisory advance
             if _cadence.get("turn_sig") != signature:
                 # New user turn: reset the cadence counter; this call IS the
                 # turn's first fan-out (on-cadence by definition).
                 _cadence["turn_sig"] = signature
                 _cadence["count"] = 0
-                _cadence["state_sig"] = task_signature
+                _cadence["state_sig"] = _state_sig
                 _cadence.pop("pinned_key", None)
-            elif _cadence.get("state_sig") != task_signature:
+            elif _cadence.get("state_sig") != _state_sig:
                 # Advisory state actually advanced (tool results landed).
-                _cadence["state_sig"] = task_signature
+                # NOTE: task_signature is compression-stable and must NOT be
+                # used here — it never changes within a turn.
+                _cadence["state_sig"] = _state_sig
                 _cadence["count"] = _cadence.get("count", 0) + 1
             _cadence["count"] = _cadence.get("count", 0)
             on_cadence = (_cadence["count"] % max(1, _fanout_n)) == 0
@@ -585,7 +596,8 @@ class MoaRunner:
             self._last_ref_results = ref_results
 
         successful = [r for r in ref_results if r.get("success")]
-        self._emit_moa_progress(len(successful), len(self._references))
+        if not _fanout_cached:
+            self._emit_moa_progress(len(successful), len(self._references))
         if len(successful) < MIN_SUCCESSFUL_REFERENCES:
             raise RuntimeError(
                 f"MoA: only {len(successful)}/{len(self._references)} reference "

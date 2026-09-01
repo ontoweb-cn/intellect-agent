@@ -1079,6 +1079,24 @@ def _build_child_agent(
         toolsets=child_toolsets,
     )
 
+    # Live transcript (G-12/A2-3②): tee child progress into an append-only
+    # side-channel file. Pure observation — failures never reach the child.
+    _live_writer = None
+    try:
+        from tools.delegation_live_log import (
+            create_live_transcript,
+            prune_stale_live_dirs,
+            wrap_progress_callback,
+        )
+
+        prune_stale_live_dirs()  # opportunistic retention sweep
+        _live_writer = create_live_transcript(subagent_id, goal)
+        child_progress_cb = wrap_progress_callback(child_progress_cb, _live_writer)
+        if _live_writer is not None:
+            _live_writer.kickoff(goal)
+    except Exception:
+        _live_writer = None  # transcript is optional — never block delegation
+
     # Each subagent gets its own iteration budget capped at max_iterations
     # (configurable via delegation.max_iterations, default 50).  This means
     # total iterations across parent + subagents can exceed the parent's
@@ -1227,6 +1245,11 @@ def _build_child_agent(
     child._subagent_id = subagent_id
     child._parent_subagent_id = parent_subagent_id
     child._subagent_goal = goal
+    # Live transcript path (G-12/A2-3②) — writer created earlier in this
+    # function; _run_single_child finalizes via the writer object.
+    child._live_transcript_path = (
+        str(_live_writer.path) if _live_writer is not None else None
+    )
 
     # Decoder-level structured output: route the requested JSON Schema through
     # the transport's request_overrides so OpenAI-compatible backends enforce it
@@ -1474,6 +1497,7 @@ def _run_single_child(
     """
     child_start = time.monotonic()
     parent_session_id = _parent_session_id_for_delegate(parent_agent)
+    _finalize_writer = getattr(child, "_live_transcript_writer", None) if child else None
 
     # Get the progress callback from the child agent
     child_progress_cb = getattr(child, "tool_progress_callback", None)
@@ -1620,6 +1644,7 @@ def _run_single_child(
                 "tool_count": 0,
                 "agent": child,
                 "accepting_steer": True,
+                "live_transcript": getattr(child, "_live_transcript_path", None),
             }
         )
 
@@ -1835,6 +1860,13 @@ def _run_single_child(
         else:
             exit_reason = "max_iterations"
 
+        # Transcript finalize (G-12/A2-3②): flush stream buffer + final line.
+        try:
+            if _finalize_writer is not None:
+                _finalize_writer.finalize(status, exit_reason)
+        except Exception:
+            pass
+
         # Extract token counts (safe for mock objects)
         _input_tokens = getattr(child, "session_prompt_tokens", 0)
         _output_tokens = getattr(child, "session_completion_tokens", 0)
@@ -1843,6 +1875,7 @@ def _run_single_child(
         entry: Dict[str, Any] = {
             "task_index": task_index,
             "status": status,
+            "live_transcript": getattr(child, "_live_transcript_path", None),
             "summary": summary,
             "api_calls": api_calls,
             "duration_seconds": duration,

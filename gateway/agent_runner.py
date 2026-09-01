@@ -979,6 +979,10 @@ class GatewayAgentRunner:
                         notify_mode,
                         parent_session_key,
                     )
+                    # The durable share was already popped in drain — restore
+                    # it, or notify_mode=off silently eats recovered text
+                    # (review P1-2).
+                    _put_back_persisted(parent_session_key, synth_text, drained_ids)
                     continue
 
                 source = self._build_process_event_source({

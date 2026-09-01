@@ -15,6 +15,13 @@ Integration contract:
   row — a poison notification must not spin forever).
 - ``delete()`` only after a successful injection.
 
+**Known gap (mixed batches)**: when registry handles AND persisted rows are
+merged into one synthesis and the injection fails, the requeue restores the
+registry handles while ``put_back`` can only restore the merged TEXT —
+which still contains the registry share, so only persisted-only batches
+(``drained_ids == []``) get exact recovery. Root fix is a drain API that
+returns the two sources separately; tracked for the control-surface round.
+
 Independent tiny DB (not state.db) so the queue's lifecycle and schema stay
 decoupled from session storage. Everything is best-effort: failures here
 degrade to the historical in-memory-only behavior, never raise into the

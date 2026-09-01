@@ -234,7 +234,12 @@ def drain_gateway_completions(parent_session_key: str) -> Tuple[Optional[str], L
         return None, []
 
     if persisted:
-        entries.extend({"summary": t, "source": "recovered"} for t in persisted)
+        # Recovered rows are previously-SUCCEEDED delegations — status
+        # completed so notify_mode=error classifies them correctly (P2-5).
+        entries.extend(
+            {"summary": t, "source": "recovered", "status": "completed"}
+            for t in persisted
+        )
 
     if not ids:
         # Persisted-only batch: no registry handles to return — the text
