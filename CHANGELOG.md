@@ -6,6 +6,21 @@ roadmap.
 
 ## Unreleased
 
+### M2 closeout — A2-2 (G-07) history sanitation closed out
+
+- **Duplicate tool-result dedup** in the pre-call sanitizer
+  (`sanitize_api_messages`): a second result for the same (variant-equal)
+  tool_call id is dropped, first occurrence wins — closes the last real
+  gap in the G-07 acceptance list. Clean histories are byte-identical
+  (gate-1 cache regression green).
+- **G-07 formally closed** with rulings recorded: pairing cleanup was
+  already delivered and wired (broader than the planned two entry
+  points); the Rust pairing matrix is not built (per-call-only, no
+  benchmark case); Hermes-style sidecar stripping is N/A (no such
+  mechanism in intellect). New `tests/agent/test_history_sanitization.py`
+  locks six dirty-history scenarios plus idempotence with the
+  provider pairing invariant.
+
 ### M3 — Gateway Multiplex (B1): one supervisor, many isolated profiles
 
 - **`intellect gateway run --multiplex`** serves the default profile plus

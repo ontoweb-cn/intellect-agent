@@ -1874,28 +1874,35 @@ def sanitize_api_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]
                     surviving_call_ids.append(cid)
 
     result_ids: list = []
-    orphaned_results: list = []
-    for msg in messages:
+    drop_idx: set = set()
+    for idx, msg in enumerate(messages):
         if msg.get("role") != "tool":
             continue
         cid = msg.get("tool_call_id")
-        if not cid or cid in result_ids:
+        if not cid:
+            continue
+        # G-07: a second result for the same (variant-equal) call id is a
+        # provider-schema violation — keep the first occurrence, drop the
+        # rest. Variant-equality matters: "abc123" then "call_abc123" is
+        # still one logical result delivered twice.
+        if result_matches_any(cid, result_ids):
+            drop_idx.add(idx)
             continue
         matched = find_matching_call_id(cid, surviving_call_ids)
         if matched:
             result_ids.append(cid)
         else:
-            orphaned_results.append(cid)
+            drop_idx.add(idx)
 
-    # 1. Drop tool results with no matching assistant call
-    if orphaned_results:
+    # 1. Drop tool results with no matching assistant call, plus duplicate
+    #    results for an id already claimed.
+    if drop_idx:
         messages = [
-            m for m in messages
-            if not (m.get("role") == "tool" and m.get("tool_call_id") in orphaned_results)
+            m for i, m in enumerate(messages) if i not in drop_idx
         ]
         _ra().logger.debug(
-            "Pre-call sanitizer: removed %d orphaned tool result(s)",
-            len(orphaned_results),
+            "Pre-call sanitizer: removed %d orphaned/duplicate tool result(s)",
+            len(drop_idx),
         )
 
     # 2. Inject stub results for calls whose result was dropped (or never

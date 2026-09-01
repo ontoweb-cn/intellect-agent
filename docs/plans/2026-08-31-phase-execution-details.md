@@ -150,11 +150,20 @@ session 元数据单键，位置 PR 内裁决）。
 **测试** `tests/agent/test_proactive_pruning.py`（rearm/reclaim/no-op 契约）。
 **验收**：默认 off 下逐字节一致；开启后五趟裁剪与 reclaim 门生效。
 
-### A2-2 · 历史清洁（G-07）
-**修改** `agent/message_sanitization.py` + `rust-core/src/sanitize.rs`：orphan tool result
-丢弃、未配对 call 注入桩（`[Result unavailable — see context summary above]`）、carrier
-完整性。压缩与 resume 两入口接线。
-**测试** `tests/agent/test_history_sanitization.py`（脏历史 6 例）。
+### A2-2 · 历史清洁（G-07）✅ 已关账（2026-09-01，方案 A 降级）
+
+**核查结论**：原定核心早已交付——`agent/agent_runtime_helpers.py::sanitize_api_messages`
+实现 variant-aware 孤儿 result 丢弃（复用 A1-5 `tool_call_id.py`）与未配对 call 注桩
+（桩文案与本文一致），在 `conversation_loop.py` 主循环 pre-call 与压缩 summary 路径
+（`chat_completion_helpers.py`）无条件接线，覆盖面大于「压缩与 resume 两入口」；
+carrier/thinking-only 由同入口的 `drop_thinking_only_and_merge_users` 承担。
+**三条裁决**：①`sanitize.rs` rust 配对矩阵不实施（每次调用一遍、数百消息，无性能收益，
+按基准门控原则）；②sidecar 剥离 = Hermes 特有机制，intellect 无对应物，N/A（等价场景
+由 A2-1 prune 覆盖）；③重复 id 去重为核查发现的真缺口，已在 `sanitize_api_messages`
+最小补齐（variant-equal 后到 result 丢弃、保留首个；gate-1 逐字节缓存回归兼容）。
+**测试** `tests/agent/test_history_sanitization.py`（脏历史 8 例：缺 result 注桩、精确重复、
+变体重复、空 assistant carrier、变体配对、resume 碎屑、压缩后碎屑、幂等性；每例断言
+provider 配对不变量）。
 
 ### A2-3 · delegation 三件（G-12）
 ①**新建** `agent/steer_markers.py`（marker 常量/`format_steer_marker`/`peel_steer_marker`）

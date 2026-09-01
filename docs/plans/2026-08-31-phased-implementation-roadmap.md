@@ -87,12 +87,23 @@ journal（实测返回 `"wal" | "delete"`）。DELETE 模式下多连接并发�
 | 包 | 来源 | 规模 | 关键约束 |
 |---|---|---|---|
 | A2-1 | G-06 | M | 默认 **off**；`replace_messages` 原语已确认存在；**开项**：rearm 值持久化位置（model_config 单键 vs 等价）在 PR 内裁决并记录 |
-| A2-2 | G-07 | M | `sanitize.rs` 扩展：sidecar/未配对清理 + 与 G-08 变体矩阵复用 |
+| A2-2 | G-07 | M | ~~`sanitize.rs` 扩展：sidecar/未配对清理~~ ✅ 已关账（2026-09-01，见下方裁决） |
 | A2-3 | G-12 | L | ①subagent steering（registry 锁内身份校验 + **marker 体系三件套新建**——marker 常量 / 精确 peel / 压缩器识别，实测 intellect 零命中，是「建体系」而非「照抄格式」）②live transcript（直搬）③durable 完成队列（已确认缺失；与 delivery ledger 同构，claim 三态） |
 | A2-4 | G-13 | M | every_n cadence + guidance peel + 事件族（facade 已存在，只补差距） |
 
 依赖：A2-1/A2-2 依赖 P0-1；A2-3 的 rust 扩展依赖 P0-1；A2-3 ③ 的持久化与 gateway delivery
 ledger 模式对照（可复用 `gateway/delivery_ledger.py` 骨架）。
+
+**A2-2 关账裁决（2026-09-01，评审后按方案 A 降级关账）**：核查发现 G-07 的两大核心
+（变体感知孤儿 tool result 丢弃 + 未配对 call 注桩，桩文案与计划逐字一致）早已以
+`agent/agent_runtime_helpers.py::sanitize_api_messages` 形态交付，并在压缩 summary 路径与
+主循环 pre-call 两处无条件接线——覆盖面大于原定的「压缩与 resume 两入口」。据此：
+①rust 配对矩阵扩展**不实施**（每 API 调用仅跑一遍、数百消息量级，纯 Python `tool_call_id.py`
+足够——按本文基准门控原则，无收益不 rust 化）；②sidecar 剥离判定为 **Hermes 语境特有 N/A**
+（intellect 无 sidecar 卸载机制，等价场景由 A2-1 proactive prune 覆盖）；③重复 id 去重为核查
+发现的真实缺口，已最小补齐（variant-equal 的后到 result 丢弃，保留首个）；④验收测试按计划
+落地 `tests/agent/test_history_sanitization.py`（脏历史 8 例含逐字节缓存回归兼容），gate-1
+回归全绿。
 
 **门-2**：G-06 默认配置下行为与现状逐字节一致（验收硬条款）；steering 伪造 owner 拒绝测试；
 durable 队列崩溃恢复测试（kill -9 后重启补投且不重复）。
