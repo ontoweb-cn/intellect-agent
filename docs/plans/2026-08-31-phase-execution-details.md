@@ -126,9 +126,13 @@ composite 桥接）、`results_match(call, result)`。
 **修改** `agent/storage/sqlite_backend.py`：`_read_conns: threading.local`（per-thread 只读
 连接，`mode=ro` URI + WAL 门控——`journal_mode != "wal"` 时池禁用）+ `state.read_pool`
 config（默认 on-wal，off 直退单锁）。
-**修改** `intellect_state.py`：39 个纯读方法路由到读连接（`_read` contextmanager）。
-**修改** `rust-core/src/backend.rs`：`list_sessions_rich` CTE 迁移（对照 gateway/session.py
-同源查询）。
+**修改** `intellect_state.py`：热点读路由到读连接（`_execute_read`；首批 `get_messages`
++ `list_sessions_rich` batch fetch，其余按收益增量——读池已消除锁竞争，SQL 占主导的
+方法迁移 rust 无收益）。
+**~~修改** `rust-core/src/backend.rs`：`list_sessions_rich` CTE 迁移~~
+**关闭（2026-08-31 profile 裁决）**：cProfile 实测 10k sessions 下 SQL 执行占 92%
+（28.4/30.7ms），python 组装仅 ~8%——SQL 已在 sqlite C 层，rust 迁移无收益。真杠杆
+是 SQL 形态（preview 相关子查询 → JOIN/索引）。读池已把 p50 35.7 → 30.8ms。
 **测试** `tests/agent/test_read_pool.py`（双 journal 模式 + 并发读写无 locked + kill 开关）+
 基准对比（P0-2 基线）。
 **验收**：两段验收（路线图门-1）；DELETE 回退路径行为与主干一致。

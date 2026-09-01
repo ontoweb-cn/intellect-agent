@@ -141,7 +141,7 @@
 - 差距：Hermes 39 个纯读方法脱离写锁；intellect `SessionDB` 读写共用 backend 单锁（`intellect_state.py:365-371`），且 `list_sessions_rich`（1586）是每次会话列表/切换的热路径。
 - 动作（三步，**评审修订**：初版「Python 层读写锁分离」在单连接下无意义）：
   1. backend 增**只读连接池**：实测 `agent/storage/sqlite_backend.py:45-69` 为单连接 + `threading.Lock`，WAL 的并发读收益只在**多连接**间成立——为读方法提供 per-thread 只读连接（WAL 安全），写路径保持独占写连接 + 锁；
-  2. **`list_sessions_rich` 的 SQL CTE / 过期检查 / 分页排序迁入 `rust-core/src/backend.rs`**（TODO-010 第 1 项，1,495 行 `gateway/session.py` 同源查询一并评估），跑在只读连接上；
+  2. ~~`list_sessions_rich` 的 SQL 迁入 `rust-core/src/backend.rs`~~ **关闭（2026-08-31 profile 裁决）**：cProfile 实测 SQL 执行占 92%、python 组装 ~8%——迁移无收益（A3-8 纪律：无收益即关闭）。真杠杆是 SQL 形态（preview 相关子查询 → JOIN/索引）。读池第一段已把 p50 35.7 → 30.8ms；
   3. 别名/变量读取盲点对齐（对照 Hermes 3.9）。
 - 验收：并发读写在隔离测试下无 `database is locked` 且读吞吐随并发提升（基准对比单锁基线）；`list_sessions_rich` 基准（10k sessions）读延迟显著下降；写路径行为不变。
 

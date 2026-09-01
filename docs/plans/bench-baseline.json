@@ -34,5 +34,18 @@
       "p95_ms": 0.53,
       "note": "measures estimate_request_tokens_rough only (not compression itself)"
     }
-  ]
+  ],
+  "g14_stage2_verdict": {
+    "date": "2026-08-31",
+    "method": "cProfile on list_sessions_rich(limit=200) @ 10k sessions, 10 iters",
+    "composition": {
+      "sql_execute_ms": 28.4,
+      "python_assembly_ms": 2.3,
+      "sql_share": "92%"
+    },
+    "verdict": "CLOSED \u2014 rust migration rejected",
+    "rationale": "SQL runs in sqlite C layer already; a Rust port can only reclaim the ~8% python assembly while paying FFI Row/dict rebuild costs. If this query ever needs real optimization, the lever is the SQL shape itself (correlated preview subquery -> JOIN/index), not the language.",
+    "baseline_p50_ms": 35.725,
+    "read_pool_p50_ms": 30.81
+  }
 }
