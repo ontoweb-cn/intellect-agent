@@ -850,7 +850,24 @@ def web_search_tool(query: str, limit: int = 5) -> str:
                 "Web search via %s: '%s' (limit: %d)",
                 provider.name, query, limit,
             )
-            response_data = provider.search(query, limit)
+            try:
+                response_data = provider.search(query, limit)
+            except Exception as search_exc:
+                # G-15: one-shot keyless rescue — a SINGLE anonymous attempt
+                # after the primary failed. Marked rescued_from, never cached,
+                # never sticky (the next call re-tries the primary first).
+                from agent.web_search_registry import get_keyless_provider
+
+                rescue = get_keyless_provider("search",
+                                              exclude=provider.name)
+                if rescue is None:
+                    raise search_exc
+                logger.warning(
+                    "Web search primary %s failed (%s) — keyless rescue via %s",
+                    provider.name, search_exc, rescue.name,
+                )
+                response_data = rescue.search(query, limit)
+                response_data["rescued_from"] = provider.name
 
         debug_call_data["results_count"] = len(response_data.get("data", {}).get("web", []))
         result_json = json.dumps(response_data, indent=2, ensure_ascii=False)

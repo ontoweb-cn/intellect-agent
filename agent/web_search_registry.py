@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 from agent.web_search_provider import WebSearchProvider
 
@@ -130,6 +130,78 @@ _LEGACY_PREFERENCE = (
 )
 
 
+def _keyless_fallback_enabled() -> bool:
+    """``web.keyless_fallback`` — default FALSE (recorded ruling: privacy
+    stance stricter than Hermes, whose default is True). Anonymous vendor
+    endpoints are only walked when explicitly enabled."""
+    try:
+        from intellect_cli.config import load_config
+
+        cfg = load_config() or {}
+        return bool((cfg.get("web") or {}).get("keyless_fallback", False))
+    except Exception:
+        return False
+
+
+def _tier_for(name: str) -> str:
+    """``web.provider_tier.<name>`` — free | paid | auto (default auto)."""
+    try:
+        from intellect_cli.config import load_config
+
+        cfg = load_config() or {}
+        tiers = (cfg.get("web") or {}).get("provider_tier") or {}
+        if isinstance(tiers, dict):
+            return str(tiers.get(name, "auto")).lower()
+    except Exception:
+        pass
+    return "auto"
+
+
+class KeylessProviderView(WebSearchProvider):
+    """Dispatcher-facing view of a keyless-capable provider: resolves like
+    any provider but its ``is_available()`` mirrors the vendor's anonymous
+    availability, and search/extract hit the vendor's keyless mode."""
+
+    def __init__(self, inner: WebSearchProvider) -> None:
+        self._inner = inner
+
+    @property
+    def name(self) -> str:
+        return f"{self._inner.name}-keyless"
+
+    @property
+    def display_name(self) -> str:
+        return f"{self._inner.display_name} (keyless)"
+
+    def is_available(self) -> bool:
+        return self._inner.is_keyless_available()
+
+    def is_keyless_available(self) -> bool:
+        return self._inner.is_keyless_available()
+
+    def supports_search(self) -> bool:
+        return self._inner.supports_search()
+
+    def supports_extract(self) -> bool:
+        return self._inner.supports_extract()
+
+    def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
+        return self._inner.search_keyless(query, limit=limit)
+
+    def extract(self, urls: List[str], **kwargs: Any) -> Any:
+        return self._inner.extract_keyless(urls, **kwargs)
+
+
+_KEYLESS_ROUND_ROBIN: tuple = (
+    "tavily", "exa", "parallel", "firecrawl", "keenable",
+)
+# Per-process random seeding + per-request advance → fleet-wide even spread.
+import random as _random
+
+_rr_cursor = _random.randrange(1 << 30)
+_rr_cursor_rescue = _random.randrange(1 << 30)
+
+
 def _resolve(configured: Optional[str], *, capability: str) -> Optional[WebSearchProvider]:
     """Resolve the active provider for a capability ("search" | "extract").
 
@@ -205,7 +277,16 @@ def _resolve(configured: Optional[str], *, capability: str) -> Optional[WebSearc
         if _capable(p) and _is_available_safe(p)
     ]
     if len(eligible) == 1:
-        return eligible[0]
+        provider = eligible[0]
+        # G-15 tier "free" forces keyless even on a single keyed provider.
+        if _tier_for(provider.name) == "free":
+            try:
+                if provider.is_keyless_available():
+                    return KeylessProviderView(provider)
+            except Exception as exc:
+                logger.debug("keyless view unavailable for %s: %s",
+                             provider.name, exc)
+        return provider
 
     for legacy in _LEGACY_PREFERENCE:
         provider = snapshot.get(legacy)
@@ -214,8 +295,73 @@ def _resolve(configured: Optional[str], *, capability: str) -> Optional[WebSearc
             and _capable(provider)
             and _is_available_safe(provider)
         ):
+            # tier "free" forces this provider's keyless mode (G-15 tri-state)
+            if _tier_for(legacy) == "free":
+                try:
+                    if provider.is_keyless_available():
+                        return KeylessProviderView(provider)
+                except Exception:
+                    pass
             return provider
 
+    # 4. Keyless walk — strictly LAST (G-15): anonymous vendor endpoints,
+    # round-robin (per-process random seed + per-request advance), only when
+    # explicitly enabled and the tier is not "paid".
+    if _keyless_fallback_enabled():
+        order = list(_KEYLESS_ROUND_ROBIN)
+        global _rr_cursor
+        _rr_cursor = (_rr_cursor + 1) % max(len(order), 1)
+        ordered = order[_rr_cursor:] + order[:_rr_cursor]
+        for legacy in ordered:
+            if _tier_for(legacy) == "paid":
+                continue
+            provider = snapshot.get(legacy)
+            if provider is None or not _capable(provider):
+                continue
+            try:
+                if not provider.is_keyless_available():
+                    continue
+            except Exception as exc:
+                logger.debug(
+                    "provider %s.is_keyless_available() raised %s", legacy, exc
+                )
+                continue
+            return KeylessProviderView(provider)
+
+    return None
+
+
+def get_keyless_provider(
+    capability: str, exclude: Optional[str] = None
+) -> Optional[WebSearchProvider]:
+    """Round-robin keyless provider for one-shot rescue (G-15).
+
+    ``exclude`` names a provider whose keyless view must not be returned
+    (the failing primary). None when keyless is disabled/unavailable.
+    """
+    if not _keyless_fallback_enabled():
+        return None
+    with _lock:
+        snapshot = dict(_providers)
+    order = list(_KEYLESS_ROUND_ROBIN)
+    global _rr_cursor_rescue
+    _rr_cursor_rescue = (_rr_cursor_rescue + 1) % max(len(order), 1)
+    ordered = order[_rr_cursor_rescue:] + order[:_rr_cursor_rescue]
+    for legacy in ordered:
+        if legacy == exclude:
+            continue
+        provider = snapshot.get(legacy)
+        if provider is None:
+            continue
+        try:
+            if not provider.is_keyless_available():
+                continue
+        except Exception:
+            continue
+        if capability == "search" and provider.supports_search():
+            return KeylessProviderView(provider)
+        if capability == "extract" and provider.supports_extract():
+            return KeylessProviderView(provider)
     return None
 
 

@@ -862,6 +862,17 @@ DEFAULT_CONFIG = {
     },
 
     "web": {
+        # G-15 / A3-3: keyless (anonymous) web-search layer. Default FALSE —
+        # a deliberate privacy stance stricter than Hermes (whose
+        # web.keyless_fallback defaults true): with the default, user queries
+        # NEVER flow to anonymous third-party endpoints. When enabled, a
+        # failed primary search gets ONE anonymous rescue attempt and the
+        # registry may walk keyless-capable vendors strictly last.
+        "keyless_fallback": False,
+        # Per-provider tier override: free (force keyless) / paid (force
+        # keyed) / auto (default: keyed when a key exists).
+        # e.g. "provider_tier": {"tavily": "free"}
+        "provider_tier": {},
         "backend": "",           # shared fallback — applies to both search and extract
         "search_backend": "",    # per-capability override for web_search (e.g. "searxng")
         "extract_backend": "",   # per-capability override for web_extract (e.g. "native")

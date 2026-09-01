@@ -136,6 +136,40 @@ class TavilyWebSearchProvider(WebSearchProvider):
     def display_name(self) -> str:
         return "Tavily"
 
+    def is_keyless_available(self) -> bool:
+        """G-15: Tavily's anonymous access mode (public keyless header)."""
+        return True
+
+    def search_keyless(self, query: str, limit: int = 5) -> Dict[str, Any]:
+        """Anonymous search via the ``X-Tavily-Access-Mode: keyless`` header."""
+        import httpx
+
+        base_url = os.getenv("TAVILY_BASE_URL", "https://api.tavily.com")
+        response = httpx.post(
+            f"{base_url}/search",
+            json={"query": query, "max_results": limit},
+            headers={"X-Tavily-Access-Mode": "keyless"},
+            timeout=60,
+        )
+        response.raise_for_status()
+        return _normalize_tavily_search_results(response.json())
+
+    def extract_keyless(self, urls: List[str], **kwargs: Any) -> Dict[str, Any]:
+        import httpx
+
+        base_url = os.getenv("TAVILY_BASE_URL", "https://api.tavily.com")
+        response = httpx.post(
+            f"{base_url}/extract",
+            json={"urls": list(urls)},
+            headers={"X-Tavily-Access-Mode": "keyless"},
+            timeout=60,
+        )
+        response.raise_for_status()
+        return {
+            "success": True,
+            "data": {"documents": _normalize_tavily_documents(response.json())},
+        }
+
     def is_available(self) -> bool:
         """Return True when ``TAVILY_API_KEY`` is set to a non-empty value."""
         return bool(os.getenv("TAVILY_API_KEY", "").strip())

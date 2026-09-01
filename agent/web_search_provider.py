@@ -96,6 +96,25 @@ class WebSearchProvider(abc.ABC):
         runs at tool-registration time and on every ``intellect tools`` paint.
         """
 
+    def is_keyless_available(self) -> bool:
+        """G-15: True when this vendor offers an anonymous (keyless) mode.
+
+        Only consulted by the registry's keyless walk, which is strictly
+        LAST in resolution and gated on ``web.keyless_fallback`` (default
+        False). ``is_available()`` keeps looking ONLY at credentials so
+        the legacy preference order never routes a keyed user to the
+        anonymous layer.
+        """
+        return False
+
+    def search_keyless(self, query: str, limit: int = 5) -> Dict[str, Any]:
+        """Anonymous-mode search (override when is_keyless_available)."""
+        raise NotImplementedError(f"{self.name} has no keyless search mode")
+
+    def extract_keyless(self, urls: List[str], **kwargs: Any) -> Any:
+        """Anonymous-mode extract (override when is_keyless_available)."""
+        raise NotImplementedError(f"{self.name} has no keyless extract mode")
+
     def supports_search(self) -> bool:
         """Return True if this provider implements :meth:`search`."""
         return True
