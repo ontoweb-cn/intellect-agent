@@ -124,7 +124,9 @@ def relay_delivery(
         "Content-Type": "application/json",
     }
     attributed = f"Message from 🤖 {sender} (@{sender}): {message}"
-    base = f"{url}/p/{profile}"
+    # The peer's own api_server root — no /p/ prefix (that's a multiplex
+    # front-end concept; the peers url already encodes the full base).
+    base = url
 
     outcome = "delivered (no reply text)"
     reply_text = ""
