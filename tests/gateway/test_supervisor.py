@@ -469,7 +469,7 @@ def test_write_observability_persists_multiplex_status(tmp_path, monkeypatch):
 
 def test_write_supervisor_pid_refuses_live_gateway(tmp_path, monkeypatch):
     import json
-    import os
+    import subprocess
 
     from gateway.status import _get_process_start_time
     from gateway.supervisor import _write_supervisor_pid
@@ -479,25 +479,34 @@ def test_write_supervisor_pid_refuses_live_gateway(tmp_path, monkeypatch):
     home = tmp_path / ".intellect"
     home.mkdir()
     monkeypatch.setenv("INTELLECT_HOME", str(home))
-    # A live gateway holds the runtime lock — get_running_pid only trusts
-    # the pid record when that lock is held.
-    lock_handle = open(home / "gateway.lock", "a+", encoding="utf-8")
-    fcntl.flock(lock_handle, fcntl.LOCK_EX)
+    # A live FOREIGN gateway: a real process (not this test process — the
+    # supervisor must still be able to claim a record pointing at itself,
+    # e.g. the lock-file fallback record written while acquiring the lock).
+    foreign = subprocess.Popen(["sleep", "30"])
     try:
-        record = {
-            "pid": os.getpid(),  # this test process is alive
-            "kind": "intellect-gateway",
-            "argv": ["intellect", "gateway", "run"],
-            "start_time": _get_process_start_time(os.getpid()),
-        }
-        (home / "gateway.pid").write_text(json.dumps(record))
+        lock_handle = open(home / "gateway.lock", "a+", encoding="utf-8")
+        fcntl.flock(lock_handle, fcntl.LOCK_EX)
+        try:
+            record = {
+                "pid": foreign.pid,
+                "kind": "intellect-gateway",
+                "argv": ["intellect", "gateway", "run"],
+                "start_time": _get_process_start_time(foreign.pid),
+            }
+            (home / "gateway.pid").write_text(json.dumps(record))
 
-        assert _write_supervisor_pid() is False
-        # The foreign record is left untouched.
-        assert json.loads((home / "gateway.pid").read_text())["pid"] == os.getpid()
+            assert _write_supervisor_pid() is False
+            # The foreign record is left untouched.
+            assert (
+                json.loads((home / "gateway.pid").read_text())["pid"]
+                == foreign.pid
+            )
+        finally:
+            fcntl.flock(lock_handle, fcntl.LOCK_UN)
+            lock_handle.close()
     finally:
-        fcntl.flock(lock_handle, fcntl.LOCK_UN)
-        lock_handle.close()
+        foreign.kill()
+        foreign.wait()
 
 
 def test_write_supervisor_pid_reclaims_stale(tmp_path, monkeypatch):

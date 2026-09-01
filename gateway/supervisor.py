@@ -118,6 +118,9 @@ class ProfileChild:
     # (B1-4): {"api_server": 41234, "webhook": 41235}. The front end
     # routes /p/<name>/ traffic to these internal loopback ports.
     listeners: Dict[str, int] = field(default_factory=dict)
+    # Parent-side handle of the child's log file. Closed before the next
+    # spawn so restarts don't accumulate fds in the supervisor.
+    log_handle: Optional[Any] = None
 
     def env(self) -> Dict[str, str]:
         env = dict(os.environ)
@@ -191,6 +194,15 @@ def listener_binding(home: Path, platform: str) -> Tuple[Optional[str], Optional
         return (None, None)
 
 
+def is_loopback_host(host: Optional[str]) -> bool:
+    """True when a host literal only serves same-machine connections.
+
+    Public because the multiplex front end gates its topology endpoint on
+    the same notion the pinning precheck uses.
+    """
+    return host is not None and host.strip().lower() in _LOOPBACK_HOSTS
+
+
 def listener_is_pinned(home: Path, platform: str) -> bool:
     """True when a profile's config pins a listener platform to its own
     external binding (explicit port, or a non-loopback host).
@@ -199,7 +211,7 @@ def listener_is_pinned(home: Path, platform: str) -> bool:
     """
     host, port = listener_binding(home, platform)
     return port is not None or (
-        host is not None and host.lower() not in _LOOPBACK_HOSTS
+        host is not None and not is_loopback_host(host)
     )
 
 
@@ -340,12 +352,19 @@ class Supervisor:
                 child.ready = True
                 return
         else:
-            child_log = self._open_child_log(child)
+            # Close the previous restart's handle before opening a new one
+            # — the supervisor would otherwise accumulate one fd per restart.
+            if child.log_handle is not None:
+                try:
+                    child.log_handle.close()
+                except OSError:
+                    pass
+            child.log_handle = self._open_child_log(child)
             child.proc = subprocess.Popen(
                 cmd,
                 cwd=str(_repo_root()),
                 env=child.env(),
-                stdout=child_log,
+                stdout=child.log_handle or subprocess.DEVNULL,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,  # kill B must not touch A
             )
@@ -522,7 +541,10 @@ class Supervisor:
     # ── observability (MP-06) ──────────────────────────────────────────
 
     @staticmethod
-    def _profile_state(child: "ProfileChild") -> str:
+    def profile_state(child: "ProfileChild") -> str:
+        """Lifecycle label for one child ("ready" / "starting" / "own-home" /
+        "rejected" / "backoff" / ...) — consumed by the front end's status
+        endpoint, the runtime snapshot, and `gateway status`."""
         if child.skipped_own_home:
             return "own-home"
         if child.port_rejected:
@@ -543,7 +565,7 @@ class Supervisor:
             {
                 "name": child.name,
                 "pid": child.proc.pid if child.proc is not None else None,
-                "state": self._profile_state(child),
+                "state": self.profile_state(child),
                 "restarts": child.restarts,
                 "port_rejected": child.port_rejected,
                 "listeners": dict(child.listeners),
@@ -597,9 +619,10 @@ def _repo_root() -> Path:
 def _write_supervisor_pid() -> bool:
     """Claim this home's gateway.pid for the supervisor (MP-06).
 
-    Returns False (with a logged, readable error) when a LIVE gateway or
-    supervisor already owns the home; stale records are cleaned by
-    ``get_running_pid`` and the write retried.
+    Precondition: the caller already holds the gateway runtime lock, so
+    ``get_running_pid`` can trust pid records on this home. Returns False
+    (with a logged, readable error) when a LIVE gateway or supervisor
+    already owns the home; stale records are cleaned and the write retried.
     """
     try:
         from gateway.status import get_running_pid, write_pid_file
@@ -609,7 +632,7 @@ def _write_supervisor_pid() -> bool:
             return True
         except FileExistsError:
             live = get_running_pid()
-            if live:
+            if live and live != os.getpid():
                 logger.error(
                     "PID %s already runs a gateway under this home — "
                     "refusing to start a second multiplex supervisor "
@@ -617,7 +640,10 @@ def _write_supervisor_pid() -> bool:
                     live,
                 )
                 return False
-            write_pid_file()  # stale record — get_running_pid cleaned it
+            # Either the record is stale (get_running_pid cleaned it) or it
+            # points at THIS process (the lock-file fallback record we just
+            # wrote while claiming the lock) — both are safe to overwrite.
+            write_pid_file()
             return True
     except OSError as exc:
         logger.warning("Supervisor pid-file write failed: %s", exc)
@@ -631,12 +657,32 @@ def run_supervisor(allowlist: Optional[List[str]] = None) -> int:
     (review P2-2) — the monitor thread observes ``_stop`` and the front
     end's stop event unwinds the asyncio loop on the main thread.
     """
+    # Runtime lock first (same protocol as gateway/run.py): pid-file
+    # liveness checks only trust records while the lock is held, so the
+    # supervisor must own it before claiming the pid file — otherwise two
+    # concurrent supervisors would both pass the duplicate-instance check.
+    try:
+        from gateway.status import (
+            acquire_gateway_runtime_lock,
+            release_gateway_runtime_lock,
+        )
+
+        if not acquire_gateway_runtime_lock():
+            logger.error(
+                "Another gateway/supervisor holds the runtime lock for this "
+                "home — refusing to start a second multiplex supervisor"
+            )
+            return 1
+    except OSError as exc:
+        logger.warning("Runtime lock unavailable (%s) — continuing without", exc)
+
     serve_set = resolve_serve_set(allowlist)
     logger.info(
         "Supervisor serving %d profile(s): %s",
         len(serve_set), ", ".join(name for name, _ in serve_set),
     )
     if not _write_supervisor_pid():
+        release_gateway_runtime_lock()
         return 1
     sup = Supervisor(serve_set)
 
@@ -739,5 +785,11 @@ def run_supervisor(allowlist: Optional[List[str]] = None) -> int:
                 served_profiles=[],
             )
             remove_pid_file()
+        except Exception:
+            pass
+        try:
+            from gateway.status import release_gateway_runtime_lock
+
+            release_gateway_runtime_lock()
         except Exception:
             pass

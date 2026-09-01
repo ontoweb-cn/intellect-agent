@@ -34,7 +34,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from aiohttp import ClientSession, ClientTimeout, web
 
-from gateway.supervisor import child_platforms, listener_binding
+from gateway.supervisor import (
+    child_platforms,
+    is_loopback_host,
+    listener_binding,
+)
 
 logger = logging.getLogger("gateway.multiplex_front")
 
@@ -60,6 +64,29 @@ _HOP_BY_HOP = frozenset({
 })
 
 ERROR_UNREADY = "profile_unready"
+
+
+# WS close codes that must never be re-sent on the wire: reserved or
+# "received-only" diagnostics (1005/1006 are what a stack REPORTS, not what
+# a peer SENDS). Anything else outside 1000-1011/3000-4999 is not sendable.
+_WS_UNSENDABLE_CLOSE_CODES = frozenset({1004, 1005, 1006, 1015})
+
+
+def _forwardable_close_code(code: Any) -> Optional[int]:
+    """Normalize a received WS close code to one that is legal to send."""
+    if code is None:
+        return None
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return None
+    if (
+        code < 1000
+        or code in _WS_UNSENDABLE_CLOSE_CODES
+        or 1012 <= code <= 2999
+    ):
+        return None
+    return code
 
 
 def _error_response(
@@ -116,13 +143,18 @@ class MultiplexFront:
         self._runners: List[web.AppRunner] = []
         self._stop_event: Any = None  # asyncio.Event, bound in run()
         self._loop: Any = None
+        # Plain flag so a stop request that arrives BEFORE run() binds the
+        # event/loop is never lost (request_stop must be safe to call from
+        # a signal handler at any moment).
+        self._stop_requested = False
         # kind -> (host, port) actually bound (port resolved when 0).
         self.bound: Dict[str, Tuple[str, int]] = {}
 
     # ── lifecycle ──────────────────────────────────────────────────────
 
     def request_stop(self) -> None:
-        """Thread-safe stop (signal handler safe): just flips the event."""
+        """Thread-safe stop (signal handler safe): just flips the flag."""
+        self._stop_requested = True
         loop = self._loop
         event = self._stop_event
         if loop is not None and event is not None:
@@ -141,16 +173,26 @@ class MultiplexFront:
         self._loop = asyncio.get_running_loop()
         self._stop_event = asyncio.Event()
         self._session = ClientSession(
-            timeout=ClientTimeout(total=None, connect=10.0, sock_connect=10.0)
+            # total=None: proxied model streams are legitimately long-lived.
+            # sock_read bounds a silent upstream — frees the connection if a
+            # child wedges (900s: generous for long first-token latencies).
+            timeout=ClientTimeout(
+                total=None, connect=10.0, sock_connect=10.0, sock_read=900.0
+            )
         )
         exit_code = 0
         try:
+            if self._stop_requested:
+                # SIGTERM landed before the front end ever served — unwind
+                # immediately instead of waiting on an already-set flag.
+                return 0
             sites = self._sites_override or self._plan_sites()
             if not sites:
                 logger.info(
                     "Multiplex front end: no listener platforms enabled in "
                     "the serve set — supervising children without a front end"
                 )
+            bind_failed = False
             for kind, host, port in sites:
                 try:
                     await self._start_site(kind, host, port)
@@ -160,14 +202,21 @@ class MultiplexFront:
                         "(%s) — free the port or fix platforms config",
                         kind, host, port, exc,
                     )
-                    exit_code = 1
-            if self.bound:
-                for kind, (host, port) in sorted(self.bound.items()):
-                    logger.info(
-                        "Multiplex front end %s site on %s:%s "
-                        "(unprefixed → default profile, /p/<name>/ → profile)",
-                        kind, host, port,
-                    )
+                    bind_failed = True
+            if bind_failed:
+                # Fail fast (review P4): a half-served multiplex (e.g. webhook
+                # callbacks unroutable) is worse than a clean refusal. The
+                # supervisor's finally stops all children.
+                logger.error(
+                    "Multiplex front end startup incomplete — shutting down"
+                )
+                return 1
+            for kind, (host, port) in sorted(self.bound.items()):
+                logger.info(
+                    "Multiplex front end %s site on %s:%s "
+                    "(unprefixed → default profile, /p/<name>/ → profile)",
+                    kind, host, port,
+                )
             await self._stop_event.wait()
         finally:
             await self._stop_sites()
@@ -214,7 +263,7 @@ class MultiplexFront:
         return sites
 
     async def _start_site(self, kind: str, host: str, port: int) -> None:
-        runner = web.AppRunner(self._make_app(kind))
+        runner = web.AppRunner(self._make_app(kind, host))
         await runner.setup()
         site = web.TCPSite(runner, host, port)
         await site.start()
@@ -244,13 +293,15 @@ class MultiplexFront:
 
     # ── app / handlers ─────────────────────────────────────────────────
 
-    def _make_app(self, kind: str) -> web.Application:
+    def _make_app(self, kind: str, host: str) -> web.Application:
         # Generous body cap: the child adapters enforce their own limits;
         # the front end only relays streams.
         app = web.Application(client_max_size=1024 ** 3)
-        if kind == "api":
+        if kind == "api" and is_loopback_host(host):
             # Exact routes BEFORE the catch-all (aiohttp matches in
             # registration order) so the topology endpoint is not proxied.
+            # Loopback-only (review): the payload names profiles, pids and
+            # internal ports — never exposed on a non-loopback bind.
             app.router.add_get("/multiplex/status", self._handle_status)
         app.router.add_route("*", "/{tail:.*}", self._make_proxy_handler(kind))
         return app
@@ -265,7 +316,7 @@ class MultiplexFront:
                     "ready": child.ready,
                     # lifecycle label ("ready" / "starting" / "own-home" /
                     # "rejected" / ...) from the supervisor's classifier
-                    "state": self._sup._profile_state(child),
+                    "state": self._sup.profile_state(child),
                     "restarts": child.restarts,
                     "desired": child.desired,
                     "port_rejected": child.port_rejected,
@@ -385,7 +436,9 @@ class MultiplexFront:
                 # content-length is re-derived by aiohttp for the relayed
                 # (possibly re-chunked) body.
                 continue
-            resp.headers[key] = value
+            # add(), not __setitem__: repeatable headers (Set-Cookie) must
+            # survive the relay instead of collapsing to the last one.
+            resp.headers.add(key, value)
         try:
             await resp.prepare(request)
             async for chunk in upstream_resp.content.iter_any():

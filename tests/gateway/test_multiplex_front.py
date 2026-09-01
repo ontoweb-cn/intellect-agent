@@ -340,6 +340,54 @@ async def test_ws_unknown_and_unready_profiles_close_4404(tmp_path):
         await _stop_front(front, task)
 
 
+@pytest.mark.asyncio
+async def test_status_endpoint_not_registered_on_non_loopback_site(tmp_path):
+    """The topology payload (pids, internal ports) must not be exposed when
+    the front end binds a non-loopback host — the route is simply absent and
+    the path falls through to the catch-all proxy."""
+    sup = _make_sup(tmp_path)
+    upstream = await _start_upstream("default")
+    sup.children["default"].listeners["api_server"] = upstream.port
+    front, task = await _start_front(sup, [("api", "0.0.0.0", 0)])
+    try:
+        _, port = front.bound["api"]
+        async with aiohttp.ClientSession() as http:
+            async with http.get(
+                f"http://127.0.0.1:{port}/multiplex/status"
+            ) as resp:
+                assert resp.status == 200
+                data = await resp.json()
+        # Proxied to the default child, NOT answered by the front end.
+        assert data.get("marker") == "default"
+        assert data.get("role") is None
+    finally:
+        await _stop_front(front, task, [upstream])
+
+
+@pytest.mark.asyncio
+async def test_request_stop_before_run_unwinds_immediately(tmp_path):
+    """SIGTERM can land between supervisor start and the front end's event
+    setup — the stop request must survive and run() must not hang."""
+    sup = _make_sup(tmp_path)
+    front = MultiplexFront(sup, sites=[("api", "127.0.0.1", 0)])
+    front.request_stop()  # before run() ever touched the event/loop
+    task = asyncio.create_task(front.run())
+    await asyncio.wait_for(task, timeout=5)  # would hang without the fix
+
+
+def test_forwardable_close_code_filter():
+    from gateway.multiplex_front import _forwardable_close_code as fwd
+
+    assert fwd(4321) == 4321  # private-use range passes through
+    assert fwd(1000) == 1000
+    assert fwd(1006) is None  # "received-only" diagnostics, not sendable
+    assert fwd(1005) is None
+    assert fwd(999) is None
+    assert fwd(1500) is None  # unassigned reserved range
+    assert fwd(None) is None
+    assert fwd("bogus") is None
+
+
 # ── site planning ───────────────────────────────────────────────────────
 
 def test_plan_sites_uses_default_profile_binding(tmp_path):
