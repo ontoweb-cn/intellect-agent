@@ -4,6 +4,7 @@ All transport is mocked — zero real network. Live endpoint verification is
 done separately via the curl archive in
 docs/plans/2026-09-02-a3-3-keyless-endpoints-analysis.md."""
 
+import httpx
 import pytest
 
 

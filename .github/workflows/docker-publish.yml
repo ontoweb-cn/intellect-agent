@@ -3,6 +3,9 @@ name: Docker Build and Publish
 on:
   push:
     branches: [main]
+    # TODO-011: tag 联动 — v* tags also publish the Docker image.
+    tags:
+      - "v*"
     paths:
       - '**/*.py'
       - 'pyproject.toml'
