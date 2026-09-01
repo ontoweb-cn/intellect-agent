@@ -993,6 +993,9 @@ DEFAULT_CONFIG = {
         "threshold": 0.50,            # compress when context usage exceeds this ratio
         "target_ratio": 0.20,         # fraction of threshold to preserve as recent tail
         "protect_last_n": 20,         # minimum recent messages to keep uncompressed
+        "proactive_prune_tokens": 0,  # G-06 trigger (tokens); 0 = OFF (default)
+        "proactive_prune_min_reclaim_tokens": 4096,  # commit only if >= this reclaimed
+        "proactive_prune_min_result_chars": 8000,    # skip results shorter than this
         "hygiene_hard_message_limit": 400,  # gateway session-hygiene force-compress threshold by message count
         "protect_first_n": 3,         # non-system head messages always preserved
                                       # verbatim, in ADDITION to the system prompt

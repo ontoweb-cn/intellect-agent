@@ -1488,6 +1488,41 @@ class SessionDB:
 
         return cleaned
 
+    def update_session_model_config(self, session_id: str, model_config: dict) -> bool:
+        """JSON-merge *model_config* into the session's stored model config.
+
+        Used by flows that persist per-session tuning state (e.g. the
+        proactive-prune rearm watermark) without touching other keys.
+        Best-effort callers may ignore the return value.
+        """
+        import json as _json
+
+        current = {}
+        sess = self.get_session(session_id)
+        raw = (sess or {}).get("model_config") if isinstance(sess, dict) else None
+        if isinstance(raw, str) and raw:
+            try:
+                current = _json.loads(raw) or {}
+            except ValueError:
+                current = {}
+        elif isinstance(raw, dict):
+            current = raw
+        current.update(model_config or {})
+
+        def _do(conn):
+            conn.execute(
+                "UPDATE sessions SET model_config = ?1 WHERE id = ?2",
+                (_json.dumps(current, ensure_ascii=False), session_id),
+            )
+
+        try:
+            self._execute_write(_do)
+            return True
+        except Exception:
+            logger.warning("update_session_model_config(%s) failed", session_id,
+                           exc_info=True)
+            return False
+
     def set_session_title(self, session_id: str, title: str) -> bool:
         """Set or update a session's title.
 

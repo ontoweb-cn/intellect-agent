@@ -634,6 +634,9 @@ class ContextCompressor(ContextEngine):
         micro_compact: bool = False,
         micro_compact_every_n_turns: int = 1,
         micro_compact_defrag_threshold_tokens: int = 2000,
+        proactive_prune_tokens: int = 0,
+        proactive_prune_min_reclaim_tokens: int = 4096,
+        proactive_prune_min_result_chars: int = 8000,
     ):
         self.model = model
         self.base_url = base_url
@@ -669,6 +672,19 @@ class ContextCompressor(ContextEngine):
         self._micro_compact_last_failure_cursor: int = -1
         self._micro_compact_passes: int = 0
         self._micro_compact_tokens_saved_total: int = 0
+        # ── Proactive prune (G-06 / A2-1) ──────────────────────────────
+        # Deterministic tool-result shrinkage WITHOUT full compression.
+        # Off by default (trigger 0): each committed prune breaks the
+        # provider's cached prefix, so it must pay for itself via the
+        # reclaim gate and stay debounced by the rearm watermark.
+        self._proactive_prune_tokens = max(0, int(proactive_prune_tokens or 0))
+        self._proactive_prune_min_reclaim_tokens = max(
+            1, int(proactive_prune_min_reclaim_tokens or 4096)
+        )
+        self._proactive_prune_min_result_chars = max(
+            200, int(proactive_prune_min_result_chars or 8000)
+        )
+        self._proactive_prune_rearm_tokens = 0
         # Defrag rewrites the newest MICRO marker's content in place and must
         # clear the append-only flush's identity stamp so the rewritten row is
         # re-persisted.  The compressor holds no agent reference, so it raises
@@ -1866,6 +1882,108 @@ The user has requested that this compaction PRIORITISE preserving all informatio
         cut_idx = self._ensure_last_user_message_in_tail(messages, cut_idx, head_end)
 
         return max(cut_idx, head_end + 1)
+
+    # ------------------------------------------------------------------
+    # Proactive prune (G-06 / A2-1)
+    # ------------------------------------------------------------------
+
+    def prune_tool_results_only(
+        self,
+        messages: List[Dict[str, Any]],
+        current_tokens: int,
+        *,
+        session_id: str | None = None,
+        session_db=None,
+    ) -> tuple:
+        """Deterministically shrink bloated tool results WITHOUT full compression.
+
+        For the window where the context is over the proactive trigger but a
+        full LLM compression is not (yet) warranted.
+
+        Contract (Hermes-aligned, review-locked):
+        - Trigger: ``proactive_prune_tokens > 0`` (default 0 = OFF) and
+          ``current_tokens >= trigger``.
+        - Debounce: a rearm watermark — after a committed prune the context
+          must GROW past ``after + runway`` before another prune may run
+          (hysteresis: one committed prune breaks the provider's cached
+          prefix; require real growth before breaking it again).
+        - Reclaim gate: commit only when reclaimed >= ``min_reclaim_tokens``
+          (default 4096). Otherwise the INPUT list is returned unchanged —
+          callers detect a no-op via ``result is not messages``.
+        - Persistence: the rearm watermark goes to the session's
+          ``model_config`` JSON key ``_proactive_prune_rearm_tokens`` via
+          *session_db* (best-effort, never raises).
+        """
+        trigger = self._proactive_prune_tokens
+        if trigger <= 0 or current_tokens < trigger:
+            return messages, 0
+
+        if self._proactive_prune_rearm_tokens and (
+            current_tokens < self._proactive_prune_rearm_tokens
+        ):
+            return messages, 0
+
+        if len(messages) <= self.protect_last_n + 1:
+            return messages, 0
+
+        from agent.model_metadata import estimate_messages_tokens_rough
+
+        before = estimate_messages_tokens_rough(messages)
+        pruned, _count = self._prune_old_tool_results(
+            messages, protect_tail_count=self.protect_last_n
+        )
+        after = estimate_messages_tokens_rough(pruned)
+        reclaimed = before - after
+        if reclaimed < self._proactive_prune_min_reclaim_tokens:
+            return messages, 0  # not worth one cache break — explicit no-op
+
+        next_rearm = after + max(
+            reclaimed, trigger, self._proactive_prune_min_reclaim_tokens
+        )
+        self._proactive_prune_rearm_tokens = next_rearm
+        if session_id and session_db is not None:
+            try:
+                self._persist_prune_rearm(session_db, session_id, next_rearm)
+            except Exception:
+                logger.debug("prune rearm persistence failed", exc_info=True)
+        logger.info(
+            "Proactive prune: %d → %d est tokens (reclaimed %d, next rearm %d)",
+            before, after, reclaimed, next_rearm,
+        )
+        return pruned, reclaimed
+
+    def load_proactive_prune_rearm(self, session_db, session_id: str | None) -> None:
+        """Restore the persisted rearm watermark for this session (best-effort)."""
+        if not session_id or session_db is None:
+            return
+        try:
+            sess = session_db.get_session(session_id)
+            raw = (sess or {}).get("model_config") if isinstance(sess, dict) else None
+            if isinstance(raw, str):
+                import json as _json
+
+                cfg = _json.loads(raw) if raw else {}
+            elif isinstance(raw, dict):
+                cfg = raw
+            else:
+                cfg = {}
+            rearm = int(cfg.get("_proactive_prune_rearm_tokens") or 0)
+            self._proactive_prune_rearm_tokens = max(0, rearm)
+        except Exception:
+            logger.debug("prune rearm restore failed", exc_info=True)
+
+    def _persist_prune_rearm(self, session_db, session_id: str, rearm_tokens: int) -> None:
+        current = {}
+        sess = session_db.get_session(session_id)
+        raw = (sess or {}).get("model_config") if isinstance(sess, dict) else None
+        if isinstance(raw, str) and raw:
+            import json as _json
+
+            current = _json.loads(raw) or {}
+        elif isinstance(raw, dict):
+            current = raw
+        current["_proactive_prune_rearm_tokens"] = int(rearm_tokens)
+        session_db.update_session_model_config(session_id, current)
 
     # ------------------------------------------------------------------
     # ContextEngine: manual /compress preflight

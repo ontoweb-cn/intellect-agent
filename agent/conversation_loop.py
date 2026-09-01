@@ -229,6 +229,18 @@ def run_conversation(
     # Continue-intent recovery counter (G-01): per-run budget of nudge
     # injections (shared cap per conversation run, reset each turn start).
     agent._continue_intent_nudges = 0
+    # Proactive prune (G-06/A2-1): restore the persisted rearm watermark for
+    # this session so a restart does not re-break a pruned cache prefix.
+    try:
+        _pp_compressor = getattr(agent, "context_compressor", None)
+        if _pp_compressor is not None and getattr(
+            _pp_compressor, "_proactive_prune_tokens", 0
+        ) > 0:
+            _pp_compressor.load_proactive_prune_rearm(
+                getattr(agent, "_session_db", None), getattr(agent, "session_id", None)
+            )
+    except Exception:
+        pass
     # True until the server rejects an image_url content part with an error
     # like "Only 'text' content type is supported."  Set to False on first
     # rejection and kept False for the rest of the session so we never re-send
@@ -3817,6 +3829,27 @@ def run_conversation(
                     # _flush_messages_to_session_db writes compressed messages
                     # to the new session (see preflight compression comment).
                     conversation_history = None
+                elif (
+                    agent.compression_enabled
+                    and getattr(_compressor, "_proactive_prune_tokens", 0) > 0
+                    and _real_tokens > 0
+                ):
+                    # Proactive prune (G-06/A2-1): deterministic tool-result
+                    # shrinkage below the full-compression threshold. No-op
+                    # when the reclaim gate says the cache break isn't worth
+                    # it (result IS the input list then).
+                    _pruned_msgs, _pruned_reclaimed = _compressor.prune_tool_results_only(
+                        messages,
+                        _real_tokens,
+                        session_id=getattr(agent, "session_id", None),
+                        session_db=getattr(agent, "_session_db", None),
+                    )
+                    if _pruned_msgs is not messages:
+                        messages = _pruned_msgs
+                        agent._session_messages = messages
+                        agent._buffer_status(
+                            f"✂️ pruned stale tool results (~{_pruned_reclaimed:,} tokens)"
+                        )
                 
                 # Save session log incrementally (so progress is visible even if interrupted)
                 agent._session_messages = messages

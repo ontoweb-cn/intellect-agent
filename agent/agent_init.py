@@ -1391,6 +1391,25 @@ def init_agent(
         )
     except (TypeError, ValueError):
         compression_micro_compact_defrag = 2000
+    # G-06 / A2-1: proactive prune knobs (all three default to OFF-safe).
+    try:
+        compression_proactive_prune_tokens = int(
+            _compression_cfg.get("proactive_prune_tokens", 0) or 0
+        )
+    except (TypeError, ValueError):
+        compression_proactive_prune_tokens = 0
+    try:
+        compression_proactive_min_reclaim = int(
+            _compression_cfg.get("proactive_prune_min_reclaim_tokens", 4096) or 4096
+        )
+    except (TypeError, ValueError):
+        compression_proactive_min_reclaim = 4096
+    try:
+        compression_proactive_min_result_chars = int(
+            _compression_cfg.get("proactive_prune_min_result_chars", 8000) or 8000
+        )
+    except (TypeError, ValueError):
+        compression_proactive_min_result_chars = 8000
 
     # Read optional explicit context_length override for the auxiliary
     # compression model. Custom endpoints often cannot report this via
@@ -1611,6 +1630,9 @@ def init_agent(
             micro_compact=compression_micro_compact,
             micro_compact_every_n_turns=compression_micro_compact_every_n,
             micro_compact_defrag_threshold_tokens=compression_micro_compact_defrag,
+            proactive_prune_tokens=compression_proactive_prune_tokens,
+            proactive_prune_min_reclaim_tokens=compression_proactive_min_reclaim,
+            proactive_prune_min_result_chars=compression_proactive_min_result_chars,
         )
     agent.compression_enabled = compression_enabled
 
