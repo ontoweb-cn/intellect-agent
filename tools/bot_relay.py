@@ -27,12 +27,28 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_RELAY_TIMEOUT_S = 600.0
+
+
+_PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def peer_profile_name(peer_name: str, peer_cfg: Dict[str, Any]) -> str:
+    """Validated remote profile name for URL-path use.
+
+    Raises ValueError on a malformed config value — a typo'd profile would
+    otherwise become a malformed URL path.
+    """
+    profile = str(peer_cfg.get("profile") or peer_name).strip().lower()
+    if not _PROFILE_RE.match(profile):
+        raise ValueError(f"invalid peer profile name: {profile!r}")
+    return profile
 
 
 def peers_config() -> Dict[str, Dict[str, Any]]:
@@ -72,21 +88,6 @@ def _peer_api_key(peer_cfg: Dict[str, Any]) -> str:
     return ""
 
 
-def _sender_name(sender_home: Path, roster: List[Dict[str, Any]]) -> str:
-    for entry in roster:
-        try:
-            if Path(entry["home"]).resolve() == Path(sender_home).resolve():
-                return str(entry["name"])
-        except (OSError, KeyError):
-            continue
-    try:
-        from intellect_cli.profiles import get_active_profile_name
-
-        return get_active_profile_name() or "default"
-    except Exception:
-        return "default"
-
-
 def relay_delivery(
     peer_name: str,
     peer_cfg: Dict[str, Any],
@@ -108,7 +109,15 @@ def relay_delivery(
     from tools.bot_mode_dm import BOT_CHAT_SESSION_ID, BOT_CHAT_SESSION_TITLE
 
     url = str(peer_cfg.get("url") or "").rstrip("/")
-    profile = str(peer_cfg.get("profile") or peer_name)
+    if not url.lower().startswith("https://"):
+        # The relay carries the peer profile's API key as a Bearer secret —
+        # an http:// peer URL puts it on the wire in cleartext. LAN
+        # deployments may accept this; the owner should see it either way.
+        logger.warning(
+            "Relay to peer %r uses a non-HTTPS url (%s) — the peer API key "
+            "travels in cleartext", peer_name, url,
+        )
+    profile = peer_profile_name(peer_name, peer_cfg)
     api_key = _peer_api_key(peer_cfg)
     headers = {
         "Authorization": f"Bearer {api_key}",

@@ -1,8 +1,10 @@
 """Tests for the peer-gateway DM relay (BT-03 / B2-4)."""
 
 import httpx
+import json
 import pytest
 from intellect_state import SessionDB
+from types import SimpleNamespace
 
 from tools.bot_mode_dm import BOT_CHAT_SESSION_TITLE
 from tools import bot_relay
@@ -208,3 +210,98 @@ def test_relay_unreachable_writes_visible_error(
     msgs = db.get_messages("bot_chat")
     assert any("[relay] delivery to beta" in m["content"]
                for m in msgs)
+
+
+# ── review findings ─────────────────────────────────────────────────────
+
+def test_local_roster_shadows_peer(tmp_path, monkeypatch, sender_home):
+    """A name present in BOTH the local roster and bot_mode.peers delivers
+    LOCALLY — same-machine is canonical (review P3)."""
+    import tools.bot_mode_dm as bdm
+    from tools.process_registry import process_registry
+
+    home = tmp_path / "beta"
+    home.mkdir()
+
+    class _Agent:
+        _session_db = SimpleNamespace(db_path=home / "state.db")
+        session_id = "bot_chat"
+
+    monkeypatch.setattr(bdm, "build_roster", lambda: [
+        {"name": "beta", "home": str(home), "online": True,
+         "model": "", "avatar": {}}])
+    monkeypatch.setattr(bdm, "bot_mode_enabled", lambda: True)
+    monkeypatch.setattr(bdm, "_read_session_title", lambda agent: "Bot Chat")
+    monkeypatch.setattr(bdm, "current_dm_depth", lambda: 0)
+    monkeypatch.setattr(bdm, "max_dm_depth", lambda: 3)
+    monkeypatch.setattr(bdm, "_session_home", lambda agent: home)
+    # resolve_peer must never be consulted for a roster-shadowed name
+    def _forbidden(target):
+        raise AssertionError("resolve_peer consulted for a local target")
+    monkeypatch.setattr(bdm, "resolve_peer", _forbidden)
+
+    # local-delivery machinery, mocked to no-op recorders
+    monkeypatch.setattr(bdm, "ensure_bot_chat_session", lambda h: "bot_chat")
+
+    written = {}
+    monkeypatch.setattr(bdm, "write_dm_query_file",
+                        lambda text: written.update(text=text) or
+                        (home / "q.txt"))
+
+    spawned = []
+    monkeypatch.setattr(process_registry, "spawn_local",
+                        lambda **kw: spawned.append(kw) or
+                        SimpleNamespace(id="p1", pid=1,
+                                        notify_on_complete=False))
+
+    agent = _Agent()
+    out = json.loads(bdm.handle_message_agent_call(
+        agent, {"target": "beta", "message": "hello"}))
+
+    assert out["delivered"] is True
+    assert "relayed" not in out  # LOCAL delivery won
+    assert spawned  # the local background chat was spawned
+
+
+def test_relay_timeout_path_writes_error(tmp_path, monkeypatch, sender_home):
+    """The peer's synchronous turn exceeding the timeout lands as a visible
+    error entry (TimeoutException branch, review note)."""
+    from tools.bot_relay import relay_delivery
+
+    class _Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, *a, **kw):
+            return _Resp(200, {})
+
+        def post(self, *a, **kw):
+            raise httpx.TimeoutException("peer turn stalled")
+
+    monkeypatch.setattr(httpx, "Client", _Client)
+
+    out = relay_delivery("beta", PEER, "alpha", "hi", sender_home, timeout=30)
+    assert out["delivered"] is False
+    assert "timeout" in out["outcome"]
+
+    from intellect_state import SessionDB
+
+    db = SessionDB(db_path=sender_home / "state.db")
+    msgs = db.get_messages("bot_chat")
+    assert any("[relay]" in m["content"] for m in msgs)
+
+
+class _Resp200:
+    status_code = 200
+
+    def json(self):
+        return {}
+
+    def raise_for_status(self):
+        return None

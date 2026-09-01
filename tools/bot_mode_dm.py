@@ -288,7 +288,10 @@ def handle_message_agent_call(agent, function_args) -> str:
         )
 
     roster = {e["name"]: e for e in build_roster()}
-    peer = resolve_peer(target)
+    # B2-4 resolution order: LOCAL roster shadows peers — a name that is
+    # both a local profile and a configured peer always delivers locally
+    # (same-machine is canonical; documented in the website guide).
+    peer = None if target in roster else resolve_peer(target)
     peer_names = set(peers_config())
     if target not in roster and peer is None:
         return _json.dumps(
@@ -315,6 +318,14 @@ def handle_message_agent_call(agent, function_args) -> str:
     if peer is not None:
         # ── B2-4: cross-gateway relayed delivery (fire-and-forget) ──
         peer_name, peer_cfg = peer
+        try:
+            from tools.bot_relay import peer_profile_name
+
+            peer_profile_name(peer_name, peer_cfg)
+        except ValueError as exc:
+            return _json.dumps(
+                {"error": str(exc), "code": "invalid_peer_profile"}
+            )
         import threading as _threading
         from tools.bot_relay import relay_delivery
 
