@@ -1057,6 +1057,15 @@ def init_agent(
         "reasoning_config": reasoning_config,
         "max_tokens": max_tokens,
     }
+    # Bot Mode (B2-2): inject message_agent into Bot Chat sessions.
+    # Runs AFTER _session_db assignment — the gate reads the session title
+    # from the store. Opt-in via config; failure degrades to no-schema.
+    try:
+        from tools.bot_mode_dm import ensure_message_agent_tool
+
+        ensure_message_agent_tool(agent)
+    except Exception:
+        pass
     
     # In-memory todo list for task planning (one per agent/session)
     from tools.todo_tool import TodoStore

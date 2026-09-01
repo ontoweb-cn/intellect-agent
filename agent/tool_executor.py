@@ -899,6 +899,14 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('memory', function_args, tool_duration, result=function_result)}")
+        elif function_name == "message_agent":
+            # Bot Mode (B2-2): double title-gate lives in the handler.
+            from tools.bot_mode_dm import handle_message_agent_call
+
+            function_result = handle_message_agent_call(agent, function_args)
+            tool_duration = time.time() - tool_start_time
+            if agent._should_emit_quiet_tool_messages():
+                agent._vprint(f"  {_get_cute_tool_message_impl('message_agent', function_args, tool_duration, result=function_result)}")
         elif function_name == "clarify":
             from tools.clarify_tool import clarify_tool as _clarify_tool
             function_result = _clarify_tool(

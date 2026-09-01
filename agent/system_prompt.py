@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.prompt_builder import (
@@ -56,6 +57,34 @@ def _ra():
     """
     import run_agent
     return run_agent
+
+
+def bot_mode_enabled_cached(agent: Any) -> bool:
+    """``bot_mode.enabled``, cached per agent — config edits take effect on
+    the next session, matching the deferred-invalidation contract of the
+    prompt cache itself."""
+    cached = getattr(agent, "_bot_mode_enabled", None)
+    if cached is None:
+        try:
+            from tools.bot_mode_dm import bot_mode_enabled
+
+            cached = bot_mode_enabled()
+        except Exception:
+            cached = False
+        try:
+            agent._bot_mode_enabled = cached
+        except Exception:
+            pass
+    return bool(cached)
+
+
+def _bot_self_name() -> str:
+    try:
+        from intellect_cli.profiles import get_active_profile_name
+
+        return get_active_profile_name() or "default"
+    except Exception:
+        return "default"
 
 
 def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) -> Dict[str, str]:
@@ -302,6 +331,36 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             _entry = platform_registry.get(platform_key)
             if _entry and _entry.platform_hint:
                 stable_parts.append(_entry.platform_hint)
+        except Exception:
+            pass
+
+    # ── Bot Mode protocol section (B2-2) ──────────────────────────────
+    # Injected ONLY into Bot Chat sessions (config gate + session title).
+    # Cached per (process, home) inside the roster module so compression
+    # rebuilds stay byte-identical; roster/epoch is stable within one
+    # process, which is exactly the prompt-cache contract.
+    if bot_mode_enabled_cached(agent):
+        try:
+            from tools.bot_mode_roster import bot_chat_protocol_section
+
+            db = getattr(agent, "_session_db", None)
+            session_id = getattr(agent, "session_id", None)
+            title = ""
+            if db is not None and session_id:
+                try:
+                    title = db.get_session_title(session_id) or ""
+                except Exception:
+                    title = ""
+            if title == "Bot Chat":
+                db_path = getattr(db, "db_path", None)
+                home_dir = Path(db_path).parent if db_path else Path.cwd()
+                self_name = _bot_self_name()
+                stable_parts.append(
+                    bot_chat_protocol_section(
+                        self_name, home_dir,
+                        sorted(getattr(agent, "valid_tool_names", None) or []),
+                    )
+                )
         except Exception:
             pass
 

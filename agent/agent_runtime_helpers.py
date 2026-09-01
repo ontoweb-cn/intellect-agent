@@ -1689,6 +1689,14 @@ def _invoke_tool_body(
     except Exception:
         pass
 
+    # Bot Mode (B2-2): message_agent is dispatch-gated here and in the
+    # sequential executor — a forged call from a non-Bot-Chat session gets
+    # a structured error, never a delivery.
+    if function_name == "message_agent":
+        from tools.bot_mode_dm import handle_message_agent_call
+
+        return handle_message_agent_call(agent, function_args)
+
     if function_name == "todo":
         from tools.todo_tool import todo_tool as _todo_tool
         return _todo_tool(

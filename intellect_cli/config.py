@@ -1465,6 +1465,16 @@ DEFAULT_CONFIG = {
     # so child agents can run on a different (cheaper/faster) provider and model.
     # Uses the same runtime provider resolution as CLI/gateway startup, so all
     # configured providers (OpenRouter, OntoWeb, Z.ai, Kimi, etc.) are supported.
+    # Bot Mode (BT-01/02): profiles as DM-able bots. The message_agent tool
+    # is injected ONLY into sessions titled "Bot Chat" and only when this is
+    # enabled. Default off — the feature spawns background processes and
+    # writes cross-profile sessions, so it is strictly opt-in.
+    "bot_mode": {
+        "enabled": False,
+        # Max chained bot→bot DM hops (depth 3 = A→B→C, who may not DM
+        # further). Prevents infinite bot↔bot reply loops.
+        "max_dm_depth": 3,
+    },
     "delegation": {
         "model": "",       # e.g. "google/gemini-3-flash-preview" (empty = inherit parent model)
         "provider": "",    # e.g. "openrouter" (empty = inherit parent provider + credentials)
