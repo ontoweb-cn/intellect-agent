@@ -196,6 +196,64 @@ E2E（`tests/gateway/test_bot_mode_e2e.py`，env 门控 INTELLECT_BOT_MODE_E2E=1
 child 的 LLM 调用以不可达 provider 失败，但用户消息走 exit-path 持久化，传输契约得以
 无凭据验证）。
 
+### A3-1 · 图片损坏矩阵 + billing 边界（G-09+G-10）✅ 已落地
+**修改** `rust-core/src/error_classifier.rs`（IMAGE_CORRUPT 家族、Kimi/Moonshot
+tool-replay 400 → retryable format_error、extra-usage 冷却守卫（message-pattern
++ 400 arm + 402 arm）、数字 429 code 提取）+ `conversation_loop` 空响应计费守卫。
+**测试** test_error_classifier.py +10。
+**验证说明**：cargo test 全量在本机 macOS 触发预存 pyo3 GIL auto-init abort（基线
+同现，与改动无关）；验证路径 = cargo 编译 + maturin 重建 + python 桥接套件 148 例。
+
+### A3-2 · per-model 用量（G-11）✅ 已落地
+**修改** `rust-core/src/usage.rs`（ModelUsage + add_model/snapshot_models/reset）
++ conversation_loop 镜像 + cli.py `_render_per_model_usage_lines`。
+**测试** rust per_model 2 例 + tests/cli/test_usage_per_model.py 2 例。
+
+### A3-7 · 更新机制硬化（G-19）✅ 已落地
+**修改** main.py `_locked_uv_sync`（uv.lock 存在时优先 `sync --frozen --inexact
+--all-extras`，失败回退 optional-fallback）+ release.py SHA256SUMS。--yes/快照
+命名保留为既有能力（核验）。**测试** tests/cli/test_update_hardened.py 4 例。
+
+### A3-5 · foreign_sessions（G-17）✅ 已落地
+**新建** `agent/foreign_sessions.py`（双源解析 + 转换契约逐条 + 幂等导入）；
+**修改** sessions CLI 增 `import` 子命令。**差异记录**：intellect schema 无
+origin.imported_from 列，provenance 由 source="imported" + 标题前缀承载。
+**测试** tests/agent/test_foreign_sessions.py 7 例。
+
+### A3-6 · MCP 治理（G-18）✅ 已落地
+**修改** budget_config（mcp_ 前缀 50K 紧门槛，优先序 PINNED > overrides > MCP >
+default）、新建 `tools/mcp_result_guard.py`（>50K 且与上次 byte-identical →
+跨回合引用桩，LRU 有界）、mcp_tool 接线（best-effort）、`intellect mcp doctor`。
+**测试** tests/tools/test_mcp_result_guard.py 9 例。
+
+### A3-4 · 项目技能 + 信任门 + 检疫（G-16，R6 同 PR 硬条款）✅ 已落地
+**新建** `agent/project_skills.py`（发现门 + 信任持久化 + 内容级 fail-closed
+检疫门，mtime 缓存）；**修改** skill_commands 扫描接线、DEFAULT_CONFIG
+`skills.project_discovery=true / trusted_project_dirs=[]`、skills CLI
+trust/untrust/trusted。**测试** tests/agent/test_project_skills.py 8 例（含
+门-5 检疫负例：trust 后注入恶意技能被拦、扫描器异常 fail-closed）。
+
+### A3-3 · keyless 池（G-15）✅ 已落地（默认 false 裁定）
+**修改** ABC `is_keyless_available`/`search_keyless`/`extract_keyless` 钩子、
+registry 第 4 步 keyless walk（严格最后，round-robin，paid 跳过）+ tier 三态
+（free/paid/auto，含单 provider 捷径）+ `get_keyless_provider` 救援、tavily
+keyless 实现（公开 header）、web_tools 一次性救援（rescued_from、不缓存）、
+DEFAULT_CONFIG `web.keyless_fallback=false` + `provider_tier`。**范围记录**：
+keenable 跳过（无端点协议文档）；exa/parallel/firecrawl 钩子就绪待端点确认。
+**测试** tests/agent/test_keyless_pool.py 7 例（含默认关回归）。
+
+### A3-8 · stream_consumer 迁移裁决（G-21）✅ 已裁决：关闭
+按 G-14 门控纪律：bench_stream_consumer.py 实测 Python 热路径 24.96 MB/s、
+现实负载估算 CPU 0.036%（解析热环已在 rust StreamAccumulator 4103.6 MB/s 覆盖）
+——迁移无收益，verdict + 数字落盘 bench-baseline.json `g21_verdict`。
+
+### PT V1 · Pets（主题 J）✅ 已落地（V1 范围）
+**新建** `agent/pet/`（constants/store/manifest/state/render/doctor：petdex
+host-pin、300s TTL、本地清单降级、slug 防穿越、unicode 半块确定性渲染）+
+`intellect pets` CLI + DEFAULT_CONFIG `display.pet.*`。**延后记录**：webp
+sprite 解码、kitty/iTerm2 图形协议、TUI petSprite.tsx → 图形批次。
+**测试** tests/agent/test_pet_package.py 12 例。
+
 ### A2-3 · delegation 三件（G-12）
 ①**新建** `agent/steer_markers.py`（marker 常量/`format_steer_marker`/`peel_steer_marker`）
 + `tools/delegate_tool.py` subagent steering（锁内 owner 三元组对象同一性校验、

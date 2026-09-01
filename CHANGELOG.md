@@ -6,6 +6,43 @@ roadmap.
 
 ## Unreleased
 
+### M5 — Protocol hardening + ecosystem long-tail (A3) + Pets (PT)
+
+- **Error classifier (A3-1, G-09+G-10)**: corrupt/broken image payloads
+  classify as strip-recoverable (multimodal-unsupported); Kimi/Moonshot
+  tool-replay 400s are retryable format errors feeding the existing
+  reasoning injector; Anthropic "out of extra usage" routes to cooldown
+  instead of terminal billing; relay-wrapped numeric 429s reach the
+  rate-limit classifier; deterministic-empty responses no longer
+  double-bill the session cost view.
+- **Per-model usage (A3-2, G-11)**: TokenAccumulator gains a per-model
+  dimension; `/usage` renders a per-model breakdown when a session used
+  more than one model.
+- **Update hardening (A3-7, G-19)**: `intellect update` prefers a locked
+  `uv sync --frozen --inexact --all-extras` when uv.lock exists;
+  release artifacts ship with SHA256SUMS.
+- **Foreign session import (A3-5, G-17)**: `intellect sessions import`
+  converts Claude Code / Codex CLI JSONL with the strict conversion
+  contract (text-only, no fabricated tool_calls, no system payloads).
+- **MCP governance (A3-6, G-18)**: mcp_-prefixed tools get a tight 50K
+  result tier; oversized byte-identical repeats collapse to reference
+  stubs; new `intellect mcp doctor` health sweep.
+- **Project skills (A3-4, G-16)**: `.intellect/skills` at your git root
+  is discovered when trusted (`intellect skills trust`) — with a
+  fail-closed content quarantine gate shipped in the same change (R6):
+  trusted repos cannot smuggle dangerous skills via git pull.
+- **Keyless search pool (A3-3, G-15)**: opt-in anonymous search layer
+  (`web.keyless_fallback`, default FALSE — deliberate privacy stance
+  stricter than Hermes) with per-provider tier overrides (free/paid/
+  auto), round-robin vendor walk strictly last, and one-shot rescue.
+- **G-21 migration CLOSED** per the benchmark gate: the stream_consumer
+  Python hot path costs 0.036% estimated CPU at realistic gateway load —
+  no measurable rust benefit (G-14 discipline, verdict + numbers in
+  bench-baseline.json).
+- **Pets (PT V1)**: `agent/pet/` store/manifest/state/render package,
+  `intellect pets` CLI (list/install/select/doctor), deterministic
+  unicode rendering. TUI/kitty graphics deferred.
+
 ### M4 — Bot Mode (B2): profiles as DM-able bots
 
 - **Opt-in** (`bot_mode.enabled`, default off): every profile in the

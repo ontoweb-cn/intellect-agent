@@ -12,7 +12,6 @@ from intellect_state import SessionDB
 
 from agent.foreign_sessions import (
     detect_format,
-    discover_foreign_sessions,
     import_foreign_session,
     parse_claude_code_jsonl,
     parse_codex_rollout,
