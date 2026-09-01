@@ -1418,7 +1418,24 @@ def skills_command(args) -> None:
     """Router for `intellect skills <subcommand>` — called from intellect_cli/main.py."""
     action = getattr(args, "skills_action", None)
 
-    if action == "browse":
+    if action == "trust":
+        from agent.project_skills import trust_project
+
+        root = trust_project(getattr(args, "path", None))
+        if root:
+            print(f"✓ Trusted project skills at {root}")
+            print("  Content scans still apply on every load (fail-closed).")
+        else:
+            print("✗ No project skills root found above the working directory.")
+    elif action == "untrust":
+        from agent.project_skills import untrust_project
+
+        root = untrust_project(getattr(args, "path", None))
+        if root:
+            print(f"✓ Removed {root} from the trust list.")
+        else:
+            print("✗ No project skills root found above the working directory.")
+    elif action == "browse":
         do_browse(page=args.page, page_size=args.size, source=args.source)
     elif action == "search":
         do_search(args.query, source=args.source, limit=args.limit,

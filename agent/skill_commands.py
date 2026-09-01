@@ -276,15 +276,28 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
         disabled = _get_disabled_skill_names()
         seen_names: set = set()
 
-        # Scan local dir first, then external dirs
+        # Scan local dir first, then external dirs, then trusted project dirs
         dirs_to_scan = []
         if SKILLS_DIR.exists():
             dirs_to_scan.append(SKILLS_DIR)
         dirs_to_scan.extend(get_external_skills_dirs())
+        from agent.project_skills import (
+            project_skill_allowed,
+            project_skill_dirs,
+        )
+        project_dirs = project_skill_dirs()
+        dirs_to_scan.extend(project_dirs)
 
         for scan_dir in dirs_to_scan:
+            is_project_source = scan_dir in project_dirs
             for skill_md in iter_skill_index_files(scan_dir, "SKILL.md"):
                 if any(part in {'.git', '.github', '.hub', '.archive'} for part in skill_md.parts):
+                    continue
+                # G-16 content gate (R6, fail-closed): trust only enables
+                # DISCOVERY — every project skill is scanned before it can
+                # auto-load, so a trusted repo cannot smuggle in a dangerous
+                # skill via git pull after the trust decision.
+                if is_project_source and not project_skill_allowed(skill_md):
                     continue
                 try:
                     content = skill_md.read_text(encoding='utf-8')

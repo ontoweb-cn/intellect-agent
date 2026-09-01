@@ -13065,6 +13065,23 @@ Examples:
     )
     skills_subparsers = skills_parser.add_subparsers(dest="skills_action")
 
+    skills_trust_p = skills_subparsers.add_parser(
+        "trust",
+        help="Trust this project's .intellect/skills directory (R6: content scans still apply)",
+    )
+    skills_trust_p.add_argument(
+        "path", nargs="?", default=None,
+        help="Project directory (defaults to the git root above cwd)",
+    )
+    skills_untrust_p = skills_subparsers.add_parser(
+        "untrust",
+        help="Remove a project's skills directory from the trust list",
+    )
+    skills_untrust_p.add_argument(
+        "path", nargs="?", default=None,
+        help="Project directory (defaults to the git root above cwd)",
+    )
+
     skills_browse = skills_subparsers.add_parser(
         "browse", help="Browse all available skills (paginated)"
     )

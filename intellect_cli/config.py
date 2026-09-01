@@ -1541,6 +1541,15 @@ DEFAULT_CONFIG = {
     # Each path is expanded (~, ${VAR}) and resolved.  Read-only — skill creation
     # always goes to ~/.intellect/skills/.
     "skills": {
+        # G-16 / A3-4: project-local skills (`.intellect/skills` at the git
+        # root). Discovery defaults TRUE (recorded ruling) with the hard
+        # clause that the content quarantine gate ships in the same change:
+        # trust only enables discovery, every skill is still scanned
+        # fail-closed before auto-load.
+        "project_discovery": True,
+        # Absolute paths of projects whose skills directory is trusted.
+        # Managed via `intellect skills trust <path>` / `untrust <path>`.
+        "trusted_project_dirs": [],
         "external_dirs": [],   # e.g. ["~/.agents/skills", "/shared/team-skills"]
         # Substitute ${intellect_SKILL_DIR} and ${intellect_SESSION_ID} in SKILL.md
         # content with the absolute skill directory and the active session id
