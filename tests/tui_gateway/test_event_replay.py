@@ -211,3 +211,89 @@ def test_normal_route_not_rejected():
         task.cancel()
 
     asyncio.run(asyncio.wait_for(main(), timeout=5))
+
+
+# ── Per-profile token chain (B1-5, MP-05) ──────────────────────────────
+
+class _FakeWSWithToken(_FakeWS):
+    """FakeWS plus the query_params surface the auth guard reads."""
+
+    def __init__(self, path="/api/ws", token=""):
+        super().__init__(path=path)
+        self.query_params = {"token": token}
+
+    @property
+    def client(self):
+        return "test-client"
+
+
+def test_per_profile_token_takes_precedence(monkeypatch):
+    """MP-05: TUI_AUTH_TOKEN_<PROFILE> wins over the global token — profile
+    A's token must not open profile B's endpoint when B pins its own."""
+    from tui_gateway.ws import handle_ws
+
+    monkeypatch.delenv("TUI_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("TUI_AUTH_TOKEN_CODER", "tok-coder")
+    monkeypatch.setattr(
+        "intellect_cli.profiles.get_active_profile_name", lambda: "coder"
+    )
+    # Client presents the GLOBAL token: rejected even though a global would
+    # have matched had no per-profile token been configured.
+    ws = _FakeWSWithToken(token="tok-global")
+
+    async def main():
+        await asyncio.wait_for(handle_ws(ws), timeout=5)
+
+    asyncio.run(asyncio.wait_for(main(), timeout=5))
+    assert ws.closed == (4001, "auth required")
+
+
+def test_per_profile_token_accepted(monkeypatch):
+    from tui_gateway.ws import handle_ws
+
+    monkeypatch.delenv("TUI_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("TUI_AUTH_TOKEN_CODER", "tok-coder")
+    monkeypatch.setattr(
+        "intellect_cli.profiles.get_active_profile_name", lambda: "coder"
+    )
+    ws = _FakeWSWithToken(token="tok-coder")
+
+    async def main():
+        task = asyncio.create_task(handle_ws(ws))
+        await asyncio.sleep(0.3)
+        assert ws.closed is None
+        task.cancel()
+
+    asyncio.run(asyncio.wait_for(main(), timeout=5))
+    assert getattr(ws, "accepted", False) is True
+
+
+def test_token_falls_back_to_global_when_no_profile_token(monkeypatch):
+    from tui_gateway.ws import handle_ws
+
+    monkeypatch.setenv("TUI_AUTH_TOKEN", "tok-global")
+    monkeypatch.delenv("TUI_AUTH_TOKEN_CODER", raising=False)
+    monkeypatch.setattr(
+        "intellect_cli.profiles.get_active_profile_name", lambda: "coder"
+    )
+    ws = _FakeWSWithToken(token="tok-global")
+
+    async def main():
+        task = asyncio.create_task(handle_ws(ws))
+        await asyncio.sleep(0.3)
+        assert ws.closed is None
+        task.cancel()
+
+    asyncio.run(asyncio.wait_for(main(), timeout=5))
+    assert getattr(ws, "accepted", False) is True
+
+
+def test_token_env_name_maps_dashes(monkeypatch):
+    from tui_gateway.ws import _expected_auth_token
+
+    monkeypatch.delenv("TUI_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("TUI_AUTH_TOKEN_MY_LAB", "tok-lab")
+    monkeypatch.setattr(
+        "intellect_cli.profiles.get_active_profile_name", lambda: "my-lab"
+    )
+    assert _expected_auth_token() == "tok-lab"

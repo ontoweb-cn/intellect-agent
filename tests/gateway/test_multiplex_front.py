@@ -238,21 +238,104 @@ async def test_status_route_is_not_proxied_to_default_child(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ws_upgrade_answered_structurally_before_b1_5(tmp_path):
+async def test_ws_routes_and_pumps_per_profile(tmp_path):
+    """WS upgrades route by the same prefix rules and frames pump both ways."""
+    import json
+
+    sup = _make_sup(tmp_path)
+    ups = {}
+    for name in ("default", "alpha"):
+        marker = name
+
+        async def handler(request, _marker=marker):
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            await ws.send_str(json.dumps({"marker": _marker}))
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    await ws.send_str(msg.data.upper())
+                else:
+                    break
+            return ws
+
+        app = web.Application()
+        app.router.add_get("/api/ws", handler)
+        server = TestServer(app)
+        await server.start_server()
+        ups[name] = server
+        sup.children[name].listeners["api_server"] = server.port
+
+    front, task = await _start_front(sup, [("api", "127.0.0.1", 0)])
+    try:
+        _, port = front.bound["api"]
+        async with aiohttp.ClientSession() as http:
+            async with http.ws_connect(
+                f"http://127.0.0.1:{port}/p/alpha/api/ws"
+            ) as ws:
+                hello = await ws.receive()  # first frame: marker announce
+                assert json.loads(hello.data)["marker"] == "alpha"
+                await ws.send_str("ping")
+                echo = await ws.receive()
+                assert echo.data == "PING"
+    finally:
+        await _stop_front(front, task, ups.values())
+
+
+@pytest.mark.asyncio
+async def test_ws_upstream_close_code_propagates(tmp_path):
+    async def handler(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        await ws.send_str("bye")
+        code = int(request.query.get("code", "1000"))
+        await ws.close(code=code, message=str(code))
+        return ws
+
+    sup = _make_sup(tmp_path, names=("default",))
+    app = web.Application()
+    app.router.add_get("/api/ws", handler)
+    server = TestServer(app)
+    await server.start_server()
+    sup.children["default"].listeners["api_server"] = server.port
+
+    front, task = await _start_front(sup, [("api", "127.0.0.1", 0)])
+    try:
+        _, port = front.bound["api"]
+        async with aiohttp.ClientSession() as http:
+            async with http.ws_connect(
+                f"http://127.0.0.1:{port}/api/ws?code=4321"
+            ) as ws:
+                msg = await ws.receive()
+                assert msg.data == "bye"
+                msg = await ws.receive()
+                assert msg.type == aiohttp.WSMsgType.CLOSE
+                assert msg.data == 4321
+    finally:
+        await _stop_front(front, task, [server])
+
+
+@pytest.mark.asyncio
+async def test_ws_unknown_and_unready_profiles_close_4404(tmp_path):
     sup = _make_sup(tmp_path)
     front, task = await _start_front(sup, [("api", "127.0.0.1", 0)])
     try:
         _, port = front.bound["api"]
         async with aiohttp.ClientSession() as http:
-            async with http.get(
-                f"http://127.0.0.1:{port}/p/alpha/api/ws",
-                headers={"Upgrade": "websocket",
-                         "Connection": "Upgrade",
-                         "Sec-WebSocket-Key": "x",
-                         "Sec-WebSocket-Version": "13"},
-            ) as resp:
-                assert resp.status == 501
-                assert (await resp.json())["error"]["code"] == "ws_not_routed"
+            async with http.ws_connect(
+                f"http://127.0.0.1:{port}/p/ghost/api/ws"
+            ) as ws:
+                msg = await ws.receive()
+                assert msg.type == aiohttp.WSMsgType.CLOSE
+                assert msg.data == 4404
+                assert msg.extra == "unknown profile"
+            # alpha is known but never reported a listener port.
+            async with http.ws_connect(
+                f"http://127.0.0.1:{port}/p/alpha/api/ws"
+            ) as ws:
+                msg = await ws.receive()
+                assert msg.type == aiohttp.WSMsgType.CLOSE
+                assert msg.data == 4404
+                assert msg.extra == "profile unavailable"
     finally:
         await _stop_front(front, task)
 

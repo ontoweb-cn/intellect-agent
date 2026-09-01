@@ -149,6 +149,32 @@ class WSTransport:
         self._closed = True
 
 
+def _expected_auth_token() -> str:
+    """Expected token for this gateway process (MP-05, B1-5).
+
+    Per-profile token first — ``TUI_AUTH_TOKEN_<PROFILE>`` (name uppercased,
+    ``-`` mapped to ``_``) — falling back to the global ``TUI_AUTH_TOKEN``.
+    Under multiplex this is what makes profile A's token useless against
+    profile B's endpoint: each child resolves the check against its own
+    profile name. When neither variable is set, auth is open exactly as
+    before (multiplex-off behavior unchanged).
+    """
+    import os as _os
+    import re as _re
+
+    global_token = _os.environ.get("TUI_AUTH_TOKEN", "").strip()
+    profile_token = ""
+    try:
+        from intellect_cli.profiles import get_active_profile_name
+
+        name = get_active_profile_name() or "default"
+        var = "TUI_AUTH_TOKEN_" + _re.sub(r"[^A-Z0-9]", "_", name.upper())
+        profile_token = _os.environ.get(var, "").strip()
+    except Exception:
+        pass
+    return profile_token or global_token
+
+
 async def handle_ws(ws: Any) -> None:
     """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``."""
     # Fail-closed profile routing guard: multi-profile URL routing
@@ -185,9 +211,7 @@ async def handle_ws(ws: Any) -> None:
     # the first JSON-RPC message MUST include "params"."_auth_token".
     # Without it, any local process can call shell.exec / sudo / slash
     # commands over the WS transport.
-    import os as _os
-
-    _expected = _os.environ.get("TUI_AUTH_TOKEN", "").strip()
+    _expected = _expected_auth_token()
     if _expected:
         _token = (
             ws.query_params.get("token", "").strip()
