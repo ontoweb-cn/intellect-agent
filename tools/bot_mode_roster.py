@@ -98,6 +98,8 @@ def build_roster() -> List[Dict[str, Any]]:
     """Compute the roster fresh: serve set + liveness + display metadata."""
     from intellect_cli.profiles import profiles_to_serve
 
+    from agent.avatar import avatar_params
+
     entries: List[Dict[str, Any]] = []
     for name, home in profiles_to_serve(multiplex=True):
         entries.append(
@@ -106,6 +108,7 @@ def build_roster() -> List[Dict[str, Any]]:
                 "home": str(home),
                 "online": _probe_online(home),
                 "model": _read_model(home),
+                "avatar": avatar_params(name),
             }
         )
     return entries

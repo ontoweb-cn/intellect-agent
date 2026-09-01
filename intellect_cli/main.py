@@ -6358,6 +6358,27 @@ def cmd_security(args):
     sys.exit(2)
 
 
+def cmd_bots(args):
+    """List the Bot Mode roster (BT-01/B2-1 + BT-04/B2-3)."""
+    from agent.avatar import render_ansi
+    from tools.bot_mode_roster import build_roster
+
+    roster = build_roster()
+    if not roster:
+        print("Bot Mode roster is empty (no profiles found).")
+        return
+    print("Bot Mode roster:")
+    for entry in roster:
+        status = "online" if entry.get("online") else "offline"
+        model = f" · {entry['model']}" if entry.get("model") else ""
+        print(f"  {render_ansi(entry['name'])}  {status}{model}")
+    print(
+        "\nDM: each bot receives messages in its 'Bot Chat' session "
+        "(fire-and-forget). Enable bot_mode.enabled to let Bot Chat "
+        "sessions use message_agent."
+    )
+
+
 def cmd_members(args):
     """Removed multi-user CLI — always fails with a clear message."""
     print(
@@ -11679,6 +11700,12 @@ def main():
         ),
     )
     members_parser.set_defaults(func=cmd_members)
+
+    bots_parser = subparsers.add_parser(
+        "bots",
+        help="List the Bot Mode roster (profiles as DM-able bots)",
+    )
+    bots_parser.set_defaults(func=cmd_bots)
 
     # =========================================================================
     # oauth command
