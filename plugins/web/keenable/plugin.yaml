@@ -1,0 +1,7 @@
+name: web-keenable
+version: 1.0.0
+description: "Keenable keyless web search + page fetch — anonymous by design (per-IP pool ~1000 req/h; free account at https://app.keenable.ai for per-org limits). No API key."
+author: ONTOWEB
+kind: backend
+provides_web_providers:
+  - keenable
