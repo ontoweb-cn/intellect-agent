@@ -1686,6 +1686,25 @@ def run_conversation(
                     # fan-out + aggregator), tracked via _moa_api_calls.
                     _pm_entry["api_calls"] += getattr(response, "_moa_api_calls", 1)
 
+                    # A3-2 (G-11): mirror the per-model bucket into the Rust
+                    # accumulator's per-key dimension so mid-session model
+                    # switches keep a native breakdown alongside the flat
+                    # session counters.
+                    acc_pm = getattr(agent, '_token_acc', None)
+                    if acc_pm is not None and hasattr(acc_pm, "add_model"):
+                        try:
+                            acc_pm.add_model(
+                                _pm_key,
+                                canonical_usage.input_tokens,
+                                canonical_usage.output_tokens,
+                                canonical_usage.cache_read_tokens,
+                                canonical_usage.cache_write_tokens,
+                                canonical_usage.reasoning_tokens,
+                                getattr(response, "_moa_api_calls", 1),
+                            )
+                        except Exception:
+                            pass  # per-key mirror is best-effort
+
                     # Log API call details for debugging/observability
                     _cache_pct = ""
                     if canonical_usage.cache_read_tokens and prompt_tokens:

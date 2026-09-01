@@ -301,6 +301,31 @@ mod tests {
 
 // ── TokenAccumulator (Stage 3b) ─────────────────────────────────────────────
 
+/// Per-model usage micro-buckets (G-11 / A3-2).
+#[derive(Default, Clone)]
+struct ModelUsage {
+    input: i64,
+    output: i64,
+    cache_read: i64,
+    cache_write: i64,
+    reasoning: i64,
+    api_calls: i64,
+    cost_micro: i64,
+}
+
+impl ModelUsage {
+    fn add(&mut self, input: i64, output: i64, cache_read: i64,
+           cache_write: i64, reasoning: i64, api_calls: i64, cost_micro: i64) {
+        self.input += input;
+        self.output += output;
+        self.cache_read += cache_read;
+        self.cache_write += cache_write;
+        self.reasoning += reasoning;
+        self.api_calls += api_calls;
+        self.cost_micro += cost_micro;
+    }
+}
+
 /// Thread-safe per-session token counter backed by AtomicI64 fields.
 /// Replaces the Python `session_input_tokens += ...` pattern.
 #[pyclass]
@@ -312,6 +337,8 @@ pub struct TokenAccumulator {
     reasoning_tokens: AtomicI64,
     api_calls: AtomicI64,
     estimated_cost_usd: AtomicI64,  // stored as micro-dollars (×1e6)
+    // G-11 / A3-2: per-model breakdown (Mutex<HashMap<model, ModelUsage>>).
+    per_model: std::sync::Mutex<std::collections::HashMap<String, ModelUsage>>,
 }
 
 #[pymethods]
@@ -326,6 +353,7 @@ impl TokenAccumulator {
             reasoning_tokens: AtomicI64::new(0),
             api_calls: AtomicI64::new(0),
             estimated_cost_usd: AtomicI64::new(0),
+            per_model: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -355,6 +383,46 @@ impl TokenAccumulator {
         }
     }
 
+    /// G-11 / A3-2: record a usage delta against ONE model (per-key
+    /// dimension). Mirrors `add` but scoped to a model bucket so a
+    /// mid-session /model switch keeps each model's usage separable.
+    #[pyo3(signature = (model, input_tokens, output_tokens, cache_read_tokens,
+                         cache_write_tokens, reasoning_tokens, api_calls=1,
+                         cost_micro_usd=0))]
+    fn add_model(
+        &self,
+        model: &str,
+        input_tokens: i64,
+        output_tokens: i64,
+        cache_read_tokens: i64,
+        cache_write_tokens: i64,
+        reasoning_tokens: i64,
+        api_calls: i64,
+        cost_micro_usd: i64,
+    ) {
+        let mut map = self.per_model.lock().unwrap();
+        let entry = map.entry(model.to_string()).or_default();
+        entry.add(input_tokens, output_tokens, cache_read_tokens,
+                  cache_write_tokens, reasoning_tokens, api_calls, cost_micro_usd);
+    }
+
+    /// G-11 / A3-2: per-model breakdown snapshot, model-name sorted —
+    /// [(model, input, output, cache_read, cache_write, reasoning,
+    ///   api_calls, cost_usd)].
+    fn snapshot_models(&self) -> Vec<(String, i64, i64, i64, i64, i64, i64, f64)> {
+        let map = self.per_model.lock().unwrap();
+        let mut rows: Vec<(String, ModelUsage)> = map.iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        rows.into_iter()
+            .map(|(model, u)| (
+                model, u.input, u.output, u.cache_read, u.cache_write,
+                u.reasoning, u.api_calls, u.cost_micro as f64 / 1_000_000.0,
+            ))
+            .collect()
+    }
+
     /// Reset all counters to zero (for session reset).
     fn reset(&self) {
         self.input_tokens.store(0, Ordering::Relaxed);
@@ -364,6 +432,9 @@ impl TokenAccumulator {
         self.reasoning_tokens.store(0, Ordering::Relaxed);
         self.api_calls.store(0, Ordering::Relaxed);
         self.estimated_cost_usd.store(0, Ordering::Relaxed);
+        if let Ok(mut map) = self.per_model.lock() {
+            map.clear();
+        }
     }
 
     // ── Getters ─────────────────────────────────────────────────────────
@@ -493,5 +564,33 @@ mod acc_tests {
         assert_eq!(format_token_count_compact_rs(2000000), "2M");
         assert_eq!(format_token_count_compact_rs(1000000000), "1B");
         assert_eq!(format_token_count_compact_rs(-1500), "-1.5K");
+    }
+}
+
+#[cfg(test)]
+mod per_model_tests {
+    use super::TokenAccumulator;
+
+    #[test]
+    fn add_model_buckets_by_name() {
+        let acc = TokenAccumulator::new();
+        acc.add_model("claude-x", 100, 10, 5, 0, 0, 1, 500);
+        acc.add_model("gpt-y", 200, 20, 0, 0, 0, 2, 900);
+        acc.add_model("claude-x", 1, 1, 0, 0, 0, 1, 100);
+        let rows = acc.snapshot_models();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "claude-x");
+        assert_eq!(rows[0].1, 101);   // inputs summed
+        assert_eq!(rows[0].7, 0.0006); // 600 micro-USD
+        assert_eq!(rows[1].0, "gpt-y");
+        assert_eq!(rows[1].2, 20);
+    }
+
+    #[test]
+    fn reset_clears_per_model() {
+        let acc = TokenAccumulator::new();
+        acc.add_model("m", 1, 1, 0, 0, 0, 1, 0);
+        acc.reset();
+        assert!(acc.snapshot_models().is_empty());
     }
 }

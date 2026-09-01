@@ -9993,6 +9993,31 @@ class IntellectCLI:
         self._pending_relaunch = ["update"]
         return True
 
+    @staticmethod
+    def _render_per_model_usage_lines(per_model: dict) -> list:
+        """A3-2 (G-11): per-model usage breakdown lines for /usage.
+
+        Empty unless more than one model was used — single-model sessions
+        are covered by the flat session block."""
+        if not isinstance(per_model, dict) or len(per_model) <= 1:
+            return []
+        lines = [f"  Per-model usage ({len(per_model)} models):"]
+        for mname in sorted(per_model):
+            mu = per_model[mname] or {}
+            m_in = mu.get("input_tokens", 0)
+            m_out = mu.get("output_tokens", 0)
+            m_calls = mu.get("api_calls", 0)
+            m_total = (
+                m_in + m_out + mu.get("cache_read_tokens", 0)
+                + mu.get("cache_write_tokens", 0)
+                + mu.get("reasoning_tokens", 0)
+            )
+            lines.append(
+                f"    · {mname}: {m_total:,} tokens "
+                f"(in {m_in:,} / out {m_out:,}) · {m_calls} calls"
+            )
+        return lines
+
     def _show_usage(self):
         """Show rate limits (if available) and session token usage."""
         if not self.agent:
@@ -10073,6 +10098,12 @@ class IntellectCLI:
         print(f"  Compressions:     {compressions}")
         if cost_result.status == "unknown":
             print(f"  Note:             Pricing unknown for {agent.model}")
+
+        # A3-2 (G-11): per-model breakdown — shown when the session used
+        # more than one model (mid-session /model or provider switch).
+        _per_model = getattr(agent, "session_tokens_by_model", None) or {}
+        for _line in self._render_per_model_usage_lines(_per_model):
+            print(_line)
 
         # Account limits -- fetched off-thread with a hard timeout so slow
         # provider APIs don't hang the prompt.
