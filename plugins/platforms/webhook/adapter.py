@@ -47,6 +47,7 @@ except ImportError:
     web = None  # type: ignore[assignment]
 
 from gateway.config import Platform, PlatformConfig
+from gateway.supervisor import is_multiplex_child, resolved_runner_port
 from gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
@@ -106,6 +107,9 @@ class WebhookAdapter(BasePlatformAdapter):
         super().__init__(config, Platform.WEBHOOK)
         self._host: str = config.extra.get("host", DEFAULT_HOST)
         self._port: int = int(config.extra.get("port", DEFAULT_PORT))
+        # Actual bound port (differs only for a multiplex child, which
+        # rebinds to an ephemeral internal port — B1-4).
+        self._resolved_port: int = self._port
         self._global_secret: str = config.extra.get("secret", "")
         self._static_routes: Dict[str, dict] = config.extra.get("routes", {})
         self._dynamic_routes: Dict[str, dict] = {}
@@ -188,31 +192,57 @@ class WebhookAdapter(BasePlatformAdapter):
         app.router.add_get("/health", self._handle_health)
         app.router.add_post("/webhooks/{route_name}", self._handle_webhook)
 
-        # Port conflict detection — fail fast if port is already in use
-        import socket as _socket
-        try:
-            with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
-                _s.settimeout(1)
-                _s.connect(('127.0.0.1', self._port))
-            logger.error('[webhook] Port %d already in use. Set a different port in config.yaml: platforms.webhook.port', self._port)
-            return False
-        except (ConnectionRefusedError, OSError):
-            pass  # port is free
+        # Multiplex child (B1-4): the supervisor front end owns the only
+        # external listener — rebind to an internal loopback ephemeral port
+        # and skip the conflict probe (the front end may legitimately hold
+        # the configured port on this profile's behalf). External providers
+        # reach this adapter through the front end's /p/<name>/ prefix.
+        bind_host, bind_port = self._host, self._port
+        if is_multiplex_child():
+            bind_host, bind_port = "127.0.0.1", 0
+        else:
+            # Port conflict detection — fail fast if port is already in use
+            import socket as _socket
+            try:
+                with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
+                    _s.settimeout(1)
+                    _s.connect(('127.0.0.1', self._port))
+                logger.error('[webhook] Port %d already in use. Set a different port in config.yaml: platforms.webhook.port', self._port)
+                return False
+            except (ConnectionRefusedError, OSError):
+                pass  # port is free
 
         self._runner = web.AppRunner(app)
         await self._runner.setup()
-        site = web.TCPSite(self._runner, self._host, self._port)
+        site = web.TCPSite(self._runner, bind_host, bind_port)
         await site.start()
+        resolved = resolved_runner_port(self._runner)
+        self._resolved_port = resolved if resolved is not None else bind_port
+
         self._mark_connected()
+        self._report_multiplex_bind_port()
 
         route_names = ", ".join(self._routes.keys()) or "(none configured)"
         logger.info(
             "[webhook] Listening on %s:%d — routes: %s",
-            self._host,
-            self._port,
+            bind_host,
+            self._resolved_port,
             route_names,
         )
         return True
+
+    def _report_multiplex_bind_port(self) -> None:
+        """Publish the resolved internal port for the multiplex front end
+        (supervisor children only — see ``gateway.supervisor``, B1-4)."""
+        if not is_multiplex_child():
+            return
+        try:
+            self._write_runtime_status_safe(
+                "multiplex-bind",
+                platform_extra={"port": self._resolved_port},
+            )
+        except Exception:
+            pass
 
     async def disconnect(self) -> None:
         if self._runner:

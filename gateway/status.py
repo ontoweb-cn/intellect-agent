@@ -547,6 +547,7 @@ def write_runtime_status(
     platform_state: Any = _UNSET,
     error_code: Any = _UNSET,
     error_message: Any = _UNSET,
+    platform_extra: Any = _UNSET,
 ) -> None:
     """Persist gateway runtime health information for diagnostics/status."""
     path = _get_runtime_status_path()
@@ -576,6 +577,10 @@ def write_runtime_status(
             platform_payload["error_code"] = error_code
         if error_message is not _UNSET:
             platform_payload["error_message"] = error_message
+        if platform_extra is not _UNSET and isinstance(platform_extra, dict):
+            # Extra per-platform detail (e.g. the resolved ephemeral bind
+            # port a multiplex child reports to the supervisor front end).
+            platform_payload.update(platform_extra)
         platform_payload["updated_at"] = _utc_now_iso()
         payload["platforms"][platform] = platform_payload
 

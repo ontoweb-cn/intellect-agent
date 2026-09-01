@@ -2005,6 +2005,11 @@ DEFAULT_CONFIG = {
         # ``agent:main:`` prefix (e.g. "telegram:dm:12345"). Session ``/model``
         # overrides take precedence. Values: {model?, provider?, api_key?, ...}.
         "model_overrides": {},
+        # Multiplex (B1-2/B1-4): restricts which SECONDARY profiles
+        # `intellect gateway run --multiplex` serves. The default (active)
+        # profile is always served. Empty/missing → every valid profile
+        # under ~/.intellect/profiles/.
+        "multiplex_profile_allowlist": [],
         # Scale-to-zero (HP-406): idle self-stop + systemd socket-activation
         # wake. Disabled by default — when off, the gateway behaves exactly as
         # before. Only valid for webhook-mode deployments; persistent/long-poll

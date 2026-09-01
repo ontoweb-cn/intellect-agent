@@ -55,6 +55,7 @@ except ImportError:
     web = None  # type: ignore[assignment]
 
 from gateway.config import Platform, PlatformConfig
+from gateway.supervisor import is_multiplex_child, resolved_runner_port
 from gateway.platforms.base import (
     BasePlatformAdapter,
     SendResult,
@@ -515,6 +516,9 @@ class APIServerAdapter(BasePlatformAdapter):
         if raw_port is None:
             raw_port = os.getenv("API_SERVER_PORT", str(DEFAULT_PORT))
         self._port: int = _coerce_port(raw_port, DEFAULT_PORT)
+        # Actual bound port (differs from _port only for a multiplex child,
+        # which rebinds to an ephemeral internal port — B1-4).
+        self._resolved_port: int = self._port
         self._api_key: str = extra.get("key", os.getenv("API_SERVER_KEY", ""))
         self._cors_origins: tuple[str, ...] = self._parse_cors_origins(
             extra.get("cors_origins", os.getenv("API_SERVER_CORS_ORIGINS", "")),
@@ -4456,31 +4460,60 @@ class APIServerAdapter(BasePlatformAdapter):
                 except ImportError:
                     pass
 
-            # Port conflict detection — fail fast if port is already in use
-            try:
-                with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
-                    _s.settimeout(1)
-                    _s.connect(('127.0.0.1', self._port))
-                logger.error('[%s] Port %d already in use. Set a different port in config.yaml: platforms.api_server.port', self.name, self._port)
-                return False
-            except (ConnectionRefusedError, OSError):
-                pass  # port is free
+            # Multiplex child (B1-4): the supervisor front end owns the only
+            # external listener — rebind to an internal loopback ephemeral
+            # port and skip the conflict probe (the front end may legitimately
+            # hold the configured port on this profile's behalf).
+            bind_host, bind_port = self._host, self._port
+            if is_multiplex_child():
+                bind_host, bind_port = "127.0.0.1", 0
+            else:
+                # Port conflict detection — fail fast if port is already in use
+                try:
+                    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
+                        _s.settimeout(1)
+                        _s.connect(('127.0.0.1', self._port))
+                    logger.error('[%s] Port %d already in use. Set a different port in config.yaml: platforms.api_server.port', self.name, self._port)
+                    return False
+                except (ConnectionRefusedError, OSError):
+                    pass  # port is free
 
             self._runner = web.AppRunner(self._app)
             await self._runner.setup()
-            self._site = web.TCPSite(self._runner, self._host, self._port)
+            self._site = web.TCPSite(self._runner, bind_host, bind_port)
             await self._site.start()
+            resolved = resolved_runner_port(self._runner)
+            self._resolved_port = resolved if resolved is not None else bind_port
 
             self._mark_connected()
+            self._report_multiplex_bind_port()
             logger.info(
                 "[%s] API server listening on http://%s:%d (model: %s)",
-                self.name, self._host, self._port, self._model_name,
+                self.name, bind_host, self._resolved_port, self._model_name,
             )
             return True
 
         except Exception as e:
             logger.error("[%s] Failed to start API server: %s", self.name, e)
             return False
+
+    def _report_multiplex_bind_port(self) -> None:
+        """Publish the resolved internal port for the multiplex front end.
+
+        A supervisor-spawned child (INTELLECT_MULTIPLEX_CHILD=1, B1-4) binds
+        an ephemeral loopback port the front end cannot guess; the supervisor
+        discovers it by polling this runtime-status field via the control
+        socket. Standalone gateways never take this branch.
+        """
+        if not is_multiplex_child():
+            return
+        try:
+            self._write_runtime_status_safe(
+                "multiplex-bind",
+                platform_extra={"port": self._resolved_port},
+            )
+        except Exception:
+            pass
 
     async def disconnect(self) -> None:
         """Stop the aiohttp web server."""
