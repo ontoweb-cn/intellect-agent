@@ -75,6 +75,14 @@ Delivery is fire-and-forget HTTP to the peer's `/p/<profile>/` surface
 the peer's Bot Chat session, the peer runs its turn, and its reply is
 written back into YOUR Bot Chat session — arriving as a later turn.
 
+**Resolution order:** a target name that is BOTH a local profile and a
+configured peer delivers LOCALLY — same-machine is canonical. Use a
+distinct peer name if you genuinely want the remote one.
+
+**Use HTTPS peer URLs.** The relay carries the peer profile's API key as
+a Bearer secret; an `http://` peer URL puts it on the wire in cleartext
+(a warning is logged when this happens).
+
 **Trust boundary (read before enabling):** a peer entry hands the peer's
 API key to this machine and lets this machine write sessions on the peer
 — cross-machine Bot Mode is an owner-managed shared-secret arrangement
