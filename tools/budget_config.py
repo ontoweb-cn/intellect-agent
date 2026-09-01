@@ -17,6 +17,10 @@ PINNED_THRESHOLDS: Dict[str, float] = {
 DEFAULT_RESULT_SIZE_CHARS: int = 100_000
 DEFAULT_TURN_BUDGET_CHARS: int = 200_000
 DEFAULT_PREVIEW_SIZE_CHARS: int = 1_500
+# G-18 / A3-6: MCP tools get a tight 50K tier — remote results are the
+# most likely to come back oversized and repeated.
+DEFAULT_MCP_RESULT_SIZE_CHARS: int = 50_000
+MCP_TOOL_PREFIX = "mcp_"
 
 
 @dataclass(frozen=True)
@@ -33,16 +37,22 @@ class BudgetConfig:
     turn_budget: int = DEFAULT_TURN_BUDGET_CHARS
     preview_size: int = DEFAULT_PREVIEW_SIZE_CHARS
     tool_overrides: Dict[str, int] = field(default_factory=dict)
+    mcp_result_size: int = DEFAULT_MCP_RESULT_SIZE_CHARS
 
     def resolve_threshold(self, tool_name: str) -> int | float:
         """Resolve the persistence threshold for a tool.
 
-        Priority: pinned -> tool_overrides -> registry per-tool -> default.
+        Priority: pinned -> tool_overrides -> MCP tight tier -> registry
+        per-tool -> default.
         """
         if tool_name in PINNED_THRESHOLDS:
             return PINNED_THRESHOLDS[tool_name]
         if tool_name in self.tool_overrides:
             return self.tool_overrides[tool_name]
+        # G-18: MCP tools get a tight 50K tier (remote results are the most
+        # likely to come back oversized and repeated).
+        if tool_name.startswith(MCP_TOOL_PREFIX):
+            return self.mcp_result_size
         from tools.registry import registry
         return registry.get_max_result_size(tool_name, default=self.default_result_size)
 

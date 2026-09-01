@@ -829,6 +829,36 @@ def cmd_mcp_configure(args):
 
 # ─── Dispatcher ───────────────────────────────────────────────────────────────
 
+def cmd_mcp_doctor(args):
+    """G-18 / A3-6: health sweep across every configured MCP server.
+
+    Probes each server (connect + tool list), reports tool counts and
+    latency, and prints a summary. Informational — exits 0 regardless so
+    scripts can parse the output; unhealthy servers are flagged inline.
+    """
+    import time as _time
+
+    servers = _get_mcp_servers()
+    if not servers:
+        print("No MCP servers configured.")
+        return
+    timeout = float(getattr(args, "timeout", 30.0) or 30.0)
+    print(f"Probing {len(servers)} MCP server(s)...")
+    healthy = []
+    for name in sorted(servers):
+        started = _time.monotonic()
+        try:
+            tools = _probe_single_server(name, servers[name], connect_timeout=timeout)
+            elapsed_ms = (_time.monotonic() - started) * 1000
+            names = ", ".join(t for t, _ in tools[:5]) or "(no tools)"
+            more = f" (+{len(tools) - 5} more)" if len(tools) > 5 else ""
+            print(f"  ✓ {name}: {len(tools)} tool(s), {elapsed_ms:.0f} ms — {names}{more}")
+            healthy.append(name)
+        except Exception as exc:
+            print(f"  ✗ {name}: {str(exc)[:160]}")
+    print(f"\n{len(healthy)}/{len(servers)} server(s) healthy.")
+
+
 def mcp_command(args):
     """Main dispatcher for ``intellect mcp`` subcommands."""
     action = getattr(args, "mcp_action", None)
@@ -857,6 +887,7 @@ def mcp_command(args):
         return
 
     handlers = {
+        "doctor": cmd_mcp_doctor,
         "add": cmd_mcp_add,
         "remove": cmd_mcp_remove,
         "rm": cmd_mcp_remove,

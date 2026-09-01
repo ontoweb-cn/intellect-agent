@@ -13835,6 +13835,15 @@ Examples:
     )
     _add_accept_hooks_flag(mcp_serve_p)
 
+    mcp_doctor_p = mcp_sub.add_parser(
+        "doctor",
+        help="Health sweep: probe every configured MCP server",
+    )
+    mcp_doctor_p.add_argument(
+        "--timeout", type=float, default=30.0,
+        help="Per-server connect timeout in seconds (default 30)",
+    )
+
     mcp_add_p = mcp_sub.add_parser(
         "add", help="Add an MCP server (discovery-first install)"
     )

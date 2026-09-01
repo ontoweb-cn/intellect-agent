@@ -2600,6 +2600,17 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
                     _reset_server_error(server_name)  # success — reset
             except (json.JSONDecodeError, TypeError):
                 _reset_server_error(server_name)  # non-JSON = success
+            # G-18 / A3-6: oversized byte-identical repeats collapse to a
+            # reference stub (same dedup concept as the G-01 stall guard).
+            try:
+                from tools.mcp_result_guard import maybe_stub_identical_result
+
+                result = maybe_stub_identical_result(
+                    tool_name_prefixed, args, result,
+                    call_id=kwargs.get("tool_call_id"),
+                )
+            except Exception:
+                pass  # stubbing is best-effort — never break delivery
             return result
         except InterruptedError:
             return _interrupted_call_result()
