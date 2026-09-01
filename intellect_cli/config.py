@@ -1258,6 +1258,16 @@ DEFAULT_CONFIG = {
     },
 
     "display": {
+        # PT V1 (主题 J): desktop pet — pure display, zero impact on
+        # prompt/toolset/cache. Sprite (webp) rendering and the TUI
+        # petSprite component are deferred to the graphics batch.
+        "pet": {
+            "enabled": False,
+            "slug": "",
+            "render_mode": "auto",
+            "scale": 0.33,
+            "unicode_cols": 8,
+        },
         "compact": False,
         "personality": "kawaii",
         "resume_display": "full",

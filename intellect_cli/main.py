@@ -6358,6 +6358,74 @@ def cmd_security(args):
     sys.exit(2)
 
 
+def cmd_pets(args):
+    """Pets CLI (PT-02): list / install / select / doctor."""
+    from agent.pet import store as pet_store
+
+    action = getattr(args, "pets_action", None) or "list"
+
+    if action == "list":
+        pets = pet_store.installed()
+        if not pets:
+            print("No pets installed. Try: intellect pets install <slug>")
+            return
+        print("Installed pets:")
+        for meta in pets:
+            marker = " (selected)" if meta.get("slug") == (
+                getattr(args, "slug", "") or ""
+            ) else ""
+            print(f"  · {meta.get('slug')} — {meta.get('name', '')}{marker}")
+        return
+
+    if action == "install":
+        from agent.pet.manifest import manifest_entry
+        import urllib.request
+
+        slug = getattr(args, "slug", "")
+        entry = manifest_entry(slug)
+        if entry is None:
+            print(f"✗ Pet '{slug}' not found in the petdex manifest "
+                  "(or the gallery is unreachable).")
+            return
+        url = str(entry.get("spritesheet_url") or "")
+        files = {}
+        if url:
+            try:
+                files["spritesheet.webp"] = urllib.request.urlopen(
+                    url, timeout=30
+                ).read()
+            except Exception as exc:
+                print(f"⚠ sprite download failed ({exc}) — installing meta only")
+        path = pet_store.install(slug, files, {"name": entry.get("name") or slug})
+        print(f"✓ Installed pet '{slug}' at {path}")
+        return
+
+    if action == "select":
+        slug = getattr(args, "slug", "")
+        from cli import save_config_value
+
+        if pet_store.load_pet(slug) is None:
+            print(f"✗ Pet '{slug}' is not installed. "
+                  "Run `intellect pets install <slug>` first.")
+            return
+        save_config_value("display.pet.slug", slug)
+        save_config_value("display.pet.enabled", True)
+        print(f"✓ Pet set to '{slug}' (display.pet.enabled = true)")
+        return
+
+    if action == "doctor":
+        from agent.pet.doctor import run_pet_doctor
+
+        issues = run_pet_doctor()
+        if issues:
+            print()
+            for issue in issues:
+                print(f"  ⚠ {issue}")
+        return
+
+    print(f"Unknown pets action: {action}")
+
+
 def cmd_bots(args):
     """List the Bot Mode roster (BT-01/B2-1 + BT-04/B2-3)."""
     from agent.avatar import render_ansi
@@ -11727,6 +11795,26 @@ def main():
         help="List the Bot Mode roster (profiles as DM-able bots)",
     )
     bots_parser.set_defaults(func=cmd_bots)
+
+    pets_parser = subparsers.add_parser(
+        "pets",
+        help="Manage desktop pets (list, install, select, doctor)",
+    )
+    pets_subparsers = pets_parser.add_subparsers(dest="pets_action")
+
+    pets_list_p = pets_subparsers.add_parser("list", help="List installed pets")
+    pets_install_p = pets_subparsers.add_parser(
+        "install", help="Install a pet from the petdex gallery by slug"
+    )
+    pets_install_p.add_argument("slug", help="Pet slug (e.g. nova)")
+    pets_select_p = pets_subparsers.add_parser(
+        "select", help="Select the active pet and enable display.pet"
+    )
+    pets_select_p.add_argument("slug", help="Pet slug to select")
+    pets_doctor_p = pets_subparsers.add_parser(
+        "doctor", help="Check pets config/store/manifest health"
+    )
+    pets_parser.set_defaults(func=cmd_pets)
 
     # =========================================================================
     # oauth command
