@@ -6,6 +6,23 @@ roadmap.
 
 ## Unreleased
 
+### M4 — Bot Mode (B2): profiles as DM-able bots
+
+- **Opt-in** (`bot_mode.enabled`, default off): every profile in the
+  multiplex serve set becomes a DM-able bot. Roster is derived from the
+  serve set with control-socket liveness (offline is normal — fire-and-
+  forget DMs still reach offline profiles) and materialized to
+  `bot_mode/roster.json` by the supervisor; `intellect bots` lists it.
+- **`message_agent`** is injected ONLY into sessions titled "Bot Chat"
+  and dispatch re-validates session title + owning profile (forged calls
+  get a structured error, never a delivery). DM bodies travel via a
+  0o600/0o700 temp file — never argv — and delivery spawns a background
+  `chat -Q` run whose reply lands in the sender's NEXT turn.
+- **Budgets**: `bot_mode.max_dm_depth` (default 3) caps chained bot→bot
+  DMs. Bot Chat sessions get a Bot Mode protocol section (roster +
+  capability epoch) injected into their system prompt, byte-stable per
+  process.
+
 ### M2 closeout — A2-2 (G-07) history sanitation closed out
 
 - **Duplicate tool-result dedup** in the pre-call sanitizer

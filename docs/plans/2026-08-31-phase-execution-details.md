@@ -165,6 +165,37 @@ carrier/thinking-only 由同入口的 `drop_thinking_only_and_merge_users` 承�
 变体重复、空 assistant carrier、变体配对、resume 碎屑、压缩后碎屑、幂等性；每例断言
 provider 配对不变量）。
 
+### B2-1 · roster + Bot Chat 传输（BT-01）✅ 已落地
+**新建** `tools/bot_mode_roster.py`（build_roster = serve 集 + control-socket 存活探测；
+roster.json 原子物化由 supervisor 维护；bot_chat_protocol_section + capability epoch
+按 (pid, home) 缓存）、`tools/bot_mode_dm.py` 传输件（ensure_bot_chat_session 确定性 id
+`bot_chat` 直写目标 state.db + 0o700/0o600 query 文件）。**修改** supervisor monitor 循环
+（persist_roster）、chat CLI `--query-file`（体不经 argv，读后删除 env 门控）。
+**测试** `tests/tools/test_bot_mode_roster.py`（9）。
+
+### B2-2 · message_agent（BT-02）✅ 已落地
+**新建** MESSAGE_AGENT_SCHEMA + `bot_mode_enabled`/`max_dm_depth`/`current_dm_depth`
+config 门、`ensure_message_agent_tool`（agent_init 尾部、per-agent copy-on-write 注入）、
+`handle_message_agent_call`（双层 title-gate：执行时重读 title + `_session_db.db_path`
+home；roster 校验；深度预算；attribution 前缀；spawn_local 后台 + notify_on_complete）。
+**修改** `agent/tool_executor.py` sequential 链 + `_invoke_tool_body`（concurrent）双派生点
+前置分支（forged 结构化错误）、`agent/system_prompt.py`（Bot Chat 协议段）、DEFAULT_CONFIG
+`bot_mode {enabled: false, max_dm_depth: 3}`。**测试** `tests/tools/test_bot_mode_dm.py`（10）。
+
+### B2-3 · 头像 + 预算（BT-04）✅ 已落地
+**新建** `agent/avatar.py`（FNV-1a + xorshift → blob 参数，SVG/ANSI 渲染，纯 stdlib）、
+`intellect bots` CLI（roster + 在线态 + 头像）。**裁决**：房间预算改造为 DM 链深度预算
+（`max_dm_depth`，回环安全必需）；群房间本体无承载面，延后。**测试** `tests/agent/test_avatar.py`（5）。
+
+### B2-4 · peer-URL relay（BT-03）⏸ 按计划可选项，本批不做（不阻塞 M4）。
+
+### 门-4 ✅
+E2E（`tests/gateway/test_bot_mode_e2e.py`，env 门控 INTELLECT_BOT_MODE_E2E=1）：roster
+离线→在线（真 gateway child + control socket 探测）；非 Bot Chat 会话 forged 结构化拒绝；
+跨 profile DM 真传输（真 `chat -Q` 后台 child，attribution 消息落入目标 Bot Chat 会话——
+child 的 LLM 调用以不可达 provider 失败，但用户消息走 exit-path 持久化，传输契约得以
+无凭据验证）。
+
 ### A2-3 · delegation 三件（G-12）
 ①**新建** `agent/steer_markers.py`（marker 常量/`format_steer_marker`/`peel_steer_marker`）
 + `tools/delegate_tool.py` subagent steering（锁内 owner 三元组对象同一性校验、

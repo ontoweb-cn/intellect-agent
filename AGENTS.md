@@ -1114,6 +1114,36 @@ boundary IS the profile boundary. This assumption breaks for a hypothetical in-p
 module-level-cache pattern is FORBIDDEN there and per-request scope resolution becomes
 mandatory (see ADR §(b) checklist).
 
+## Bot Mode
+
+Bot Mode (M4, opt-in via `bot_mode.enabled`) turns the profile roster into
+DM-able agents. **Same single-owner boundary as multiplex**: the bots are
+the OWNER's own profiles talking to each other — this is not multi-user and
+never reintroduces members/teams.
+
+- **Roster** (`tools/bot_mode_roster.py`): derived from the multiplex serve
+  set, liveness probed via each profile's control socket; materialized to
+  `<default home>/bot_mode/roster.json` by the gateway supervisor
+  (change-detected). Offline is a normal state — fire-and-forget DMs reach
+  offline profiles.
+- **Bot Chat session**: a session titled exactly `Bot Chat` (deterministic
+  id `bot_chat`) in the target profile's own state.db, created on first DM
+  by the SENDER (cross-profile SQLite write, same user/machine).
+- **message_agent tool** (`tools/bot_mode_dm.py`): injected ONLY into
+  sessions titled "Bot Chat" (`ensure_message_agent_tool` gate chain:
+  config → title; per-agent copy-on-write — the memoized global schema
+  cache is never mutated, and it never enters a core toolset). Dispatch
+  re-validates at execution time (DOUBLE title-gate: title + home from
+  `agent._session_db.db_path`, not env) — forged calls from other sessions
+  get the structured `not_bot_chat_session` error, never a delivery.
+- **Transport**: message bodies NEVER travel through argv — 0o600 query
+  file in a 0o700 dir, deleted after read (`INTELLECT_QUERY_FILE_DELETE=1`,
+  set only by the deliverer); `chat --query-file` is the CLI surface.
+  Delivery spawns a background `chat -Q --continue "Bot Chat"` process with
+  notify_on_complete — replies arrive in the sender's NEXT turn.
+- **Budgets**: `bot_mode.max_dm_depth` (default 3) caps chained bot→bot DMs
+  via `INTELLECT_BOT_DM_DEPTH` — no infinite reply loops.
+
 ## Known Pitfalls
 
 ### DO NOT hardcode `~/.intellect` paths
