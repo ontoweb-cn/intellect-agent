@@ -1609,3 +1609,64 @@ def resolve_profile_env(profile_name: str) -> str:
         )
 
     return str(profile_dir)
+
+def profiles_to_serve(
+    multiplex: bool,
+    profile_allowlist: Optional[List[str]] = None,
+) -> List[tuple[str, Path]]:
+    """Resolve the (profile_name, home) set a multiplex gateway serves (MP-00a).
+
+    - ``multiplex=False`` → the active profile only (historical behavior).
+    - ``multiplex=True``  → the default profile PLUS every valid profile
+      directory under ``profiles/``; ``profile_allowlist`` (optional) filters
+      secondaries. The default profile is ALWAYS served — a missing
+      allowlist entry warns once, it never removes default.
+
+    Deliberately lightweight: directory scan + name validation only.
+    """
+    if not multiplex:
+        return [(_active_profile_name_or_default(), _get_active_home())]
+
+    served: list[tuple[str, Path]] = [("default", _get_default_intellect_home())]
+    root = _get_profiles_root()
+    allow = {a.strip() for a in (profile_allowlist or []) if a and a.strip()}
+    if root.is_dir():
+        for entry in sorted(root.iterdir()):
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            try:
+                validate_profile_name(name)
+            except (ValueError, OSError):
+                continue
+            if allow and name not in allow:
+                continue
+            served.append((name, entry))
+    missing = allow - {name for name, _ in served} - {"default"}
+    if missing:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "multiplex_profile_allowlist entries not found on disk: %s",
+            ", ".join(sorted(missing)),
+        )
+    return served
+
+
+def _active_profile_name_or_default() -> str:
+    try:
+        active = _get_active_profile_path()
+        if active.exists():
+            name = active.read_text(encoding="utf-8").strip()
+            if name:
+                return name
+    except OSError:
+        pass
+    return "default"
+
+
+def _get_active_home() -> Path:
+    name = _active_profile_name_or_default()
+    if name == "default":
+        return _get_default_intellect_home()
+    return get_profile_dir(name)

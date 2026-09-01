@@ -11811,6 +11811,19 @@ def main():
         help="Replace any existing gateway instance (useful for systemd)",
     )
     gateway_run.add_argument(
+        "--multiplex",
+        action="store_true",
+        help=(
+            "Run the multiplex supervisor (MP-00a): one child gateway per "
+            "profile (default + secondaries under profiles/), each fully "
+            "isolated in its own INTELLECT_HOME. The supervisor owns no "
+            "platforms itself; use gateway.multiplex_profile_allowlist in "
+            "config.yaml to restrict the served set. Run WITHOUT -p: the "
+            "profile the supervisor runs under is occupied by the "
+            "supervisor itself and is not served. Conflicts with --replace."
+        ),
+    )
+    gateway_run.add_argument(
         "--no-supervise",
         action="store_true",
         help=(

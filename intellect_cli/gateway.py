@@ -5248,6 +5248,26 @@ def _gateway_command_inner(args):
         verbose = getattr(args, 'verbose', 0)
         quiet = getattr(args, 'quiet', False)
         replace = getattr(args, 'replace', False)
+        if getattr(args, 'multiplex', False):
+            if replace:
+                print_error("--multiplex and --replace are mutually exclusive")
+                sys.exit(2)
+            if quiet:
+                print_error("--multiplex does not support --quiet (supervisor "
+                            "logs are the only operational visibility)")
+                sys.exit(2)
+            from gateway.supervisor import run_supervisor
+
+            allowlist = None
+            try:
+                from intellect_cli.config import load_config
+
+                cfg = (load_config() or {}).get("gateway") or {}
+                allowlist = cfg.get("multiplex_profile_allowlist") or None
+            except Exception:
+                allowlist = None
+            sys.exit(run_supervisor(allowlist))
+
         run_gateway(verbose, quiet=quiet, replace=replace)
         return
 
