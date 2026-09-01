@@ -96,3 +96,93 @@ async def test_firecrawl_extract_keyless_per_url_error(firecrawl_provider, tmp_p
 
     out = await firecrawl_provider.extract_keyless(["https://bad.example"])
     assert "error" in out[0]
+
+
+# ── parallel (stateless MCP JSON-RPC) ───────────────────────────────────
+
+@pytest.fixture
+def parallel_provider():
+    from plugins.web.parallel.provider import ParallelWebSearchProvider
+
+    return ParallelWebSearchProvider()
+
+
+def test_parallel_is_keyless_available(parallel_provider):
+    assert parallel_provider.is_keyless_available() is True
+
+
+def test_parallel_search_keyless_stateless_call(parallel_provider, monkeypatch):
+    import agent.web_keyless_mcp as wk
+
+    captured = {}
+
+    def _fake_call(endpoint, tool, arguments, timeout=60.0):
+        captured["endpoint"] = endpoint
+        captured["tool"] = tool
+        captured["arguments"] = arguments
+        return "first line\nsecond line"
+
+    monkeypatch.setattr(wk, "mcp_call", _fake_call)
+    monkeypatch.setenv("PARALLEL_KEYLESS_MCP_URL", "https://fake.parallel/mcp")
+
+    out = parallel_provider.search_keyless("test query", limit=5)
+    assert out["success"] is True
+    assert captured["endpoint"] == "https://fake.parallel/mcp"
+    assert captured["tool"] == "web_search"
+    assert captured["arguments"]["query"] == "test query"
+    assert out["data"]["web"][0]["position"] == 1
+    assert len(out["data"]["web"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_parallel_extract_keyless(parallel_provider, monkeypatch):
+    import agent.web_keyless_mcp as wk
+
+    captured = {}
+
+    def _fake_call(endpoint, tool, arguments, timeout=60.0):
+        captured["tool"] = tool
+        captured["arguments"] = arguments
+        return "page content"
+
+    monkeypatch.setattr(wk, "mcp_call", _fake_call)
+
+    out = await parallel_provider.extract_keyless(["https://example.com"])
+    assert out[0]["content"] == "page content"
+    assert captured["tool"] == "web_fetch"
+    assert captured["arguments"] == {"url": "https://example.com"}
+
+
+def test_mcp_session_call_handshake_sequence(monkeypatch):
+    """Exa (session MCP): initialize → session header → initialized →
+    tools/call, SSE-framed responses unwrapped."""
+    import agent.web_keyless_mcp as wk
+
+    calls = []
+
+    class _Resp:
+        status_code = 200
+        headers = {"mcp-session-id": "sess-123"}
+        text = (
+            'event: message\n'
+            'data: {"jsonrpc":"2.0","id":9,"result":{"content":'
+            '[{"type":"text","text":"found it"}]}}\n'
+        )
+
+        def raise_for_status(self):
+            return None
+
+    def _fake_post(endpoint, json=None, headers=None, timeout=None):
+        calls.append((json.get("method"), headers.get("Mcp-Session-Id")))
+        return _Resp()
+
+    monkeypatch.setattr(wk.httpx, "post", _fake_post)
+
+    text = wk.mcp_session_call("https://fake.exa/mcp", "web_search_exa",
+                               {"query": "q", "numResults": 3})
+    assert text == "found it"
+    # sequence: initialize (no session) → initialized (session) → tools/call
+    assert calls[0][0] == "initialize" and calls[0][1] is None
+    assert calls[1][0] == "notifications/initialized" and calls[1][1] == "sess-123"
+    assert calls[2][0] == "tools/call" and calls[2][1] == "sess-123"
+    assert calls[2][1] is not None or calls[1][1] == "sess-123"

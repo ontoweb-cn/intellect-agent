@@ -151,6 +151,50 @@ class ParallelWebSearchProvider(WebSearchProvider):
     def display_name(self) -> str:
         return "Parallel"
 
+    def is_keyless_available(self) -> bool:
+        """G-15: Parallel's search MCP server accepts stateless keyless
+        JSON-RPC (live-probed 2026-09-02 — tools/list without initialize).
+        Subject to anonymous rate limits."""
+        return True
+
+    def search_keyless(self, query: str, limit: int = 5) -> Dict[str, Any]:
+        """Anonymous search via the stateless search MCP server
+        (``tools/call web_search``). Returns the standard data.web shape."""
+        from agent.web_keyless_mcp import mcp_call
+
+        endpoint = os.getenv(
+            "PARALLEL_KEYLESS_MCP_URL", "https://search.parallel.ai/mcp"
+        )
+        text = mcp_call(endpoint, "web_search",
+                        {"query": query, "max_results": min(limit, 20)})
+        web = []
+        for i, line in enumerate(line for line in text.splitlines() if line.strip()):
+            web.append({"url": "", "title": line[:200],
+                        "description": line, "position": i + 1})
+        return {"success": True, "data": {"web": web}}
+
+    async def extract_keyless(self, urls: List[str], **kwargs: Any) -> List[Dict[str, Any]]:
+        """Anonymous extract via ``tools/call web_fetch`` (one URL per call)."""
+        import asyncio
+
+        from agent.web_keyless_mcp import mcp_call
+
+        endpoint = os.getenv(
+            "PARALLEL_KEYLESS_MCP_URL", "https://search.parallel.ai/mcp"
+        )
+
+        async def _fetch_one(url: str) -> Dict[str, Any]:
+            try:
+                text = await asyncio.to_thread(
+                    mcp_call, endpoint, "web_fetch", {"url": url}
+                )
+                return {"url": url, "title": "", "content": text,
+                        "raw_content": text, "metadata": {"sourceURL": url}}
+            except Exception as exc:
+                return {"url": url, "error": str(exc)}
+
+        return list(await asyncio.gather(*(_fetch_one(u) for u in urls)))
+
     def is_available(self) -> bool:
         """Return True when ``PARALLEL_API_KEY`` is set to a non-empty value."""
         return bool(os.getenv("PARALLEL_API_KEY", "").strip())
