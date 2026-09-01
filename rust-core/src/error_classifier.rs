@@ -164,14 +164,31 @@ const RATE_LIMIT: &[&str] = &[
     "try again in", "please retry after", "resource_exhausted",
     "rate increased too quickly", "throttlingexception",
     "too many concurrent requests", "servicequotaexceededexception",
+    "error code: 429",
 ];
-const USAGE_LIMIT: &[&str] = &["usage limit", "quota", "limit exceeded", "key limit exceeded"];
+const USAGE_LIMIT: &[&str] = &[
+    "usage limit", "quota", "limit exceeded", "key limit exceeded",
+    // G-10: Anthropic extra-usage budget exhaustion — a usage-window
+    // cooldown, NOT terminal billing.
+    "out of extra usage", "extra usage",
+];
 const USAGE_TRANSIENT: &[&str] = &[
     "try again", "retry", "resets at", "reset in", "wait",
     "requests remaining", "periodic", "window",
 ];
 const PAYLOAD_TOO_LARGE: &[&str] = &["request entity too large", "payload too large", "error code: 413"];
-const IMAGE_TOO_LARGE: &[&str] = &["image exceeds", "image too large", "image_too_large", "image size exceeds"];
+const IMAGE_TOO_LARGE: &[&str] = &[
+    "image exceeds", "image too large", "image_too_large", "image size exceeds",
+    "media exceeds size limit", "media too large",
+];
+// G-09: corrupt/broken image payloads (e.g. a download that produced a
+// truncated or non-decodable file). Shrinking cannot help — the recovery is
+// stripping the image, so these classify like multimodal-unsupported.
+const IMAGE_CORRUPT: &[&str] = &[
+    "corrupt image", "image file is corrupted", "could not process image",
+    "invalid image data", "image data is invalid", "failed to decode image",
+    "image decoding failed", "unsupported image format",
+];
 const MULTIMODAL_TOOL: &[&str] = &[
     "text is not set", "tool message content must be a string",
     "tool content must be a string", "tool message must be a string",
@@ -319,6 +336,13 @@ fn extract_error_code(py: Python<'_>, body_dict: Option<&Bound<'_, PyDict>>) -> 
             let t = code.trim();
             if !t.is_empty() && t != "400" { return t.to_string(); }
         }
+        // G-10: relays wrap upstream rate limits with NUMERIC codes
+        // (e.g. error.code = 429) — stringify them for the code classifier.
+        if let Ok(Some(num)) = err_obj.get_item("code") {
+            if let Ok(n) = num.extract::<i64>() {
+                if n > 0 && n != 400 { return n.to_string(); }
+            }
+        }
         if let Some(typ) = try_get_str(&err_obj, "type") {
             let t = typ.trim();
             if !t.is_empty() && t != "400" { return t.to_string(); }
@@ -407,7 +431,7 @@ fn build_result(
 
 #[allow(clippy::too_many_arguments)]
 fn classify_400(
-    error_msg: &str, error_code: &str, body_msg: &str, py: Python<'_>,
+    error_msg: &str, error_code: &str, body_msg: &str, provider: &str, py: Python<'_>,
     approx_tokens: i64, context_length: i64, num_messages: i64,
 ) -> ClassifiedError {
     if any_match(error_msg, MULTIMODAL_TOOL) {
@@ -415,6 +439,29 @@ fn classify_400(
     }
     if any_match(error_msg, IMAGE_TOO_LARGE) {
         return build_result(py, make_reason(py, "image_too_large"), None, None, None, String::new(), true, false, false, false);
+    }
+    // G-09: corrupt/broken image payloads — shrinking cannot help, the
+    // recovery strips the image instead (multimodal-unsupported semantics).
+    if any_match(error_msg, IMAGE_CORRUPT) || any_match(body_msg, IMAGE_CORRUPT) {
+        return build_result(py, make_reason(py, "multimodal_tool_content_unsupported"), None, None, None, String::new(), true, false, false, false);
+    }
+    // G-09: Kimi/Moonshot 400s around assistant tool-call replay are the
+    // missing `reasoning_content` signature — retryable format_error; the
+    // Python-side Kimi reasoning injector repairs the replay on retry.
+    let prov_lower = provider.to_lowercase();
+    if prov_lower.contains("kimi") || prov_lower.contains("moonshot") {
+        if error_msg.contains("reasoning")
+            || error_msg.contains("tool_call")
+            || error_msg.contains("thinking")
+        {
+            let mut c = build_result(
+                py, make_reason(py, "format_error"), None, None, None,
+                format!("kimi/moonshot tool-call replay requires reasoning_content: {error_msg}"),
+                true, false, false, true,
+            );
+            c.provider = Some(provider.to_string());
+            return c;
+        }
     }
     let code_lower = error_code.to_lowercase();
     if code_lower == "invalid_encrypted_content"
@@ -435,6 +482,10 @@ fn classify_400(
     if any_match(error_msg, RATE_LIMIT) {
         return build_result(py, make_reason(py, "rate_limit"), None, None, None, String::new(), true, false, true, true);
     }
+    // G-10: extra-usage cooldown must precede billing (400 arm).
+    if error_msg.contains("out of extra usage") || error_msg.contains("extra usage") {
+        return build_result(py, make_reason(py, "rate_limit"), None, None, None, String::new(), true, false, true, true);
+    }
     if any_match(error_msg, BILLING) {
         return build_result(py, make_reason(py, "billing"), None, None, None, String::new(), false, false, true, true);
     }
@@ -453,7 +504,7 @@ fn classify_400(
 
 fn classify_by_error_code(code: &str, py: Python<'_>) -> Option<ClassifiedError> {
     let c = code.to_lowercase();
-    if matches!(c.as_str(), "resource_exhausted" | "throttled" | "rate_limit_exceeded") {
+    if matches!(c.as_str(), "resource_exhausted" | "throttled" | "rate_limit_exceeded" | "429") {
         return Some(build_result(py, make_reason(py, "rate_limit"), None, None, None, String::new(), true, false, true, false));
     }
     if matches!(c.as_str(), "insufficient_quota" | "billing_not_active" | "payment_required"
@@ -603,11 +654,16 @@ pub fn classify_api_error_rs(
                     Some((make_reason(py, "auth"), false, false, false, true))
                 }
             }
-            402 => Some(if any_match(&error_msg, USAGE_LIMIT) && any_match(&error_msg, USAGE_TRANSIENT) {
-                (make_reason(py, "rate_limit"), true, false, true, true)
-            } else {
-                (make_reason(py, "billing"), false, false, true, true)
-            }),
+            402 => {
+                // G-10: extra-usage exhaustion is a cooldown, not terminal.
+                if error_msg.contains("out of extra usage") || error_msg.contains("extra usage") {
+                    Some((make_reason(py, "rate_limit"), true, false, true, true))
+                } else if any_match(&error_msg, USAGE_LIMIT) && any_match(&error_msg, USAGE_TRANSIENT) {
+                    Some((make_reason(py, "rate_limit"), true, false, true, true))
+                } else {
+                    Some((make_reason(py, "billing"), false, false, true, true))
+                }
+            }
             404 => {
                 if any_match(&error_msg, BILLING) {
                     Some((make_reason(py, "billing"), false, false, true, true))
@@ -622,7 +678,7 @@ pub fn classify_api_error_rs(
             413 => Some((make_reason(py, "payload_too_large"), true, true, false, false)),
             429 => Some((make_reason(py, "rate_limit"), true, false, true, true)),
             400 => {
-                let c = classify_400(&error_msg, &error_code, &body_msg, py, approx_tokens, context_length, num_messages);
+                let c = classify_400(&error_msg, &error_code, &body_msg, provider, py, approx_tokens, context_length, num_messages);
                 let mut c = c;
                 c.status_code = status_code;
                 c.provider = prov;
@@ -684,6 +740,16 @@ pub fn classify_api_error_rs(
         let reason = if any_match(&error_msg, USAGE_TRANSIENT) { make_reason(py, "rate_limit") } else { make_reason(py, "billing") };
         let retryable = any_match(&error_msg, USAGE_TRANSIENT);
         let r = build_result(py, reason, status_code, prov.clone(), mdl.clone(), message_str.clone(), retryable, false, true, true);
+        return Ok(r);
+    }
+    // G-10: Anthropic "out of extra usage" ambiguity — billing-adjacent
+    // wording but semantically a usage-window cooldown. Must precede the
+    // BILLING branch or it terminally classifies and breaks
+    // classification→cooldown→terminal routing.
+    if error_msg.contains("out of extra usage") || error_msg.contains("extra usage") {
+        let mut r = set(make_reason(py, "rate_limit"));
+        r.should_rotate_credential = true;
+        r.should_fallback = true;
         return Ok(r);
     }
     if any_match(&error_msg, BILLING) {
@@ -782,5 +848,22 @@ mod tests {
     fn test_any_match() {
         assert!(any_match("rate limit exceeded", RATE_LIMIT));
         assert!(!any_match("normal response", RATE_LIMIT));
+    }
+
+    #[test]
+    fn test_g09_image_corrupt_patterns() {
+        assert!(any_match("could not process image: bad payload", IMAGE_CORRUPT));
+        assert!(any_match("media exceeds size limit", IMAGE_TOO_LARGE));
+        assert!(!any_match("normal text response", IMAGE_CORRUPT));
+    }
+
+    #[test]
+    fn test_g10_extra_usage_in_usage_limit_family() {
+        assert!(any_match("you have run out of extra usage", USAGE_LIMIT));
+    }
+
+    #[test]
+    fn test_g10_relay_429_pattern() {
+        assert!(any_match("upstream error code: 429", RATE_LIMIT));
     }
 }

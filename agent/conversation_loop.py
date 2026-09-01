@@ -1697,6 +1697,14 @@ def run_conversation(
                         api_duration, _cache_pct,
                     )
 
+                    # G-10: a deterministic-empty response (no content, no
+                    # tool calls) gets retried by the loop — accruing its
+                    # estimated cost again on every attempt double-bills the
+                    # session view with provider-side noise. Token counters
+                    # still track; only the cost estimate is skipped.
+                    _resp_had_payload = bool(getattr(response, "content", None)) or bool(
+                        getattr(response, "tool_calls", None)
+                    )
                     cost_result = estimate_usage_cost(
                         agent.model,
                         canonical_usage,
@@ -1704,7 +1712,7 @@ def run_conversation(
                         base_url=agent.base_url,
                         api_key=getattr(agent, "api_key", ""),
                     )
-                    if cost_result.amount_usd is not None:
+                    if cost_result.amount_usd is not None and _resp_had_payload:
                         cost_val = float(cost_result.amount_usd)
                         agent.session_estimated_cost_usd += cost_val
                         # ── Stage 3b: add cost to Rust accumulator ──────

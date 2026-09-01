@@ -1449,3 +1449,79 @@ class TestMultimodalToolContentUnsupported:
         e = MockAPIError("bad request: missing field 'model'", status_code=400)
         result = classify_api_error(e, provider="openrouter", model="anthropic/claude-sonnet-4")
         assert result.reason != FailoverReason.multimodal_tool_content_unsupported
+
+
+# ── A3-1 (G-09+G-10): image corruption matrix + billing boundary ──────
+
+class TestA3ImageCorruption:
+    def test_media_size_limit_classifies_image_too_large(self):
+        err = MockAPIError("media exceeds size limit", status_code=400)
+        c = classify_api_error(err)
+        assert c.reason == FailoverReason.image_too_large
+
+    def test_corrupt_image_classifies_multimodal_unsupported(self):
+        """Corrupt payloads can't be shrunk — recovery strips the image."""
+        err = MockAPIError("could not process image: bad payload", status_code=400)
+        c = classify_api_error(err)
+        assert c.reason == FailoverReason.multimodal_tool_content_unsupported
+
+    def test_invalid_image_data_in_body(self):
+        err = MockAPIError("bad request", status_code=400,
+                           body={"error": {"message": "invalid image data"}})
+        c = classify_api_error(err)
+        assert c.reason == FailoverReason.multimodal_tool_content_unsupported
+
+
+class TestA3KimiMoonshot400:
+    def test_kimi_tool_reasoning_400_is_retryable_format_error(self):
+        err = MockAPIError(
+            "missing reasoning_content for assistant tool_call message",
+            status_code=400,
+        )
+        c = classify_api_error(err, provider="kimi-coding")
+        assert c.reason == FailoverReason.format_error
+        assert c.retryable is True
+
+    def test_moonshot_thinking_400_retryable(self):
+        err = MockAPIError("thinking block required for tool_call", status_code=400)
+        c = classify_api_error(err, provider="moonshot")
+        assert c.reason == FailoverReason.format_error
+        assert c.retryable is True
+
+
+class TestA3ExtraUsageBillingBoundary:
+    def test_out_of_extra_usage_is_cooldown_not_terminal_billing(self):
+        """G-10: billing-adjacent wording must route to rate_limit
+        (cooldown), not terminal billing."""
+        err = MockAPIError(
+            "Your account has run out of extra usage. It will reset tomorrow.",
+            status_code=400,
+        )
+        c = classify_api_error(err)
+        assert c.reason == FailoverReason.rate_limit
+
+    def test_out_of_extra_usage_402_is_cooldown(self):
+        err = MockAPIError(
+            "out of extra usage for this billing period", status_code=402)
+        c = classify_api_error(err)
+        assert c.reason == FailoverReason.rate_limit
+
+    def test_true_billing_still_terminal(self):
+        err = MockAPIError("insufficient credits", status_code=400)
+        c = classify_api_error(err)
+        assert c.reason == FailoverReason.billing
+        assert c.retryable is False
+
+
+class TestA3RelayWrapped429:
+    def test_numeric_429_error_code_in_body(self):
+        err = MockAPIError("request failed", status_code=200,
+                           body={"error": {"code": 429,
+                                           "message": "upstream busy"}})
+        c = classify_api_error(err)
+        assert c.reason == FailoverReason.rate_limit
+
+    def test_relay_rate_limit_text_without_status(self):
+        err = MockAPIError("error code: 429 from upstream provider")
+        c = classify_api_error(err)
+        assert c.reason == FailoverReason.rate_limit
