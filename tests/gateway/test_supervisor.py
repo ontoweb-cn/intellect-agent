@@ -345,7 +345,7 @@ def _ready_child(sup, name):
     return child
 
 
-def test_refresh_listeners_reads_child_status(tmp_path, monkeypatch):
+def test_discover_listeners_reads_child_status(tmp_path, monkeypatch):
     sup = _make_supervisor(tmp_path, [("a", "a")])
     child = _ready_child(sup, "a")
     calls = []
@@ -365,7 +365,7 @@ def test_refresh_listeners_reads_child_status(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "gateway.control_socket.query_control_socket", fake_query
     )
-    sup._refresh_listeners(child)
+    sup.discover_listeners(child)
     assert calls == ["status"]
     assert child.listeners == {"api_server": 41234, "webhook": 41235}
     # Non-ports and absent platforms are dropped, not guessed.
@@ -376,11 +376,11 @@ def test_refresh_listeners_reads_child_status(tmp_path, monkeypatch):
             "runtime_status": {"platforms": {"api_server": {"port": "x"}}},
         },
     )
-    sup._refresh_listeners(child)
+    sup.discover_listeners(child)
     assert child.listeners == {}
 
 
-def test_refresh_listeners_requires_ready_child(tmp_path, monkeypatch):
+def test_discover_listeners_requires_ready_child(tmp_path, monkeypatch):
     sup = _make_supervisor(tmp_path, [("a", "a")])
     called = []
     monkeypatch.setattr(
@@ -388,11 +388,11 @@ def test_refresh_listeners_requires_ready_child(tmp_path, monkeypatch):
         lambda *a, **kw: called.append(1),
     )
     child = sup.children["a"]  # not ready, no proc
-    sup._refresh_listeners(child)
+    sup.discover_listeners(child)
     assert called == []
     _ready_child(sup, "a")
     child.ready = False
-    sup._refresh_listeners(child)
+    sup.discover_listeners(child)
     assert called == []
 
 

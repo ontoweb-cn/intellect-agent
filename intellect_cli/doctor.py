@@ -455,8 +455,10 @@ def _check_gateway_multiplex(issues: list[str]) -> None:
             for platform, pcfg in platforms.items():
                 if not isinstance(pcfg, dict):
                     continue
+                extra = pcfg.get("extra")
+                extra = extra if isinstance(extra, dict) else {}
                 for key in cred_keys:
-                    value = str(pcfg.get(key) or "").strip()
+                    value = str(pcfg.get(key) or extra.get(key) or "").strip()
                     if not value or value.startswith("${"):
                         continue
                     ident = (str(platform).lower(), key, value)

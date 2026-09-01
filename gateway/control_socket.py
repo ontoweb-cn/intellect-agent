@@ -142,6 +142,19 @@ class ControlSocketServer:
     def start(self) -> bool:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
+            # AF_UNIX paths are capped at ~104 bytes (macOS) / 108 (Linux).
+            # A deep INTELLECT_HOME silently exceeds it: bind fails and the
+            # socket disables itself — under the multiplex supervisor that
+            # would leave the child permanently "not ready", so surface it.
+            if len(str(self._path)) >= 100:
+                logger.warning(
+                    "Control socket path is %d chars (%s ...) — AF_UNIX "
+                    "paths must stay under ~104; the socket will be "
+                    "DISABLED and the gateway will look not-ready to the "
+                    "multiplex supervisor. Move INTELLECT_HOME to a shorter "
+                    "path.",
+                    len(str(self._path)), str(self._path)[:60],
+                )
             # A stale socket file from a crashed gateway blocks bind; probe
             # it first and reclaim only if nothing answers.
             if self._path.exists():

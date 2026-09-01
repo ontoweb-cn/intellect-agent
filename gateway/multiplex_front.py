@@ -263,6 +263,9 @@ class MultiplexFront:
                     "name": child.name,
                     "pid": child.proc.pid if child.proc is not None else None,
                     "ready": child.ready,
+                    # lifecycle label ("ready" / "starting" / "own-home" /
+                    # "rejected" / ...) from the supervisor's classifier
+                    "state": self._sup._profile_state(child),
                     "restarts": child.restarts,
                     "desired": child.desired,
                     "port_rejected": child.port_rejected,
@@ -313,8 +316,25 @@ class MultiplexFront:
                 profile=name,
             )
         port = child.listeners.get(platform)
+        if port is None and not child.port_rejected and not getattr(
+            child, "skipped_own_home", False
+        ):
+            # On-demand discovery: the monitor loop polls every 2s, but a
+            # freshly-ready child would otherwise 503 for up to one cycle.
+            # The child's api_server binds BEFORE it reports ready, so the
+            # port is already in its runtime status here.
+            import asyncio
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(self._sup.discover_listeners, child),
+                    timeout=5.0,
+                )
+            except Exception:
+                pass
+            port = child.listeners.get(platform)
         if port is None:
-            if child.port_rejected:
+            if child.port_rejected or getattr(child, "skipped_own_home", False):
                 return _error_response(
                     404,
                     "profile_rejected",
@@ -415,8 +435,25 @@ class MultiplexFront:
             await _close(4404, "unknown profile")
             return ws
         port = child.listeners.get(platform)
+        if port is None and not child.port_rejected and not getattr(
+            child, "skipped_own_home", False
+        ):
+            # Same on-demand discovery as the HTTP path.
+            import asyncio
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(self._sup.discover_listeners, child),
+                    timeout=5.0,
+                )
+            except Exception:
+                pass
+            port = child.listeners.get(platform)
         if port is None:
-            await _close(4404, "profile unavailable")
+            if child.port_rejected or getattr(child, "skipped_own_home", False):
+                await _close(4404, "profile not served")
+            else:
+                await _close(4404, "profile unavailable")
             return ws
 
         upstream_url = f"http://127.0.0.1:{port}{rest}"

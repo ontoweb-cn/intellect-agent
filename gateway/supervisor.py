@@ -175,8 +175,13 @@ def listener_binding(home: Path, platform: str) -> Tuple[Optional[str], Optional
         pcfg = (data.get("platforms") or {}).get(platform)
         if not isinstance(pcfg, dict):
             return (None, None)
-        host = pcfg.get("host")
-        port = pcfg.get("port")
+        # Real configs nest host/port under ``extra`` (that is where the
+        # adapters read them); accept top-level spellings too.
+        extra = pcfg.get("extra")
+        if not isinstance(extra, dict):
+            extra = {}
+        host = extra.get("host") or pcfg.get("host")
+        port = extra.get("port") or pcfg.get("port")
         return (
             str(host).strip() if host else None,
             int(port) if port is not None else None,
@@ -268,17 +273,25 @@ class Supervisor:
 
     def start(self) -> None:
         for child in self.children.values():
+            # The profile the supervisor itself runs under is never served
+            # (its home holds the supervisor's own pid/status/control
+            # socket) — regardless of whether that profile is named
+            # "default" (MP-00a: the -p boundary).
+            if Path(child.home).resolve() == _own_home().resolve():
+                logger.info(
+                    "Skipping profile %r: supervisor runs inside it",
+                    child.name,
+                )
+                child.desired = False
+                child.skipped_own_home = True
+                continue
             if child.name == "default":
-                # The default profile IS this supervisor's own profile in the
-                # common single-home deployment; when the supervisor runs
-                # under the default home it must not spawn itself.
-                if Path(child.home).resolve() == _own_home().resolve():
-                    logger.info(
-                        "Skipping default profile: supervisor runs inside it"
-                    )
-                    child.desired = False
-                    child.skipped_own_home = True
-                    continue
+                # MP-04's startup rejection is for SECONDARIES only. The
+                # front end DERIVES its binding from the default profile's
+                # config, so a pinned default binding is expected here —
+                # the default child rebinds internally like any other.
+                self._spawn(child)
+                continue
             try:
                 if self.front_end is not None:
                     # B1-4 rule: only a PINNED port/host is a conflict.
@@ -327,12 +340,13 @@ class Supervisor:
                 child.ready = True
                 return
         else:
+            child_log = self._open_child_log(child)
             child.proc = subprocess.Popen(
                 cmd,
                 cwd=str(_repo_root()),
                 env=child.env(),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=child_log,
+                stderr=subprocess.STDOUT,
                 start_new_session=True,  # kill B must not touch A
             )
         child.ready = False
@@ -347,32 +361,39 @@ class Supervisor:
             logger.info("Child %r ready (control socket answering)", child.name)
         else:
             logger.warning(
-                "Child %r not ready within %.0fs — monitor will handle it",
+                "Child %r not ready within %.0fs — monitor will handle it "
+                "(if this never clears, check the child log %s and that "
+                "%s is under ~100 chars: longer AF_UNIX paths cannot bind)",
                 child.name, self._ready_timeout_s,
+                _own_home() / "logs" / f"gateway-child-{child.name}.log",
+                child.control_sock,
             )
+
+    def _probe_ready_once(self, child: ProfileChild) -> bool:
+        """Single ready check against the child's control socket."""
+        if self._probe is not None:
+            return bool(self._probe(child))
+        try:
+            from gateway.control_socket import query_control_socket
+
+            ident = query_control_socket(
+                "identify", timeout=2.0, path=child.control_sock
+            )
+            return bool(ident and ident.get("ok"))
+        except Exception:
+            return False
 
     def _wait_ready(self, child: ProfileChild) -> bool:
         """Wait-for-ready probe (spike acceptance clause): poll the child's
         control socket `identify` until it answers or the timeout expires.
-        NEVER a fixed delay."""
+        NEVER a fixed delay. A child that outlives the timeout is NOT given
+        up on — the monitor loop keeps probing (slow machines, cold caches)."""
         deadline = time.time() + self._ready_timeout_s
         while time.time() < deadline:
             if self._stop or not self._child_alive(child):
                 return False
-            if self._probe is not None:
-                if self._probe(child):
-                    return True
-            else:
-                try:
-                    from gateway.control_socket import query_control_socket
-
-                    ident = query_control_socket(
-                        "identify", timeout=2.0, path=child.control_sock
-                    )
-                    if ident and ident.get("ok"):
-                        return True
-                except Exception:
-                    pass  # not ready yet — keep polling
+            if self._probe_ready_once(child):
+                return True
             time.sleep(READY_POLL_S)
         return False
 
@@ -381,17 +402,35 @@ class Supervisor:
             return False
         return child.proc.poll() is None
 
-    def _refresh_listeners(self, child: ProfileChild) -> None:
-        """Poll a ready child's control socket `status` for bound ports (B1-4).
+    def _open_child_log(self, child: ProfileChild):
+        """Per-child stdout/stderr capture under the supervisor's own logs.
 
-        Under the supervisor, children rebind listener platforms to internal
-        loopback ephemeral ports; the front end routes by the ports the child
-        reports in its runtime status. Absent/unusable payloads leave the
-        previous snapshot untouched — the front end answers 503 until a real
-        port shows up.
+        Children were DEVNULL'd before — undiagnosable when a child fails
+        to become ready. Best-effort: on failure children fall back to
+        DEVNULL semantics (None).
+        """
+        try:
+            log_dir = _own_home() / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            return open(
+                log_dir / f"gateway-child-{child.name}.log",
+                "ab",
+            )
+        except OSError:
+            return None
+
+    def discover_listeners(self, child: ProfileChild) -> Dict[str, int]:
+        """Fetch a ready child's bound listener ports (B1-4) and cache them.
+
+        Children rebind listener platforms to internal loopback ephemeral
+        ports; the front end routes by the ports the child reports in its
+        runtime status. Called by the monitor loop on its regular cadence
+        AND on demand by the front end when a routing lookup misses.
+        Absent/unusable payloads leave the previous snapshot untouched.
+        Returns the current snapshot.
         """
         if not child.ready or not self._child_alive(child):
-            return
+            return child.listeners
         try:
             from gateway.control_socket import query_control_socket
 
@@ -399,9 +438,9 @@ class Supervisor:
                 "status", timeout=2.0, path=child.control_sock
             )
         except Exception:
-            return
+            return child.listeners
         if not isinstance(snap, dict) or not snap.get("ok"):
-            return
+            return child.listeners
         platforms = (snap.get("runtime_status") or {}).get("platforms") or {}
         listeners: Dict[str, int] = {}
         for platform in PORT_BINDING_PLATFORMS:
@@ -414,6 +453,7 @@ class Supervisor:
         if listeners != child.listeners:
             child.listeners = listeners
             logger.info("Child %r listeners: %s", child.name, listeners or "{}")
+        return child.listeners
 
     # ── monitor ────────────────────────────────────────────────────────
 
@@ -427,7 +467,17 @@ class Supervisor:
                 if self._stop or not child.desired:
                     continue
                 if self._child_alive(child):
-                    self._refresh_listeners(child)
+                    if not child.ready and self._probe_ready_once(child):
+                        # Slow child finally answered (loaded machine, cold
+                        # caches) — it is never written off, only retried.
+                        child.ready = True
+                        child.backoff = RESTART_BACKOFF_MIN_S
+                        logger.info(
+                            "Child %r ready (control socket answering, "
+                            "after the initial wait window)",
+                            child.name,
+                        )
+                    self.discover_listeners(child)
                     continue
                 # Dead child: restart with backoff. Other children are
                 # untouched by design (process-boundary isolation).
