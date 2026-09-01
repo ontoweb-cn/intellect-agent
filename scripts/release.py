@@ -1678,7 +1678,23 @@ def build_release_artifacts(semver: str) -> list[Path]:
             if tail:
                 print(f"    {tail[-1]}")
 
-    return artifacts if py_artifacts or rust_artifacts else []
+    artifacts = artifacts if py_artifacts or rust_artifacts else []
+
+    # G-19: emit SHA256 checksums alongside the artifacts so consumers and
+    # the update flow can verify downloads instead of trusting plain HTTPS.
+    if artifacts:
+        import hashlib
+
+        sums_path = artifacts[0].parent / "SHA256SUMS"
+        lines = []
+        for art in artifacts:
+            digest = hashlib.sha256(art.read_bytes()).hexdigest()
+            lines.append(f"{digest}  {art.name}")
+        sums_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        artifacts.append(sums_path)
+        print(f"  ✓ SHA256SUMS written ({len(lines)} artifacts)")
+
+    return artifacts
 
 
 def resolve_author(name: str, email: str) -> str:

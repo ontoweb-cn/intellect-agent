@@ -9023,6 +9023,27 @@ def _cmd_update_pip(args):
     print("✓ Update complete! Restart intellect to use the new version.")
 
 
+def _locked_uv_sync(uv_bin: str, project_root, env: dict) -> bool:
+    """G-19: run a locked ``uv sync --frozen --inexact --all-extras``.
+
+    Returns True on success. Never raises; callers fall back to the
+    optional-fallback install when this returns False.
+    """
+    try:
+        print("  → Locked dependency sync (uv sync --frozen --inexact)...")
+        result = subprocess.run(
+            [uv_bin, "sync", "--frozen", "--inexact", "--all-extras"],
+            cwd=str(project_root), env=env, capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            print("  ✓ Dependencies synced from uv.lock.")
+            return True
+        logger.debug("locked uv sync failed: %s", (result.stderr or "")[-400:])
+    except Exception as exc:
+        logger.debug("locked uv sync unavailable: %s", exc)
+    return False
+
+
 def _cmd_update_impl(args, gateway_mode: bool):
     """Body of ``cmd_update`` — kept separate so the wrapper can always
     restore stdio even on ``sys.exit``."""
