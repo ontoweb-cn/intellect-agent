@@ -65,7 +65,7 @@ if hasattr(intellect_community_core, "__all__"):  # noqa: F405
 # (site-packages vs rust-core source drift) fails loud instead of surfacing
 # as mysterious AttributeError/segfault behaviour later.
 # Keep in sync with rust-core/Cargo.toml `version`.
-_EXPECTED_RUST_CORE_VERSION = "0.6.7"
+_EXPECTED_RUST_CORE_VERSION = "0.6.8"
 
 try:
     # Pre-handshake builds simply don't export rust_core_version (star-import

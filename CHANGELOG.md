@@ -4,7 +4,10 @@ All notable changes to Intellect Agent are documented in per-version release not
 (`RELEASE_vX.Y.Z.md`).  This file provides a high-level index and forward-looking
 roadmap.
 
-## Unreleased
+## v0.6.8 (2026-09-08)
+
+phase0 foundations — multiplex supervisor, bot mode, pets, and protocol/ecosystem
+hardening. Detailed milestone notes below.
 
 ### M5 — Protocol hardening + ecosystem long-tail (A3) + Pets (PT)
 
@@ -150,10 +153,17 @@ roadmap.
 - Installs that never set this key explicitly may see the Profiles UI / CLI create-switch-delete disappear until you set `profiles.management_enabled: true` in `config.yaml` and restart.
 - Existing explicit `true` / `false` in user yaml are unchanged; no automatic yaml rewrite and no `_config_version` bump.
 
+## Unreleased
+
 ## Recent Releases
 
 | Date | Highlights |
 |------|------------|
+| **2026-09-08** | **v0.6.8 — Multiplex Supervisor + Bot Mode + Pets + 协议加固** |
+|                | Gateway: 单监听前端 + per-profile supervisor 子进程, `/p/<name>/` 路由, WS 鉴权隔离, watchdog 自动重启 |
+|                | Bot Mode: profile→DM bot + roster/liveness, 跨机 DM relay (B2-4), bot-mode 本地优先 |
+|                | 协议/质量: deadline 系统, error classifier + 历史清理闭环, per-model usage, tool_call_id 变体 |
+|                | 生态: web-search provider 扩展 (keyless/parallel/tavily/exa/firecrawl/keenable), project skills, pets |
 | **2026-06-22** | **v0.6.7 — A1 Gateway 拆分 + 发布流水线 + 版本自动化** |
 |                | A1: gateway/run.py 19,808→10,098 (-49%), 5 Mixin + 4 Helper, 注册表派发 |
 |                | CI: 冒烟测试, GPG 签名, changelog 生成, 产物命名统一, 国内镜像文档 |
