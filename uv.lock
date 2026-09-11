@@ -967,7 +967,7 @@ wheels = [
 
 [[package]]
 name = "daytona"
-version = "0.205.1"
+version = "0.210.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "aiofiles" },
@@ -995,14 +995,14 @@ dependencies = [
     { name = "urllib3" },
     { name = "wsproto" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/7b/a1/3b012fb13c8a90da67bad45c30de58e1f4a40b53b4fae68a419a57568792/daytona-0.205.1.tar.gz", hash = "sha256:4429a12ab66abbeeb2e5ddc196b2d74557c698764e79329eb38c5e172b23c248" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/cc/dd/9ce4820cb05cc2b7f38f9fd076bc575b1190a3236d69a40a0f5a09ebd14c/daytona-0.210.0.tar.gz", hash = "sha256:313fcec07ec4d04a6ccaa91618ce956612ef9ba78484691aeccdaa36d017d6b4" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/fa/91/46b7743b380139e794bad94cfc5103889659f60c94484524198867b93c45/daytona-0.205.1-py3-none-any.whl", hash = "sha256:84f4ac0922e5d9eccec78e9e56ccf725cdc95eed94e0432a375cf273eefd9fcc" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/ec/2d/f4c1dec9dc0da86aa79b64a83e6f3c94ff9a25ed78a1bc59c5c2fa3c51db/daytona-0.210.0-py3-none-any.whl", hash = "sha256:0df723203e20a894fd07808e62f13f419e41f6d035016ecdc8f873c50cb32634" },
 ]
 
 [[package]]
 name = "daytona-analytics-api-client"
-version = "0.205.1"
+version = "0.210.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "pydantic" },
@@ -1010,14 +1010,14 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/e6/77/0c69c42e095b92737521159e8239fc854c952421b970520b68a846f55eb4/daytona_analytics_api_client-0.205.1.tar.gz", hash = "sha256:603334868b1fa839264d5764460f916b1a045acb1822a51352325268973b3676" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/4f/2d/76721bf383de06bb16ce6dec473d0f18f2b6853602d7410ce0116e1981f9/daytona_analytics_api_client-0.210.0.tar.gz", hash = "sha256:b4230a0a6afe65e2a1c7b0e9bb49bf905a795b1610256afaad956a3475b8569d" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/df/ce/7e6357f85e48cb7f3b48fb30fe28faa895ac0fa3c1699707ca66d9b1e8d5/daytona_analytics_api_client-0.205.1-py3-none-any.whl", hash = "sha256:37b95d07d93fd3d8f5457d4547ab7f0c910146d73d4fcc610e92357841201b42" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/45/31/b6ed690257cfb34b37088919b36ee9f87a8d76aaf08ef110b093580de8ac/daytona_analytics_api_client-0.210.0-py3-none-any.whl", hash = "sha256:2e70b15e8c14bb4e88a12bb3644b6e4f4a296305298f111efac4409f3e92ae37" },
 ]
 
 [[package]]
 name = "daytona-analytics-api-client-async"
-version = "0.205.1"
+version = "0.210.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "aiohttp" },
@@ -1026,14 +1026,14 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/34/b1/ac5ca68dacc0e4552b7552b6db21c47fc0f570fe0d299ef9a1fd9ddfd16d/daytona_analytics_api_client_async-0.205.1.tar.gz", hash = "sha256:6b659457288fd63d423e511757c8530fd0e7c1684311aba2cf2de02e2fe3db27" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/a5/72/a0d2ced3b786624b95d3059d0fe7641736064e6470018ff023e46ba3c4f4/daytona_analytics_api_client_async-0.210.0.tar.gz", hash = "sha256:762f19d4e8d9eb74b3d5e3cdeec0ebeddae623d7b6a764e6c97a7f5cafa8f8c9" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/1f/3b/e9c43eb29cacc0fc9a5bf03e65989f9855e6429d06b62b77c53f9f556a6e/daytona_analytics_api_client_async-0.205.1-py3-none-any.whl", hash = "sha256:2821f24cc637552e407c93d0e35b4894e0d24c576a42bafa7aac4b92ad20739b" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/82/a7/8ee5f1fa221c30914aa6f0a9a5a66c7d176d109c3feae3bf61a7b571ac5c/daytona_analytics_api_client_async-0.210.0-py3-none-any.whl", hash = "sha256:258af338e3a95c4a02b3e5c84c8283c0aad1e14151cd2ab4f575700cc200b48a" },
 ]
 
 [[package]]
 name = "daytona-api-client"
-version = "0.205.1"
+version = "0.210.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "pydantic" },
@@ -1041,14 +1041,14 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/8a/25/b3abec5009e747912631c222b0207e8155cb6cd7da711770ccbbe733c227/daytona_api_client-0.205.1.tar.gz", hash = "sha256:b26cf3b26d00020c725603acd61da01d6edfe50970e35b021c8bd701605c4a74" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/b4/fb/3f577dea27c04937ad2cea314877346d2ac5cdf44925bd09eb2b6de2e6f5/daytona_api_client-0.210.0.tar.gz", hash = "sha256:1aea806ca4fe86f0f59b66c043b849d1acf61d9b7db240ec13b7c0678f955590" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/54/f4/d782804be4ebf8552b7bfef714bdf10a3f0e6d4232fd6c2a50b16a31d527/daytona_api_client-0.205.1-py3-none-any.whl", hash = "sha256:2a9e4fdd5736a0d2d50d08145b6976fda034cc3732cfc54cade535ed31d57930" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/b6/bf/7b6e062bf754707c0a29c5e65de2c98fb1a04b2f298fbceba9ab513b88ea/daytona_api_client-0.210.0-py3-none-any.whl", hash = "sha256:c55f42d13fc8da84380fbdc5bc010c67dca7f9b9d399546ab54e8810c5dc1c38" },
 ]
 
 [[package]]
 name = "daytona-api-client-async"
-version = "0.205.1"
+version = "0.210.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "aiohttp" },
@@ -1057,14 +1057,14 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/c4/59/a9b146f3690277c7b15e253a3fc39f2cdd82a65e413340b8ad7d83b9b231/daytona_api_client_async-0.205.1.tar.gz", hash = "sha256:814298236a2ccf983f3201b018990e6560b0c3c27102eb26bfd4bc9dca4aae5e" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/96/f4/6707985e647280d34a87de4ed24fd501bbe4999c0165b4c9b374490b773b/daytona_api_client_async-0.210.0.tar.gz", hash = "sha256:0b597f289f992572e776e3616cf5aae89a9b623dbbc911213e69c2d193bfe302" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/30/20/e7f7bc13907dc6ba135214169cc134de258a1f8609859bc8f458cadb9f91/daytona_api_client_async-0.205.1-py3-none-any.whl", hash = "sha256:983413b5ac6e6c5029a2e7eed5656dde23ed16378f550d859ac0efb824fef3cf" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/e1/47/7ef49573074d5956578f8c899b528a8107e0dfc9fe0d953c32859d968dc0/daytona_api_client_async-0.210.0-py3-none-any.whl", hash = "sha256:6da7dc68915b216d1a7a821e8dbe3c832b63c63c0e8701cda1216d5c38080e59" },
 ]
 
 [[package]]
 name = "daytona-toolbox-api-client"
-version = "0.205.1"
+version = "0.210.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "pydantic" },
@@ -1072,14 +1072,14 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/5f/96/0ad97caab898dacb89d0ce547d046cd4e92311da6cb9da9cee432c08b98d/daytona_toolbox_api_client-0.205.1.tar.gz", hash = "sha256:551d74af55b096a8b0bd191e582ad6457b5b6603172eb8364423c14c4cadeb7f" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/d1/16/83d9b090d8107a95f871ed0154392732918ee6b0606b7117444353b29412/daytona_toolbox_api_client-0.210.0.tar.gz", hash = "sha256:f816c60d01bbd8de4649caa6e6a05bd025a8096e17d6096cbc8b537db900fa9a" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/4a/6d/c88bd6fe6063e26ed3cf36c5f78127d5a339c3ff328029da69e99c99ab5e/daytona_toolbox_api_client-0.205.1-py3-none-any.whl", hash = "sha256:b5727ab6ff2a0e77f83b9fc3db4c653809ba25f32d1e8d1e42eaac6d9caac113" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/8b/43/5810261a1d57c4eff93960a1848767ca14a2d5fb543d1f32aab74954fdbd/daytona_toolbox_api_client-0.210.0-py3-none-any.whl", hash = "sha256:f346fbfc7db3ad5201dfe35610fd068d3992f8ae5e3bc5a312d1214da528dddb" },
 ]
 
 [[package]]
 name = "daytona-toolbox-api-client-async"
-version = "0.205.1"
+version = "0.210.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "aiohttp" },
@@ -1088,9 +1088,9 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/a1/fe/7511797f4ef27a5111af0969fd7ee805c9820eb5bd9737a4345948fd5374/daytona_toolbox_api_client_async-0.205.1.tar.gz", hash = "sha256:6b53d67b21d5f9b505dbb83eb0dc2c7e36264fc7dba45e3c5c97ad8df8b556de" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/c1/b9/419fcacbf90f22679da6f73a2ba6c8dae3c7054e81546589dca28f5c2c0e/daytona_toolbox_api_client_async-0.210.0.tar.gz", hash = "sha256:82e1b0c9cc5db0484be061e39a9810bc7df1e8c0ca0aeb0cd9a3dd6d5eb1101a" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/ef/83/3e99370a2a8a41114aefb8455f1cd9d35d0fdb244983d5e3b460d7f50850/daytona_toolbox_api_client_async-0.205.1-py3-none-any.whl", hash = "sha256:739321a98a8154461e9bafc529eedca37fdf6787667cd22a6516d34a8b03c017" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/ac/57/1d2bef2d66f6d212155aeb2ca09e2f817b7eea84df759cd1fab10b4b1f7b/daytona_toolbox_api_client_async-0.210.0-py3-none-any.whl", hash = "sha256:cf4a1c9b64f3a7f8fc8d2d46b5c577824bb43452744fcc4b3874a25e04f52a05" },
 ]
 
 [[package]]
@@ -1202,7 +1202,7 @@ wheels = [
 
 [[package]]
 name = "elevenlabs"
-version = "2.59.0"
+version = "2.66.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "httpx" },
@@ -1212,9 +1212,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/f4/54/198bf4ab4ba88455466963c733473fbab6b3c34910807c71b412c4ee7220/elevenlabs-2.59.0.tar.gz", hash = "sha256:b05cc41636bef94172e1b9343b650f5cc5e543fc88afe06c12217e0120fd1238" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/cf/e2/191439b42753b350cd41be78e2ee32015793215546fd8c1f4c3ad6642805/elevenlabs-2.66.0.tar.gz", hash = "sha256:6372efd76710e82013a388585a6b8a1aada2f8c91046ee0105afe67565cea291" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/57/49/6ed4f12b1451714972d38ce1c0df446414acdd08f08336fc298901b68e95/elevenlabs-2.59.0-py3-none-any.whl", hash = "sha256:cdd048dc380733f81ee512baa3e9b333c11f4f466aa84301b946fe5354a3b6da" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/92/a0/2f063e96602914ec3e4acaa680a51d08a57a96546da6caf4b1dc83d5b63d/elevenlabs-2.66.0-py3-none-any.whl", hash = "sha256:c7bcc1b616887d2e2482e07a2c91640897fc9b7e24d930940abe7336485ba706" },
 ]
 
 [[package]]
@@ -1228,7 +1228,7 @@ wheels = [
 
 [[package]]
 name = "exa-py"
-version = "2.18.1"
+version = "2.20.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "httpcore" },
@@ -1239,9 +1239,9 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/58/34/16d6d767889fdb86735d5be34dcc5db9f456870815bf3d0ddc8d5fdfbfec/exa_py-2.18.1.tar.gz", hash = "sha256:f571f001ca8122b4432ef795b1c5c0afe97b5d20e84d4a1b769b9a888141e9c7" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/d9/3d/112afb07944b357c3b6e37e63639a2d6d7178edaf486e87f7f0f70d92694/exa_py-2.20.0.tar.gz", hash = "sha256:e7c6d80c91fcb192a53e4615f032f15fd50352fec1825535222e5c9b4f1fda78" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/e1/5f/bdd2230640e2792b3048e69bbb70ab65b8ddf8e51e2ef8880d8cce466a1f/exa_py-2.18.1-py3-none-any.whl", hash = "sha256:98a43c8c598b0360ee8c1a014e7433ae92dcbf58af3d40cac701e145c6e2680e" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/15/e1/0de5407121dcef075567d2f352dd0f268c7c21eedd402a75bf2b747b19f6/exa_py-2.20.0-py3-none-any.whl", hash = "sha256:5a61decaa2d8d6124938c9f86b89ff53b6f4d8b11bf24ddf83fcca76c11c26b2" },
 ]
 
 [[package]]
@@ -1300,7 +1300,7 @@ wheels = [
 
 [[package]]
 name = "firecrawl-py"
-version = "4.37.1"
+version = "4.41.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "aiohttp" },
@@ -1311,9 +1311,9 @@ dependencies = [
     { name = "requests" },
     { name = "websockets" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/39/c3/66b990700fa8b71fd1daf12f2421eb2d10eaca0f9501b3848d37b45ff345/firecrawl_py-4.37.1.tar.gz", hash = "sha256:5e35362b7bc64e5586cf4ea79baf7e0b0955656a958254d6cc9ea5c7a4526d58" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/de/a0/cdfc896a73cb53d17f974ecc5caae2077495e4257e5147ecd6b675449c0d/firecrawl_py-4.41.0.tar.gz", hash = "sha256:ba5fcfe86bd8e643d2908abfa1eeed5e67e735e1a0c69af1071d0b6ac47ea1f0" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/45/e6/09f63c8ec4745481ed134ebdea8dcc5ca55fac9fc5ba5e89bd5d6a9ae05d/firecrawl_py-4.37.1-py3-none-any.whl", hash = "sha256:975167fb8ab1b75941f7adbfa6c3e56da2eb79449eb02f2f0fb468d49d903cd9" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/4b/cf/13009d50deeb9ff97af7b03b75d6811b102b4f4f24db86b26a6d290fc422/firecrawl_py-4.41.0-py3-none-any.whl", hash = "sha256:6e76a7aa6a45c3a46b0570c31185b966c0cd9eec51b709ebd3fb7f29071ac341" },
 ]
 
 [[package]]
@@ -1440,7 +1440,7 @@ wheels = [
 
 [[package]]
 name = "google-api-python-client"
-version = "2.199.0"
+version = "2.200.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "google-api-core" },
@@ -1449,9 +1449,9 @@ dependencies = [
     { name = "httplib2" },
     { name = "uritemplate" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/13/ff/c58d475046b552754a5ee24d98912506b07ea7ac7f0a434b327ad194ca32/google_api_python_client-2.199.0.tar.gz", hash = "sha256:8150816e22e01b36aa4b7523cdc1a2d2164e81c4de8a9b338785d7ecb4390ec2" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/fd/e5/12024a0ae2fd39a54ff47a3868c47344ffff4ff1cd5edf4dff523c1a9fc1/google_api_python_client-2.200.0.tar.gz", hash = "sha256:82aa18b851328ea04867fd51c5a0c8da2e1b86ec45ce08487e902e7726d4ee50" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/b5/42/c443badc33d972ee0e0adcd481c32a71f15d3e04c23a7a3d758e4018c633/google_api_python_client-2.199.0-py3-none-any.whl", hash = "sha256:1d2fa0e7f9d68f063b1a9ff7ed290d6e6c93176260487bf3a991e41534ca23a3" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/13/5a/5242d5a8a6077ae73bd8a2bd7e3161f2aab476f0868fb6f85cf88b1c8835/google_api_python_client-2.200.0-py3-none-any.whl", hash = "sha256:c0c2c4072a110b7fcc30ac151744d4410cddaba99c53cb4e815463308952b638" },
 ]
 
 [[package]]
@@ -1591,15 +1591,15 @@ wheels = [
 
 [[package]]
 name = "honcho-ai"
-version = "2.3.0"
+version = "2.4.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/94/db/778084201211218d2499693eb803d7556a050562eaf10c7ef833e2f7562d/honcho_ai-2.3.0.tar.gz", hash = "sha256:748e11924043aea121e364e9465cddd2d37209b62e661c02d61e00bdbffa51f6" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/47/f2/445e684deecfcda9a22d9e8803e152f8bc30e26d4b4fbf9d387dc7b29574/honcho_ai-2.4.0.tar.gz", hash = "sha256:474addb5974834ff6ab3303f6bd18ba2074c78e41a7ae160acffd94dd52131d3" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/c4/07/52a99b050243fb42b8271e9ba29a24d52d5ed8079d948149b0e1b9f471a4/honcho_ai-2.3.0-py3-none-any.whl", hash = "sha256:92e01ee2bb6600489b7ed9d44a9b59f23069911f809cc2e413de76d62893fed2" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/9e/9b/0cf7480ccd1278f00e8cca2625bbe8ed67755fb0be89652dd604c09bd483/honcho_ai-2.4.0-py3-none-any.whl", hash = "sha256:a84312a7cbfebc7dafc4a3816877af8f0396a793d487407338da4b2b71921ffe" },
 ]
 
 [[package]]
@@ -2000,24 +2000,24 @@ requires-dist = [
     { name = "brotlicffi", marker = "extra == 'messaging'", specifier = "==1.2.0.2" },
     { name = "croniter", specifier = "==6.2.4" },
     { name = "cryptography", marker = "extra == 'webui'", specifier = ">=48.0.1,<51" },
-    { name = "daytona", marker = "extra == 'daytona'", specifier = "==0.205.1" },
+    { name = "daytona", marker = "extra == 'daytona'", specifier = "==0.210.0" },
     { name = "debugpy", marker = "extra == 'dev'", specifier = "==1.8.21" },
     { name = "defusedxml", marker = "extra == 'wecom'", specifier = "==0.7.1" },
     { name = "dingtalk-stream", marker = "extra == 'dingtalk'", specifier = "==0.24.3" },
     { name = "discord-py", extras = ["voice"], marker = "extra == 'messaging'", specifier = "==2.7.1" },
     { name = "edge-tts", marker = "extra == 'edge-tts'", specifier = "==7.2.8" },
-    { name = "elevenlabs", marker = "extra == 'tts-premium'", specifier = "==2.59.0" },
-    { name = "exa-py", marker = "extra == 'exa'", specifier = "==2.18.1" },
+    { name = "elevenlabs", marker = "extra == 'tts-premium'", specifier = "==2.66.0" },
+    { name = "exa-py", marker = "extra == 'exa'", specifier = "==2.20.0" },
     { name = "fal-client", marker = "extra == 'fal'", specifier = "==1.0.1" },
     { name = "faster-whisper", marker = "extra == 'voice'", specifier = "==1.2.1" },
     { name = "filelock", marker = "extra == 'dev'", specifier = "==3.32.3" },
     { name = "fire", specifier = "==0.7.1" },
-    { name = "firecrawl-py", marker = "extra == 'firecrawl'", specifier = "==4.37.1" },
-    { name = "google-api-python-client", marker = "extra == 'google'", specifier = "==2.199.0" },
+    { name = "firecrawl-py", marker = "extra == 'firecrawl'", specifier = "==4.41.0" },
+    { name = "google-api-python-client", marker = "extra == 'google'", specifier = "==2.200.0" },
     { name = "google-auth-httplib2", marker = "extra == 'google'", specifier = "==0.4.1" },
     { name = "google-auth-oauthlib", marker = "extra == 'google'", specifier = "==1.4.0" },
     { name = "hindsight-client", marker = "extra == 'hindsight'", specifier = "==0.9.1" },
-    { name = "honcho-ai", marker = "extra == 'honcho'", specifier = "==2.3.0" },
+    { name = "honcho-ai", marker = "extra == 'honcho'", specifier = "==2.4.0" },
     { name = "httpx", extras = ["socks"], specifier = "==0.28.1" },
     { name = "intellect-agent", extras = ["acp"], marker = "extra == 'all'" },
     { name = "intellect-agent", extras = ["acp"], marker = "extra == 'termux'" },
@@ -2078,8 +2078,8 @@ requires-dist = [
     { name = "simple-term-menu", marker = "extra == 'cli'", specifier = "==1.6.6" },
     { name = "slack-bolt", marker = "extra == 'messaging'", specifier = "==1.30.0" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = "==1.30.0" },
-    { name = "slack-sdk", marker = "extra == 'messaging'", specifier = "==3.43.0" },
-    { name = "slack-sdk", marker = "extra == 'slack'", specifier = "==3.43.0" },
+    { name = "slack-sdk", marker = "extra == 'messaging'", specifier = "==3.44.1" },
+    { name = "slack-sdk", marker = "extra == 'slack'", specifier = "==3.44.1" },
     { name = "sounddevice", marker = "extra == 'voice'", specifier = "==0.5.6" },
     { name = "starlette", marker = "extra == 'computer-use'", specifier = "==1.6.0" },
     { name = "starlette", marker = "extra == 'dev'", specifier = "==1.6.0" },
@@ -3871,11 +3871,11 @@ wheels = [
 
 [[package]]
 name = "slack-sdk"
-version = "3.43.0"
+version = "3.44.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/13/75/a4964eb771a0c74d79ee7a3bee6fb5d9718909dd1b675e80d62a6a0ad90a/slack_sdk-3.43.0.tar.gz", hash = "sha256:0553152e46c4259eb69f7464cdadc35ba4802ca10f9f5a849c92cf03d6c2ba07" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/6e/4e/371068dd7281139307e60cd18553b96b9c8c391a4c3040617192713a3cc4/slack_sdk-3.44.1.tar.gz", hash = "sha256:ca19505423789fa2a3189ff486f989f02e49289f008d0a5813df7255b3fb93ea" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/e4/55/42141b8338d46323d5b3c6095201b044c670c20f898643b322ea9b1543a1/slack_sdk-3.43.0-py2.py3-none-any.whl", hash = "sha256:4b6557c65577fc172f685af218b811f9f3b4909e24cddd839ada09565f10c585" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/ab/fc/67352b742fc6fa520a550581b0284f5757e4e31a32327c2a00276747fd30/slack_sdk-3.44.1-py2.py3-none-any.whl", hash = "sha256:d6f20a0fbe3fecf9cac955c99d686301b48a645b7045472c3a0cdd186d7c42b2" },
 ]
 
 [[package]]
