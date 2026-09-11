@@ -373,7 +373,7 @@ TOOLSETS = {
     },
 
     "intellect-api-server": {
-        "description": "OpenAI-compatible API server — full agent tools accessible via HTTP (no interactive UI tools like clarify or send_message)",
+        "description": "OpenAI-compatible API server — full agent tools accessible via HTTP (interactive clarify is delivered as a clarify.request run event + POST /v1/runs/{run_id}/clarify; no send_message)",
         "tools": [
             # Web
             "web_search", "web_extract",
@@ -398,6 +398,10 @@ TOOLSETS = {
             "execute_code", "delegate_task",
             # Cronjob management
             "cronjob",
+            # Interactive clarifying questions, delivered over the run's SSE
+            # stream (clarify.request) and answered via
+            # POST /v1/runs/{run_id}/clarify.
+            "clarify",
             # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)
             "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
 

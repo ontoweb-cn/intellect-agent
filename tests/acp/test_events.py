@@ -126,6 +126,90 @@ class TestToolProgressCallback:
             step_cb(2, [{"name": "terminal", "result": "ok-2"}])
             assert "terminal" not in tool_call_ids
 
+    def test_subagent_progress_updates_tracked_delegate_call(self, mock_conn, event_loop_fixture):
+        """subagent_progress must attach to the running delegate_task call."""
+        tool_call_ids = {}
+        tool_call_meta = {}
+        loop = event_loop_fixture
+        # Capture the update object directly (a plain mock returns no coroutine,
+        # so there is nothing left un-awaited when the scheduler is patched).
+        mock_conn.session_update = MagicMock()
+
+        progress_cb = make_tool_progress_cb(mock_conn, "session-1", loop, tool_call_ids, tool_call_meta)
+
+        with patch("acp_adapter.events.asyncio.run_coroutine_threadsafe") as mock_rcts:
+            future = MagicMock(spec=Future)
+            future.result.return_value = None
+            mock_rcts.return_value = future
+
+            progress_cb("tool.started", "delegate_task", None, {"goal": "research"})
+            mock_conn.session_update.reset_mock()
+
+            # delegate_tool puts the summary in the *name* positional slot.
+            progress_cb("subagent_progress", "├─ 🔀 child searched docs")
+
+        assert mock_conn.session_update.call_count == 1
+        _session_id, update = mock_conn.session_update.call_args.args
+        # Correlates by the delegate_task tool-call id, not a new call.
+        assert update.tool_call_id == tool_call_ids["delegate_task"][0]
+        assert update.status == "in_progress"
+
+    def test_subagent_progress_does_not_consume_fifo(self, mock_conn, event_loop_fixture):
+        """A progress update must not pop the FIFO — completion pairing needs it."""
+        tool_call_ids = {}
+        tool_call_meta = {}
+        loop = event_loop_fixture
+
+        progress_cb = make_tool_progress_cb(mock_conn, "session-1", loop, tool_call_ids, tool_call_meta)
+        step_cb = make_step_cb(mock_conn, "session-1", loop, tool_call_ids, tool_call_meta)
+
+        with patch("acp_adapter.events.asyncio.run_coroutine_threadsafe") as mock_rcts:
+            future = MagicMock(spec=Future)
+            future.result.return_value = None
+            mock_rcts.return_value = future
+
+            progress_cb("tool.started", "delegate_task", None, {"goal": "g"})
+            progress_cb("subagent_progress", "child working")
+            # FIFO entry must still be present for the completion to pair.
+            assert len(tool_call_ids["delegate_task"]) == 1
+
+            step_cb(1, [{"name": "delegate_task", "result": "done"}])
+            assert "delegate_task" not in tool_call_ids
+
+    def test_subagent_progress_without_delegate_call_is_ignored(self, mock_conn, event_loop_fixture):
+        """No tracked delegate_task → nothing to attach to, so no update."""
+        tool_call_ids = {}
+        tool_call_meta = {}
+        loop = event_loop_fixture
+        mock_conn.session_update = MagicMock()
+
+        progress_cb = make_tool_progress_cb(mock_conn, "session-1", loop, tool_call_ids, tool_call_meta)
+
+        progress_cb("subagent_progress", "orphan summary")
+
+        mock_conn.session_update.assert_not_called()
+
+    def test_subagent_progress_with_empty_summary_is_ignored(self, mock_conn, event_loop_fixture):
+        """Empty summary should not emit an empty progress block."""
+        tool_call_ids = {}
+        tool_call_meta = {}
+        loop = event_loop_fixture
+        mock_conn.session_update = MagicMock()
+
+        progress_cb = make_tool_progress_cb(mock_conn, "session-1", loop, tool_call_ids, tool_call_meta)
+
+        with patch("acp_adapter.events.asyncio.run_coroutine_threadsafe") as mock_rcts:
+            future = MagicMock(spec=Future)
+            future.result.return_value = None
+            mock_rcts.return_value = future
+
+            progress_cb("tool.started", "delegate_task", None, {"goal": "g"})
+            mock_conn.session_update.reset_mock()
+
+            progress_cb("subagent_progress", "")
+
+        mock_conn.session_update.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Thinking callback

@@ -127,11 +127,40 @@ def make_tool_progress_cb(
 
     Emits ``ToolCallStart`` for ``tool.started`` events and tracks IDs in a FIFO
     queue per tool name so duplicate/parallel same-name calls still complete
-    against the correct ACP tool call.  Other event types (``tool.completed``,
-    ``reasoning.available``) are silently ignored.
+    against the correct ACP tool call.  ``subagent_progress`` is forwarded as a
+    ``ToolCallProgress`` on the running ``delegate_task`` call so clients can
+    show what a subagent is doing mid-flight.  Other event types
+    (``tool.completed``, ``reasoning.available``) are silently ignored.
     """
 
     def _tool_progress(event_type: str, name: str = None, preview: str = None, args: Any = None, **kwargs) -> None:
+        if event_type == "subagent_progress":
+            # delegate_tool relays the pre-batched summary via
+            # ``parent_cb("subagent_progress", summary)`` — the summary lands in
+            # the *name* positional slot, not ``preview``.
+            summary = name or preview or ""
+            if not summary:
+                return
+            # Attach to the running delegate_task call. Peek (do NOT pop): the
+            # per-name FIFO is the completion pairing, so consuming an id here
+            # would make the later tool.completed pair with the wrong call.
+            queue = tool_call_ids.get("delegate_task")
+            tc_id = queue[0] if queue else None
+            if tc_id is None:
+                logger.debug("ACP subagent_progress with no tracked delegate_task; skipping")
+                return
+            _send_update(
+                conn,
+                session_id,
+                loop,
+                acp.update_tool_call(
+                    tc_id,
+                    status="in_progress",
+                    content=[acp.tool_content(acp.text_block(summary))],
+                ),
+            )
+            return
+
         # Only emit ACP ToolCallStart for tool.started; ignore other event types
         if event_type != "tool.started":
             return

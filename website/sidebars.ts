@@ -42,7 +42,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/multi-profile-gateways',
         'user-guide/multiplex-gateways',
         'user-guide/bot-mode',
-        'user-guide/pets'
+        'user-guide/pets',
         'user-guide/git-worktrees',
         'user-guide/docker',
         'user-guide/security',

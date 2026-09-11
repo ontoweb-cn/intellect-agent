@@ -548,6 +548,11 @@ class APIServerAdapter(BasePlatformAdapter):
         # resolves requests by session key, while API clients address the
         # in-flight run by run_id.
         self._run_approval_sessions: Dict[str, str] = {}
+        # Currently-pending clarify_id for each run_id. The clarify primitive
+        # resolves by clarify_id, while API clients address the in-flight run
+        # by run_id — this maps between them and lets the resolve endpoint
+        # report a precise "nothing pending" error.
+        self._run_clarify_pending: Dict[str, str] = {}
         self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
 
     @staticmethod
@@ -941,6 +946,8 @@ class APIServerAdapter(BasePlatformAdapter):
         tool_start_callback=None,
         tool_complete_callback=None,
         gateway_session_key: Optional[str] = None,
+        model: Optional[str] = None,
+        clarify_callback=None,
     ) -> Any:
         """
         Create an AIAgent instance using the gateway's runtime config.
@@ -949,6 +956,16 @@ class APIServerAdapter(BasePlatformAdapter):
         base_url, etc. from config.yaml / env vars.  Toolsets are resolved
         from config.yaml platform_toolsets.api_server (same as all other
         gateway platforms), falling back to the intellect-api-server default.
+
+        ``model`` overrides the config-derived model for this agent only
+        (per-run model selection on ``POST /v1/runs``).  When omitted the
+        resolution is unchanged: ``_resolve_gateway_model()`` from config.yaml.
+
+        ``clarify_callback`` is the platform's delivery hook for the ``clarify``
+        tool (``callback(question, choices) -> str``).  The api_server has no
+        interactive UI of its own, so ``_handle_runs`` supplies a callback that
+        surfaces the question as a ``clarify.request`` run event and blocks for
+        the client's answer.
 
         ``gateway_session_key`` is a stable per-channel identifier supplied
         by the client (via ``X-Intellect-Session-Key``).  Unlike ``session_id``
@@ -963,7 +980,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
         runtime_kwargs = _resolve_runtime_agent_kwargs()
         reasoning_config = GatewayRunner._load_reasoning_config()
-        model = _resolve_gateway_model()
+        model = model or _resolve_gateway_model()
 
         user_config = _load_gateway_config()
         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
@@ -992,6 +1009,7 @@ class APIServerAdapter(BasePlatformAdapter):
             fallback_model=fallback_model,
             reasoning_config=reasoning_config,
             gateway_session_key=gateway_session_key,
+            clarify_callback=clarify_callback,
         )
         return agent
 
@@ -1135,6 +1153,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "run_status": {"method": "GET", "path": "/v1/runs/{run_id}"},
                 "run_events": {"method": "GET", "path": "/v1/runs/{run_id}/events"},
                 "run_approval": {"method": "POST", "path": "/v1/runs/{run_id}/approval"},
+                "run_clarify": {"method": "POST", "path": "/v1/runs/{run_id}/clarify"},
                 "run_stop": {"method": "POST", "path": "/v1/runs/{run_id}/stop"},
                 "skills": {"method": "GET", "path": "/v1/skills"},
                 "custom_skills": {"method": "GET", "path": "/v1/skills/custom"},
@@ -3743,7 +3762,20 @@ class APIServerAdapter(BasePlatformAdapter):
                     "timestamp": ts,
                     "text": preview or "",
                 })
-            # _thinking and subagent_progress are intentionally not forwarded
+            elif event_type == "subagent_progress":
+                # Pre-batched progress summary relayed from a delegated
+                # subagent (delegate_tool emits parent_cb("subagent_progress",
+                # summary) — the summary arrives in the *tool_name* positional
+                # slot, not preview). Forwarding it lets a client show what a
+                # subagent is doing mid-flight instead of one long silent
+                # delegate_task call.
+                _push({
+                    "event": "subagent_progress",
+                    "run_id": run_id,
+                    "timestamp": ts,
+                    "text": tool_name or preview or "",
+                })
+            # _thinking is intentionally not forwarded
 
         return _callback
 
@@ -3809,6 +3841,24 @@ class APIServerAdapter(BasePlatformAdapter):
                     ),
                     status=400,
                 )
+
+        # Per-run model override — same semantics as POST /api/sessions:
+        # accept any non-empty model string, omit to use the server default.
+        # Validated here (fail fast, alongside 'skill') so a bad value never
+        # starts a run that silently uses a different model than requested.
+        requested_model: Optional[str] = None
+        if "model" in body:
+            raw_model = body.get("model")
+            if not isinstance(raw_model, str) or not raw_model.strip():
+                return web.json_response(
+                    _openai_error(
+                        "'model' must be a non-empty model name string",
+                        param="model",
+                        code="invalid_model",
+                    ),
+                    status=400,
+                )
+            requested_model = raw_model.strip()
 
         instructions = body.get("instructions")
         previous_response_id = body.get("previous_response_id")
@@ -3916,6 +3966,9 @@ class APIServerAdapter(BasePlatformAdapter):
                 clear_session_vars(skill_context_tokens)
 
         approval_session_key = gateway_session_key or session_id or run_id
+        # clarify shares the same run-scoped identity as approval: clients
+        # address the run by run_id, the primitive resolves by session key.
+        clarify_session_key = approval_session_key
         ephemeral_system_prompt = instructions
         loop = asyncio.get_running_loop()
         q: "asyncio.Queue[Optional[Dict]]" = asyncio.Queue()
@@ -3940,10 +3993,17 @@ class APIServerAdapter(BasePlatformAdapter):
             except Exception:
                 pass
 
+        # Resolve the model once so the run status, the 202 response and the
+        # agent all agree. Previously the status echoed body["model"] while the
+        # agent used the config default — reporting a model that was never used.
+        from gateway.run import _resolve_gateway_model
+
+        effective_model = requested_model or _resolve_gateway_model()
+
         run_status_fields: Dict[str, Any] = {
             "created_at": created_at,
             "session_id": session_id,
-            "model": body.get("model", self._model_name),
+            "model": effective_model,
         }
         if selected_skill_name is not None:
             run_status_fields["skill"] = selected_skill_name
@@ -3952,12 +4012,66 @@ class APIServerAdapter(BasePlatformAdapter):
         async def _run_and_close():
             try:
                 self._set_run_status(run_id, "running")
+
+                def _clarify_callback(question: str, choices) -> str:
+                    """Deliver a ``clarify`` question to the API client and block.
+
+                    Runs on the agent worker thread (invoked from inside
+                    ``run_conversation``), so the SSE push goes through
+                    ``loop.call_soon_threadsafe`` exactly like ``_approval_notify``.
+                    Returns the client's answer, or a sentinel explaining that
+                    nothing arrived so the agent can adapt instead of hanging.
+                    """
+                    import uuid as _uuid
+
+                    from tools import clarify_gateway as _clarify_mod
+
+                    clarify_id = _uuid.uuid4().hex[:10]
+                    _clarify_mod.register(
+                        clarify_id=clarify_id,
+                        session_key=clarify_session_key,
+                        question=question,
+                        choices=list(choices) if choices else None,
+                    )
+                    self._run_clarify_pending[run_id] = clarify_id
+                    self._set_run_status(
+                        run_id,
+                        "waiting_for_clarify",
+                        last_event="clarify.request",
+                    )
+                    try:
+                        loop.call_soon_threadsafe(q.put_nowait, {
+                            "event": "clarify.request",
+                            "run_id": run_id,
+                            "timestamp": time.time(),
+                            "clarify_id": clarify_id,
+                            "question": question,
+                            "choices": list(choices) if choices else None,
+                        })
+                    except Exception:
+                        pass
+
+                    try:
+                        timeout = _clarify_mod.get_clarify_timeout()
+                    except Exception:
+                        timeout = 600
+                    try:
+                        response = _clarify_mod.wait_for_response(clarify_id, timeout)
+                    finally:
+                        self._run_clarify_pending.pop(run_id, None)
+
+                    if response is None or response == "":
+                        return f"[user did not respond within {int(timeout / 60)}m]"
+                    return response
+
                 agent = self._create_agent(
                     ephemeral_system_prompt=ephemeral_system_prompt,
                     session_id=session_id,
                     stream_delta_callback=_text_cb,
                     tool_progress_callback=event_cb,
                     gateway_session_key=gateway_session_key,
+                    model=effective_model,
+                    clarify_callback=_clarify_callback,
                 )
                 self._active_run_agents[run_id] = agent
 
@@ -4113,6 +4227,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 self._active_run_agents.pop(run_id, None)
                 self._active_run_tasks.pop(run_id, None)
                 self._run_approval_sessions.pop(run_id, None)
+                self._run_clarify_pending.pop(run_id, None)
 
         task = asyncio.create_task(_run_and_close())
         self._active_run_tasks[run_id] = task
@@ -4126,7 +4241,13 @@ class APIServerAdapter(BasePlatformAdapter):
         response_headers = (
             {"X-Intellect-Session-Key": gateway_session_key} if gateway_session_key else {}
         )
-        response_payload = {"run_id": run_id, "status": "started"}
+        response_payload = {
+            "run_id": run_id,
+            "status": "started",
+            # Echo the model actually used so a client can verify its per-run
+            # override took effect (and see what the server default resolved to).
+            "model": effective_model,
+        }
         if selected_skill_name is not None:
             response_payload["skill"] = selected_skill_name
         return web.json_response(response_payload, status=202, headers=response_headers)
@@ -4284,6 +4405,102 @@ class APIServerAdapter(BasePlatformAdapter):
             "resolved": resolved,
         })
 
+    async def _handle_run_clarify(self, request: "web.Request") -> "web.Response":
+        """POST /v1/runs/{run_id}/clarify — answer a pending run clarify question.
+
+        Mirrors ``_handle_run_approval``: the agent thread is blocked inside the
+        run's clarify callback, so resolving the primitive unblocks it and the
+        run continues. Body: ``{"response": str, "clarify_id"?: str}``.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+
+        run_id = request.match_info["run_id"]
+        status = self._run_status_store.get(run_id)
+        if status is None:
+            return web.json_response(
+                _openai_error(f"Run not found: {run_id}", code="run_not_found"),
+                status=404,
+            )
+
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response(_openai_error("Invalid JSON"), status=400)
+
+        raw_response = body.get("response")
+        if raw_response is None:
+            return web.json_response(
+                _openai_error(
+                    "Missing 'response' field",
+                    param="response",
+                    code="invalid_clarify_response",
+                ),
+                status=400,
+            )
+        response_text = str(raw_response)
+
+        pending_id = self._run_clarify_pending.get(run_id)
+        if not pending_id:
+            return web.json_response(
+                _openai_error(
+                    f"Run has no pending clarify: {run_id}",
+                    code="clarify_not_pending",
+                ),
+                status=409,
+            )
+
+        # Optional explicit clarify_id — lets a client that saw a superseded
+        # question avoid answering a newer one by mistake.
+        requested_id = body.get("clarify_id")
+        if requested_id is not None and str(requested_id) != pending_id:
+            return web.json_response(
+                _openai_error(
+                    "clarify_id does not match the pending question",
+                    param="clarify_id",
+                    code="clarify_id_mismatch",
+                ),
+                status=409,
+            )
+
+        try:
+            from tools.clarify_gateway import resolve_gateway_clarify
+
+            resolved = resolve_gateway_clarify(pending_id, response_text)
+        except Exception as exc:
+            logger.exception("[api_server] clarify resolution failed for run %s", run_id)
+            return web.json_response(_openai_error(str(exc)), status=500)
+
+        if not resolved:
+            return web.json_response(
+                _openai_error(
+                    f"Run has no pending clarify: {run_id}",
+                    code="clarify_not_pending",
+                ),
+                status=409,
+            )
+
+        self._set_run_status(run_id, "running", last_event="clarify.responded")
+        q = self._run_streams.get(run_id)
+        if q is not None:
+            try:
+                q.put_nowait({
+                    "event": "clarify.responded",
+                    "run_id": run_id,
+                    "timestamp": time.time(),
+                    "clarify_id": pending_id,
+                })
+            except Exception:
+                pass
+
+        return web.json_response({
+            "object": "intellect.run.clarify_response",
+            "run_id": run_id,
+            "clarify_id": pending_id,
+            "resolved": True,
+        })
+
     async def _handle_stop_run(self, request: "web.Request") -> "web.Response":
         """POST /v1/runs/{run_id}/stop — interrupt a running agent."""
         auth_err = self._check_auth(request)
@@ -4349,6 +4566,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 self._active_run_agents.pop(run_id, None)
                 self._active_run_tasks.pop(run_id, None)
                 self._run_approval_sessions.pop(run_id, None)
+                self._run_clarify_pending.pop(run_id, None)
 
             cutoff = now - self._RUN_STATUS_TTL
             for run_id, _status in self._run_status_store.items_terminal_before(cutoff):
@@ -4416,6 +4634,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/v1/runs/{run_id}", self._handle_get_run)
             self._app.router.add_get("/v1/runs/{run_id}/events", self._handle_run_events)
             self._app.router.add_post("/v1/runs/{run_id}/approval", self._handle_run_approval)
+            self._app.router.add_post("/v1/runs/{run_id}/clarify", self._handle_run_clarify)
             self._app.router.add_post("/v1/runs/{run_id}/stop", self._handle_stop_run)
             # Store the adapter after native routes are registered. Local Intellect-Relay
             # bootstrap shims use this key as a feature-detection hook; registering

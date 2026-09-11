@@ -44,9 +44,15 @@ class TestintellectApiServerToolset:
         for tool in ["ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service"]:
             assert tool in tools, f"Missing HA tool: {tool}"
 
-    def test_toolset_excludes_clarify(self):
+    def test_toolset_includes_clarify(self):
+        """clarify is delivered over the run's SSE stream (clarify.request +
+        POST /v1/runs/{run_id}/clarify), so the toolset now exposes it.
+
+        It was excluded while the api_server had no delivery path — calling it
+        would only time out. See issue #125.
+        """
         tools = resolve_toolset("intellect-api-server")
-        assert "clarify" not in tools
+        assert "clarify" in tools
 
     def test_toolset_excludes_send_message(self):
         tools = resolve_toolset("intellect-api-server")
