@@ -195,7 +195,7 @@ webui = [
   # in wheels). Lower bound bumped to pick up the fix.  alibabacloud-tea-openapi
   # requires cryptography<47 and may downgrade at lock time — that downgrade is
   # tracked as an accepted risk until alibabacloud updates.
-  "cryptography>=48.0.1,<50",
+  "cryptography>=48.0.1,<51",
 ]
 all = [
   # Policy (2026-05-12): `[all]` includes only extras that genuinely
