@@ -1,7 +1,7 @@
 """Tests for MCP tool-handler auth-failure detection.
 
 When a tool call raises UnauthorizedError / OAuthNonInteractiveError /
-httpx.HTTPStatusError(401), the handler should:
+HTTPStatusError(401) (httpx on mcp 1.x, httpx2 on 2.x), the handler should:
   1. Ask MCPOAuthManager.handle_401 if recovery is viable.
   2. If yes, trigger MCPServerTask._reconnect_event and retry once.
   3. If no, return a structured needs_reauth error so the model stops
@@ -32,7 +32,9 @@ def test_is_auth_error_detects_oauth_non_interactive():
 
 def test_is_auth_error_detects_httpx_401():
     from tools.mcp_tool import _is_auth_error
-    import httpx
+    from tools.mcp_compat import http_lib
+
+    httpx = http_lib()
 
     response = MagicMock()
     response.status_code = 401
@@ -42,7 +44,9 @@ def test_is_auth_error_detects_httpx_401():
 
 def test_is_auth_error_rejects_httpx_500():
     from tools.mcp_tool import _is_auth_error
-    import httpx
+    from tools.mcp_compat import http_lib
+
+    httpx = http_lib()
 
     response = MagicMock()
     response.status_code = 500

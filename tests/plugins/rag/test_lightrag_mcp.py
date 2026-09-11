@@ -86,8 +86,16 @@ async def test_search_delegates_to_manager():
     from plugins.rag.lightrag.mcp_server import create_lightrag_mcp
 
     mcp = create_lightrag_mcp(scope="auto")
-    content, _meta = await mcp.call_tool("lightrag_search", {"query": "docs"})
-    result = json.loads(content[0].text)
+    # The SDK server's call_tool signature/return shape differ by major
+    # version: 1.x is (name, arguments) -> (content, meta); 2.x is
+    # (name, arguments, context) -> CallToolResult.
+    from tools.mcp_compat import extract_tool_result_text, is_v2
+
+    if is_v2():
+        raw = await mcp.call_tool("lightrag_search", {"query": "docs"}, None)
+    else:
+        raw = await mcp.call_tool("lightrag_search", {"query": "docs"})
+    result = json.loads(extract_tool_result_text(raw))
     assert result["success"] is True
     assert result["context"] == "chunk one"
     mgr.search.assert_called_once()
@@ -99,14 +107,17 @@ async def test_upload_passes_multimodal_kwargs():
     from plugins.rag.lightrag.mcp_server import create_lightrag_mcp
 
     mcp = create_lightrag_mcp(scope="auto")
-    await mcp.call_tool(
-        "lightrag_upload_document",
-        {
-            "file_path": "/tmp/a.pdf",
-            "parse_engine": "mineru",
-            "analyze_images": True,
-        },
-    )
+    from tools.mcp_compat import is_v2
+
+    _args = {
+        "file_path": "/tmp/a.pdf",
+        "parse_engine": "mineru",
+        "analyze_images": True,
+    }
+    if is_v2():
+        await mcp.call_tool("lightrag_upload_document", _args, None)
+    else:
+        await mcp.call_tool("lightrag_upload_document", _args)
     mgr.upload_document.assert_called_once()
     kwargs = mgr.upload_document.call_args.kwargs
     assert kwargs["parse_engine"] == "mineru"

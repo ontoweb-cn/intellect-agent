@@ -197,10 +197,14 @@ def create_graphiti_mcp(scope: str = "auto") -> Any:
     ``auto`` (member + team), ``member``, ``team``, ``project``, or ``all``.
     Writes always go to the member graph (or global).
 
-    Returns a ``FastMCP`` instance.  Call ``mcp.run_stdio_async()`` to
+    Returns an SDK server instance.  Call ``mcp.run_stdio_async()`` to
     start serving on stdin/stdout.
     """
-    from mcp.server.fastmcp import FastMCP  # type: ignore
+    # mcp 2.x renamed FastMCP -> MCPServer (mcp.server.mcpserver).
+    try:
+        from mcp.server.mcpserver import MCPServer as FastMCP  # type: ignore
+    except ImportError:
+        from mcp.server.fastmcp import FastMCP  # type: ignore
 
     _init_manager(scope)
 

@@ -117,8 +117,12 @@ _LIST_DESC = LIST_SCHEMA["description"]
 
 
 def create_lightrag_mcp(scope: str = "auto") -> Any:
-    """Build a FastMCP server with LightRAG document RAG tools."""
-    from mcp.server.fastmcp import FastMCP  # type: ignore
+    """Build an MCP server with LightRAG document RAG tools."""
+    # mcp 2.x renamed FastMCP -> MCPServer (mcp.server.mcpserver).
+    try:
+        from mcp.server.mcpserver import MCPServer as FastMCP  # type: ignore
+    except ImportError:
+        from mcp.server.fastmcp import FastMCP  # type: ignore
 
     _init_manager(scope)
 

@@ -12,6 +12,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tools import mcp_compat
+
+
+def _fake_http_lib(async_client_cls):
+    """Build a stand-in for the SDK's HTTP lib (httpx2 on mcp 2.x, httpx on 1.x).
+
+    ``_run_http`` resolves its client through ``tools.mcp_tool._mcp_http_lib``,
+    so patching that name with this object keeps the HTTP-transport tests
+    independent of which SDK major version is installed.
+    """
+    return SimpleNamespace(
+        AsyncClient=async_client_cls,
+        Timeout=lambda *a, **kw: ("timeout", a, kw),
+        URL=lambda url: SimpleNamespace(
+            scheme="https", host="example.com", port=None,
+        ),
+    )
+
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1535,7 +1554,7 @@ class TestHTTPConfig:
             captured.clear()
             with patch("tools.mcp_tool._MCP_HTTP_AVAILABLE", True), \
                  patch("tools.mcp_tool._MCP_NEW_HTTP", new_http), \
-                 patch("httpx.AsyncClient", DummyAsyncClient), \
+                 patch("tools.mcp_tool._mcp_http_lib", _fake_http_lib(DummyAsyncClient)), \
                  patch("tools.mcp_tool.streamable_http_client", return_value=DummyTransportCtx()), \
                  patch("tools.mcp_tool.streamablehttp_client", side_effect=lambda url, **kwargs: DummyLegacyTransportCtx(**kwargs)), \
                  patch("tools.mcp_tool.ClientSession", DummySession), \
@@ -2595,7 +2614,7 @@ class TestSamplingCallbackText:
         assert result.content.text == "Hello from LLM"
         assert result.model == "test-model"
         assert result.role == "assistant"
-        assert result.stopReason == "endTurn"
+        assert mcp_compat.mcp_field(result, "stop_reason") == "endTurn"
 
     def test_system_prompt_prepended(self):
         """System prompt is inserted as the first message."""
@@ -2655,7 +2674,7 @@ class TestSamplingCallbackText:
             result = asyncio.run(self.handler(None, params))
 
         assert isinstance(result, CreateMessageResult)
-        assert result.stopReason == "maxTokens"
+        assert mcp_compat.mcp_field(result, "stop_reason") == "maxTokens"
 
 
 # ---------------------------------------------------------------------------
@@ -2679,7 +2698,7 @@ class TestSamplingCallbackToolUse:
             result = asyncio.run(self.handler(None, params))
 
         assert isinstance(result, CreateMessageResultWithTools)
-        assert result.stopReason == "toolUse"
+        assert mcp_compat.mcp_field(result, "stop_reason") == "toolUse"
         assert result.model == "test-model"
         assert len(result.content) == 1
         tc = result.content[0]

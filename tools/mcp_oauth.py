@@ -50,6 +50,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 from intellect_constants import secure_parent_dir
 
+from tools import mcp_compat
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -448,8 +450,12 @@ async def _redirect_handler(authorization_url: str) -> None:
         print("  (Headless environment detected — open the URL manually.)\n", file=sys.stderr)
 
 
-async def _wait_for_callback() -> tuple[str, str | None]:
+async def _wait_for_callback() -> Any:
     """Wait for the OAuth callback to arrive on the local callback server.
+
+    Returns the shape the installed SDK consumes: a ``(code, state)`` tuple on
+    mcp 1.x, an ``AuthorizationCodeResult`` on 2.x (see
+    :func:`tools.mcp_compat.authorization_code_result`).
 
     Uses the module-level ``_oauth_port`` which is set by ``build_oauth_auth``
     before this is ever called.  Polls for the result without blocking the
@@ -532,7 +538,7 @@ async def _wait_for_callback() -> tuple[str, str | None]:
             "Ensure you completed the browser authorization flow."
         )
 
-    return result["auth_code"], result["state"]
+    return mcp_compat.authorization_code_result(result["auth_code"], result["state"])
 
 
 def _paste_callback_reader(result: dict) -> None:
@@ -767,10 +773,18 @@ def build_oauth_auth(
     _maybe_preregister_client(storage, cfg, client_metadata)
 
     return OAuthClientProvider(
-        server_url=server_url,
-        client_metadata=client_metadata,
-        storage=storage,
-        redirect_handler=_redirect_handler,
-        callback_handler=_wait_for_callback,
-        timeout=float(cfg.get("timeout", 300)),
+        **mcp_compat.supported_kwargs(
+            OAuthClientProvider,
+            {
+                "server_url": server_url,
+                "client_metadata": client_metadata,
+                "storage": storage,
+                "redirect_handler": _redirect_handler,
+                "callback_handler": _wait_for_callback,
+                # mcp 1.x accepted a flow timeout here; 2.x dropped the
+                # parameter (the flow is bounded by callback_handler's own
+                # timeout), so supported_kwargs trims it on v2.
+                "timeout": float(cfg.get("timeout", 300)),
+            },
+        )
     )

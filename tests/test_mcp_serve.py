@@ -221,7 +221,7 @@ class _FakeToolManager:
     def add_tool(self, fn):
         self._tools[fn.__name__] = _FakeTool(fn)
 
-    async def call_tool(self, name, args=None):
+    async def call_tool(self, name, args=None, context=None):
         return self._tools[name].fn(**(args or {}))
 
     def list_tools(self):
@@ -510,9 +510,14 @@ def mcp_server_e2e(populated_sessions_dir, mock_session_db, monkeypatch):
 
 
 def _run_tool(server, name, args=None):
-    """Call an MCP tool through FastMCP's tool manager and return parsed JSON."""
+    """Call an MCP tool through the SDK server's tool manager.
+
+    Returns parsed JSON. The context argument is passed as ``None``: the
+    tool manager requires it on mcp 2.x and defaults it on 1.x, and these
+    tools never touch request context.
+    """
     result = asyncio.get_event_loop().run_until_complete(
-        server._tool_manager.call_tool(name, args or {})
+        server._tool_manager.call_tool(name, args or {}, None)
     )
     return json.loads(result) if isinstance(result, str) else result
 

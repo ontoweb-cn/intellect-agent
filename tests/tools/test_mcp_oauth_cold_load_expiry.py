@@ -382,7 +382,9 @@ async def test_initialize_prefetches_oauth_metadata_when_missing(
     """
     monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
 
-    import httpx
+    from tools.mcp_compat import http_lib
+
+    httpx = http_lib()
     from mcp.shared.auth import (
         OAuthClientInformationFull,
         OAuthClientMetadata,
@@ -451,16 +453,15 @@ async def test_initialize_prefetches_oauth_metadata_when_missing(
     transport = httpx.MockTransport(mock_handler)
 
     # Patch the AsyncClient constructor used by _prefetch_oauth_metadata so
-    # it uses our mock transport instead of the real network.
-    import httpx as real_httpx
-
-    original_async_client = real_httpx.AsyncClient
+    # it uses our mock transport instead of the real network. The module is
+    # the SDK's HTTP lib (httpx2 on mcp 2.x, httpx on 1.x).
+    original_async_client = httpx.AsyncClient
 
     def patched_async_client(*args, **kwargs):
         kwargs["transport"] = transport
         return original_async_client(*args, **kwargs)
 
-    monkeypatch.setattr(real_httpx, "AsyncClient", patched_async_client)
+    monkeypatch.setattr(httpx, "AsyncClient", patched_async_client)
 
     metadata = OAuthClientMetadata(
         redirect_uris=[AnyUrl("http://127.0.0.1:12345/callback")],
@@ -498,7 +499,9 @@ async def test_initialize_skips_prefetch_when_no_tokens(tmp_path, monkeypatch):
     discovery will run on the first real request anyway).
     """
     monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
-    import httpx
+    from tools.mcp_compat import http_lib
+
+    httpx = http_lib()
     from mcp.shared.auth import OAuthClientMetadata
     from pydantic import AnyUrl
 
@@ -515,15 +518,13 @@ async def test_initialize_skips_prefetch_when_no_tokens(tmp_path, monkeypatch):
         return httpx.Response(404)
 
     transport = httpx.MockTransport(mock_handler)
-    import httpx as real_httpx
-
-    original = real_httpx.AsyncClient
+    original = httpx.AsyncClient
 
     def patched(*args, **kwargs):
         kwargs["transport"] = transport
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(real_httpx, "AsyncClient", patched)
+    monkeypatch.setattr(httpx, "AsyncClient", patched)
 
     storage = intellectTokenStorage("srv")  # empty — no tokens on disk
     metadata = OAuthClientMetadata(

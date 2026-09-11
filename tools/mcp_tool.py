@@ -93,6 +93,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+from tools import mcp_compat
+
 logger = logging.getLogger(__name__)
 
 
@@ -176,6 +178,9 @@ _MCP_HTTP_AVAILABLE = False
 _MCP_SAMPLING_TYPES = False
 _MCP_NOTIFICATION_TYPES = False
 _MCP_MESSAGE_HANDLER_SUPPORTED = False
+# The HTTP client library the installed SDK builds transports with: httpx2 on
+# mcp 2.x, httpx on 1.x. Resolved lazily so a missing SDK doesn't break import.
+_mcp_http_lib = None
 # Conservative fallback for SDK builds that don't export LATEST_PROTOCOL_VERSION.
 # Streamable HTTP was introduced by 2025-03-26, so this remains valid for the
 # HTTP transport path even on older-but-supported SDK versions.
@@ -185,17 +190,23 @@ try:
     from mcp.client.stdio import stdio_client
     _MCP_AVAILABLE = True
     try:
-        from mcp.client.streamable_http import streamablehttp_client
-        _MCP_HTTP_AVAILABLE = True
-    except ImportError:
-        _MCP_HTTP_AVAILABLE = False
-    # Prefer the non-deprecated API (mcp >= 1.24.0); fall back to the
-    # deprecated wrapper for older SDK versions.
+        _mcp_http_lib = mcp_compat.http_lib()
+    except Exception:  # pragma: no cover -- defensive; httpx is a core dep
+        logger.debug("MCP HTTP client library (httpx2/httpx) unavailable")
+    # Non-deprecated API (mcp >= 1.24.0, the only one in 2.x). Bound at module
+    # level even when unavailable so tests can patch the name either way.
     try:
         from mcp.client.streamable_http import streamable_http_client
         _MCP_NEW_HTTP = True
     except ImportError:
+        streamable_http_client = None  # type: ignore[assignment]
         _MCP_NEW_HTTP = False
+    # Deprecated alias, removed in mcp 2.x. Kept as a fallback path for 1.x.
+    try:
+        from mcp.client.streamable_http import streamablehttp_client
+    except ImportError:
+        streamablehttp_client = None  # type: ignore[assignment]
+    _MCP_HTTP_AVAILABLE = streamable_http_client is not None or streamablehttp_client is not None
     try:
         from mcp.types import LATEST_PROTOCOL_VERSION
     except ImportError:
@@ -493,7 +504,7 @@ def _cache_mcp_image_block(block) -> str:
     import base64
 
     data = getattr(block, "data", None)
-    mime_type = getattr(block, "mimeType", None)
+    mime_type = mcp_compat.mcp_field(block, "mime_type")
     normalized_mime = str(mime_type or "").split(";", 1)[0].strip().lower()
     if data is None or not normalized_mime.startswith("image/"):
         return ""
@@ -866,10 +877,15 @@ class SamplingHandler:
                     for block in content_blocks:
                         if hasattr(block, "text"):
                             parts.append({"type": "text", "text": block.text})
-                        elif hasattr(block, "data") and hasattr(block, "mimeType"):
+                        elif hasattr(block, "data") and mcp_compat.mcp_field(block, "mime_type"):
                             parts.append({
                                 "type": "image_url",
-                                "image_url": {"url": f"data:{block.mimeType};base64,{block.data}"},
+                                "image_url": {
+                                    "url": (
+                                        f"data:{mcp_compat.mcp_field(block, 'mime_type')}"
+                                        f";base64,{block.data}"
+                                    )
+                                },
                             })
                         else:
                             logger.warning(
@@ -1042,7 +1058,7 @@ class SamplingHandler:
                         "name": getattr(t, "name", ""),
                         "description": getattr(t, "description", "") or "",
                         "parameters": _normalize_mcp_input_schema(
-                            getattr(t, "inputSchema", None)
+                            mcp_compat.mcp_field(t, "input_schema")
                         ),
                     },
                 }
@@ -1204,33 +1220,44 @@ class MCPServerTask:
                 if isinstance(message, Exception):
                     logger.debug("MCP message handler (%s): exception: %s", self.name, message)
                     return
-                if _MCP_NOTIFICATION_TYPES and isinstance(message, ServerNotification):
-                    match message.root:
-                        case ToolListChangedNotification():
-                            logger.info(
-                                "MCP server '%s': received tools/list_changed notification",
-                                self.name,
-                            )
-                            # Some servers (notably mongodb-mcp-server) emit
-                            # tools/list_changed immediately after initialize,
-                            # while the client may already be executing another
-                            # request. Refreshing synchronously inside the SDK
-                            # notification handler can race with that request
-                            # and wedge the stdio JSON-RPC stream, making all
-                            # subsequent tool calls time out. Do the refresh in
-                            # a separate task and let the handler return
-                            # promptly.
-                            self._schedule_tools_refresh()
-                            # Yield one loop tick so tests and short-lived
-                            # notification contexts can observe the scheduled
-                            # refresh without awaiting the full server RPC.
-                            await asyncio.sleep(0)
-                        case PromptListChangedNotification():
-                            logger.debug("MCP server '%s': prompts/list_changed (ignored)", self.name)
-                        case ResourceListChangedNotification():
-                            logger.debug("MCP server '%s': resources/list_changed (ignored)", self.name)
-                        case _:
-                            pass
+                if not _MCP_NOTIFICATION_TYPES:
+                    return
+                # mcp 1.x wraps the payload in a ``ServerNotification`` root
+                # envelope (the concrete notification lives at ``.root``); 2.x
+                # is a plain discriminated union, so the message itself is the
+                # concrete notification. Unwrap when the envelope is present,
+                # otherwise require the message to be a union member.
+                notification = getattr(message, "root", None)
+                if notification is None:
+                    if not isinstance(message, ServerNotification):
+                        return
+                    notification = message
+                match notification:
+                    case ToolListChangedNotification():
+                        logger.info(
+                            "MCP server '%s': received tools/list_changed notification",
+                            self.name,
+                        )
+                        # Some servers (notably mongodb-mcp-server) emit
+                        # tools/list_changed immediately after initialize,
+                        # while the client may already be executing another
+                        # request. Refreshing synchronously inside the SDK
+                        # notification handler can race with that request
+                        # and wedge the stdio JSON-RPC stream, making all
+                        # subsequent tool calls time out. Do the refresh in
+                        # a separate task and let the handler return
+                        # promptly.
+                        self._schedule_tools_refresh()
+                        # Yield one loop tick so tests and short-lived
+                        # notification contexts can observe the scheduled
+                        # refresh without awaiting the full server RPC.
+                        await asyncio.sleep(0)
+                    case PromptListChangedNotification():
+                        logger.debug("MCP server '%s': prompts/list_changed (ignored)", self.name)
+                    case ResourceListChangedNotification():
+                        logger.debug("MCP server '%s': resources/list_changed (ignored)", self.name)
+                    case _:
+                        pass
             except Exception:
                 logger.exception("Error in MCP message handler for '%s'", self.name)
         return _handler
@@ -1556,8 +1583,9 @@ class MCPServerTask:
                 # them through an httpx_client_factory that wraps the SDK's
                 # defaults (follow_redirects=True) and adds our TLS settings.
                 # The SDK calls the factory with (headers, auth, timeout); we
-                # forward all of those and layer verify/cert on top.
-                import httpx as _httpx_mod
+                # forward all of those and layer verify/cert on top. The client
+                # class must match the SDK's HTTP lib (httpx2 on mcp 2.x).
+                _httpx_mod = _mcp_http_lib or mcp_compat.http_lib()
 
                 _cert_for_factory = client_cert
                 _verify_for_factory = ssl_verify
@@ -1599,11 +1627,12 @@ class MCPServerTask:
             return
 
         if _MCP_NEW_HTTP:
-            # New API (mcp >= 1.24.0): build an explicit httpx.AsyncClient
-            # matching the SDK's own create_mcp_http_client defaults.
-            import httpx
+            # New API (mcp >= 1.24.0): build an explicit HTTP client matching
+            # the SDK's own create_mcp_http_client defaults. The client class
+            # must match the SDK's HTTP lib (httpx2 on mcp 2.x, httpx on 1.x).
+            _httpx2 = _mcp_http_lib or mcp_compat.http_lib()
 
-            _original_url = httpx.URL(url)
+            _original_url = _httpx2.URL(url)
 
             async def _strip_auth_on_cross_origin_redirect(response):
                 """Strip Authorization headers when redirected to a different origin."""
@@ -1617,7 +1646,7 @@ class MCPServerTask:
 
             client_kwargs: dict = {
                 "follow_redirects": True,
-                "timeout": httpx.Timeout(float(connect_timeout), read=300.0),
+                "timeout": _httpx2.Timeout(float(connect_timeout), read=300.0),
                 "verify": ssl_verify,
                 "event_hooks": {"response": [_strip_auth_on_cross_origin_redirect]},
             }
@@ -1630,10 +1659,11 @@ class MCPServerTask:
 
             # Caller owns the client lifecycle — the SDK skips cleanup when
             # http_client is provided, so we wrap in async-with.
-            async with httpx.AsyncClient(**client_kwargs) as http_client:
-                async with streamable_http_client(url, http_client=http_client) as (
-                    read_stream, write_stream, _get_session_id,
-                ):
+            async with _httpx2.AsyncClient(**client_kwargs) as http_client:
+                # mcp 1.24+ yields (read, write, get_session_id); mcp 2.x
+                # dropped the callback and yields (read, write) only.
+                async with streamable_http_client(url, http_client=http_client) as streams:
+                    read_stream, write_stream = streams[0], streams[1]
                     async with ClientSession(read_stream, write_stream, **sampling_kwargs) as session:
                         self.initialize_result = await session.initialize()
                         self.session = session
@@ -1646,7 +1676,8 @@ class MCPServerTask:
                                 "tearing down HTTP session", self.name,
                             )
         else:
-            # Deprecated API (mcp < 1.24.0): manages httpx client internally.
+            # Deprecated API (mcp < 1.24.0): manages the HTTP client internally
+            # and always yields the 3-tuple with a session-id callback.
             _http_kwargs: dict = {
                 "headers": headers,
                 "timeout": float(connect_timeout),
@@ -1978,9 +2009,8 @@ def _get_auth_error_types() -> tuple:
     except ImportError:
         pass
     try:
-        import httpx
-        types.append(httpx.HTTPStatusError)
-    except ImportError:
+        types.append(mcp_compat.http_lib().HTTPStatusError)
+    except Exception:
         pass
     _AUTH_ERROR_TYPES = tuple(types)
     return _AUTH_ERROR_TYPES
@@ -1989,18 +2019,17 @@ def _get_auth_error_types() -> tuple:
 def _is_auth_error(exc: BaseException) -> bool:
     """Return True if ``exc`` indicates an MCP OAuth failure.
 
-    ``httpx.HTTPStatusError`` is only treated as auth-related when the
-    response status code is 401. Other HTTP errors fall through to the
-    generic error path in the tool handlers.
+    An ``HTTPStatusError`` (httpx on mcp 1.x, httpx2 on 2.x) is only treated
+    as auth-related when the response status code is 401. Other HTTP errors
+    fall through to the generic error path in the tool handlers.
     """
     types = _get_auth_error_types()
     if not types or not isinstance(exc, types):
         return False
     try:
-        import httpx
-        if isinstance(exc, httpx.HTTPStatusError):
+        if isinstance(exc, mcp_compat.http_lib().HTTPStatusError):
             return getattr(exc.response, "status_code", None) == 401
-    except ImportError:
+    except Exception:
         pass
     return True
 
@@ -2539,8 +2568,8 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
         async def _call():
             async with server._rpc_lock:
                 result = await server.session.call_tool(tool_name, arguments=args)
-            # MCP CallToolResult has .content (list of content blocks) and .isError
-            if result.isError:
+            # MCP CallToolResult has .content (list of content blocks) and .is_error
+            if mcp_compat.mcp_field(result, "is_error", False):
                 error_text = ""
                 for block in (result.content or []):
                     if hasattr(block, "text"):
@@ -2572,11 +2601,11 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
                     parts.append(image_tag)
             text_result = "\n".join(parts) if parts else ""
 
-            # Combine content + structuredContent when both are present.
-            # MCP spec: content is model-oriented (text), structuredContent
+            # Combine content + structured_content when both are present.
+            # MCP spec: content is model-oriented (text), structured_content
             # is machine-oriented (JSON metadata).  For an AI agent, content
-            # is the primary payload; structuredContent supplements it.
-            structured = getattr(result, "structuredContent", None)
+            # is the primary payload; structured_content supplements it.
+            structured = mcp_compat.mcp_field(result, "structured_content")
             if structured is not None:
                 if text_result:
                     return json.dumps({
@@ -2672,8 +2701,8 @@ def _make_list_resources_handler(server_name: str, tool_timeout: float):
                     entry["name"] = r.name
                 if hasattr(r, "description") and r.description:
                     entry["description"] = r.description
-                if hasattr(r, "mimeType") and r.mimeType:
-                    entry["mimeType"] = r.mimeType
+                if mcp_compat.mcp_field(r, "mime_type"):
+                    entry["mimeType"] = mcp_compat.mcp_field(r, "mime_type")
                 resources.append(entry)
             return json.dumps({"resources": resources}, ensure_ascii=False)
 
@@ -3052,7 +3081,7 @@ def _convert_mcp_schema(server_name: str, mcp_tool) -> dict:
     return {
         "name": prefixed_name,
         "description": mcp_tool.description or f"MCP tool {mcp_tool.name} from {server_name}",
-        "parameters": _normalize_mcp_input_schema(getattr(mcp_tool, "inputSchema", None)),
+        "parameters": _normalize_mcp_input_schema(mcp_compat.mcp_field(mcp_tool, "input_schema")),
     }
 
 

@@ -48,7 +48,10 @@ logger = logging.getLogger("intellect.mcp_serve")
 
 _MCP_SERVER_AVAILABLE = False
 try:
-    from mcp.server.fastmcp import FastMCP
+    # mcp 2.x renamed FastMCP -> MCPServer (mcp.server.mcpserver).
+    from tools.mcp_compat import server_class as _mcp_server_class
+
+    FastMCP = _mcp_server_class()
 
     _MCP_SERVER_AVAILABLE = True
 except ImportError:

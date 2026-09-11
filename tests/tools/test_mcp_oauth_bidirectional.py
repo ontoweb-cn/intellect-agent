@@ -43,7 +43,9 @@ async def test_intellect_provider_forwards_asend_values(tmp_path, monkeypatch):
     ``oauth2.py:505``. With the correct bridge, a 200 response finishes the
     flow cleanly (``StopAsyncIteration``).
     """
-    import httpx
+    from tools.mcp_compat import http_lib
+
+    httpx = http_lib()
     from mcp.shared.auth import OAuthClientMetadata, OAuthToken
     from pydantic import AnyUrl
 
@@ -125,7 +127,9 @@ async def test_intellect_provider_forwards_401_triggers_refresh(tmp_path, monkey
     bridge, the 401 is routed into the SDK's ``response.status_code == 401``
     branch which begins discovery (yielding a metadata-discovery request).
     """
-    import httpx
+    from tools.mcp_compat import http_lib
+
+    httpx = http_lib()
     from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
     from pydantic import AnyUrl
 

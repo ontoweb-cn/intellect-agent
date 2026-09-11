@@ -158,9 +158,13 @@ def test_call_tool_handler_reconnects_on_session_expired(monkeypatch, tmp_path):
         if call_count["n"] == 1:
             raise RuntimeError("Invalid params: Invalid or expired session")
         # Second call: mimic the MCP SDK's structured success response.
+        # Set both spellings: mcp 2.x models expose snake_case, 1.x camelCase,
+        # and MagicMock auto-creates absent attributes.
         result = MagicMock()
+        result.is_error = False
         result.isError = False
         result.content = [MagicMock(type="text", text="tool completed")]
+        result.structured_content = None
         result.structuredContent = None
         return result
 

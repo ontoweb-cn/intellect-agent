@@ -74,10 +74,14 @@ def test_circuit_breaker_half_opens_after_cooldown(monkeypatch, tmp_path):
     async def _call_tool_success(*a, **kw):
         call_count["n"] += 1
         result = MagicMock()
+        # Set both spellings: mcp 2.x models expose snake_case, 1.x camelCase.
+        # MagicMock auto-creates any attribute, so both must be explicit.
+        result.is_error = False
         result.isError = False
         block = MagicMock()
         block.text = "ok"
         result.content = [block]
+        result.structured_content = None
         result.structuredContent = None
         return result
 

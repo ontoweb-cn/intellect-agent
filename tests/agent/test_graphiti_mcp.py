@@ -224,9 +224,19 @@ def test_cli_mcp_start_rejects_invalid_scope(capsys):
 # ---------------------------------------------------------------------------
 
 async def _call_mcp_tool(mcp, name: str, **kwargs) -> str:
-    """Await a tool on the MCP server and extract the text result."""
-    content, _meta = await mcp.call_tool(name, kwargs)
-    return content[0].text
+    """Await a tool on the MCP server and extract the text result.
+
+    The SDK server's ``call_tool`` signature and return shape differ by major
+    version: 1.x takes ``(name, arguments)`` and returns ``(content, meta)``;
+    2.x takes ``(name, arguments, context)`` and returns a ``CallToolResult``.
+    """
+    from tools.mcp_compat import extract_tool_result_text, is_v2
+
+    if is_v2():
+        result = await mcp.call_tool(name, kwargs, None)
+    else:
+        result = await mcp.call_tool(name, kwargs)
+    return extract_tool_result_text(result)
 
 
 @pytest.mark.asyncio

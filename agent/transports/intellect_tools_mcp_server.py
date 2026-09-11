@@ -110,11 +110,15 @@ def _build_server() -> Any:
     so the module can be imported without the mcp package installed
     (we degrade to a clear error only when actually run)."""
     try:
-        from mcp.server.fastmcp import FastMCP
-    except ImportError as exc:  # pragma: no cover - install hint
-        raise ImportError(
-            f"intellect-tools MCP server requires the 'mcp' package: {exc}"
-        ) from exc
+        # mcp 2.x renamed FastMCP -> MCPServer (mcp.server.mcpserver).
+        from mcp.server.mcpserver import MCPServer as FastMCP
+    except ImportError:
+        try:
+            from mcp.server.fastmcp import FastMCP
+        except ImportError as exc:  # pragma: no cover - install hint
+            raise ImportError(
+                f"intellect-tools MCP server requires the 'mcp' package: {exc}"
+            ) from exc
 
     # Discover Intellect tools so dispatch works.
     from model_tools import (

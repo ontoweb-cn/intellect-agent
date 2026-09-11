@@ -15,9 +15,24 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+def _fake_http_lib(async_client_cls):
+    """Stand-in for the SDK's HTTP lib (httpx2 on mcp 2.x, httpx on 1.x).
+
+    ``_run_http`` resolves its client through ``tools.mcp_tool._mcp_http_lib``,
+    so patching that name keeps these tests independent of the installed SDK
+    major version and of which httpx fork it pulls in.
+    """
+    return SimpleNamespace(
+        AsyncClient=async_client_cls,
+        Timeout=lambda *a, **kw: ("timeout", a, kw),
+        URL=lambda url: SimpleNamespace(scheme="https", host="example.com", port=None),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +219,7 @@ class TestHTTPClientCert:
         async def _drive():
             with patch("tools.mcp_tool._MCP_HTTP_AVAILABLE", True), \
                  patch("tools.mcp_tool._MCP_NEW_HTTP", True), \
-                 patch("httpx.AsyncClient", DummyAsyncClient), \
+                 patch("tools.mcp_tool._mcp_http_lib", _fake_http_lib(DummyAsyncClient)), \
                  patch("tools.mcp_tool.streamable_http_client",
                        return_value=DummyTransportCtx()), \
                  patch("tools.mcp_tool.ClientSession", DummySession), \
@@ -265,7 +280,7 @@ class TestHTTPClientCert:
         async def _drive():
             with patch("tools.mcp_tool._MCP_HTTP_AVAILABLE", True), \
                  patch("tools.mcp_tool._MCP_NEW_HTTP", True), \
-                 patch("httpx.AsyncClient", DummyAsyncClient), \
+                 patch("tools.mcp_tool._mcp_http_lib", _fake_http_lib(DummyAsyncClient)), \
                  patch("tools.mcp_tool.streamable_http_client",
                        return_value=DummyTransportCtx()), \
                  patch("tools.mcp_tool.ClientSession", DummySession), \
@@ -322,7 +337,7 @@ class TestHTTPClientCert:
         async def _drive():
             with patch("tools.mcp_tool._MCP_HTTP_AVAILABLE", True), \
                  patch("tools.mcp_tool._MCP_NEW_HTTP", True), \
-                 patch("httpx.AsyncClient", DummyAsyncClient), \
+                 patch("tools.mcp_tool._mcp_http_lib", _fake_http_lib(DummyAsyncClient)), \
                  patch("tools.mcp_tool.streamable_http_client",
                        return_value=DummyTransportCtx()), \
                  patch("tools.mcp_tool.ClientSession", DummySession), \
@@ -437,8 +452,17 @@ class TestSSEClientCert:
         server._auth_type = ""
         server._sampling = None
 
+        captured_client_kwargs: dict = {}
+
+        class DummyAsyncClient:
+            def __init__(self, **kwargs):
+                captured_client_kwargs.update(kwargs)
+
         async def drive():
-            with patch.object(MCPServerTask, "_wait_for_lifecycle_event",
+            # The factory closes over the HTTP lib resolved during _run_http,
+            # so the patch must be active here (not just at factory call time).
+            with patch("tools.mcp_tool._mcp_http_lib", _fake_http_lib(DummyAsyncClient)), \
+                 patch.object(MCPServerTask, "_wait_for_lifecycle_event",
                               new=AsyncMock(return_value="shutdown")), \
                  patch.object(MCPServerTask, "_discover_tools", new=AsyncMock()):
                 try:
@@ -459,16 +483,8 @@ class TestSSEClientCert:
         assert factory is not None, "expected httpx_client_factory to be injected"
 
         # Invoke the factory the way the SDK would; capture the resulting
-        # httpx.AsyncClient kwargs.
-        captured_client_kwargs: dict = {}
-
-        class DummyAsyncClient:
-            def __init__(self, **kwargs):
-                captured_client_kwargs.update(kwargs)
-
-        import httpx
-        with patch.object(httpx, "AsyncClient", DummyAsyncClient):
-            factory(headers={"x": "y"}, timeout=httpx.Timeout(30.0), auth=None)
+        # HTTP-client kwargs.
+        factory(headers={"x": "y"}, timeout=None, auth=None)
 
         assert captured_client_kwargs["cert"] == str(cert)
         assert captured_client_kwargs["verify"] is True
@@ -486,8 +502,15 @@ class TestSSEClientCert:
         server._auth_type = ""
         server._sampling = None
 
+        captured_client_kwargs: dict = {}
+
+        class DummyAsyncClient:
+            def __init__(self, **kwargs):
+                captured_client_kwargs.update(kwargs)
+
         async def drive():
-            with patch.object(MCPServerTask, "_wait_for_lifecycle_event",
+            with patch("tools.mcp_tool._mcp_http_lib", _fake_http_lib(DummyAsyncClient)), \
+                 patch.object(MCPServerTask, "_wait_for_lifecycle_event",
                               new=AsyncMock(return_value="shutdown")), \
                  patch.object(MCPServerTask, "_discover_tools", new=AsyncMock()):
                 try:
@@ -507,15 +530,7 @@ class TestSSEClientCert:
         factory = patch_sse_client.get("httpx_client_factory")
         assert factory is not None
 
-        captured_client_kwargs: dict = {}
-
-        class DummyAsyncClient:
-            def __init__(self, **kwargs):
-                captured_client_kwargs.update(kwargs)
-
-        import httpx
-        with patch.object(httpx, "AsyncClient", DummyAsyncClient):
-            factory(headers=None, timeout=None, auth=None)
+        factory(headers=None, timeout=None, auth=None)
 
         assert captured_client_kwargs["verify"] == str(ca_bundle)
         assert "cert" not in captured_client_kwargs

@@ -34,6 +34,7 @@ from tools.computer_use.backend import (
     ComputerUseBackend,
     UIElement,
 )
+from tools import mcp_compat
 
 logger = logging.getLogger(__name__)
 
@@ -299,8 +300,8 @@ def _extract_tool_result(mcp_result: Any) -> Dict[str, Any]:
     """
     data: Any = None
     images: List[str] = []
-    is_error = bool(getattr(mcp_result, "isError", False))
-    structured: Optional[Dict] = getattr(mcp_result, "structuredContent", None) or None
+    is_error = bool(mcp_compat.mcp_field(mcp_result, "is_error", False))
+    structured: Optional[Dict] = mcp_compat.mcp_field(mcp_result, "structured_content") or None
     text_chunks: List[str] = []
     for part in getattr(mcp_result, "content", []) or []:
         ptype = getattr(part, "type", None)

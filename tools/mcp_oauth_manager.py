@@ -40,6 +40,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from tools import mcp_compat
+
 logger = logging.getLogger(__name__)
 
 
@@ -198,7 +200,9 @@ def _make_intellect_provider_class() -> Optional[type]:
             builders and response handlers so we track whatever the SDK
             version we're pinned to expects.
             """
-            import httpx  # local import: httpx is an MCP SDK dependency
+            # The HTTP client must match the SDK's HTTP lib: the discovery
+            # helpers return/consume httpx2 objects on mcp 2.x, httpx on 1.x.
+            httpx = mcp_compat.http_lib()
             from mcp.client.auth.utils import (
                 build_oauth_authorization_server_metadata_discovery_urls,
                 build_protected_resource_metadata_discovery_urls,
@@ -436,13 +440,21 @@ class MCPOAuthManager:
         _maybe_preregister_client(storage, cfg, client_metadata)
 
         return _intellect_PROVIDER_CLS(
-            server_name=server_name,
-            server_url=entry.server_url,
-            client_metadata=client_metadata,
-            storage=storage,
-            redirect_handler=_redirect_handler,
-            callback_handler=_wait_for_callback,
-            timeout=float(cfg.get("timeout", 300)),
+            **mcp_compat.supported_kwargs(
+                _intellect_PROVIDER_CLS,
+                {
+                    "server_name": server_name,
+                    "server_url": entry.server_url,
+                    "client_metadata": client_metadata,
+                    "storage": storage,
+                    "redirect_handler": _redirect_handler,
+                    "callback_handler": _wait_for_callback,
+                    # mcp 1.x accepted a flow timeout here; 2.x dropped the
+                    # parameter (the flow is bounded by callback_handler's own
+                    # timeout), so supported_kwargs trims it on v2.
+                    "timeout": float(cfg.get("timeout", 300)),
+                },
+            )
         )
 
     def remove(self, server_name: str) -> None:
