@@ -4,6 +4,46 @@ All notable changes to Intellect Agent are documented in per-version release not
 (`RELEASE_vX.Y.Z.md`).  This file provides a high-level index and forward-looking
 roadmap.
 
+## v0.6.9 (2026-09-12)
+
+对外通道补齐 + MCP SDK 2.x 迁移 + 依赖升级清扫。详见 `RELEASE_v0.6.9.md`。
+
+### 对外通道（api_server / ACP）
+
+- **逐回合 model 覆盖 (#126)**: `POST /v1/runs` 接受 `model` 并透传到 agent；
+  run 状态与 202 响应回显**实际使用**的模型。此前状态回显的是请求体里的值而
+  agent 用的是 config 默认值——等于对外报告了一个从未使用的模型。
+- **clarify 交付 (#125)**: 两条通道此前都没有 clarify 交付路径，agent 调用
+  clarify 时用户收不到提问、只能等超时。
+  - api_server: 新增 `clarify.request` run 事件 +
+    `POST /v1/runs/{run_id}/clarify` 端点（与 approval 流程同构）。
+  - ACP: 桥接到 `elicitation/create`——选择题映射为 enum 属性，开放式为自由
+    文本；decline/cancel/超时降级为哨兵而非挂死。
+- **subagent_progress 透出 (#125)**: 两条通道均转发委派子代理的运行中进度摘要，
+  外部集成方不再只见一次长时间静默的 delegate_task 调用。
+- `clarify` 加入 `intellect-api-server` 与 `intellect-acp` 工具集（此前因无交付
+  路径而排除）。
+
+### MCP Python SDK 2.x 迁移
+
+- mcp 1.28.1 → 2.1.1 是破坏性大版本。新增 `tools/mcp_compat.py` 适配层，使集成
+  在 2.x 与 1.x 上均可运行：服务端类改名（`FastMCP` → `MCPServer`）、模型字段
+  camelCase → snake_case、客户端传输改用 httpx2、`streamable_http_client` 改为
+  二元组、`OAuthClientProvider` 移除 `timeout` 参数且回调需返回
+  `AuthorizationCodeResult`。
+- 验证：完整 MCP 测试面在 **2.1.1 与 1.28.1 上结果一致**（744 passed）。
+
+### 依赖与工程
+
+- 合并 13 个 dependabot 分支（pip / npm / GitHub Actions）。
+- **ACP 版本漂移修复**: `tools/lazy_deps.py` 的 `tool.acp` 停在 0.9.0 而
+  `pyproject.toml` 已到 0.12.1——`intellect update` 会把已装的 0.12.1 静默降级
+  回 0.9.0。已同步，并新增 pin 一致性契约测试防止再犯。
+- **docs 构建修复**: `website/sidebars.ts` 缺失逗号导致 `npm run build` 报
+  ParseError、所有部署失败。已修复（本地构建验证通过）。
+- **watchdog 降噪**: skills-index 探针仅在状态变化或上条评论超 24h 时追加，
+  不再每 4 小时一条（此前已累积 474 条）。
+
 ## v0.6.8 (2026-09-08)
 
 phase0 foundations — multiplex supervisor, bot mode, pets, and protocol/ecosystem
@@ -159,6 +199,10 @@ hardening. Detailed milestone notes below.
 
 | Date | Highlights |
 |------|------------|
+| **2026-09-12** | **v0.6.9 — 对外通道补齐 + MCP SDK 2.x 迁移 + 依赖清扫** |
+|                | api_server/ACP: 逐回合 model 覆盖 + 真实回显 (#126), clarify 交付 + subagent_progress 透出 (#125) |
+|                | MCP: 迁移到 SDK 2.x（破坏性大版本）经 tools/mcp_compat.py 双版本适配层, 2.1.1/1.28.1 测试面一致 |
+|                | 工程: 13 个 dependabot 分支合并, ACP pin 漂移修复 + 防漂移契约测试, docs 构建修复, watchdog 降噪 |
 | **2026-09-08** | **v0.6.8 — Multiplex Supervisor + Bot Mode + Pets + 协议加固** |
 |                | Gateway: 单监听前端 + per-profile supervisor 子进程, `/p/<name>/` 路由, WS 鉴权隔离, watchdog 自动重启 |
 |                | Bot Mode: profile→DM bot + roster/liveness, 跨机 DM relay (B2-4), bot-mode 本地优先 |
