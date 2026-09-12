@@ -1,8 +1,14 @@
 # ACP 版本漂移修复 + 0.12.1 迁移计划
 
 日期：2026-09-12
-状态：待实施
+状态：**已实施**（漂移修复 `f4aeb33`；ACP clarify 实现见同目录提交）
 关联：issue #125（ACP clarify 曾以"SDK 不支持 elicitation"为由暂缓——该结论已更正）
+
+> 实施结果：0.9.0 → 0.12.1 漂移已修复（`tool.acp` pin 同步 + 防漂移契约测试）。
+> ACP clarify 已实现：`acp_adapter/clarify.py` 把 `clarify` 工具桥接到
+> ACP `elicitation/create`，`server.py` 在 prompt 循环注入回调，`clarify` 已
+> 加入 `intellect-acp` 工具集。`tests/acp/` + `tests/acp_adapter/` 332 passed
+> （较 304 基线新增 28 条），唯一失败为既有 `test_update_cwd_restores_from_db`。
 
 ---
 

@@ -354,7 +354,7 @@ TOOLSETS = {
     # ==========================================================================
 
     "intellect-acp": {
-        "description": "Editor integration (VS Code, Zed, JetBrains) — coding-focused tools without messaging, audio, or clarify UI",
+        "description": "Editor integration (VS Code, Zed, JetBrains) — coding-focused tools without messaging or audio; clarify is delivered via ACP elicitation",
         "tools": [
             "web_search", "web_extract",
             "terminal", "process",
@@ -368,6 +368,9 @@ TOOLSETS = {
             "todo", "memory",
             "session_search",
             "execute_code", "delegate_task",
+            # Interactive clarifying questions, delivered to the editor via
+            # ACP elicitation/create (acp_adapter/clarify.py).
+            "clarify",
         ],
         "includes": []
     },

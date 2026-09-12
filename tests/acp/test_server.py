@@ -1083,6 +1083,44 @@ class TestPrompt:
         assert state.agent.thinking_callback is None
 
     @pytest.mark.asyncio
+    async def test_prompt_wires_clarify_callback(self, agent):
+        """clarify must be delivered over ACP elicitation, not left unset.
+
+        Without this wiring the tool is registered (toolset includes it) but
+        returns "Clarify tool is not available in this execution context".
+        """
+        new_resp = await agent.new_session(cwd=".")
+        state = agent.session_manager.get_session(new_resp.session_id)
+        state.agent.run_conversation = MagicMock(
+            return_value={"final_response": "ok", "messages": []}
+        )
+
+        mock_conn = MagicMock(spec=acp.Client)
+        mock_conn.session_update = AsyncMock()
+        mock_conn.create_elicitation = AsyncMock()
+        agent._conn = mock_conn
+
+        prompt = [TextContentBlock(type="text", text="hello")]
+        await agent.prompt(prompt=prompt, session_id=new_resp.session_id)
+
+        assert callable(state.agent.clarify_callback)
+
+    @pytest.mark.asyncio
+    async def test_prompt_without_connection_leaves_clarify_unset(self, agent):
+        """No ACP connection → no callback, so the tool degrades cleanly."""
+        new_resp = await agent.new_session(cwd=".")
+        state = agent.session_manager.get_session(new_resp.session_id)
+        state.agent.run_conversation = MagicMock(
+            return_value={"final_response": "ok", "messages": []}
+        )
+        agent._conn = None
+
+        prompt = [TextContentBlock(type="text", text="hello")]
+        await agent.prompt(prompt=prompt, session_id=new_resp.session_id)
+
+        assert state.agent.clarify_callback is None
+
+    @pytest.mark.asyncio
     async def test_prompt_updates_history(self, agent):
         """After a prompt, session history should be updated."""
         new_resp = await agent.new_session(cwd=".")

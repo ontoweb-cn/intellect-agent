@@ -1426,6 +1426,15 @@ class intellectACPAgent(acp.Agent):
 
             approval_cb = make_approval_callback(conn.request_permission, loop, session_id)
             try:
+                from acp_adapter.clarify import make_clarify_callback
+
+                clarify_cb = make_clarify_callback(
+                    conn.create_elicitation, loop, session_id
+                )
+            except Exception:
+                logger.debug("Could not create ACP clarify callback", exc_info=True)
+                clarify_cb = None
+            try:
                 from acp_adapter.edit_approval import make_acp_edit_approval_requester
 
                 edit_approval_requester = make_acp_edit_approval_requester(
@@ -1442,6 +1451,7 @@ class intellectACPAgent(acp.Agent):
             step_cb = None
             stream_delta_cb = None
             approval_cb = None
+            clarify_cb = None
 
         agent = state.agent
         agent.tool_progress_callback = tool_progress_cb
@@ -1452,6 +1462,9 @@ class intellectACPAgent(acp.Agent):
         agent.reasoning_callback = reasoning_cb
         agent.step_callback = step_cb
         agent.stream_delta_callback = stream_delta_cb
+        # clarify is delivered through ACP elicitation/create; without this the
+        # tool is registered but returns "not available in this context".
+        agent.clarify_callback = clarify_cb
 
         # Approval callback is per-thread (thread-local, GHSA-qg5c-hvr5-hjgr).
         # Set it INSIDE _run_agent so the TLS write happens in the executor
