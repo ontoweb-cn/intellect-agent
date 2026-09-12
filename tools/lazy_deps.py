@@ -167,8 +167,12 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "skill.youtube": ("youtube-transcript-api==1.2.4",),
 
     # ─── Tools ─────────────────────────────────────────────────────────────
-    # ACP adapter (VS Code / Zed / JetBrains integration)
-    "tool.acp": ("agent-client-protocol==0.9.0",),
+    # ACP adapter (VS Code / Zed / JetBrains integration).
+    # Must track the `acp` extra in pyproject.toml — a dependabot bump that
+    # touched only pyproject.toml left this at 0.9.0, so `intellect update`
+    # would downgrade an installed 0.12.1 back to it (the ACP adapter needs
+    # 0.12.1 for elicitation). See docs/plans/2026-09-12-acp-version-drift-fix.md.
+    "tool.acp": ("agent-client-protocol==0.12.1",),
 }
 
 

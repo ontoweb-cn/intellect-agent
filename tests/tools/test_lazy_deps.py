@@ -404,3 +404,136 @@ class TestRefreshActiveFeatures:
         result = ld.refresh_active_features()
         assert result["a.ok"] == "current"
         assert result["b.fail"].startswith("failed:")
+
+
+# ---------------------------------------------------------------------------
+# Pin parity with pyproject.toml extras
+# ---------------------------------------------------------------------------
+#
+# tools/lazy_deps.py states the contract: "When bumping, update both this map
+# AND the corresponding extra in pyproject.toml." A dependabot bump once
+# touched only pyproject.toml (agent-client-protocol 0.9.0 -> 0.12.1), leaving
+# LAZY_DEPS stale — so `intellect update` would DOWNGRADE an installed 0.12.1
+# back to 0.9.0, silently breaking the ACP adapter's elicitation support.
+#
+# These tests assert the *relationship* (same package -> same pin), not any
+# specific version, so routine dependency bumps don't break them. That keeps
+# them from being change-detector tests while still catching a one-sided bump.
+
+
+def _parse_pins(specs) -> dict[str,str]:
+    """Extract {package: exact-version} from requirement specs."""
+    import re
+    out: dict[str, str] = {}
+    for spec in specs:
+        for pkg, ver in re.findall(
+            r"([A-Za-z0-9_.\-]+)==([0-9][0-9A-Za-z.\-]*)", str(spec)
+        ):
+            out[pkg.lower()] = ver
+    return out
+
+
+def _lazy_pins() -> dict[str, set[str]]:
+    out: dict[str, set[str]] = {}
+    for specs in ld.LAZY_DEPS.values():
+        for pkg, ver in _parse_pins(specs).items():
+            out.setdefault(pkg, set()).add(ver)
+    return out
+
+
+def _extra_pins() -> dict[str, set[str]]:
+    import tomllib
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    with pyproject.open("rb") as handle:
+        data = tomllib.load(handle)
+    extras = data.get("project", {}).get("optional-dependencies", {})
+    out: dict[str, set[str]] = {}
+    for specs in extras.values():
+        for pkg, ver in _parse_pins(specs).items():
+            out.setdefault(pkg, set()).add(ver)
+    return out
+
+
+# Packages known to be drifted as of 2026-09-12 (pre-existing debt, found while
+# fixing the ACP case). These are reported but not enforced yet; the list should
+# only ever shrink. New conflicts NOT in this set fail the test below.
+_KNOWN_DRIFTED = {
+    "aiohttp",
+    "aiohttp-socks",
+    "alibabacloud-dingtalk",
+    "anthropic",
+    "boto3",
+    "brotlicffi",
+    "daytona",
+    "edge-tts",
+    "elevenlabs",
+    "exa-py",
+    "fal-client",
+    "firecrawl-py",
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
+    "hindsight-client",
+    "honcho-ai",
+    "lark-oapi",
+    "markdown",
+    "mistralai",
+    "modal",
+    "numpy",
+    "slack-bolt",
+    "slack-sdk",
+    "sounddevice",
+}
+
+
+def _conflicting_packages() -> dict[str, tuple[set[str], set[str]]]:
+    lazy, extra = _lazy_pins(), _extra_pins()
+    conflicts: dict[str, tuple[set[str], set[str]]] = {}
+    for pkg in sorted(set(lazy) & set(extra)):
+        if lazy[pkg] != extra[pkg]:
+            conflicts[pkg] = (lazy[pkg], extra[pkg])
+    return conflicts
+
+
+class TestPinParityWithPyproject:
+    def test_acp_pin_matches_pyproject_extra(self):
+        """The ACP adapter needs the version declared in the `acp` extra.
+
+        Regression guard for the drift that let LAZY_DEPS downgrade an
+        installed 0.12.1 back to 0.9.0.
+        """
+        assert ld.LAZY_DEPS["tool.acp"] == ("agent-client-protocol==0.12.1",)
+
+    def test_no_new_pin_conflicts_beyond_known_drift(self):
+        """Any *new* lazy_deps <-> pyproject pin conflict fails this test.
+
+        Pre-existing conflicts are listed in _KNOWN_DRIFTED; this only fires
+        when a bump touches one side without the other (the ACP failure mode).
+        """
+        conflicts = _conflicting_packages()
+        unexpected = sorted(set(conflicts) - _KNOWN_DRIFTED)
+        detail = {
+            pkg: {"lazy_deps": sorted(conflicts[pkg][0]),
+                  "pyproject": sorted(conflicts[pkg][1])}
+            for pkg in unexpected
+        }
+        assert not unexpected, (
+            f"New lazy_deps/pyproject pin conflict(s): {detail}. "
+            "Update BOTH tools/lazy_deps.py and the matching extra in "
+            "pyproject.toml (or add to _KNOWN_DRIFTED with a reason)."
+        )
+
+    def test_known_drift_list_only_shrinks(self):
+        """Guard against the exemption list quietly growing.
+
+        Every entry must be a real conflict — if a package was fixed, it should
+        be removed from _KNOWN_DRIFTED (this fails loudly so it gets cleaned up).
+        """
+        conflicts = _conflicting_packages()
+        stale = sorted(_KNOWN_DRIFTED - set(conflicts))
+        assert not stale, (
+            f"_KNOWN_DRIFTED lists packages that no longer conflict: {stale}. "
+            "Remove them from the exemption set."
+        )
