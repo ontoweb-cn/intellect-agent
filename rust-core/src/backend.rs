@@ -347,7 +347,7 @@ impl SQLiteBackend {
         &self,
         py: Python<'_>,
         sql: &str,
-        params: Option<Vec<PyObject>>,
+        params: Option<Vec<Py<PyAny>>>,
     ) -> PyResult<usize> {
         let mut last_err: Option<PyErr> = None;
 
@@ -407,13 +407,13 @@ impl SQLiteBackend {
         &self,
         py: Python<'_>,
         sql: &str,
-        params: Vec<PyObject>,
-    ) -> PyResult<Vec<PyObject>> {
+        params: Vec<Py<PyAny>>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let conn = match self.conn.lock() {
             Ok(c) => c,
             Err(e) => {
                 // Log but don't crash — search is best-effort
-                let py_warn = pyo3::types::PyModule::import_bound(py, "logging")
+                let py_warn = pyo3::types::PyModule::import(py, "logging")
                     .and_then(|m| m.call_method1("getLogger", ("intellect_community_core",)));
                 if let Ok(logger) = py_warn {
                     let _ = logger.call_method1("warning", (format!("search_fts5 mutex poison: {:?}", e),));
@@ -426,7 +426,7 @@ impl SQLiteBackend {
             Ok(s) => s,
             Err(e) => {
                 if !e.to_string().contains("locked") && !e.to_string().contains("busy") {
-                    let py_warn = pyo3::types::PyModule::import_bound(py, "logging")
+                    let py_warn = pyo3::types::PyModule::import(py, "logging")
                         .and_then(|m| m.call_method1("getLogger", ("intellect_community_core",)));
                     if let Ok(logger) = py_warn {
                         let _ = logger.call_method1("warning", (format!("search_fts5 prepare error: {:?}", e),));
@@ -465,7 +465,7 @@ impl SQLiteBackend {
         let mut results = Vec::new();
         for row in rows {
             if let Ok(fields) = row {
-                let dict = pyo3::types::PyDict::new_bound(py);
+                let dict = pyo3::types::PyDict::new(py);
                 for (col, val) in &fields {
                     let py_val = val_to_py(val, py);
                     let _ = dict.set_item(col.as_str(), py_val);
@@ -482,7 +482,7 @@ impl SQLiteBackend {
         &self,
         py: Python<'_>,
         match_ids: Vec<i64>,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<Py<PyAny>>> {
         if match_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -548,12 +548,12 @@ impl SQLiteBackend {
 
         let mut results = Vec::with_capacity(match_ids.len());
         for id in &match_ids {
-            let mut context: Vec<PyObject> = Vec::new();
+            let mut context: Vec<Py<PyAny>> = Vec::new();
 
             // before — skip if empty (no preceding message)
             if let Some((role, content)) = before_map.get(id) {
                 if !role.is_empty() || !content.is_empty() {
-                    let d = pyo3::types::PyDict::new_bound(py);
+                    let d = pyo3::types::PyDict::new(py);
                     let _ = d.set_item("role", role.as_str());
                     let _ = d.set_item("content", truncate_content(content));
                     context.push(d.into());
@@ -562,7 +562,7 @@ impl SQLiteBackend {
 
             // self
             if let Some((role, content)) = self_map.get(id) {
-                let d = pyo3::types::PyDict::new_bound(py);
+                let d = pyo3::types::PyDict::new(py);
                 let _ = d.set_item("role", role.as_str());
                 let _ = d.set_item("content", truncate_content(content));
                 context.push(d.into());
@@ -571,15 +571,16 @@ impl SQLiteBackend {
             // after — skip if empty (no following message)
             if let Some((role, content)) = after_map.get(id) {
                 if !role.is_empty() || !content.is_empty() {
-                    let d = pyo3::types::PyDict::new_bound(py);
+                    let d = pyo3::types::PyDict::new(py);
                     let _ = d.set_item("role", role.as_str());
                     let _ = d.set_item("content", truncate_content(content));
                     context.push(d.into());
                 }
             }
 
+            // `PyList::new` returns a `PyResult` as of pyo3 0.23.
             results.push(
-                pyo3::types::PyList::new_bound(py, &context).into(),
+                pyo3::types::PyList::new(py, &context)?.into_any().unbind(),
             );
         }
 
@@ -595,12 +596,12 @@ impl SQLiteBackend {
     /// callback so the callback can call conn.execute() (which re-acquires
     /// the Mutex momentarily).  The GIL ensures only one thread runs
     /// Python code at a time.
-    fn execute_write(&self, py: Python<'_>, callback: PyObject) -> PyResult<PyObject> {
+    fn execute_write(&self, py: Python<'_>, callback: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let py_conn = RustConnection::from_arc(Arc::clone(&self.conn));
         let mut last_err: Option<PyErr> = None;
 
         for attempt in 0..WRITE_MAX_RETRIES {
-            let result = (|| -> PyResult<PyObject> {
+            let result = (|| -> PyResult<Py<PyAny>> {
                 // Acquire lock, begin transaction
                 {
                     let conn = self.conn.lock().unwrap();
@@ -745,7 +746,7 @@ impl SQLiteBackend {
         &self,
         py: Python<'_>,
         session_id: &str,
-    ) -> PyResult<Option<PyObject>> {
+    ) -> PyResult<Option<Py<PyAny>>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, source, started_at, ended_at, end_reason, \
@@ -755,7 +756,7 @@ impl SQLiteBackend {
         ).map_err(_map_rusqlite_err)?;
 
         let result = stmt.query_row(rusqlite::params![session_id], |row| {
-            let dict = pyo3::types::PyDict::new_bound(py);
+            let dict = pyo3::types::PyDict::new(py);
             let _ = dict.set_item("id", row.get::<_, String>(0).unwrap_or_default());
             let _ = dict.set_item("source", row.get::<_, String>(1).unwrap_or_default());
             let _ = dict.set_item("started_at", row.get::<_, Option<f64>>(2).unwrap_or(None));
@@ -785,7 +786,7 @@ impl SQLiteBackend {
         limit: i64,
         offset: i64,
         active_only: bool,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let conn = self.conn.lock().unwrap();
 
         let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = {
@@ -823,7 +824,7 @@ impl SQLiteBackend {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
         let rows = stmt.query_map(rusqlite::params_from_iter(param_refs), |row| {
-            let dict = pyo3::types::PyDict::new_bound(py);
+            let dict = pyo3::types::PyDict::new(py);
             let _ = dict.set_item("id", row.get::<_, String>(0).unwrap_or_default());
             let _ = dict.set_item("source", row.get::<_, String>(1).unwrap_or_default());
             let _ = dict.set_item("started_at", row.get::<_, Option<f64>>(2).unwrap_or(None));
@@ -853,7 +854,7 @@ impl SQLiteBackend {
         limit: i64,
         offset: i64,
         role: Option<&str>,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let conn = self.conn.lock().unwrap();
 
         let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = {
@@ -886,7 +887,7 @@ impl SQLiteBackend {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
         let rows = stmt.query_map(rusqlite::params_from_iter(param_refs), |row| {
-            let dict = pyo3::types::PyDict::new_bound(py);
+            let dict = pyo3::types::PyDict::new(py);
             let _ = dict.set_item("id", row.get::<_, i64>(0).unwrap_or(0));
             let _ = dict.set_item("role", row.get::<_, String>(1).unwrap_or_default());
             let _ = dict.set_item("content", row.get::<_, Option<String>>(2).unwrap_or(None));
@@ -947,8 +948,8 @@ impl SQLiteBackend {
         &self,
         py: Python<'_>,
         sql: &str,
-        params: Option<Vec<PyObject>>,
-    ) -> PyResult<Vec<PyObject>> {
+        params: Option<Vec<Py<PyAny>>>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = match conn.prepare(sql) {
             Ok(s) => s,
@@ -966,7 +967,7 @@ impl SQLiteBackend {
         let rows = stmt.query_map(
             rusqlite::params_from_iter(sql_params.iter()),
             |row| {
-                let dict = pyo3::types::PyDict::new_bound(py);
+                let dict = pyo3::types::PyDict::new(py);
                 for (i, col) in columns.iter().enumerate() {
                     let val = crate::connection::SqlValue::from_row(row, i).ok();
                     if let Some(v) = val {
@@ -1005,7 +1006,7 @@ impl SQLiteBackend {
         limit: i64,
         offset: i64,
         sort: Option<&str>,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let conn = self.conn.lock().unwrap();
 
         // Build ORDER BY
@@ -1070,7 +1071,7 @@ impl SQLiteBackend {
         let rows = match stmt.query_map(
             rusqlite::params_from_iter(param_refs),
             |row| {
-                let dict = pyo3::types::PyDict::new_bound(py);
+                let dict = pyo3::types::PyDict::new(py);
                 for (i, col) in columns.iter().enumerate() {
                     let val = crate::connection::SqlValue::from_row(row, i).ok();
                     if let Some(v) = val {
@@ -1108,7 +1109,7 @@ impl SQLiteBackend {
         limit: i64,
         offset: i64,
         member_id: Option<&str>,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let conn = self.conn.lock().unwrap();
 
         let mut where_parts = Vec::new();
@@ -1180,7 +1181,7 @@ impl SQLiteBackend {
         let rows = match stmt.query_map(
             rusqlite::params_from_iter(param_refs),
             |row| {
-                let dict = pyo3::types::PyDict::new_bound(py);
+                let dict = pyo3::types::PyDict::new(py);
                 for (i, col) in columns.iter().enumerate() {
                     let val = crate::connection::SqlValue::from_row(row, i).ok();
                     if let Some(v) = val {

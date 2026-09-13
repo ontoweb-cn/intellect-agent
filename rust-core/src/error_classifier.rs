@@ -11,7 +11,7 @@ use pyo3::types::PyDict;
 // Bound<PyAny>::get_item also returns PyResult<Option<Bound<'py, PyAny>>>
 
 fn try_get_dict<'py>(d: &Bound<'py, PyAny>, key: &str) -> Option<Bound<'py, PyDict>> {
-    d.get_item(key).ok().and_then(|v| v.downcast::<PyDict>().ok().cloned())
+    d.get_item(key).ok().and_then(|v| v.cast::<PyDict>().ok().cloned())
 }
 
 fn try_get_str(d: &Bound<'_, PyAny>, key: &str) -> Option<String> {
@@ -24,7 +24,11 @@ fn try_get_i64(d: &Bound<'_, PyAny>, key: &str) -> Option<i64> {
 
 // ── FailoverReason ────────────────────────────────────────────────────────
 
-#[pyclass(name = "FailoverReason")]
+// `skip_from_py_object`: this type is only ever handed *to* Python (returned
+// from `classify_api_error_rs`, held as `Py<FailoverReason>`), never extracted
+// from it — `__eq__` goes through `PyRef`, which doesn't need the impl.
+// pyo3 0.29 deprecates the implicit `FromPyObject` derive on `Clone` pyclasses.
+#[pyclass(name = "FailoverReason", skip_from_py_object)]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct FailoverReason {
     #[pyo3(get)]
@@ -89,8 +93,11 @@ impl FailoverReason {
 
 // ── ClassifiedError ───────────────────────────────────────────────────────
 
+// No `#[derive(Clone)]` here on purpose.  This struct is never cloned (nothing
+// in the crate calls `.clone()` on a `ClassifiedError`), and in pyo3 0.22+
+// `Clone` for `Py<T>` is behind the `py-clone` feature — deriving it would
+// force that feature on for no reason.
 #[pyclass(name = "ClassifiedError")]
-#[derive(Clone)]
 pub struct ClassifiedError {
     #[pyo3(get)] pub reason: Py<FailoverReason>,
     #[pyo3(get)] pub status_code: Option<i32>,
@@ -133,7 +140,7 @@ impl ClassifiedError {
 
     #[getter]
     fn is_auth(&self) -> bool {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let reason = self.reason.bind(py);
             let val: String = reason.getattr("value").ok().and_then(|v| v.extract().ok()).unwrap_or_default();
             val == "auth" || val == "auth_permanent"
@@ -141,7 +148,7 @@ impl ClassifiedError {
     }
 
     fn __repr__(&self) -> String {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let r = self.reason.bind(py).repr().ok().map(|v| v.to_string()).unwrap_or_default();
             format!("ClassifiedError(reason={r}, status={:?})", self.status_code)
         })
@@ -283,13 +290,13 @@ fn extract_status_code(error: &Bound<'_, PyAny>) -> Option<i32> {
 
 fn extract_error_body(error: &Bound<'_, PyAny>) -> Option<Py<PyDict>> {
     if let Ok(body) = error.getattr("body") {
-        if let Ok(dict) = body.downcast::<PyDict>() {
+        if let Ok(dict) = body.cast::<PyDict>() {
             return Some(dict.clone().unbind());
         }
     }
     if let Ok(response) = error.getattr("response") {
         if let Ok(json) = response.call_method0("json") {
-            if let Ok(dict) = json.downcast::<PyDict>() {
+            if let Ok(dict) = json.cast::<PyDict>() {
                 return Some(dict.clone().unbind());
             }
         }
@@ -350,7 +357,7 @@ fn extract_error_code(py: Python<'_>, body_dict: Option<&Bound<'_, PyDict>>) -> 
         // Peek inside error.message for nested JSON
         if let Some(msg) = try_get_str(&err_obj, "message") {
             if msg.trim().starts_with('{') {
-                if let Ok(json_mod) = py.import_bound("json") {
+                if let Ok(json_mod) = py.import("json") {
                     if let Ok(inner) = json_mod.call_method1("loads", (msg.trim(),)) {
                         if let Some(inner_err) = try_get_dict(&inner, "error") {
                             if let Some(c) = try_get_str(&inner_err, "code") {
@@ -391,7 +398,7 @@ fn extract_metadata_msg(py: Python<'_>, err_dict: &Bound<'_, PyAny>) -> String {
     };
     let trimmed = raw.trim();
     if trimmed.is_empty() { return String::new(); }
-    if let Ok(json_mod) = py.import_bound("json") {
+    if let Ok(json_mod) = py.import("json") {
         if let Ok(inner) = json_mod.call_method1("loads", (trimmed,)) {
             if let Some(inner_err) = try_get_dict(&inner, "error") {
                 if let Some(msg) = try_get_str(&inner_err, "message") {
@@ -552,7 +559,7 @@ pub fn classify_api_error_rs(
     let body_py = extract_error_body(error);
 
     // Pre-compute in GIL context
-    let (error_code, error_msg, message_str, body_msg) = Python::with_gil(|py| {
+    let (error_code, error_msg, message_str, body_msg) = Python::attach(|py| {
         let body_bound = body_py.as_ref().map(|b| b.bind(py).clone());
         let body_ref = body_bound.as_ref();
 

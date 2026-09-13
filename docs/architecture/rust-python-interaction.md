@@ -26,7 +26,7 @@ Intellect Agent 是一个 **Python 为主进程、Rust 为性能/安全核心** 
 | **当前版本** | `0.6.9` (`pyproject.toml`) | `0.6.9` (`rust-core/Cargo.toml`) |
 | **版本是否绑定** | **是（发布对齐）** — Python 与 Rust crate 版本号同步发布；逻辑耦合仍通过 API 契约 |
 | **Python 模块名** | — | `intellect_community_core` (编译产物 `.so`/`.pyd`) |
-| **Python 版本要求** | `>=3.12` | 由 PyO3 0.21 决定，CI 中在 3.11/3.12 上测试 |
+| **Python 版本要求** | `>=3.12` | PyO3 0.29 自身下限是 CPython 3.8；本项目在 `pyproject.toml` 里收紧到 3.12 |
 | **构建方式** | `pip install -e .` / `uv sync` | **单独** `maturin develop --release` |
 | **pip 是否自动编译 Rust** | **否** — setuptools 只装 Python 包 |
 
@@ -66,7 +66,7 @@ intellect-agent 0.6.x          intellect-community-core 0.6.x
 flowchart LR
     subgraph Build["构建阶段"]
         Cargo["rust-core/Cargo.toml\nintellect-community-core 0.6.9"]
-        PyO3["PyO3 0.21\nextension-module"]
+        PyO3["PyO3 0.29\nextension-module"]
         Maturin["maturin develop/build\n(pyproject [tool.maturin])"]
         SO["intellect_community_core.so"]
     end
@@ -490,12 +490,12 @@ timeline
 4. **读写模式**：
    - `intellect_state.py` 中 `SESSIONDB_USE_RUST_RW = 1`（**当前默认**）—— 全部读写走 Rust rusqlite（独立读连接，WAL 模式）
    - 设为 `0` 回退 Python sqlite3；`agent/storage/sqlite_backend.py` 会读这个常量决定分流
-   - 注：该常量上方的注释块仍写着 "0 = ...（safe default）"，与赋值不符，属注释漂移
+   - 注：该常量上方的注释块曾写着 "0 = ...（safe default）"，与赋值不符（注释漂移），已于 commit a890e82 修正
 
 ### Rust 依赖（Cargo.toml）
 
 ```toml
-pyo3 = "0.21"            # Python bindings（default feature: extension-module）
+pyo3 = "0.29"            # Python bindings（default feature: extension-module；下限 CPython 3.8 / Rust 1.83）
 rusqlite = "0.31"        # SQLite (bundled, FTS5 included)
 regex = "1"              # 命令安全正则
 serde + serde_json = "1" # 序列化

@@ -31,11 +31,13 @@ fn apply_cache_marker_to_msg(msg: &Bound<'_, PyDict>, marker: &Bound<'_, PyDict>
     if let Some(c) = &content {
         if let Ok(text) = c.extract::<String>() {
             let py = msg.py();
-            let text_part = PyDict::new_bound(py);
+            let text_part = PyDict::new(py);
             text_part.set_item("type", "text")?;
             text_part.set_item("text", text)?;
             text_part.set_item("cache_control", marker)?;
-            let parts = PyList::new_bound(py, [text_part]);
+            // `PyList::new` became fallible in pyo3 0.23 (element conversion
+            // can now fail); with a `Bound<PyDict>` element it cannot.
+            let parts = PyList::new(py, [text_part])?;
             msg.set_item("content", parts)?;
             return Ok(());
         }
@@ -43,11 +45,11 @@ fn apply_cache_marker_to_msg(msg: &Bound<'_, PyDict>, marker: &Bound<'_, PyDict>
 
     // List content → add marker to last element
     if let Some(c) = &content {
-        if let Ok(list) = c.downcast::<PyList>() {
+        if let Ok(list) = c.cast::<PyList>() {
             let len = list.len();
             if len > 0 {
                 if let Ok(last) = list.get_item(len - 1) {
-                    if let Ok(last_dict) = last.downcast::<PyDict>() {
+                    if let Ok(last_dict) = last.cast::<PyDict>() {
                         last_dict.set_item("cache_control", marker)?;
                     }
                 }
@@ -68,17 +70,17 @@ pub fn apply_anthropic_cache_control_rs(
     let py = api_messages.py();
 
     // Build the cache marker
-    let marker = PyDict::new_bound(py);
+    let marker = PyDict::new(py);
     marker.set_item("type", "ephemeral")?;
     if cache_ttl == "1h" {
         marker.set_item("ttl", "1h")?;
     }
 
     // Deep copy via Python's copy.deepcopy
-    let copy_mod = py.import_bound("copy")?;
+    let copy_mod = py.import("copy")?;
     let messages: Bound<'_, PyList> = copy_mod
         .call_method1("deepcopy", (api_messages,))?
-        .downcast_into::<PyList>()?;
+        .cast_into::<PyList>()?;
     let len = messages.len();
     if len == 0 {
         return Ok(messages.unbind());
@@ -88,7 +90,7 @@ pub fn apply_anthropic_cache_control_rs(
 
     // System message gets first breakpoint
     if let Ok(first) = messages.get_item(0) {
-        if let Ok(first_dict) = first.downcast::<PyDict>() {
+        if let Ok(first_dict) = first.cast::<PyDict>() {
             let role: String = first_dict.get_item("role")?
                 .and_then(|v| v.extract().ok())
                 .unwrap_or_default();
@@ -105,7 +107,7 @@ pub fn apply_anthropic_cache_control_rs(
         let mut non_sys: Vec<usize> = Vec::new();
         for i in 0..len {
             if let Ok(msg) = messages.get_item(i) {
-                if let Ok(d) = msg.downcast::<PyDict>() {
+                if let Ok(d) = msg.cast::<PyDict>() {
                     let role: String = d.get_item("role")?
                         .and_then(|v| v.extract().ok())
                         .unwrap_or_default();
@@ -118,7 +120,7 @@ pub fn apply_anthropic_cache_control_rs(
         let start = non_sys.len().saturating_sub(remaining);
         for &idx in &non_sys[start..] {
             if let Ok(msg) = messages.get_item(idx) {
-                if let Ok(d) = msg.downcast::<PyDict>() {
+                if let Ok(d) = msg.cast::<PyDict>() {
                     apply_cache_marker_to_msg(&d, &marker, native_anthropic)?;
                 }
             }

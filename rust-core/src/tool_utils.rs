@@ -83,7 +83,7 @@ pub fn paths_overlap_rs(a: &str, b: &str) -> bool {
 #[pyfunction]
 pub fn canonical_tool_args_rs(name: &str, args: &Bound<'_, PyAny>) -> PyResult<String> {
     let py = args.py();
-    let json_mod = py.import_bound("json")?;
+    let json_mod = py.import("json")?;
     let dumped: String = json_mod
         .call_method1("dumps", (args,))?
         .extract()?;

@@ -67,7 +67,11 @@ pub fn insert_verification_evidence(
     }
 }
 
+// pyo3 0.22+ no longer infers a `None` default for trailing `Option<T>`
+// parameters; the keyword-only defaults have to be spelled out.  All four
+// remain optional in Python, as they were on 0.21.
 #[pyfunction]
+#[pyo3(signature = (db_path, session_id=None, kind=None, limit=None))]
 pub fn query_verification_evidence(
     db_path: &str,
     session_id: Option<&str>,

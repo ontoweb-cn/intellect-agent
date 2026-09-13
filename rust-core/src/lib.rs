@@ -27,7 +27,10 @@ pub mod verification;
 use pyo3::prelude::*;
 
 /// Python module: `import intellect_community_core`
-#[pymodule]
+// `gil_used = true` because this extension assumes the GIL is held: it uses
+// `Python::attach`, `Bound<'_, PyAny>` and interior mutability that is not
+// free-threaded-safe.  pyo3 0.28+ makes modules declare this explicitly.
+#[pymodule(gil_used = true)]
 fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── Build identity (P0-1 binding handshake) ─────────────────────────
     // Lets the Python wrapper detect a stale/missing extension build: the

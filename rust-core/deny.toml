@@ -1,19 +1,33 @@
 # cargo-deny configuration for supply chain security.
 # Run locally: cargo deny check
 # CI: .github/workflows/rust-ci.yml + .gitee/workflows/rust-ci.yml
+#
+# Schema target: cargo-deny 0.16+ (CI installs the latest release via
+# `cargo install cargo-deny --locked`).
+#
+# This file previously used the pre-0.16 schema, which current cargo-deny
+# cannot even deserialize — it aborts with `error[unexpected-value]` on
+# `unmaintained` before running any check. What changed:
+#   * `unmaintained` is now a *scope* selector, not a lint level:
+#     "all" | "workspace" | "transitive" | "none".
+#   * `vulnerability`, `yanked` and `notice` were removed — vulnerabilities
+#     and yanked crates are unconditionally denied now.
+#   * `licenses.unlicensed`, `licenses.copyleft` and `licenses.default` were
+#     removed; unlisted licenses are denied by default.
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "deny"
-notice = "warn"
+# "all" rather than "workspace": the old `unmaintained = "warn"` reported
+# unmaintained crates wherever they appeared in the graph, including
+# transitive deps.  "workspace" would only check this crate itself.
+unmaintained = "all"
 ignore = []
 
 [licenses]
-unlicensed = "deny"
 allow = [
     "MIT",
     "Apache-2.0",
+    # required by target-lexicon, a build dependency of pyo3-build-config
+    "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
@@ -22,10 +36,6 @@ allow = [
     "Unlicense",
     "Zlib",
 ]
-copyleft = "deny"
-default = "deny"
 
 [bans]
 multiple-versions = "warn"
-deny = []
-skip = []
