@@ -1,12 +1,12 @@
-"""Container-boot reconciliation of per-profile gateway s6 services.
+"""Container-boot reconciliation of per-agent gateway s6 services.
 
 Service directories under /run/service/ live on **tmpfs** and are wiped
-on every container restart. Profile directories under
-``$INTELLECT_HOME/profiles/<name>/`` live on the persistent VOLUME, and
-each one records its gateway's last state in ``gateway_state.json``.
-This module bridges the two: on every container boot, walk the
-persistent profiles, recreate the s6 service slots, and auto-start
-only those whose last recorded state was ``running``.
+on every container restart. Agent directories under
+``$INTELLECT_HOME/agents/<name>/`` (legacy ``profiles/<name>/``) live on
+the persistent VOLUME, and each one records its gateway's last state in
+``gateway_state.json``. This module bridges the two: on every container
+boot, walk the persistent agents, recreate the s6 service slots, and
+auto-start only those whose last recorded state was ``running``.
 
 Wired into the image as /etc/cont-init.d/02-reconcile-profiles by the
 Dockerfile (Phase 4 Task 4.0). Runs as root after 01-intellect-setup
@@ -14,8 +14,8 @@ Dockerfile (Phase 4 Task 4.0). Runs as root after 01-intellect-setup
 before s6-rc starts user services.
 
 Without this module, every ``docker restart`` would silently wipe
-every per-profile gateway, even though the user's profiles still
-exist on disk.
+every per-agent gateway, even though the user's agents still exist on
+disk.
 """
 from __future__ import annotations
 
@@ -105,29 +105,35 @@ def reconcile_profile_gateways(
         action="started" if default_should_start else "registered",
     ))
 
-    profiles_root = intellect_home / "profiles"
-    if profiles_root.is_dir():
-        for entry in sorted(profiles_root.iterdir()):
+    profiles_root = intellect_home / "agents"
+    legacy_root = intellect_home / "profiles"
+    seen: set[str] = set()
+    for container in (profiles_root, legacy_root):
+        if not container.is_dir():
+            continue
+        for entry in sorted(container.iterdir()):
             if not entry.is_dir():
                 continue
-            # SOUL.md is always seeded by `intellect profile create` (config.yaml
+            # SOUL.md is always seeded by `intellect agent create` (config.yaml
             # is not — that comes later via `intellect setup`). Use it as the
-            # "real profile" marker so stray dirs (backups, manual mkdir)
+            # "real agent" marker so stray dirs (backups, manual mkdir)
             # aren't picked up.
             if not (entry / "SOUL.md").exists():
                 continue
             # The "default" service name is reserved for the root
-            # profile (above) — if a user has somehow created a
-            # ``profiles/default/`` directory, skip it to avoid the
-            # slot collision. Their gateway would still be reachable
-            # via ``intellect -p default-named gateway start`` if they
-            # rename the directory; we don't try to disambiguate here.
+            # agent (above) — if a user has somehow created an
+            # ``agents/default/`` (or legacy ``profiles/default/``) directory,
+            # skip it to avoid the slot collision.
             if entry.name == "default":
                 log.warning(
-                    "profiles/default/ exists — skipping to avoid colliding "
-                    "with the reserved root-profile s6 slot",
+                    "%s/default/ exists — skipping to avoid colliding "
+                    "with the reserved root-agent s6 slot",
+                    container.name,
                 )
                 continue
+            if entry.name in seen:
+                continue
+            seen.add(entry.name)
 
             prior_state = _read_prior_state(entry)
             should_start = prior_state in _AUTOSTART_STATES

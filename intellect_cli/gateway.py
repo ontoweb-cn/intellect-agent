@@ -299,9 +299,13 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
     pids: list[int] = []
     patterns = [
         "intellect_cli.main gateway",
+        "intellect_cli.main --agent",
+        "intellect_cli.main -a",
         "intellect_cli.main --profile",
         "intellect_cli.main -p",
         "intellect_cli/main.py gateway",
+        "intellect_cli/main.py --agent",
+        "intellect_cli/main.py -a",
         "intellect_cli/main.py --profile",
         "intellect_cli/main.py -p",
         "intellect gateway",
@@ -314,17 +318,24 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
     def _matches_current_profile(command: str) -> bool:
         if current_profile_name:
             return (
-                f"--profile {current_profile_name}" in command
+                f"--agent {current_profile_name}" in command
+                or f"-a {current_profile_name}" in command
+                or f"--profile {current_profile_name}" in command
                 or f"-p {current_profile_name}" in command
                 or f"INTELLECT_HOME={current_home}" in command
             )
 
-        # Default-profile case: no profile flag in argv. Accept as long as
-        # the command doesn't advertise *some other* profile. INTELLECT_HOME
+        # Default-agent case: no agent/profile flag in argv. Accept as long as
+        # the command doesn't advertise *some other* agent. INTELLECT_HOME
         # may be passed via env (not visible in wmic/CIM command line) so
         # its absence is NOT disqualifying — only a non-matching explicit
         # INTELLECT_HOME= in argv is.
-        if "--profile " in command or " -p " in command:
+        if (
+            "--agent " in command
+            or " -a " in command
+            or "--profile " in command
+            or " -p " in command
+        ):
             return False
         if "INTELLECT_HOME=" in command and f"INTELLECT_HOME={current_home}" not in command:
             return False
@@ -564,7 +575,7 @@ def find_profile_gateway_processes(
 def _gateway_run_args_for_profile(profile: str) -> list[str]:
     args = [get_python_path(), "-m", "intellect_cli.main"]
     if profile != "default":
-        args.extend(["--profile", profile])
+        args.extend(["--agent", profile])
     args.extend(["gateway", "run", "--replace"])
     return args
 
@@ -1284,8 +1295,9 @@ SERVICE_DESCRIPTION = "Intellect Agent Gateway - Messaging Platform Integration"
 def _profile_suffix() -> str:
     """Derive a service-name suffix from the current INTELLECT_HOME.
 
-    Returns ``""`` for the default root, the profile name for
-    ``<root>/profiles/<name>``, or a short hash for any other path.
+    Returns ``""`` for the default root, the agent name for
+    ``<root>/agents/<name>`` (or legacy ``profiles/<name>``), or a short hash
+    for any other path.
     Works correctly in Docker (INTELLECT_HOME=/opt/data) and standard deployments.
     """
     import hashlib
@@ -1295,24 +1307,26 @@ def _profile_suffix() -> str:
     default = get_default_intellect_root().resolve()
     if home == default:
         return ""
-    # Detect <root>/profiles/<name> pattern → use the profile name
-    profiles_root = (default / "profiles").resolve()
-    try:
-        rel = home.relative_to(profiles_root)
-        parts = rel.parts
-        if len(parts) == 1 and re.match(r"^[a-z0-9][a-z0-9_-]{0,63}$", parts[0]):
-            return parts[0]
-    except ValueError:
-        pass
+    # Detect <root>/agents/<name> or legacy <root>/profiles/<name>
+    for dirname in ("agents", "profiles"):
+        container = (default / dirname).resolve()
+        try:
+            rel = home.relative_to(container)
+            parts = rel.parts
+            if len(parts) == 1 and re.match(r"^[a-z0-9][a-z0-9_-]{0,63}$", parts[0]):
+                return parts[0]
+        except ValueError:
+            pass
     # Fallback: short hash for arbitrary INTELLECT_HOME paths
     return hashlib.sha256(str(home).encode()).hexdigest()[:8]
 
 
 def _profile_arg(intellect_home: str | None = None) -> str:
-    """Return ``--profile <name>`` only when INTELLECT_HOME is a named profile.
+    """Return ``--agent <name>`` only when INTELLECT_HOME is a named agent home.
 
-    For ``~/.intellect/profiles/<name>``, returns ``"--profile <name>"``.
-    For the default profile or hash-based custom paths, returns the empty string.
+    For ``~/.intellect/agents/<name>`` (or legacy ``profiles/<name>``), returns
+    ``"--agent <name>"``. For the default agent or hash-based custom paths,
+    returns the empty string.
 
     Args:
         intellect_home: Optional explicit INTELLECT_HOME path. Defaults to the current
@@ -1325,14 +1339,15 @@ def _profile_arg(intellect_home: str | None = None) -> str:
     default = get_default_intellect_root().resolve()
     if home == default:
         return ""
-    profiles_root = (default / "profiles").resolve()
-    try:
-        rel = home.relative_to(profiles_root)
-        parts = rel.parts
-        if len(parts) == 1 and re.match(r"^[a-z0-9][a-z0-9_-]{0,63}$", parts[0]):
-            return f"--profile {parts[0]}"
-    except ValueError:
-        pass
+    for dirname in ("agents", "profiles"):
+        container = (default / dirname).resolve()
+        try:
+            rel = home.relative_to(container)
+            parts = rel.parts
+            if len(parts) == 1 and re.match(r"^[a-z0-9][a-z0-9_-]{0,63}$", parts[0]):
+                return f"--agent {parts[0]}"
+        except ValueError:
+            pass
     return ""
 
 
@@ -2864,7 +2879,7 @@ def generate_launchd_plist() -> str:
         dict.fromkeys(priority_dirs + [p for p in os.environ.get("PATH", "").split(":") if p])
     )
 
-    # Build ProgramArguments array, including --profile when using a named profile
+    # Build ProgramArguments array, including --agent when using a named agent
     prog_args = [
         f"<string>{python_path}</string>",
         "<string>-m</string>",

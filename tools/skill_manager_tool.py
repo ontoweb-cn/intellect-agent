@@ -339,22 +339,17 @@ def _find_skill_in_other_profiles(name: str) -> List[Tuple[str, Path]]:
     except (OSError, RuntimeError):
         pass
 
-    # All named profiles (~/.intellect/profiles/*/skills)
-    profiles_root = root / "profiles"
-    if profiles_root.is_dir():
+    # All named agents (~/.intellect/agents/*/skills and legacy profiles/)
+    from intellect_constants import iter_named_agent_homes
+
+    for entry in iter_named_agent_homes(root):
+        pskills = entry / "skills"
         try:
-            for entry in profiles_root.iterdir():
-                if not entry.is_dir():
-                    continue
-                pskills = entry / "skills"
-                try:
-                    if pskills.resolve() == active_dir:
-                        continue
-                except (OSError, RuntimeError):
-                    continue
-                candidates.append((entry.name, pskills))
-        except OSError:
-            pass
+            if pskills.resolve() == active_dir:
+                continue
+        except (OSError, RuntimeError):
+            continue
+        candidates.append((entry.name, pskills))
 
     for profile_name, skills_dir in candidates:
         if not skills_dir.is_dir():

@@ -7753,17 +7753,13 @@ def _invalidate_update_cache():
     ``intellect update``, every profile is now current.
     """
     homes = []
-    # Default profile home (Docker-aware — uses /opt/data in Docker)
-    from intellect_constants import get_default_intellect_root
+    # Default agent home (Docker-aware — uses /opt/data in Docker)
+    from intellect_constants import get_default_intellect_root, iter_named_agent_homes
 
     default_home = get_default_intellect_root()
     homes.append(default_home)
-    # Named profiles under <root>/profiles/
-    profiles_root = default_home / "profiles"
-    if profiles_root.is_dir():
-        for entry in profiles_root.iterdir():
-            if entry.is_dir():
-                homes.append(entry)
+    # Named agents under <root>/agents/ (and legacy profiles/)
+    homes.extend(iter_named_agent_homes(default_home))
     for home in homes:
         try:
             cache_file = home / ".update_check"
@@ -10523,10 +10519,10 @@ def cmd_profile(args):
 
 def cmd_agent(args):
     """Agent-home management — create, delete, list, switch, alias."""
-    from intellect_cli.profile_gate import (
-        CLI_MUTATING_PROFILE_ACTIONS,
-        is_profile_management_enabled,
-        profile_management_disabled_message,
+    from intellect_cli.agent_gate import (
+        CLI_MUTATING_AGENT_ACTIONS,
+        is_agent_management_enabled,
+        agent_management_disabled_message,
     )
     from intellect_cli.profiles import (
         list_profiles,
@@ -10547,8 +10543,8 @@ def cmd_agent(args):
 
     # TEMPORARY: block create / switch / delete while agents.management_enabled
     # (or legacy profiles.management_enabled) is false.
-    if action in CLI_MUTATING_PROFILE_ACTIONS and not is_profile_management_enabled():
-        print(f"Error: {profile_management_disabled_message()}", file=sys.stderr)
+    if action in CLI_MUTATING_AGENT_ACTIONS and not is_agent_management_enabled():
+        print(f"Error: {agent_management_disabled_message()}", file=sys.stderr)
         sys.exit(1)
 
     if action is None:

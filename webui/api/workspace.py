@@ -107,7 +107,11 @@ def _clean_workspace_list(workspaces: list) -> list:
       confusion with the 'default' profile name).
     Returns the cleaned list (may be empty).
     """
-    intellect_profiles = (Path.home() / '.intellect' / 'profiles').resolve()
+    base_home = (Path.home() / '.intellect').resolve()
+    agent_roots = [
+        (base_home / 'agents').resolve(),
+        (base_home / 'profiles').resolve(),  # legacy
+    ]
     result = []
     for w in workspaces:
         path = w.get('path', '')
@@ -115,21 +119,24 @@ def _clean_workspace_list(workspaces: list) -> list:
         if not path:
             continue
         p = _safe_resolve(Path(path).expanduser())
-        # Skip paths inside a DIFFERENT profile's directory (cross-profile leak).
-        # Allow paths inside the CURRENT profile's own directory (e.g. test workspaces
-        # created under ~/.intellect/profiles/webui/webui-mvp-test/).
-        try:
-            p.relative_to(intellect_profiles)
-            # p is under ~/.intellect/profiles/ — only skip if it's under a DIFFERENT profile
+        # Skip paths inside a DIFFERENT agent's directory (cross-agent leak).
+        # Allow paths inside the CURRENT agent's own directory.
+        under_agent_tree = False
+        for agent_root in agent_roots:
+            try:
+                p.relative_to(agent_root)
+                under_agent_tree = True
+                break
+            except ValueError:
+                continue
+        if under_agent_tree:
             try:
                 from api.profiles import get_active_intellect_home
                 own_profile_dir = get_active_intellect_home().resolve()
                 p.relative_to(own_profile_dir)
-                # p is under our own profile dir — keep it
+                # p is under our own agent dir — keep it
             except (ValueError, Exception):
-                continue  # under profiles/ but not our own — cross-profile leak, skip
-        except ValueError:
-            pass  # not under profiles/ at all — keep it
+                continue  # under agents|profiles/ but not our own — skip
         # Rename confusing 'default' label to 'Home'
         if name.lower() == 'default':
             name = 'Home'

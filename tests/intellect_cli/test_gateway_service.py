@@ -1560,10 +1560,10 @@ class TestPreflightUserSystemd:
 
 
 class TestProfileArg:
-    """Tests for _profile_arg — returns '--profile <name>' for named profiles."""
+    """Tests for _profile_arg — returns '--agent <name>' for named agents."""
 
     def test_default_intellect_home_returns_empty(self, tmp_path, monkeypatch):
-        """Default ~/.intellect should not produce a --profile flag."""
+        """Default ~/.intellect should not produce an --agent flag."""
         intellect_home = tmp_path / ".intellect"
         intellect_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -1572,13 +1572,22 @@ class TestProfileArg:
         assert result == ""
 
     def test_named_profile_returns_flag(self, tmp_path, monkeypatch):
-        """~/.intellect/profiles/mybot should return '--profile mybot'."""
+        """~/.intellect/profiles/mybot (legacy) should return '--agent mybot'."""
         profile_dir = tmp_path / ".intellect" / "profiles" / "mybot"
         profile_dir.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("INTELLECT_HOME", str(tmp_path / ".intellect"))
         result = gateway_cli._profile_arg(str(profile_dir))
-        assert result == "--profile mybot"
+        assert result == "--agent mybot"
+
+    def test_named_agent_dir_returns_flag(self, tmp_path, monkeypatch):
+        """~/.intellect/agents/mybot should return '--agent mybot'."""
+        agent_dir = tmp_path / ".intellect" / "agents" / "mybot"
+        agent_dir.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("INTELLECT_HOME", str(tmp_path / ".intellect"))
+        result = gateway_cli._profile_arg(str(agent_dir))
+        assert result == "--agent mybot"
 
     def test_hash_path_returns_empty(self, tmp_path, monkeypatch):
         """Arbitrary non-profile INTELLECT_HOME should return empty string."""
@@ -1608,25 +1617,25 @@ class TestProfileArg:
         assert result == ""
 
     def test_systemd_unit_includes_profile(self, tmp_path, monkeypatch):
-        """generate_systemd_unit should include --profile in ExecStart for named profiles."""
+        """generate_systemd_unit should include --agent in ExecStart for named agents."""
         profile_dir = tmp_path / ".intellect" / "profiles" / "mybot"
         profile_dir.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("INTELLECT_HOME", str(profile_dir))
         monkeypatch.setattr(gateway_cli, "get_intellect_home", lambda: profile_dir)
         unit = gateway_cli.generate_systemd_unit(system=False)
-        assert "--profile mybot" in unit
+        assert "--agent mybot" in unit
         assert "gateway run --replace" in unit
 
     def test_launchd_plist_includes_profile(self, tmp_path, monkeypatch):
-        """generate_launchd_plist should include --profile in ProgramArguments for named profiles."""
+        """generate_launchd_plist should include --agent in ProgramArguments for named agents."""
         profile_dir = tmp_path / ".intellect" / "profiles" / "mybot"
         profile_dir.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("INTELLECT_HOME", str(profile_dir))
         monkeypatch.setattr(gateway_cli, "get_intellect_home", lambda: profile_dir)
         plist = gateway_cli.generate_launchd_plist()
-        assert "<string>--profile</string>" in plist
+        assert "<string>--agent</string>" in plist
         assert "<string>mybot</string>" in plist
 
     def test_launchd_plist_path_uses_real_user_home_not_profile_home(self, tmp_path, monkeypatch):

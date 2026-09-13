@@ -106,36 +106,38 @@ def restore_skill_home_modules(snapshot: dict[str, dict[str, object]]) -> None:
 
 
 def _unwrap_profile_home_to_base(home: Path) -> Path:
-    """Return the base Intellect home when *home* is already a named profile dir."""
-    if home.parent.name == 'profiles':
+    """Return the base Intellect home when *home* is already a named agent dir."""
+    if home.parent.name in {'agents', 'profiles'}:
         return home.parent.parent
     return home
 
 
 def _resolve_base_intellect_home() -> Path:
-    """Return the BASE ~/.intellect directory — the root that contains profiles/.
+    """Return the BASE ~/.intellect directory — the root that contains agents/.
 
     This is intentionally distinct from INTELLECT_HOME, which tracks the *active
-    profile's* home and changes on every profile switch.  The base dir must
-    always point to the top-level .intellect regardless of which profile is active.
+    agent's* home and changes on every agent switch.  The base dir must
+    always point to the top-level .intellect regardless of which agent is active.
 
     Resolution order:
       1. INTELLECT_BASE_HOME env var (set explicitly, highest priority)
-      2. INTELLECT_HOME env var — but only if it does NOT look like a profile subdir
-         (i.e. its parent is not named 'profiles').  This handles test isolation
-         where INTELLECT_HOME is set to an isolated test state dir.
+      2. INTELLECT_HOME env var — but only if it does NOT look like an agent subdir
+         (i.e. its parent is not named ``agents`` or legacy ``profiles``).
+         This handles test isolation where INTELLECT_HOME is set to an isolated
+         test state dir.
       3. ~/.intellect (always-correct default)
 
     The bug this prevents: if INTELLECT_HOME has already been mutated to
-    /home/user/.intellect/profiles/webui (by init_profile_state at startup),
+    /home/user/.intellect/agents/webui (by init_profile_state at startup),
     reading it here would make _DEFAULT_INTELLECT_HOME point to that subdir,
     causing switch_profile('webui') to look for
-    /home/user/.intellect/profiles/webui/profiles/webui — which doesn't exist.
+    /home/user/.intellect/agents/webui/agents/webui — which doesn't exist.
 
     INTELLECT_BASE_HOME normally points at the base home already, but isolated
-    single-profile WebUI deployments can provide /base/profiles/<name> there as
-    well.  Normalize both env vars through the same helper so active-profile
-    and per-request resolution share one base-root contract (#749).
+    single-agent WebUI deployments can provide /base/agents/<name> (or legacy
+    /base/profiles/<name>) there as well.  Normalize both env vars through the
+    same helper so active-agent and per-request resolution share one base-root
+    contract (#749).
     """
     # Explicit override for tests or unusual setups
     base_override = os.getenv('INTELLECT_BASE_HOME', '').strip()
@@ -164,15 +166,17 @@ _DEFAULT_INTELLECT_HOME = _resolve_base_intellect_home()
 
 
 def _read_active_profile_file() -> str:
-    """Read the sticky active profile from ~/.intellect/active_profile."""
-    ap_file = _DEFAULT_INTELLECT_HOME / 'active_profile'
-    if ap_file.exists():
+    """Read the sticky active agent (``active_agent``, legacy ``active_profile``)."""
+    for fname in ('active_agent', 'active_profile'):
+        ap_file = _DEFAULT_INTELLECT_HOME / fname
+        if not ap_file.exists():
+            continue
         try:
             name = ap_file.read_text(encoding="utf-8").strip()
             if name:
                 return name
         except Exception:
-            logger.debug("Failed to read active profile file")
+            logger.debug("Failed to read sticky file %s", fname)
     return 'default'
 
 
@@ -278,7 +282,7 @@ def _profiles_match(row_profile, active_profile) -> bool:
 def is_profile_management_enabled() -> bool:
     """TEMPORARY gate — see intellect_cli.profile_gate and profiles.management_enabled."""
     try:
-        from intellect_cli.profile_gate import is_profile_management_enabled as _enabled
+        from intellect_cli.agent_gate import is_profile_management_enabled as _enabled
 
         return _enabled()
     except ImportError:
@@ -948,12 +952,20 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
             _reload_dotenv(home)
 
     if process_wide:
-        # Write sticky default for CLI consistency
+        # Write sticky default for CLI consistency (canonical active_agent)
         try:
-            ap_file = _DEFAULT_INTELLECT_HOME / 'active_profile'
-            ap_file.write_text('' if _is_root_profile(name) else name, encoding='utf-8')
+            sticky = '' if _is_root_profile(name) else name
+            (_DEFAULT_INTELLECT_HOME / 'active_agent').write_text(
+                sticky, encoding='utf-8'
+            )
+            legacy = _DEFAULT_INTELLECT_HOME / 'active_profile'
+            if legacy.exists():
+                try:
+                    legacy.unlink()
+                except OSError:
+                    pass
         except Exception:
-            logger.debug("Failed to write active profile file")
+            logger.debug("Failed to write sticky active_agent file")
 
         # Reload config.yaml from the new profile
         reload_config()
@@ -1093,27 +1105,43 @@ def _validate_profile_name(name: str):
 
 
 def _profiles_root() -> Path:
-    """Return the canonical root that contains named profiles."""
+    """Return the canonical root that contains named agents (``…/agents``)."""
+    return (_DEFAULT_INTELLECT_HOME / 'agents').resolve()
+
+
+def _legacy_profiles_root() -> Path:
+    """Legacy ``…/profiles`` root (pre profile→agent rename)."""
     return (_DEFAULT_INTELLECT_HOME / 'profiles').resolve()
 
 
 def _resolve_named_profile_home(name: str) -> Path:
-    """Resolve a named profile to a directory under the profiles root.
+    """Resolve a named agent to a directory under agents/ (or legacy profiles/).
 
-    Validates *name* as a logical profile identifier first, then resolves the
-    final filesystem path and enforces containment under ~/.intellect/profiles.
+    Validates *name* as a logical agent identifier first, then resolves the
+    final filesystem path and enforces containment under the agents root
+    (preferring an existing legacy path when that is the only match).
     """
     _validate_profile_name(name)
-    profiles_root = _profiles_root()
-    candidate = (profiles_root / name).resolve()
-    candidate.relative_to(profiles_root)
-    return candidate
+    agents_root = _profiles_root()
+    agents_candidate = (agents_root / name).resolve()
+    agents_candidate.relative_to(agents_root)
+    if agents_candidate.is_dir():
+        return agents_candidate
+    legacy_root = _legacy_profiles_root()
+    legacy_candidate = (legacy_root / name).resolve()
+    try:
+        legacy_candidate.relative_to(legacy_root)
+    except ValueError:
+        return agents_candidate
+    if legacy_candidate.is_dir():
+        return legacy_candidate
+    return agents_candidate
 
 
 def _create_profile_fallback(name: str, clone_from: str = None,
                               clone_config: bool = False) -> Path:
-    """Create a profile directory without intellect_cli (Docker/standalone fallback)."""
-    profile_dir = _DEFAULT_INTELLECT_HOME / 'profiles' / name
+    """Create an agent directory without intellect_cli (Docker/standalone fallback)."""
+    profile_dir = _DEFAULT_INTELLECT_HOME / 'agents' / name
     if profile_dir.exists():
         raise FileExistsError(f"Profile '{name}' already exists.")
 
@@ -1127,7 +1155,7 @@ def _create_profile_fallback(name: str, clone_from: str = None,
         if _is_root_profile(clone_from):
             source_dir = _DEFAULT_INTELLECT_HOME
         else:
-            source_dir = _DEFAULT_INTELLECT_HOME / 'profiles' / clone_from
+            source_dir = _resolve_named_profile_home(clone_from)
         if source_dir.is_dir():
             for filename in _CLONE_CONFIG_FILES:
                 src = source_dir / filename
@@ -1336,7 +1364,7 @@ def create_profile_api(name: str, clone_from: str = None,
     # intellect_cli and the webui runtime do not always agree on the exact root,
     # so we prefer the path returned by list_profiles_api() and fall back to the
     # standard profile location only if the profile cannot be found there yet.
-    profile_path = _DEFAULT_INTELLECT_HOME / 'profiles' / name
+    profile_path = _DEFAULT_INTELLECT_HOME / 'agents' / name
     for p in list_profiles_api():
         if p['name'] == name:
             try:

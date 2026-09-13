@@ -10135,8 +10135,10 @@ def _handle_media(handler, parsed):
             # ws == root, ws inside root, or ws an ancestor of root → unsafe.
             if ws == _root or _path_is_within_root(ws, _root) or _path_is_within_root(_root, ws):
                 return False
-        # A */profiles dir or a named-profile root (…/profiles/<name>).
-        if ws.name == "profiles" or (ws.parent.name == "profiles"):
+        # A */agents|profiles dir or a named-agent root (…/agents/<name>).
+        if ws.name in ("agents", "profiles") or (
+            ws.parent.name in ("agents", "profiles")
+        ):
             return False
         if ws.name in _DENY_SUBDIRS:
             return False

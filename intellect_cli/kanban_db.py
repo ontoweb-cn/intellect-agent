@@ -7358,20 +7358,17 @@ def read_worker_log(
 # ---------------------------------------------------------------------------
 
 def list_profiles_on_disk() -> list[str]:
-    """Return the set of assignee/profile names discovered on disk.
+    """Return the set of assignee/agent names discovered on disk.
 
     Includes:
-    - named profiles under ``<default-root>/profiles/<name>/config.yaml``
-    - the implicit ``default`` profile when the default Intellect root exists
+    - named agents under ``<default-root>/agents/<name>/`` (and legacy ``profiles/``)
+    - the implicit ``default`` agent when the default Intellect root exists
 
-    Reads profile paths directly so this module has no import dependency on
-    ``intellect_cli.profiles`` (which pulls in a large chunk of the CLI startup
-    path).
+    Uses :func:`intellect_constants.iter_named_agent_homes` (import-safe).
     """
     try:
-        from intellect_constants import get_default_intellect_root
+        from intellect_constants import get_default_intellect_root, iter_named_agent_homes
         default_root = get_default_intellect_root()
-        profiles_dir = default_root / "profiles"
     except Exception:
         return []
 
@@ -7379,15 +7376,9 @@ def list_profiles_on_disk() -> list[str]:
     if default_root.exists():
         names.add("default")
 
-    if profiles_dir.is_dir():
-        try:
-            for entry in sorted(profiles_dir.iterdir()):
-                if not entry.is_dir():
-                    continue
-                if (entry / "config.yaml").is_file():
-                    names.add(entry.name)
-        except OSError:
-            pass
+    for entry in iter_named_agent_homes(default_root):
+        if (entry / "config.yaml").is_file():
+            names.add(entry.name)
 
     return sorted(names)
 

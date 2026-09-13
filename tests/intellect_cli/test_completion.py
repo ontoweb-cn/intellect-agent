@@ -149,7 +149,8 @@ class TestGenerateZsh:
         out = generate_zsh(_make_parser())
         assert "'(-)'{-h,--help}'[Show help and exit]'" in out
         assert "'(-)'{-V,--version}'[Show version and exit]'" in out
-        assert "'(-)'{-p,--profile}'[Profile name]:profile:_intellect_profiles'" in out
+        assert "'(-)'{-a,--agent}'[Agent name]:agent:_intellect_profiles'" in out
+        assert "'(-)'{-p,--profile}'[Agent name (legacy)]:agent:_intellect_profiles'" in out
         assert "'(-h --help){-h,--help}[Show help and exit]'" not in out
         assert '"(-h --help)"{-h,--help}"[Show help and exit]"' not in out
 
@@ -259,10 +260,13 @@ class TestProfileCompletion:
     def test_bash_has_profiles_helper(self):
         out = generate_bash(_make_parser())
         assert "_intellect_profiles()" in out
-        assert 'profiles_dir="$HOME/.intellect/profiles"' in out
+        assert '$HOME/.intellect/agents' in out
+        assert '$HOME/.intellect/profiles' in out  # legacy dual-read
 
     def test_bash_completes_profiles_after_p_flag(self):
         out = generate_bash(_make_parser())
+        assert '"-a"' in out or '== "-a"' in out
+        assert '"--agent"' in out or '== "--agent"' in out
         assert '"-p"' in out or "== \"-p\"" in out
         assert '"--profile"' in out or '== "--profile"' in out
         assert "_intellect_profiles" in out
@@ -289,10 +293,12 @@ class TestProfileCompletion:
     def test_zsh_has_profiles_helper(self):
         out = generate_zsh(_make_parser())
         assert "_intellect_profiles()" in out
+        assert "$HOME/.intellect/agents" in out
         assert "$HOME/.intellect/profiles" in out
 
     def test_zsh_has_profile_flag_completion(self):
         out = generate_zsh(_make_parser())
+        assert "--agent" in out
         assert "--profile" in out
         assert "_intellect_profiles" in out
 

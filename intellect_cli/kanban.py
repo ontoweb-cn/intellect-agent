@@ -748,8 +748,8 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     # --- assignees ---
     p_asg = sub.add_parser(
         "assignees",
-        help="List known profiles + per-profile task counts "
-             "(union of ~/.intellect/profiles/ and current assignees on the board)",
+        help="List known agents + per-agent task counts "
+             "(union of ~/.intellect/agents/ and current assignees on the board)",
     )
     p_asg.add_argument("--json", action="store_true")
 
@@ -1267,8 +1267,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
         for name in profiles:
             print(f"  {name}")
     else:
-        print("No profiles found under ~/.intellect/profiles/.")
-        print("Create one with `intellect -p <name> setup` before assigning tasks.")
+        print("No agents found under ~/.intellect/agents/ (or legacy profiles/).")
+        print("Create one with `intellect -a <name> setup` before assigning tasks.")
     print()
     print("Next step: start the gateway so ready tasks actually get picked up.")
     print("  intellect gateway start")

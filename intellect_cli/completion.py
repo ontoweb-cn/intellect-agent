@@ -102,12 +102,14 @@ def generate_bash(parser: argparse.ArgumentParser) -> str:
 #   eval "$(intellect completion bash)"
 
 _intellect_profiles() {{
-    local profiles_dir="$HOME/.intellect/profiles"
-    local profiles="default"
-    if [ -d "$profiles_dir" ]; then
-        profiles="$profiles $(ls "$profiles_dir" 2>/dev/null)"
-    fi
-    echo "$profiles"
+    local names="default"
+    local d
+    for d in "$HOME/.intellect/agents" "$HOME/.intellect/profiles"; do
+        if [ -d "$d" ]; then
+            names="$names $(ls "$d" 2>/dev/null)"
+        fi
+    done
+    echo "$names"
 }}
 
 _intellect_completion() {{
@@ -116,8 +118,8 @@ _intellect_completion() {{
     cur="${{COMP_WORDS[COMP_CWORD]}}"
     prev="${{COMP_WORDS[COMP_CWORD-1]}}"
 
-    # Complete profile names after -p / --profile
-    if [[ "$prev" == "-p" || "$prev" == "--profile" ]]; then
+    # Complete agent names after -a/--agent or legacy -p/--profile
+    if [[ "$prev" == "-a" || "$prev" == "--agent" || "$prev" == "-p" || "$prev" == "--profile" ]]; then
         COMPREPLY=($(compgen -W "$(_intellect_profiles)" -- "$cur"))
         return
     fi
@@ -155,26 +157,26 @@ def generate_zsh(parser: argparse.ArgumentParser) -> str:
         info = tree["subcommands"][cmd]
         if not info["subcommands"]:
             continue
-        if cmd == "profile":
-            # Profile subcommand: complete actions, then profile names for
-            # actions that accept a profile argument.
+        if cmd in ("agent", "profile"):
+            # Agent (canonical) / profile (legacy) subcommand completion.
             sub_lines: list[str] = []
             for sc in sorted(info["subcommands"]):
                 sh = _clean(info["subcommands"][sc].get("help", ""))
                 sub_lines.append(f"                        '{sc}:{sh}'")
             sub_str = "\n".join(sub_lines)
+            label = "agent" if cmd == "agent" else "profile"
             sub_cases.append(
-                f"                profile)\n"
+                f"                {cmd})\n"
                 f"                    case ${{line[2]}} in\n"
                 f"                        use|delete|show|alias|rename|export)\n"
                 f"                            _intellect_profiles\n"
                 f"                            ;;\n"
                 f"                        *)\n"
-                f"                            local -a profile_cmds\n"
-                f"                            profile_cmds=(\n"
+                f"                            local -a {label}_cmds\n"
+                f"                            {label}_cmds=(\n"
                 f"{sub_str}\n"
                 f"                            )\n"
-                f"                            _describe 'profile command' profile_cmds\n"
+                f"                            _describe '{label} command' {label}_cmds\n"
                 f"                            ;;\n"
                 f"                    esac\n"
                 f"                    ;;"
@@ -205,10 +207,13 @@ def generate_zsh(parser: argparse.ArgumentParser) -> str:
 _intellect_profiles() {{
     local -a profiles
     profiles=(default)
-    if [[ -d "$HOME/.intellect/profiles" ]]; then
-        profiles+=("${{(@f)$(ls $HOME/.intellect/profiles 2>/dev/null)}}")
-    fi
-    _describe 'profile' profiles
+    local d
+    for d in "$HOME/.intellect/agents" "$HOME/.intellect/profiles"; do
+        if [[ -d "$d" ]]; then
+            profiles+=("${{(@f)$(ls $d 2>/dev/null)}}")
+        fi
+    done
+    _describe 'agent' profiles
 }}
 
 _intellect() {{
@@ -218,7 +223,8 @@ _intellect() {{
     _arguments -C \\
         '(-)'{{-h,--help}}'[Show help and exit]' \\
         '(-)'{{-V,--version}}'[Show version and exit]' \\
-        '(-)'{{-p,--profile}}'[Profile name]:profile:_intellect_profiles' \\
+        '(-)'{{-a,--agent}}'[Agent name]:agent:_intellect_profiles' \\
+        '(-)'{{-p,--profile}}'[Agent name (legacy)]:agent:_intellect_profiles' \\
         '1:command:->commands' \\
         '*::arg:->args'
 
@@ -256,20 +262,24 @@ def generate_fish(parser: argparse.ArgumentParser) -> str:
         "# Add to your config:",
         "#   intellect completion fish | source",
         "",
-        "# Helper: list available profiles",
+        "# Helper: list available agents (agents/ + legacy profiles/)",
         "function __intellect_profiles",
         "    echo default",
-        "    if test -d $HOME/.intellect/profiles",
-        "        ls $HOME/.intellect/profiles 2>/dev/null",
+        "    for d in $HOME/.intellect/agents $HOME/.intellect/profiles",
+        "        if test -d $d",
+        "            ls $d 2>/dev/null",
+        "        end",
         "    end",
         "end",
         "",
         "# Disable file completion by default",
         "complete -c intellect -f",
         "",
-        "# Complete profile names after -p / --profile",
+        "# Complete agent names after -a/--agent or legacy -p/--profile",
+        "complete -c intellect -f -s a -l agent"
+        " -d 'Agent name' -xa '(__intellect_profiles)'",
         "complete -c intellect -f -s p -l profile"
-        " -d 'Profile name' -xa '(__intellect_profiles)'",
+        " -d 'Agent name (legacy)' -xa '(__intellect_profiles)'",
         "",
         "# Top-level subcommands",
     ]

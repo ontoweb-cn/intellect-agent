@@ -16,7 +16,7 @@ from intellect_constants import display_intellect_home
 
 PROJECT_ROOT = get_project_root()
 INTELLECT_HOME = get_intellect_home()
-_DHH = display_intellect_home()  # user-facing display path (e.g. ~/.intellect or ~/.intellect/profiles/coder)
+_DHH = display_intellect_home()  # user-facing display path (e.g. ~/.intellect or ~/.intellect/agents/coder)
 
 # Load environment variables from ~/.intellect/.env so API key checks work
 _env_path = get_env_path()

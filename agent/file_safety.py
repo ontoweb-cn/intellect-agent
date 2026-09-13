@@ -337,10 +337,11 @@ PROFILE_SCOPED_AREAS = ("skills", "plugins", "cron", "memories")
 
 
 def _resolve_active_profile_name() -> str:
-    """Return the active profile name derived from INTELLECT_HOME.
+    """Return the active agent name derived from INTELLECT_HOME.
 
     ``~/.intellect``              -> ``"default"``
-    ``~/.intellect/profiles/X``  -> ``"X"``
+    ``~/.intellect/agents/X``     -> ``"X"``
+    ``~/.intellect/profiles/X``   -> ``"X"`` (legacy)
 
     Falls back to ``"default"`` on any resolution failure so the guard
     never raises into the tool path.
@@ -350,14 +351,15 @@ def _resolve_active_profile_name() -> str:
         root_real = _intellect_root_path().resolve()
     except (OSError, RuntimeError):
         return "default"
-    profiles_dir = root_real / "profiles"
-    try:
-        rel = home_real.relative_to(profiles_dir)
-        parts = rel.parts
-        if len(parts) >= 1:
-            return parts[0]
-    except ValueError:
-        pass
+    for dirname in ("agents", "profiles"):
+        container = root_real / dirname
+        try:
+            rel = home_real.relative_to(container)
+            parts = rel.parts
+            if len(parts) >= 1:
+                return parts[0]
+        except ValueError:
+            pass
     return "default"
 
 
@@ -401,11 +403,11 @@ def classify_cross_profile_target(path: str) -> Optional[dict]:
         target_profile = "default"
         area = parts[0]
     elif (
-        parts[0] == "profiles"
+        parts[0] in {"agents", "profiles"}
         and len(parts) >= 3
         and parts[2] in PROFILE_SCOPED_AREAS
     ):
-        # ``<root>/profiles/<name>/<area>/...`` → named profile.
+        # ``<root>/agents/<name>/<area>/...`` (or legacy profiles/) → named agent.
         target_profile = parts[1]
         area = parts[2]
     else:

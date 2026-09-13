@@ -255,6 +255,52 @@ def display_intellect_home() -> str:
         return str(home)
 
 
+def iter_named_agent_homes(root: Path | None = None) -> list[Path]:
+    """Yield named agent-home directories under *root* (``agents/`` then legacy ``profiles/``).
+
+    Import-safe helper for scanners that must not pull in ``intellect_cli``.
+    Prefer :func:`intellect_cli.agents_home._iter_named_agent_dirs` when the
+    CLI package is already loaded (it also runs on-disk migration).
+
+    Same id under both trees: only the ``agents/`` entry is returned.
+    """
+    import re
+
+    base = Path(root) if root is not None else get_default_intellect_root()
+    id_re = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    seen: set[str] = set()
+    out: list[Path] = []
+    for dirname in ("agents", "profiles"):
+        container = base / dirname
+        if not container.is_dir():
+            continue
+        try:
+            entries = sorted(container.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            if not id_re.match(name) or name in seen:
+                continue
+            seen.add(name)
+            out.append(entry)
+    return out
+
+
+def resolve_named_agent_home(name: str, root: Path | None = None) -> Path | None:
+    """Return ``agents/<name>`` or legacy ``profiles/<name>`` if it exists, else None."""
+    base = Path(root) if root is not None else get_default_intellect_root()
+    agents = base / "agents" / name
+    if agents.is_dir():
+        return agents
+    legacy = base / "profiles" / name
+    if legacy.is_dir():
+        return legacy
+    return None
+
+
 def secure_parent_dir(path: Path) -> None:
     """Chmod ``0o700`` on the parent directory of *path*, but only if safe.
 
