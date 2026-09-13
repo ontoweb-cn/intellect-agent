@@ -92,11 +92,13 @@ jobs:
           key: rust-${{ runner.os }}-${{ hashFiles('rust-core/Cargo.lock') }}
           restore-keys: rust-${{ runner.os }}-
 
-      - name: Run Rust unit tests (with extension module)
-        run: |
-          cd rust-core
-          PYO3_PYTHON=$(which python3) cargo test
-          echo "Rust tests (extension-module): OK"
+      # NOTE: deliberately no `cargo test` step here.  With the default features
+      # (extension-module) pyo3 does NOT link libpython — the host interpreter
+      # supplies those symbols at runtime — so building a *test binary* fails to
+      # link with "undefined symbol: PyExc_TypeError" and friends.  Test
+      # binaries are only linkable with --no-default-features, which is exactly
+      # what the rust-unit job runs.  This job exists to produce the wheel that
+      # rust-python-verify consumes.
 
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1

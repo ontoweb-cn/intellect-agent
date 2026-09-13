@@ -98,12 +98,11 @@ stages:
               python3 -m pip install --upgrade pip
               pip3 install maturin
 
-          - name: Run Rust tests (with extension module)
-            run: |
-              source $HOME/.cargo/env
-              cd rust-core
-              PYO3_PYTHON=$(which python3) cargo test
-              echo "Rust tests (extension-module): OK"
+          # No cargo test here on purpose: with the default extension-module
+          # feature pyo3 does not link libpython, so a test binary cannot link
+          # ("undefined symbol: PyExc_*").  rust-unit runs the testable
+          # --no-default-features configuration; this job builds the wheel.
+          # See the matching note in .github/workflows/rust-ci.yml.
 
           - name: Build release wheel
             run: |
