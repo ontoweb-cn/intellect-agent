@@ -240,22 +240,38 @@ mod tests {
         assert_eq!(classify_verification_command("echo hello"), None);
     }
 
-    /// Temp *file* DB — deliberately not ``:memory:``.  Every function in this
-    /// module opens its own connection, and each connection to ``:memory:``
-    /// gets a separate, empty database, so a table the test creates would be
-    /// invisible to the code under test.
-    fn temp_db_path() -> String {
+    /// Temp *file* DB, distinct per test — deliberately not ``:memory:``.  Every
+    /// function in this module opens its own connection, and each connection to
+    /// ``:memory:`` gets a separate, empty database, so a table the test creates
+    /// would be invisible to the code under test.
+    ///
+    /// The label keys the file to one test: libtest runs tests on parallel
+    /// threads inside a single process, so a path keyed only on the process id
+    /// would be shared by every test in this module — same latent hazard that
+    /// backend.rs's tests had.
+    fn temp_db_path(label: &str) -> String {
         let path = std::env::temp_dir().join(format!(
-            "intellect_verification_test_{}.db",
-            std::process::id()
+            "intellect_verification_test_{}_{}.db",
+            std::process::id(),
+            label
         ));
-        let _ = std::fs::remove_file(&path); // stale file from an earlier run
+        cleanup_db(&path.to_string_lossy()); // stale file from a crashed run
         path.to_string_lossy().to_string()
+    }
+
+    /// Remove a test DB together with the sidecar files SQLite leaves behind
+    /// when a test panics mid-transaction: ``-journal`` under the default
+    /// DELETE-mode journal, plus ``-wal``/``-shm`` should this module ever
+    /// switch to WAL.
+    fn cleanup_db(path: &str) {
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            let _ = std::fs::remove_file(format!("{}{}", path, suffix));
+        }
     }
 
     #[test]
     fn test_insert_and_query() {
-        let db_path = temp_db_path();
+        let db_path = temp_db_path("insert_and_query");
         let conn = Connection::open(&db_path).unwrap();
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS verification_evidence (
@@ -295,6 +311,6 @@ mod tests {
         assert!(result.contains("ev1"));
         assert!(result.contains("pytest"));
 
-        let _ = std::fs::remove_file(&db_path);
+        cleanup_db(&db_path);
     }
 }
