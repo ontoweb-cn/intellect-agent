@@ -75,7 +75,13 @@ jobs:
                   sarif['runs'][0]['tool']['driver']['rules'].append(rules[rid])
               sarif['runs'][0]['results'].append({
                   'ruleId': rid,
-                  'level': r['issue_severity'].lower(),
+                  # SARIF only permits none|note|warning|error. Bandit says
+                  # LOW/MEDIUM/HIGH, and passing that through verbatim made
+                  # every upload fail validation ("level is not one of enum
+                  # values") — so no Bandit finding ever reached the Security
+                  # tab. Map it, and keep the raw severity in properties.
+                  'level': {'HIGH': 'error', 'MEDIUM': 'warning'}.get(r['issue_severity'], 'note'),
+                  'properties': {'bandit_severity': r['issue_severity']},
                   'message': {'text': r['issue_text']},
                   'locations': [{
                       'physicalLocation': {
@@ -114,9 +120,21 @@ jobs:
           pip-audit -r installed-packages.txt --ignore-vuln PYSEC-2024-999 || true
 
   gitleaks:
+    # Uses the free gitleaks CLI rather than gitleaks-action@v3: the action
+    # requires a paid GITLEAKS_LICENSE secret for organization-owned repos
+    # (this repo is under the ontoweb-cn org) and aborted in ~7s on every run
+    # without one. The CLI performs the same detection on the same git history
+    # with no license requirement.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v3
+      - name: Install gitleaks CLI
+        run: |
+          GITLEAKS_VERSION=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Run gitleaks (full history)
+        run: gitleaks detect --source . --redact --verbose --exit-code 1
