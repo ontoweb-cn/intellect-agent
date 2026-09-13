@@ -59,15 +59,15 @@ def generate_bash(parser: argparse.ArgumentParser) -> str:
     cases: list[str] = []
     for cmd in sorted(tree["subcommands"]):
         info = tree["subcommands"][cmd]
-        if cmd == "profile" and info["subcommands"]:
-            # Profile subcommand: complete actions, then profile names for
-            # actions that accept a profile argument.
+        if cmd in ("agent", "profile") and info["subcommands"]:
+            # Agent (canonical) / profile (legacy) subcommand: complete
+            # actions, then agent-home names for actions that take a name.
             subcmds = " ".join(sorted(info["subcommands"]))
             profile_actions = "use delete show alias rename export"
             cases.append(
-                f"        profile)\n"
+                f"        {cmd})\n"
                 f"            case \"$prev\" in\n"
-                f"                profile)\n"
+                f"                {cmd})\n"
                 f"                    COMPREPLY=($(compgen -W \"{subcmds}\" -- \"$cur\"))\n"
                 f"                    return\n"
                 f"                    ;;\n"
@@ -311,14 +311,14 @@ def generate_fish(parser: argparse.ArgumentParser) -> str:
                 f"-n '__fish_seen_subcommand_from {cmd}' "
                 f"-a {sc} -d '{sh}'"
             )
-        # For profile subcommand, complete profile names for relevant actions
-        if cmd == "profile":
+        # Agent (canonical) / profile (legacy): complete names for name-taking actions
+        if cmd in ("agent", "profile"):
             for action in sorted(profile_name_actions):
                 lines.append(
                     f"complete -c intellect -f "
                     f"-n '__fish_seen_subcommand_from {action}; "
-                    f"and __fish_seen_subcommand_from profile' "
-                    f"-a '(__intellect_profiles)' -d 'Profile name'"
+                    f"and __fish_seen_subcommand_from {cmd}' "
+                    f"-a '(__intellect_profiles)' -d 'Agent name'"
                 )
 
     lines.append("")

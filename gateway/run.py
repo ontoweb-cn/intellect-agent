@@ -1040,7 +1040,7 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
 
         "commands": "_handle_commands_command",
 
-        "profile": "_handle_profile_command",
+        "agent": "_handle_profile_command",
 
         "whoami": "_handle_whoami_command",
 
@@ -4585,7 +4585,7 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
 
                     return await self._handle_commands_command(event)
 
-                if _cmd_def_inner.name == "profile":
+                if _cmd_def_inner.name == "agent":
 
                     return await self._handle_profile_command(event)
 

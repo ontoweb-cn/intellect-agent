@@ -118,8 +118,9 @@ def _coerce_command_list(raw: Any) -> FrozenSet[str]:
     """Normalize a slash command allowlist.
 
     Strips leading slashes so YAML can read either ``["help", "status"]``
-    or ``["/help", "/status"]``. Lowercase canonicalization matches how
-    ``resolve_command()`` stores names.
+    or ``["/help", "/status"]``. Known names and aliases are resolved to
+    their canonical registry name (e.g. legacy ``profile`` → ``agent``) so
+    allowlists written before the rename still match dispatch.
     """
     if raw is None:
         return frozenset()
@@ -129,11 +130,15 @@ def _coerce_command_list(raw: Any) -> FrozenSet[str]:
         items = (s for s in raw.split(",") if s.strip())
     else:
         items = (raw,)
+    from intellect_cli.commands import resolve_command
+
     out: list[str] = []
     for it in items:
         s = str(it).strip().lstrip("/").lower()
-        if s:
-            out.append(s)
+        if not s:
+            continue
+        resolved = resolve_command(s)
+        out.append(resolved.name if resolved is not None else s)
     return frozenset(out)
 
 

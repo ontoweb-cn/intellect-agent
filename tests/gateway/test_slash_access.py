@@ -61,6 +61,19 @@ class TestPolicyFromExtra:
         assert p.can_run("999", "stop") is False
         assert p.can_run("999", "kanban") is False
 
+    def test_legacy_profile_allowlist_entry_maps_to_agent(self):
+        """YAML that still lists ``profile`` must authorize canonical ``agent``."""
+        p = policy_from_extra(
+            {
+                "allow_admin_from": ["111"],
+                "user_allowed_commands": ["profile"],
+            },
+            "dm",
+        )
+        assert "agent" in p.user_allowed_commands
+        assert "profile" not in p.user_allowed_commands
+        assert p.can_run("999", "agent") is True
+
     def test_always_allowed_floor_for_non_admin(self):
         # /help and /whoami always reachable so users can see what they can do.
         p = policy_from_extra(

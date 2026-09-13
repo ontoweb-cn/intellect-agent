@@ -20,7 +20,8 @@ def _make_parser() -> argparse.ArgumentParser:
     """Build a minimal parser that mirrors the real intellect structure."""
     p = argparse.ArgumentParser(prog="intellect")
     p.add_argument("--version", "-V", action="store_true")
-    p.add_argument("-p", "--profile", help="Profile name")
+    p.add_argument("-a", "--agent", help="Agent name")
+    p.add_argument("-p", "--profile", help="Agent name (legacy)")
     sub = p.add_subparsers(dest="command")
 
     chat = sub.add_parser("chat", help="Interactive chat with the agent")
@@ -40,16 +41,18 @@ def _make_parser() -> argparse.ArgumentParser:
     sess_sub.add_parser("list", help="List sessions")
     sess_sub.add_parser("delete", help="Delete a session")
 
-    prof = sub.add_parser("profile", help="Manage profiles")
+    # Canonical ``agent``; ``profile`` is a deprecated alias (omitted from
+    # completions via _choices_actions, same as the live CLI parser).
+    prof = sub.add_parser("agent", aliases=["profile"], help="Manage agents")
     prof_sub = prof.add_subparsers(dest="profile_command")
-    prof_sub.add_parser("list", help="List profiles")
-    prof_sub.add_parser("use", help="Switch to a profile")
-    prof_sub.add_parser("create", help="Create a new profile")
-    prof_sub.add_parser("delete", help="Delete a profile")
-    prof_sub.add_parser("show", help="Show profile details")
-    prof_sub.add_parser("alias", help="Set profile alias")
-    prof_sub.add_parser("rename", help="Rename a profile")
-    prof_sub.add_parser("export", help="Export a profile")
+    prof_sub.add_parser("list", help="List agents")
+    prof_sub.add_parser("use", help="Switch to an agent")
+    prof_sub.add_parser("create", help="Create a new agent")
+    prof_sub.add_parser("delete", help="Delete an agent")
+    prof_sub.add_parser("show", help="Show agent details")
+    prof_sub.add_parser("alias", help="Set agent alias")
+    prof_sub.add_parser("rename", help="Rename an agent")
+    prof_sub.add_parser("export", help="Export an agent")
 
     sub.add_parser("version", help="Show version")
 
@@ -63,7 +66,7 @@ def _make_parser() -> argparse.ArgumentParser:
 class TestWalk:
     def test_top_level_subcommands_extracted(self):
         tree = _walk(_make_parser())
-        assert set(tree["subcommands"].keys()) == {"chat", "gateway", "sessions", "profile", "version"}
+        assert set(tree["subcommands"].keys()) == {"chat", "gateway", "sessions", "agent", "version"}
 
     def test_nested_subcommands_extracted(self):
         tree = _walk(_make_parser())
@@ -243,7 +246,7 @@ class TestSubcommandDrift:
         required = {
             "chat", "model", "gateway", "setup", "login", "logout", "auth",
             "status", "cron", "config", "sessions", "version", "update",
-            "uninstall", "profile", "skills", "tools", "mcp", "plugins",
+            "uninstall", "agent", "profile", "skills", "tools", "mcp", "plugins",
             "acp", "claw", "honcho", "completion", "logs",
         }
         missing = required - defined
@@ -275,20 +278,20 @@ class TestProfileCompletion:
         out = generate_bash(_make_parser())
         assert "use|delete|show|alias|rename|export)" in out
 
-    def test_bash_profile_actions_complete_profile_names(self):
-        """After 'intellect profile use', complete with profile names."""
+    def test_bash_agent_actions_complete_agent_names(self):
+        """After 'intellect agent use', complete with agent-home names."""
         out = generate_bash(_make_parser())
-        # The profile case should have _intellect_profiles for name-taking actions
+        # The agent case should have _intellect_profiles for name-taking actions
         lines = out.split("\n")
-        in_profile_case = False
+        in_agent_case = False
         has_profiles_in_action = False
         for line in lines:
-            if "profile)" in line:
-                in_profile_case = True
-            if in_profile_case and "_intellect_profiles" in line:
+            if "agent)" in line:
+                in_agent_case = True
+            if in_agent_case and "_intellect_profiles" in line:
                 has_profiles_in_action = True
                 break
-        assert has_profiles_in_action, "profile actions should complete with _intellect_profiles"
+        assert has_profiles_in_action, "agent actions should complete with _intellect_profiles"
 
     def test_zsh_has_profiles_helper(self):
         out = generate_zsh(_make_parser())

@@ -166,22 +166,30 @@ class _FakeWS:
         return ""
 
 
-def test_profile_route_rejected():
+@pytest.mark.parametrize(
+    "path",
+    ["/p/coder/api/ws", "/a/coder/api/ws"],
+)
+def test_agent_home_route_rejected(path):
     from tui_gateway.ws import handle_ws
 
-    ws = _FakeWS(path="/p/coder/api/ws")
+    ws = _FakeWS(path=path)
     asyncio.run(asyncio.wait_for(handle_ws(ws), timeout=5))
     # Accept-then-close so the client gets a real WS close frame.
     assert ws.accepted is True
-    assert ws.closed == (4404, "profile routing not implemented")
+    assert ws.closed == (4404, "agent home routing not implemented")
 
 
-def test_embedded_p_segment_route_not_rejected():
-    # The guard is anchored to the ^/p/ prefix: a route that merely
-    # CONTAINS "/p/" (e.g. /api/p/...) must not be swept up.
+@pytest.mark.parametrize(
+    "path",
+    ["/api/p/x", "/api/a/x"],
+)
+def test_embedded_agent_home_segment_route_not_rejected(path):
+    # Guard is anchored to ^/(a|p)/ — routes that merely CONTAIN those
+    # segments (e.g. /api/p/...) must not be swept up.
     from tui_gateway.ws import handle_ws
 
-    ws = _FakeWS(path="/api/p/x")
+    ws = _FakeWS(path=path)
 
     async def main():
         task = asyncio.create_task(handle_ws(ws))

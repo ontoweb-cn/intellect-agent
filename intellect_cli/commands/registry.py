@@ -353,6 +353,7 @@ def is_gateway_known_command(name: str | None) -> bool:
 # should_bypass_active_session below).
 ACTIVE_SESSION_BYPASS_COMMANDS: frozenset[str] = frozenset(
     {
+        "agent",
         "agents",
         "approve",
         "background",
@@ -361,7 +362,6 @@ ACTIVE_SESSION_BYPASS_COMMANDS: frozenset[str] = frozenset(
         "deny",
         "help",
         "new",
-        "profile",
         "queue",
         "restart",
         "status",

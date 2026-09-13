@@ -177,9 +177,10 @@ def _expected_auth_token() -> str:
 
 async def handle_ws(ws: Any) -> None:
     """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``."""
-    # Fail-closed profile routing guard: multi-profile URL routing
-    # (``/p/<profile>``) is NOT implemented. Reject explicitly instead of
-    # silently serving the gateway's owner profile under a foreign path.
+    # Fail-closed agent-home routing guard: multiplex URL prefixes
+    # (``/a/<name>/`` canonical, legacy ``/p/<name>/``) are stripped by the
+    # multiplex front end. A direct hit on a standalone/child gateway must
+    # NOT silently serve this process's INTELLECT_HOME under a foreign path.
     _path = ""
     try:
         _scope = getattr(ws, "scope", {}) or {}
@@ -188,16 +189,15 @@ async def handle_ws(ws: Any) -> None:
         _path = ""
     import re as _re
 
-    # Anchored to the path PREFIX: Hermes-style profile multiplexing is
-    # ``/p/<profile>/...``. An unanchored match would also reject unrelated
-    # future routes that merely contain a "/p/" segment.
-    if _re.match(r"^/p/", _path):
-        _log.warning("Rejected multi-profile route (not implemented): %s", _path)
+    # Anchored to the path PREFIX only — an unanchored match would also
+    # reject unrelated routes that merely contain "/a/" or "/p/" segments.
+    if _re.match(r"^/(?:a|p)/", _path):
+        _log.warning("Rejected multi-agent route (not implemented): %s", _path)
         # Accept first so the rejection reaches the client as a real WS
         # close frame with the diagnostic code (closing pre-accept would
         # surface only as an HTTP-level denial without the reason).
         await ws.accept()
-        await ws.close(code=4404, reason="profile routing not implemented")
+        await ws.close(code=4404, reason="agent home routing not implemented")
         return
 
     await ws.accept()
