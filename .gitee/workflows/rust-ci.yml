@@ -50,14 +50,17 @@ stages:
             run: |
               source $HOME/.cargo/env
               cd rust-core
-              cargo test --no-default-features -- --test-threads=2
+              # Serial on purpose — see the note in .github/workflows/rust-ci.yml:
+              # parallel runs race pyo3's lazy interpreter init (aborting the
+              # process) and backend.rs's shared temp_db_path(). Suite is ~0.15s.
+              cargo test --no-default-features -- --test-threads=1
               echo "Rust unit tests (pure): OK"
 
           - name: Assert minimum Rust test count
             run: |
               source $HOME/.cargo/env
               cd rust-core
-              COUNT=$(cargo test --no-default-features -- --list 2>&1 | grep -c 'test .*\.rs:' || echo 0)
+              COUNT=$(cargo test --no-default-features -- --list 2>&1 | grep -c ': test$' || echo 0)
               echo "Rust test count: $COUNT"
               python3 -c "assert $COUNT >= 84, f'Expected >= 84 Rust tests, got {$COUNT}'"
               echo "Test count assertion: OK"

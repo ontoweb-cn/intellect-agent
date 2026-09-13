@@ -240,10 +240,23 @@ mod tests {
         assert_eq!(classify_verification_command("echo hello"), None);
     }
 
+    /// Temp *file* DB — deliberately not ``:memory:``.  Every function in this
+    /// module opens its own connection, and each connection to ``:memory:``
+    /// gets a separate, empty database, so a table the test creates would be
+    /// invisible to the code under test.
+    fn temp_db_path() -> String {
+        let path = std::env::temp_dir().join(format!(
+            "intellect_verification_test_{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path); // stale file from an earlier run
+        path.to_string_lossy().to_string()
+    }
+
     #[test]
     fn test_insert_and_query() {
-        let db_path = ":memory:";
-        let conn = Connection::open(db_path).unwrap();
+        let db_path = temp_db_path();
+        let conn = Connection::open(&db_path).unwrap();
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS verification_evidence (
                 id TEXT PRIMARY KEY,
@@ -260,9 +273,11 @@ mod tests {
             CREATE INDEX IF NOT EXISTS idx_ve_kind ON verification_evidence(kind);",
         )
         .unwrap();
+        // Release the setup connection — the functions under test open their own.
+        drop(conn);
 
         insert_verification_evidence(
-            db_path,
+            &db_path,
             "ev1",
             "sess1",
             "test_run",
@@ -276,8 +291,10 @@ mod tests {
         .unwrap();
 
         let result =
-            query_verification_evidence(db_path, Some("sess1"), None, None).unwrap();
+            query_verification_evidence(&db_path, Some("sess1"), None, None).unwrap();
         assert!(result.contains("ev1"));
         assert!(result.contains("pytest"));
+
+        let _ = std::fs::remove_file(&db_path);
     }
 }
