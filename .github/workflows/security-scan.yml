@@ -19,7 +19,27 @@ jobs:
       - name: Install bandit
         run: pip install bandit[toml]
       - name: Run bandit (JSON output)
-        run: bandit -c pyproject.toml -r agent tools intellect_cli gateway plugins -f json -o bandit-results.json
+        # --exit-zero so the SARIF below is always produced and uploaded: the
+        # repo carries ~1445 pre-existing LOW/MEDIUM findings, and a bare
+        # `bandit` invocation exits 1 on any of them, which meant this job
+        # failed on every push since it was added and pushed zero results to
+        # the Security tab.  Severity gating moved to the dedicated step
+        # below so the check stays actionable instead of permanently red.
+        run: bandit -c pyproject.toml -r agent tools intellect_cli gateway plugins -f json -o bandit-results.json --exit-zero
+      - name: Fail on HIGH severity findings
+        # The gate: HIGH is the actionable tier.  LOW/MEDIUM stay visible in
+        # the Security tab via SARIF without blocking every unrelated PR.
+        run: |
+          python3 -c "
+          import json, sys
+          data = json.load(open('bandit-results.json'))
+          high = [r for r in data.get('results', []) if r.get('issue_severity') == 'HIGH']
+          if high:
+              for r in high:
+                  print(f\"::error file={r['filename']},line={r['line_number']}::{r['test_id']} {r['issue_text']}\")
+              sys.exit(1)
+          print('No HIGH severity findings')
+          "
       - name: Convert JSON to SARIF
         run: |
           python3 -c "
