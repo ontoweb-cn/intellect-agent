@@ -130,7 +130,8 @@ Python-bound, which is the same reason G-14 and G-21 closed.
 ## Dependencies
 
 ```toml
-pyo3 = "0.21"          # Python bindings (default feature: extension-module)
+pyo3 = "0.29"          # Python bindings (default feature: extension-module)
+                       # floor: CPython 3.8, Rust 1.83
 rusqlite = "0.31"      # SQLite (bundled, FTS5 included)
 regex = "1"            # Regex engine (replaced fancy-regex v0.14 for ReDoS safety)
 serde + serde_json = "1"   # Serialization
