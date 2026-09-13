@@ -2,7 +2,13 @@
 sidebar_position: 2
 ---
 
-# Profiles: Running Multiple Agents
+# Agents: Running Multiple Isolated Homes
+
+:::info Renamed from "Profiles"
+As of the profile→agent rename, the isolation unit is called an **agent**
+(agent home). CLI: `intellect agent`. On-disk: `~/.intellect/agents/<name>/`.
+Legacy `intellect profile`, `-p`/`--profile`, and `~/.intellect/profiles/` still work.
+:::
 
 Run multiple independent Intellect agents on the same machine — each with its own config, API keys, memory, sessions, skills, and gateway state.
 

@@ -72,7 +72,9 @@ def get_intellect_home() -> Path:
             # Inline the default-root resolution from get_default_intellect_root()
             # to stay import-safe (this function is called from module scope
             # in 30+ files; we cannot afford to trigger logging setup here).
-            active_path = (Path.home() / ".intellect" / "active_profile")
+            active_path = (Path.home() / ".intellect" / "active_agent")
+            if not active_path.exists():
+                active_path = (Path.home() / ".intellect" / "active_profile")
             active = active_path.read_text().strip() if active_path.exists() else ""
         except (UnicodeDecodeError, OSError):
             active = ""
@@ -86,9 +88,9 @@ def get_intellect_home() -> Path:
             import sys
             msg = (
                 f"[INTELLECT_HOME fallback] INTELLECT_HOME is unset but active "
-                f"profile is {active!r}. Falling back to ~/.intellect, which "
-                f"is the DEFAULT profile — not {active!r}. Any data this "
-                f"process writes will land in the wrong profile. The "
+                f"agent is {active!r}. Falling back to ~/.intellect, which "
+                f"is the DEFAULT agent — not {active!r}. Any data this "
+                f"process writes will land in the wrong agent home. The "
                 f"subprocess spawner should pass INTELLECT_HOME explicitly "
                 f"(see issue #18594)."
             )
@@ -102,7 +104,7 @@ def get_intellect_home() -> Path:
 
 
 def get_default_intellect_root() -> Path:
-    """Return the root Intellect directory for profile-level operations.
+    """Return the root Intellect directory for agent-home operations.
 
     In standard deployments this is ``~/.intellect``.
 
@@ -110,10 +112,11 @@ def get_default_intellect_root() -> Path:
     ``~/.intellect`` (e.g. ``/opt/data``), returns ``INTELLECT_HOME`` directly
     — that IS the root.
 
-    In profile mode where ``INTELLECT_HOME`` is ``<root>/profiles/<name>``,
-    returns ``<root>`` so that ``profile list`` can see all profiles.
-    Works both for standard (``~/.intellect/profiles/coder``) and Docker
-    (``/opt/data/profiles/coder``) layouts.
+    In agent-home mode where ``INTELLECT_HOME`` is ``<root>/agents/<name>``
+    (or legacy ``<root>/profiles/<name>``), returns ``<root>`` so that
+    ``agent list`` can see all agents.
+    Works for standard (``~/.intellect/agents/coder``) and Docker
+    (``/opt/data/agents/coder``) layouts, plus legacy ``profiles/`` paths.
 
     Import-safe — no dependencies beyond stdlib.
     """
@@ -124,19 +127,17 @@ def get_default_intellect_root() -> Path:
     env_path = Path(env_home)
     try:
         env_path.resolve().relative_to(native_home.resolve())
-        # INTELLECT_HOME is under ~/.intellect (normal or profile mode)
+        # INTELLECT_HOME is under ~/.intellect (normal or agent-home mode)
         return native_home
     except ValueError:
         pass
 
     # Docker / custom deployment.
-    # Check if this is a profile path: <root>/profiles/<name>
-    # If the immediate parent dir is named "profiles", the root is
-    # the grandparent — this covers Docker profiles correctly.
-    if env_path.parent.name == "profiles":
+    # Agent path: <root>/agents/<name> (canonical) or <root>/profiles/<name> (legacy).
+    if env_path.parent.name in {"agents", "profiles"}:
         return env_path.parent.parent
 
-    # Not a profile path — INTELLECT_HOME itself is the root
+    # Not an agent-home path — INTELLECT_HOME itself is the root
     return env_path
 
 
@@ -240,7 +241,7 @@ def display_intellect_home() -> str:
     Uses ``~/`` shorthand for readability::
 
         default:  ``~/.intellect``
-        profile:  ``~/.intellect/profiles/coder``
+        agent:    ``~/.intellect/agents/coder`` (legacy: ``…/profiles/coder``)
         custom:   ``/opt/intellect-custom``
 
     Use this in **user-facing** print/log messages instead of hardcoding

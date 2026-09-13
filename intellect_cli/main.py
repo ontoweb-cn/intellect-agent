@@ -278,24 +278,32 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # Falls back to ~/.intellect/active_profile for sticky default.
 # ---------------------------------------------------------------------------
 def _apply_profile_override() -> None:
-    """Pre-parse --profile/-p and set INTELLECT_HOME before module imports."""
+    """Pre-parse --agent/--profile flags and set INTELLECT_HOME before imports.
+
+    Canonical flags: ``--agent`` / ``-a``. Legacy ``--profile`` / ``-p`` still
+    work. Sticky default: ``active_agent``, then legacy ``active_profile``.
+    """
     argv = sys.argv[1:]
     profile_name = None
     consume = 0
 
-    # 1. Check for explicit -p / --profile flag
+    # 1. Check for explicit agent/profile flag (--agent/-a preferred)
     for i, arg in enumerate(argv):
-        if arg in {"--profile", "-p"} and i + 1 < len(argv):
+        if arg in {"--agent", "-a", "--profile", "-p"} and i + 1 < len(argv):
             profile_name = argv[i + 1]
             consume = 2
+            break
+        elif arg.startswith("--agent="):
+            profile_name = arg.split("=", 1)[1]
+            consume = 1
             break
         elif arg.startswith("--profile="):
             profile_name = arg.split("=", 1)[1]
             consume = 1
             break
 
-    # 1b. Reject values that can't be valid profile names (e.g. pytest's
-    # "-p no:xdist" would be misread as profile "no:xdist" otherwise).
+    # 1b. Reject values that can't be valid agent names (e.g. pytest's
+    # "-p no:xdist" would be misread as agent "no:xdist" otherwise).
     # Mirrors intellect_cli.profiles._PROFILE_ID_RE so we never call
     # resolve_profile_env() with a value it must reject + sys.exit on.
     if profile_name is not None and consume == 2:
@@ -306,34 +314,36 @@ def _apply_profile_override() -> None:
             consume = 0
 
     # 1.5 If INTELLECT_HOME is already set and no explicit flag was given, trust it
-    # only when it already points to a specific profile directory.  The
-    # distinguishing heuristic: a profile path has "profiles" as its immediate
-    # parent directory name (e.g. ~/.intellect/profiles/coder or
-    # /opt/data/profiles/coder).  If INTELLECT_HOME points to the intellect root
+    # only when it already points to a specific agent-home directory.  The
+    # distinguishing heuristic: parent dir is ``agents`` (canonical) or
+    # ``profiles`` (legacy).  If INTELLECT_HOME points to the intellect root
     # instead (e.g. systemd hardcodes INTELLECT_HOME=/root/.intellect), we must
-    # still read active_profile — the user may have switched profiles via
-    # `intellect profile use` and the gateway should honour that choice.
+    # still read active_agent / active_profile — the user may have switched
+    # via `intellect agent use` and the gateway should honour that choice.
     # See issue #22502.
     intellect_home_env = os.environ.get("INTELLECT_HOME", "")
     if profile_name is None and intellect_home_env:
-        if Path(intellect_home_env).parent.name == "profiles":
+        if Path(intellect_home_env).parent.name in {"agents", "profiles"}:
             return
 
-    # 2. If no flag, check active_profile in the intellect root
+    # 2. If no flag, check sticky active agent in the intellect root
     if profile_name is None:
         try:
             from intellect_constants import get_default_intellect_root
 
-            active_path = get_default_intellect_root() / "active_profile"
-            if active_path.exists():
-                name = active_path.read_text().strip()
-                if name and name != "default":
-                    profile_name = name
-                    consume = 0  # don't strip anything from argv
+            root = get_default_intellect_root()
+            for sticky in ("active_agent", "active_profile"):
+                active_path = root / sticky
+                if active_path.exists():
+                    name = active_path.read_text().strip()
+                    if name and name != "default":
+                        profile_name = name
+                        consume = 0  # don't strip anything from argv
+                        break
         except (UnicodeDecodeError, OSError):
             pass  # corrupted file, skip
 
-    # 3. If we found a profile, resolve and set INTELLECT_HOME
+    # 3. If we found an agent, resolve and set INTELLECT_HOME
     if profile_name is not None:
         try:
             from intellect_cli.profiles import resolve_profile_env
@@ -345,7 +355,7 @@ def _apply_profile_override() -> None:
         except Exception as exc:
             # A bug in profiles.py must NEVER prevent intellect from starting
             print(
-                f"Warning: profile override failed ({exc}), using default",
+                f"Warning: agent override failed ({exc}), using default",
                 file=sys.stderr,
             )
             return
@@ -353,11 +363,11 @@ def _apply_profile_override() -> None:
         # Strip the flag from argv so argparse doesn't choke
         if consume > 0:
             for i, arg in enumerate(argv):
-                if arg in {"--profile", "-p"}:
+                if arg in {"--agent", "-a", "--profile", "-p"}:
                     start = i + 1  # +1 because argv is sys.argv[1:]
                     sys.argv = sys.argv[:start] + sys.argv[start + consume :]
                     break
-                elif arg.startswith("--profile="):
+                elif arg.startswith("--agent=") or arg.startswith("--profile="):
                     start = i + 1
                     sys.argv = sys.argv[:start] + sys.argv[start + 1 :]
                     break
@@ -10460,6 +10470,7 @@ def _coalesce_session_name_args(argv: list) -> list:
         "version",
         "update",
         "uninstall",
+        "agent",
         "profile",
         "honcho",
         "claw",
@@ -10502,7 +10513,16 @@ def _coalesce_session_name_args(argv: list) -> list:
 
 
 def cmd_profile(args):
-    """Profile management — create, delete, list, switch, alias."""
+    """Agent-home management — create, delete, list, switch, alias.
+
+    CLI entrypoints: ``intellect agent`` (canonical) and deprecated
+    ``intellect profile``.
+    """
+    cmd_agent(args)
+
+
+def cmd_agent(args):
+    """Agent-home management — create, delete, list, switch, alias."""
     from intellect_cli.profile_gate import (
         CLI_MUTATING_PROFILE_ACTIONS,
         is_profile_management_enabled,
@@ -10525,33 +10545,33 @@ def cmd_profile(args):
 
     action = getattr(args, "profile_action", None)
 
-    # TEMPORARY: block create / switch / delete while profiles.management_enabled
-    # is false. Read-only actions (list, show, describe, export, …) still run.
+    # TEMPORARY: block create / switch / delete while agents.management_enabled
+    # (or legacy profiles.management_enabled) is false.
     if action in CLI_MUTATING_PROFILE_ACTIONS and not is_profile_management_enabled():
         print(f"Error: {profile_management_disabled_message()}", file=sys.stderr)
         sys.exit(1)
 
     if action is None:
-        # Bare `intellect profile` — show current profile status
+        # Bare `intellect agent` — show current agent status
         profile_name = get_active_profile_name()
         dhh = display_intellect_home()
-        print(f"\nActive profile: {profile_name}")
-        print(f"Path:           {dhh}")
+        print(f"\nActive agent: {profile_name}")
+        print(f"Path:         {dhh}")
 
         profiles = list_profiles()
         for p in profiles:
             if p.name == profile_name or (profile_name == "default" and p.is_default):
                 if p.model:
                     print(
-                        f"Model:          {p.model}"
+                        f"Model:        {p.model}"
                         + (f" ({p.provider})" if p.provider else "")
                     )
                 print(
-                    f"Gateway:        {'running' if p.gateway_running else 'stopped'}"
+                    f"Gateway:      {'running' if p.gateway_running else 'stopped'}"
                 )
-                print(f"Skills:         {p.skill_count} installed")
+                print(f"Skills:       {p.skill_count} installed")
                 if p.alias_path:
-                    print(f"Alias:          {p.name} → intellect -p {p.name}")
+                    print(f"Alias:        {p.name} → intellect -a {p.name}")
                 break
         print()
         return
@@ -10561,12 +10581,12 @@ def cmd_profile(args):
         active = get_active_profile_name()
 
         if not profiles:
-            print("No profiles found.")
+            print("No agents found.")
             return
 
         # Header
         print(
-            f"\n {'Profile':<16} {'Model':<28} {'Gateway':<12} "
+            f"\n {'Agent':<16} {'Model':<28} {'Gateway':<12} "
             f"{'Alias':<12} {'Distribution'}"
         )
         print(
@@ -11237,7 +11257,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "config", "cron", "curator", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "lsp", "mcp", "members", "memory", "migrate",
-        "model", "pairing", "plugins", "portal", "postinstall", "profile", "proxy",
+        "model", "pairing", "plugins", "portal", "postinstall", "agent", "profile", "proxy",
         "prompt-size",
         "send", "sessions", "setup",
         "skills", "slack", "status", "tools", "uninstall", "update",
@@ -14624,11 +14644,19 @@ Examples:
     acp_parser.set_defaults(func=cmd_acp)
 
     # =========================================================================
-    # profile command
+    # agent command (canonical); ``profile`` is a deprecated alias
     # =========================================================================
     profile_parser = subparsers.add_parser(
-        "profile",
-        help="Manage profiles — multiple isolated Intellect instances",
+        "agent",
+        aliases=["profile"],
+        help="Manage agents — multiple isolated Intellect instances (homes)",
+        description=(
+            "Each agent is a fully isolated INTELLECT_HOME (config, keys, "
+            "memory, sessions, skills, gateway). Canonical on-disk path: "
+            "~/.intellect/agents/<name>/. Legacy ~/.intellect/profiles/<name>/ "
+            "is still discovered. ``intellect profile`` remains a deprecated "
+            "alias for this command."
+        ),
     )
     profile_subparsers = profile_parser.add_subparsers(dest="profile_action")
 
@@ -14812,7 +14840,7 @@ Examples:
     )
     profile_info.add_argument("profile_name", help="Profile to inspect")
 
-    profile_parser.set_defaults(func=cmd_profile)
+    profile_parser.set_defaults(func=cmd_agent)
 
     # =========================================================================
     # completion command

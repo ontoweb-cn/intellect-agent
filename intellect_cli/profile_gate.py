@@ -1,12 +1,13 @@
-"""Temporary gate for profile create / switch / delete (CLI + WebUI).
+"""Temporary gate for agent (formerly profile) create / switch / delete.
 
-Controlled by ``profiles.management_enabled`` in config.yaml. When false:
+Controlled by ``agents.management_enabled`` in config.yaml (legacy key:
+``profiles.management_enabled``). When false:
 
-- CLI blocks mutating ``intellect profile`` subcommands (create, use, delete, …).
-- WebUI hides Profiles UI and returns 403 on mutating profile APIs.
-- ``intellect -p <existing>`` and read-only ``intellect profile list`` stay available.
+- CLI blocks mutating ``intellect agent`` / ``intellect profile`` subcommands.
+- WebUI hides Profiles/Agents UI and returns 403 on mutating APIs.
+- ``intellect -a <existing>`` / ``-p`` and read-only list stay available.
 
-Set ``profiles.management_enabled: true`` to restore full profile management.
+Set ``agents.management_enabled: true`` to restore full management.
 """
 
 from __future__ import annotations
@@ -24,21 +25,39 @@ CLI_MUTATING_PROFILE_ACTIONS = frozenset({
     "alias",
 })
 
+# Alias for callers that prefer agent terminology.
+CLI_MUTATING_AGENT_ACTIONS = CLI_MUTATING_PROFILE_ACTIONS
+
 
 def is_profile_management_enabled(config: dict[str, Any] | None = None) -> bool:
-    """Return True when users may create, switch, or delete profiles."""
+    """Return True when users may create, switch, or delete agents.
+
+    Reads ``agents.management_enabled`` (canonical) and legacy
+    ``profiles.management_enabled``. Either True enables management so older
+    configs that only set ``profiles.*`` keep working after DEFAULT_CONFIG
+    gained an ``agents`` block (deep-merge would otherwise leave agents=false).
+    """
     if config is None:
         from intellect_cli.config import load_config
 
         config = load_config()
+    agents = config.get("agents") if isinstance(config.get("agents"), dict) else {}
     profiles = config.get("profiles") if isinstance(config.get("profiles"), dict) else {}
-    # Default false: temporary product lock until multi-profile UX is re-enabled.
-    return bool(profiles.get("management_enabled", False))
+    return bool(agents.get("management_enabled")) or bool(
+        profiles.get("management_enabled")
+    )
+
+
+is_agent_management_enabled = is_profile_management_enabled
 
 
 def profile_management_disabled_message() -> str:
     return (
-        "Profile management is temporarily disabled "
-        "(set profiles.management_enabled: true in config.yaml to re-enable). "
-        "Existing profiles remain usable via intellect -p <name>."
+        "Agent management is temporarily disabled "
+        "(set agents.management_enabled: true in config.yaml to re-enable). "
+        "Existing agents remain usable via intellect -a <name> "
+        "(or legacy -p / intellect profile)."
     )
+
+
+agent_management_disabled_message = profile_management_disabled_message

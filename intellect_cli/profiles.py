@@ -1,22 +1,27 @@
 """
-Profile management for multiple isolated Intellect instances.
+Agent-home management for multiple isolated Intellect instances.
 
-Each profile is a fully independent INTELLECT_HOME directory with its own
-config.yaml, .env, memory, sessions, skills, gateway, cron, and logs.
-Profiles live under ``~/.intellect/profiles/<name>/`` by default.
+Each *agent* (historically called a *profile*) is a fully independent
+INTELLECT_HOME directory with its own config.yaml, .env, memory, sessions,
+skills, gateway, cron, and logs.
 
-The "default" profile is ``~/.intellect`` itself — backward compatible,
+Canonical layout: ``~/.intellect/agents/<name>/``.
+Legacy layout ``~/.intellect/profiles/<name>/`` is still discovered (dual-read).
+
+The "default" agent is ``~/.intellect`` itself — backward compatible,
 zero migration needed.
 
 Usage::
 
-    intellect profile create coder          # fresh profile + bundled skills
-    intellect profile create coder --clone  # also copy config, .env, SOUL.md, skills
-    intellect profile create coder --clone-all  # full copy of source profile
-    coder chat                           # use via wrapper alias
-    intellect -p coder chat                 # or via flag
-    intellect profile use coder             # set as sticky default
-    intellect profile delete coder          # remove profile + alias + service
+    intellect agent create coder          # fresh agent + bundled skills
+    intellect agent create coder --clone  # also copy config, .env, SOUL.md, skills
+    intellect agent create coder --clone-all  # full copy of source agent
+    coder chat                            # use via wrapper alias
+    intellect -a coder chat               # or via flag (--agent / --profile / -p)
+    intellect agent use coder             # set as sticky default
+    intellect agent delete coder          # remove agent + alias + service
+
+``intellect profile …`` remains a deprecated alias for the same commands.
 """
 
 import json
@@ -88,7 +93,7 @@ _CLONE_ALL_STRIP: list[str] = [
 # Rationale per item:
 #   intellect-agent  — git repo checkout (~84 MB source + ~3 GB venv)
 #   .worktrees    — git worktrees
-#   profiles      — sibling named profiles (recursive copy never intended)
+#   agents/profiles — sibling named agent homes (recursive copy never intended)
 #   bin           — installed binaries (tirith etc., ~10 MB) shared per-host
 #   node_modules  — npm packages (hundreds of MB)
 #
@@ -99,7 +104,8 @@ _CLONE_ALL_STRIP: list[str] = [
 _CLONE_ALL_DEFAULT_EXCLUDE_ROOT: frozenset[str] = frozenset({
     "intellect-agent",
     ".worktrees",
-    "profiles",
+    "agents",
+    "profiles",  # legacy sibling tree
     "bin",
     "node_modules",
 })
@@ -176,7 +182,8 @@ _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
     # Infrastructure
     "intellect-agent",         # repo checkout (multi-GB)
     ".worktrees",           # git worktrees
-    "profiles",             # other profiles — never recursive-export
+    "agents",               # other agent homes — never recursive-export
+    "profiles",             # legacy sibling tree — never recursive-export
     "bin",                  # installed binaries (tirith, etc.)
     "node_modules",         # npm packages
     # Databases & runtime state
@@ -186,7 +193,7 @@ _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
     "gateway.pid", "gateway_state.json", "processes.json",
     "auth.json",            # API keys, OAuth tokens, credential pools
     ".env",                 # API keys (dotenv)
-    "auth.lock", "active_profile", ".update_check",
+    "auth.lock", "active_agent", "active_profile", ".update_check",
     "errors.log",
     ".intellect_history",
     # Caches (regenerated on use)
@@ -206,30 +213,72 @@ _intellect_SUBCOMMANDS = frozenset({
     "chat", "model", "gateway", "setup", "whatsapp", "login", "logout",
     "status", "cron", "doctor", "dump", "config", "pairing", "skills", "tools",
     "mcp", "sessions", "insights", "version", "update", "uninstall",
-    "profile", "plugins", "honcho", "acp",
+    "profile", "agent", "plugins", "honcho", "acp",
 })
+
+# On-disk directory names for named agent homes.
+_AGENTS_DIRNAME = "agents"
+_LEGACY_PROFILES_DIRNAME = "profiles"
 
 
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
 
-def _get_profiles_root() -> Path:
-    """Return the directory where named profiles are stored.
+def _get_agents_root() -> Path:
+    """Return the canonical directory for named agent homes (``…/agents``).
 
     Anchored to the intellect root, NOT to the current INTELLECT_HOME
-    (which may itself be a profile).  This ensures ``coder profile list``
-    can see all profiles.
+    (which may itself be an agent home).  This ensures ``coder agent list``
+    can see all agents.
 
     In Docker/custom deployments where INTELLECT_HOME points outside
-    ``~/.intellect``, profiles live under ``INTELLECT_HOME/profiles/`` so
+    ``~/.intellect``, agents live under ``INTELLECT_HOME/agents/`` so
     they persist on the mounted volume.
     """
-    return _get_default_intellect_home() / "profiles"
+    return _get_default_intellect_home() / _AGENTS_DIRNAME
+
+
+def _get_legacy_profiles_root() -> Path:
+    """Return the legacy ``…/profiles`` directory (pre-rename)."""
+    return _get_default_intellect_home() / _LEGACY_PROFILES_DIRNAME
+
+
+def _get_profiles_root() -> Path:
+    """Return the canonical named-agent root (``agents/``).
+
+    Kept as ``_get_profiles_root`` for call-site compatibility during the
+    profile→agent rename. New code should prefer :func:`_get_agents_root`.
+    """
+    return _get_agents_root()
+
+
+def _iter_named_agent_dirs() -> List[Path]:
+    """Yield named agent home directories (agents/ preferred over legacy profiles/).
+
+    If the same id exists under both trees, only the ``agents/`` entry is
+    returned.
+    """
+    seen: set[str] = set()
+    out: list[Path] = []
+    for root in (_get_agents_root(), _get_legacy_profiles_root()):
+        if not root.is_dir():
+            continue
+        for entry in sorted(root.iterdir()):
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            if not _PROFILE_ID_RE.match(name):
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append(entry)
+    return out
 
 
 def _get_default_intellect_home() -> Path:
-    """Return the default (pre-profile) INTELLECT_HOME path.
+    """Return the default (pre-agent) INTELLECT_HOME path.
 
     In standard deployments this is ``~/.intellect``.
     In Docker/custom deployments where INTELLECT_HOME is outside ``~/.intellect``
@@ -239,8 +288,21 @@ def _get_default_intellect_home() -> Path:
     return get_default_intellect_root()
 
 
+def _get_active_agent_path() -> Path:
+    """Return the path to the sticky ``active_agent`` file."""
+    return _get_default_intellect_home() / "active_agent"
+
+
 def _get_active_profile_path() -> Path:
-    """Return the path to the sticky active_profile file."""
+    """Return the sticky active-agent path (canonical ``active_agent``).
+
+    Legacy name kept for imports; prefer :func:`_get_active_agent_path`.
+    """
+    return _get_active_agent_path()
+
+
+def _legacy_active_profile_path() -> Path:
+    """Pre-rename sticky file path (``active_profile``)."""
     return _get_default_intellect_home() / "active_profile"
 
 
@@ -254,10 +316,11 @@ def _get_wrapper_dir() -> Path:
 # ---------------------------------------------------------------------------
 
 def normalize_profile_name(name: str) -> str:
-    """Return the canonical profile id used on disk and in CLI ``-p`` argv.
+    """Return the canonical agent id used on disk and in CLI ``-a``/``-p`` argv.
 
-    Named profiles are stored lowercase under ``profiles/<id>/``. The special
-    alias ``default`` is matched case-insensitively (``Default`` → ``default``).
+    Named agents are stored lowercase under ``agents/<id>/`` (legacy:
+    ``profiles/<id>/``). The special alias ``default`` is matched
+    case-insensitively (``Default`` → ``default``).
     Dashboards and tools may pass title-cased display labels; normalize before
     validation, assignment, and subprocess spawn (see issue #18498).
     """
@@ -265,14 +328,14 @@ def normalize_profile_name(name: str) -> str:
         name = str(name)
     stripped = name.strip()
     if not stripped:
-        raise ValueError("profile name cannot be empty")
+        raise ValueError("agent name cannot be empty")
     if stripped.casefold() == "default":
         return "default"
     return stripped.lower()
 
 
 def validate_profile_name(name: str) -> None:
-    """Raise ``ValueError`` if *name* is not a valid profile identifier.
+    """Raise ``ValueError`` if *name* is not a valid agent identifier.
 
     Validates the input as-given — strict lowercase match. Callers that accept
     mixed-case or title-cased input from users (UI, CLI args) should
@@ -282,39 +345,59 @@ def validate_profile_name(name: str) -> None:
 
     Also rejects names in :data:`_RESERVED_NAMES` (``intellect``, ``test``,
     ``tmp``, ``root``, ``sudo``) that would create confusing on-disk
-    collisions (a ``intellect`` profile inside ``~/.intellect/``) or get refused
+    collisions (an ``intellect`` agent inside ``~/.intellect/``) or get refused
     at alias-creation time anyway. ``default`` is a special pass-through —
-    it's a valid alias for the built-in root profile.
+    it's a valid alias for the built-in root agent home.
     """
     if name == "default":
         return  # special alias for ~/.intellect
     if not _PROFILE_ID_RE.match(name):
         raise ValueError(
-            f"Invalid profile name {name!r}. Must match "
+            f"Invalid agent name {name!r}. Must match "
             f"[a-z0-9][a-z0-9_-]{{0,63}}"
         )
     if name in _RESERVED_NAMES:
         raise ValueError(
-            f"Profile name {name!r} is reserved — it collides with either "
+            f"Agent name {name!r} is reserved — it collides with either "
             f"the Intellect installation itself or a common system binary.  "
             f"Pick a different name."
         )
 
 
 def get_profile_dir(name: str) -> Path:
-    """Resolve a profile name to its INTELLECT_HOME directory."""
+    """Resolve an agent name to its INTELLECT_HOME directory.
+
+    Prefers ``agents/<id>/`` when it exists; falls back to legacy
+    ``profiles/<id>/``; otherwise returns the canonical ``agents/<id>``
+    path (used when creating a new agent).
+    """
     canon = normalize_profile_name(name)
     if canon == "default":
         return _get_default_intellect_home()
-    return _get_profiles_root() / canon
+    agents_dir = _get_agents_root() / canon
+    if agents_dir.is_dir():
+        return agents_dir
+    legacy_dir = _get_legacy_profiles_root() / canon
+    if legacy_dir.is_dir():
+        return legacy_dir
+    return agents_dir
+
+
+# Public aliases (profile → agent rename)
+normalize_agent_name = normalize_profile_name
+validate_agent_name = validate_profile_name
+get_agent_dir = get_profile_dir
 
 
 def profile_exists(name: str) -> bool:
-    """Check whether a profile directory exists."""
+    """Check whether an agent home directory exists."""
     canon = normalize_profile_name(name)
     if canon == "default":
         return True
     return get_profile_dir(canon).is_dir()
+
+
+agent_exists = profile_exists
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +430,8 @@ def check_alias_collision(name: str) -> Optional[str]:
             if existing_path == str(expected):
                 try:
                     content = expected.read_text()
-                    if "intellect -p" in content:
+                    # Own wrappers use ``-a`` (canonical) or legacy ``-p``.
+                    if "intellect -a" in content or "intellect -p" in content:
                         return None  # it's our wrapper, safe to overwrite
                 except Exception:
                     pass
@@ -387,7 +471,7 @@ def create_wrapper_script(name: str, target: Optional[str] = None) -> Optional[P
     if is_windows:
         wrapper_path = wrapper_dir / f"{canon}.bat"
         try:
-            wrapper_path.write_text(f"@echo off\r\nintellect -p {profile} %*\r\n")
+            wrapper_path.write_text(f"@echo off\r\nintellect -a {profile} %*\r\n")
             return wrapper_path
         except OSError as e:
             print(f"⚠ Could not create wrapper at {wrapper_path}: {e}")
@@ -395,7 +479,7 @@ def create_wrapper_script(name: str, target: Optional[str] = None) -> Optional[P
     else:
         wrapper_path = wrapper_dir / canon
         try:
-            wrapper_path.write_text(f'#!/bin/sh\nexec intellect -p {profile} "$@"\n')
+            wrapper_path.write_text(f'#!/bin/sh\nexec intellect -a {profile} "$@"\n')
             wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
             return wrapper_path
         except OSError as e:
@@ -419,7 +503,7 @@ def remove_wrapper_script(name: str) -> bool:
             try:
                 # Verify it's our wrapper before removing
                 content = wrapper_path.read_text()
-                if "intellect -p" in content:
+                if "intellect -a" in content or "intellect -p" in content:
                     wrapper_path.unlink()
                     return True
             except Exception:
@@ -605,11 +689,11 @@ def write_profile_meta(
 # ---------------------------------------------------------------------------
 
 def list_profiles() -> List[ProfileInfo]:
-    """Return info for all profiles, including the default."""
+    """Return info for all agents (homes), including the default."""
     profiles = []
     wrapper_dir = _get_wrapper_dir()
 
-    # Default profile
+    # Default agent home
     default_home = _get_default_intellect_home()
     if default_home.is_dir():
         model, provider = _read_config_model(default_home)
@@ -631,37 +715,34 @@ def list_profiles() -> List[ProfileInfo]:
             description_auto=meta.get("description_auto", False),
         ))
 
-    # Named profiles
-    profiles_root = _get_profiles_root()
-    if profiles_root.is_dir():
-        for entry in sorted(profiles_root.iterdir()):
-            if not entry.is_dir():
-                continue
-            name = entry.name
-            if not _PROFILE_ID_RE.match(name):
-                continue
-            model, provider = _read_config_model(entry)
-            alias_path = wrapper_dir / name
-            dist_name, dist_version, dist_source = _read_distribution_meta(entry)
-            meta = read_profile_meta(entry)
-            profiles.append(ProfileInfo(
-                name=name,
-                path=entry,
-                is_default=False,
-                gateway_running=_check_gateway_running(entry),
-                model=model,
-                provider=provider,
-                has_env=(entry / ".env").exists(),
-                skill_count=_count_skills(entry),
-                alias_path=alias_path if alias_path.exists() else None,
-                distribution_name=dist_name,
-                distribution_version=dist_version,
-                distribution_source=dist_source,
-                description=meta.get("description", ""),
-                description_auto=meta.get("description_auto", False),
-            ))
+    # Named agents (canonical agents/ + legacy profiles/)
+    for entry in _iter_named_agent_dirs():
+        name = entry.name
+        model, provider = _read_config_model(entry)
+        alias_path = wrapper_dir / name
+        dist_name, dist_version, dist_source = _read_distribution_meta(entry)
+        meta = read_profile_meta(entry)
+        profiles.append(ProfileInfo(
+            name=name,
+            path=entry,
+            is_default=False,
+            gateway_running=_check_gateway_running(entry),
+            model=model,
+            provider=provider,
+            has_env=(entry / ".env").exists(),
+            skill_count=_count_skills(entry),
+            alias_path=alias_path if alias_path.exists() else None,
+            distribution_name=dist_name,
+            distribution_version=dist_version,
+            distribution_source=dist_source,
+            description=meta.get("description", ""),
+            description_auto=meta.get("description_auto", False),
+        ))
 
     return profiles
+
+
+list_agents = list_profiles
 
 
 def create_profile(
@@ -1190,50 +1271,59 @@ def _stop_gateway_process(profile_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def get_active_profile() -> str:
-    """Read the sticky active profile name.
+    """Read the sticky active agent name.
 
-    Returns ``"default"`` if no active_profile file exists or it's empty.
+    Prefers ``active_agent``; falls back to legacy ``active_profile``.
+    Returns ``"default"`` if neither file exists or is empty.
     """
-    path = _get_active_profile_path()
-    try:
-        name = path.read_text().strip()
-        if not name:
-            return "default"
-        return name
-    except (FileNotFoundError, UnicodeDecodeError, OSError):
-        return "default"
+    for path in (_get_active_agent_path(), _legacy_active_profile_path()):
+        try:
+            name = path.read_text().strip()
+            if name:
+                return name
+        except (FileNotFoundError, UnicodeDecodeError, OSError):
+            continue
+    return "default"
 
 
 def set_active_profile(name: str) -> None:
-    """Set the sticky active profile.
+    """Set the sticky active agent.
 
-    Writes to ``~/.intellect/active_profile``. Use ``"default"`` to clear.
+    Writes to ``~/.intellect/active_agent`` and clears legacy
+    ``active_profile`` if present. Use ``"default"`` to clear.
     """
     canon = normalize_profile_name(name)
     validate_profile_name(canon)
     if canon != "default" and not profile_exists(canon):
         raise FileNotFoundError(
-            f"Profile '{canon}' does not exist. "
-            f"Create it with: intellect profile create {canon}"
+            f"Agent '{canon}' does not exist. "
+            f"Create it with: intellect agent create {canon}"
         )
 
-    path = _get_active_profile_path()
+    path = _get_active_agent_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    legacy = _legacy_active_profile_path()
     if canon == "default":
-        # Remove the file to indicate default
         path.unlink(missing_ok=True)
+        legacy.unlink(missing_ok=True)
     else:
         # Atomic write
         tmp = path.with_suffix(".tmp")
         tmp.write_text(canon + "\n")
         tmp.replace(path)
+        legacy.unlink(missing_ok=True)
+
+
+get_active_agent = get_active_profile
+set_active_agent = set_active_profile
 
 
 def get_active_profile_name() -> str:
-    """Infer the current profile name from INTELLECT_HOME.
+    """Infer the current agent name from INTELLECT_HOME.
 
     Returns ``"default"`` if INTELLECT_HOME is not set or points to ``~/.intellect``.
-    Returns the profile name if INTELLECT_HOME points into ``~/.intellect/profiles/<name>``.
+    Returns the agent name if INTELLECT_HOME points into ``…/agents/<name>``
+    or legacy ``…/profiles/<name>``.
     Returns ``"custom"`` if INTELLECT_HOME is set to an unrecognized path.
     """
     from intellect_constants import get_intellect_home
@@ -1244,16 +1334,19 @@ def get_active_profile_name() -> str:
     if resolved == default_resolved:
         return "default"
 
-    profiles_root = _get_profiles_root().resolve()
-    try:
-        rel = resolved.relative_to(profiles_root)
-        parts = rel.parts
-        if len(parts) == 1 and _PROFILE_ID_RE.match(parts[0]):
-            return parts[0]
-    except ValueError:
-        pass
+    for root in (_get_agents_root(), _get_legacy_profiles_root()):
+        try:
+            rel = resolved.relative_to(root.resolve())
+            parts = rel.parts
+            if len(parts) == 1 and _PROFILE_ID_RE.match(parts[0]):
+                return parts[0]
+        except ValueError:
+            pass
 
     return "custom"
+
+
+get_active_agent_name = get_active_profile_name
 
 
 # ---------------------------------------------------------------------------
@@ -1592,7 +1685,7 @@ def rename_profile(old_name: str, new_name: str) -> Path:
 # ---------------------------------------------------------------------------
 
 def resolve_profile_env(profile_name: str) -> str:
-    """Resolve a profile name to a INTELLECT_HOME path string.
+    """Resolve an agent name to a INTELLECT_HOME path string.
 
     Called early in the CLI entry point, before any intellect modules
     are imported, to set the INTELLECT_HOME environment variable.
@@ -1604,23 +1697,28 @@ def resolve_profile_env(profile_name: str) -> str:
     # codeql[py/path-injection]: canon validated by normalize+validate_profile_name
     if canon != "default" and not profile_dir.is_dir():
         raise FileNotFoundError(
-            f"Profile '{canon}' does not exist. "
-            f"Create it with: intellect profile create {canon}"
+            f"Agent '{canon}' does not exist. "
+            f"Create it with: intellect agent create {canon}"
         )
 
     return str(profile_dir)
+
+
+resolve_agent_env = resolve_profile_env
+
 
 def profiles_to_serve(
     multiplex: bool,
     profile_allowlist: Optional[List[str]] = None,
 ) -> List[tuple[str, Path]]:
-    """Resolve the (profile_name, home) set a multiplex gateway serves (MP-00a).
+    """Resolve the (agent_name, home) set a multiplex gateway serves (MP-00a).
 
-    - ``multiplex=False`` → the active profile only (historical behavior).
-    - ``multiplex=True``  → the default profile PLUS every valid profile
-      directory under ``profiles/``; ``profile_allowlist`` (optional) filters
-      secondaries. The default profile is ALWAYS served — a missing
-      allowlist entry warns once, it never removes default.
+    - ``multiplex=False`` → the active agent only (historical behavior).
+    - ``multiplex=True``  → the default agent PLUS every valid agent
+      directory under ``agents/`` (and legacy ``profiles/``);
+      ``profile_allowlist`` (optional) filters secondaries. The default
+      agent is ALWAYS served — a missing allowlist entry warns once, it
+      never removes default.
 
     Deliberately lightweight: directory scan + name validation only.
     """
@@ -1628,38 +1726,37 @@ def profiles_to_serve(
         return [(_active_profile_name_or_default(), _get_active_home())]
 
     served: list[tuple[str, Path]] = [("default", _get_default_intellect_home())]
-    root = _get_profiles_root()
     allow = {a.strip() for a in (profile_allowlist or []) if a and a.strip()}
-    if root.is_dir():
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            name = entry.name
-            try:
-                validate_profile_name(name)
-            except (ValueError, OSError):
-                continue
-            if allow and name not in allow:
-                continue
-            served.append((name, entry))
+    for entry in _iter_named_agent_dirs():
+        name = entry.name
+        try:
+            validate_profile_name(name)
+        except (ValueError, OSError):
+            continue
+        if allow and name not in allow:
+            continue
+        served.append((name, entry))
     missing = allow - {name for name, _ in served} - {"default"}
     if missing:
         import logging
 
         logging.getLogger(__name__).warning(
-            "multiplex_profile_allowlist entries not found on disk: %s",
+            "multiplex_agent_allowlist entries not found on disk: %s",
             ", ".join(sorted(missing)),
         )
     return served
 
 
+agents_to_serve = profiles_to_serve
+
+
 def _active_profile_name_or_default() -> str:
     try:
-        active = _get_active_profile_path()
-        if active.exists():
-            name = active.read_text(encoding="utf-8").strip()
-            if name:
-                return name
+        for path in (_get_active_agent_path(), _legacy_active_profile_path()):
+            if path.exists():
+                name = path.read_text(encoding="utf-8").strip()
+                if name:
+                    return name
     except OSError:
         pass
     return "default"

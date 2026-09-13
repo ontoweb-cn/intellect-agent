@@ -1234,10 +1234,14 @@ DEFAULT_CONFIG = {
         },
     },
 
-    # TEMPORARY: profile create / switch / delete gate (CLI + WebUI).
-    # When management_enabled is false, mutating profile commands and WebUI
-    # Profiles UI are blocked; ``intellect -p <existing>`` still works.
-    # Default false (opt-in restore). Set true in config.yaml to re-enable.
+    # Agent homes (isolation units). Canonical key: agents.*
+    # Legacy profiles.* is still read by profile_gate / migrate for compat.
+    # When management_enabled is false, mutating agent commands and WebUI
+    # Agents UI are blocked; ``intellect -a <existing>`` still works.
+    "agents": {
+        "management_enabled": False,
+    },
+    # DEPRECATED: use agents.* — kept so older configs keep working until migrate.
     "profiles": {
         "management_enabled": False,
     },

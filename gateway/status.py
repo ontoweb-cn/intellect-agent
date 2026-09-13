@@ -571,6 +571,8 @@ def write_runtime_status(
         payload["active_agents"] = max(0, int(active_agents))
     if served_profiles is not _UNSET:
         # Multiplex supervisor topology (MP-06): one entry per served child.
+        # Emit both served_agents (canonical) and served_profiles (legacy).
+        payload["served_agents"] = served_profiles
         payload["served_profiles"] = served_profiles
 
     if platform is not _UNSET:

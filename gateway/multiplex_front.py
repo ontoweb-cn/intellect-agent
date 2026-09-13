@@ -8,20 +8,21 @@ ephemeral ports and report the resolved port via their control socket
 
 Routing (per MP-04/MP-05):
 
-- no prefix (``/v1/...``)          → the DEFAULT profile's child
-- ``/p/<name>/...``                → child ``<name>``, prefix stripped
-- invalid name / unknown profile   → 404 with a structured JSON error
-- known profile, no bound port yet → 503 with a structured JSON error
+- no prefix (``/v1/...``)          → the DEFAULT agent's child
+- ``/a/<name>/...``                → child ``<name>``, prefix stripped (canonical)
+- ``/p/<name>/...``                → same (legacy profile prefix)
+- invalid name / unknown agent     → 404 with a structured JSON error
+- known agent, no bound port yet   → 503 with a structured JSON error
 - WebSocket upgrades               → routed the same way; routing failures
   reach the client as WS close 4404 (fail-closed, GW-302 lineage)
 
 The front end is a secret-free byte pump: it holds no credentials, and each
 child keeps enforcing its own API key / webhook secrets / WS token from its
 own INTELLECT_HOME. Two sites are hosted when the corresponding platform is
-enabled anywhere in the serve set — the api site (default profile's
+enabled anywhere in the serve set — the api site (default agent's
 configured api_server host/port) and the webhook site (so external webhook
-providers keep pointing at one port while ``/p/<name>/webhooks/<route>``
-fans out per profile).
+providers keep pointing at one port while ``/a/<name>/webhooks/<route>``
+fans out per agent).
 
 aiohttp is imported lazily by the supervisor glue; if unavailable, the
 supervisor degrades to the pre-B1-4 shape and this module never loads.
@@ -100,21 +101,21 @@ def _error_response(
 
 
 def _split_profile_prefix(path: str) -> Tuple[Optional[str], str]:
-    """Three-state ``/p/<profile>/`` parse (Hermes MP-04 semantics).
+    """Three-state ``/a/<agent>/`` (canonical) or ``/p/<agent>/`` (legacy) parse.
 
     Returns ``(None, path)`` for an unprefixed path, or ``(name, rest)`` —
     ``rest`` always starts with ``/``. Raises ``ValueError`` on a malformed
-    profile segment (empty, or failing ``validate_profile_name``).
+    agent segment (empty, or failing ``validate_profile_name``).
     """
     parts = path.split("/", 3)
-    # "/p/<name>/..." → ['', 'p', name, 'rest/of/path']
-    if len(parts) < 3 or parts[1] != "p":
+    # "/a/<name>/..." or "/p/<name>/..." → ['', 'a'|'p', name, 'rest/of/path']
+    if len(parts) < 3 or parts[1] not in {"a", "p"}:
         return (None, path)
     name = parts[2]
     if not name:
-        raise ValueError("empty profile prefix")
-    # The prefix may address the profile root itself: "/p/<name>" or
-    # "/p/<name>/". maxsplit=3 keeps the remainder intact.
+        raise ValueError("empty agent prefix")
+    # The prefix may address the agent root itself: "/a/<name>" or
+    # "/a/<name>/". maxsplit=3 keeps the remainder intact.
     rest = "/" + parts[3] if len(parts) > 3 and parts[3] else "/"
     try:
         from intellect_cli.profiles import (
@@ -125,7 +126,7 @@ def _split_profile_prefix(path: str) -> Tuple[Optional[str], str]:
         name = normalize_profile_name(name)
         validate_profile_name(name)
     except (ValueError, ImportError) as exc:
-        raise ValueError(f"invalid profile prefix {name!r}") from exc
+        raise ValueError(f"invalid agent prefix {name!r}") from exc
     return (name, rest)
 
 

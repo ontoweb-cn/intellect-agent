@@ -30,10 +30,10 @@ def _run_apply_profile_override(
     intellect_root.mkdir(parents=True, exist_ok=True)
 
     if active_profile is not None:
-        (intellect_root / "active_profile").write_text(active_profile)
+        (intellect_root / "active_agent").write_text(active_profile)
 
     if active_profile and active_profile != "default":
-        (intellect_root / "profiles" / active_profile).mkdir(parents=True, exist_ok=True)
+        (intellect_root / "agents" / active_profile).mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     if intellect_home is not None:
@@ -61,7 +61,7 @@ class TestApplyProfileOverrideintellectHomeGuard:
         self, tmp_path, monkeypatch
     ):
         """INTELLECT_HOME=/root/.intellect + active_profile=coder must redirect
-        INTELLECT_HOME to .../profiles/coder.
+        INTELLECT_HOME to .../agents/coder.
 
         Bug scenario from #22502: systemd sets INTELLECT_HOME to the intellect root
         and the user switches to a profile via `intellect profile use`.
@@ -78,26 +78,26 @@ class TestApplyProfileOverrideintellectHomeGuard:
         )
 
         assert result is not None, "INTELLECT_HOME must be set after profile redirect"
-        assert "profiles" in result, (
-            f"Expected INTELLECT_HOME to point into profiles/ dir, got: {result!r}"
+        assert "agents" in result, (
+            f"Expected INTELLECT_HOME to point into agents/ dir, got: {result!r}"
         )
         assert result.endswith("coder"), (
             f"Expected INTELLECT_HOME to end with 'coder', got: {result!r}"
         )
 
     def test_intellect_home_already_profile_dir_is_trusted(self, tmp_path, monkeypatch):
-        """INTELLECT_HOME=.../profiles/coder must not be overridden even when
-        active_profile says something different.
+        """INTELLECT_HOME=.../agents/coder must not be overridden even when
+        active_agent says something different.
 
         Preserves the child-process inheritance contract: a subprocess spawned
         with INTELLECT_HOME already set to a specific profile must stay in that
         profile.
         """
         intellect_root = tmp_path / ".intellect"
-        profile_dir = intellect_root / "profiles" / "coder"
+        profile_dir = intellect_root / "agents" / "coder"
         profile_dir.mkdir(parents=True, exist_ok=True)
 
-        (intellect_root / "active_profile").write_text("other")
+        (intellect_root / "active_agent").write_text("other")
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("INTELLECT_HOME", str(profile_dir))
@@ -132,7 +132,7 @@ class TestApplyProfileOverrideintellectHomeGuard:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.delenv("INTELLECT_HOME", raising=False)
         monkeypatch.setattr(sys, "argv", ["intellect", "gateway", "start"])
-        (intellect_root / "active_profile").write_text("default")
+        (intellect_root / "active_agent").write_text("default")
 
         from intellect_cli.main import _apply_profile_override
         _apply_profile_override()

@@ -1014,16 +1014,24 @@ User command
 
 ---
 
-## Profiles: Multi-Instance Support
+## Agents (homes): Multi-Instance Support
 
-Intellect supports **profiles** — multiple fully isolated instances, each with its own
-`INTELLECT_HOME` directory (config, API keys, memory, sessions, skills, gateway, etc.).
+Intellect supports **agents** (historically *profiles*) — multiple fully isolated
+instances, each with its own `INTELLECT_HOME` directory (config, API keys, memory,
+sessions, skills, gateway, etc.).
+
+Canonical on-disk layout: ``~/.intellect/agents/<name>/``.
+Legacy ``~/.intellect/profiles/<name>/`` is still discovered (dual-read).
+CLI: ``intellect agent`` (canonical); ``intellect profile`` is a deprecated alias.
+Flags: ``-a`` / ``--agent`` (canonical); ``-p`` / ``--profile`` still accepted.
+Sticky default: ``active_agent`` (legacy ``active_profile`` still read).
+Config gate: ``agents.management_enabled`` (legacy ``profiles.management_enabled`` OR'd).
 
 The core mechanism: `_apply_profile_override()` in `intellect_cli/main.py` sets
 `INTELLECT_HOME` before any module imports. All `get_intellect_home()` references
-automatically scope to the active profile.
+automatically scope to the active agent home.
 
-### Rules for profile-safe code
+### Rules for agent-home-safe code
 
 1. **Use `get_intellect_home()` for all INTELLECT_HOME paths.** Import from `intellect_constants`.
    NEVER hardcode `~/.intellect` or `Path.home() / ".intellect"` in code that reads/writes state.
@@ -1032,18 +1040,18 @@ automatically scope to the active profile.
    from intellect_constants import get_intellect_home
    config_path = get_intellect_home() / "config.yaml"
 
-   # BAD — breaks profiles
+   # BAD — breaks agents
    config_path = Path.home() / ".intellect" / "config.yaml"
    ```
 
 2. **Use `display_intellect_home()` for user-facing messages.** Import from `intellect_constants`.
-   This returns `~/.intellect` for default or `~/.intellect/profiles/<name>` for profiles.
+   This returns `~/.intellect` for default or `~/.intellect/agents/<name>` for named agents.
    ```python
    # GOOD
    from intellect_constants import display_intellect_home
    print(f"Config saved to {display_intellect_home()}/config.yaml")
 
-   # BAD — shows wrong path for profiles
+   # BAD — shows wrong path for agents
    print("Config saved to ~/.intellect/config.yaml")
    ```
 
@@ -1062,27 +1070,28 @@ automatically scope to the active profile.
 5. **Gateway platform adapters should use token locks** — if the adapter connects with
    a unique credential (bot token, API key), call `acquire_scoped_lock()` from
    `gateway.status` in the `connect()`/`start()` method and `release_scoped_lock()` in
-   `disconnect()`/`stop()`. This prevents two profiles from using the same credential.
+   `disconnect()`/`stop()`. This prevents two agents from using the same credential.
    See `gateway/platforms/telegram.py` for the canonical pattern.
 
-6. **Profile operations are HOME-anchored, not INTELLECT_HOME-anchored** — `_get_profiles_root()`
-   returns `Path.home() / ".intellect" / "profiles"`, NOT `get_intellect_home() / "profiles"`.
-   This is intentional — it lets `intellect -p coder profile list` see all profiles regardless
+6. **Agent-home operations are HOME-anchored, not INTELLECT_HOME-anchored** —
+   `_get_agents_root()` / `_get_profiles_root()` return
+   ``<root>/agents`` (not `get_intellect_home() / "agents"`).
+   This is intentional — it lets `intellect -a coder agent list` see all agents regardless
    of which one is active.
 
 ## Gateway Multiplex
 
-Multiplex (`intellect gateway run --multiplex`) serves MULTIPLE profiles from one
+Multiplex (`intellect gateway run --multiplex`) serves MULTIPLE agents from one
 supervisor process. Per the multiplex ADR (`docs/plans/2026-08-31-adr-multiplex-architecture.md`,
 verdict **(a)**): the supervisor hosts zero gateways — it spawns one gateway child per
-profile (`INTELLECT_HOME=<home> INTELLECT_MULTIPLEX_CHILD=1 python -m gateway.run`),
+agent (`INTELLECT_HOME=<home> INTELLECT_MULTIPLEX_CHILD=1 python -m gateway.run`),
 monitors/restarts them independently, and its **front end owns the ONLY external
-listener**, routing by profile URL prefix.
+listener**, routing by agent URL prefix.
 
-**Single-owner boundary (permanent):** multiplex is a multi-PROFILE isolation extension
+**Single-owner boundary (permanent):** multiplex is a multi-agent isolation extension
 for one owner. It is NOT multi-user — `members`/`teams`/`projects` remain WONTFIX and
 must not be reintroduced "because multiplex now exists". Auth is per-owner trust:
-profile keys/tokens isolate profiles from each other, not users from each other.
+agent keys/tokens isolate agents from each other, not users from each other.
 
 Key contracts (B1-2..B1-6):
 
@@ -1091,19 +1100,23 @@ Key contracts (B1-2..B1-6):
   port and reports the resolved port through runtime status; standalone gateways never
   see the flag, so every behavior gated on it is a no-op when multiplex is off.
 - **Precheck:** a secondary that merely ENABLES a listener platform is served under the
-  front end's `/p/<name>/` prefix; one that PINS a port or a non-loopback host is
-  rejected at supervisor startup (`PortConflictError`, readable message).
+  front end's `/a/<name>/` prefix (legacy `/p/<name>/` also accepted); one that PINS a
+  port or a non-loopback host is rejected at supervisor startup (`PortConflictError`,
+  readable message).
 - **Front end** (`gateway/multiplex_front.py`) is a secret-free byte pump: unprefixed
-  paths → default child, `/p/<name>/…` → that child (prefix stripped). HTTP keys, webhook
-  HMAC secrets and WS tokens are enforced by each child from its own home.
-- **Per-profile WS tokens (MP-05):** `tui_gateway/ws.py` resolves `TUI_AUTH_TOKEN_<PROFILE>`
-  (uppercased, `-`→`_`) first, falling back to global `TUI_AUTH_TOKEN`. The `^/p/` → WS
-  close 4404 guard is the fail-closed default and stays: children under the supervisor
-  never see prefixed paths (the front end strips them), and direct `/p/` hits stay rejected.
-- **Observability:** the supervisor writes `gateway_state="multiplex"` + `served_profiles`
-  runtime status, claims the home pid file, serves a control socket with
-  `role: supervisor` + live topology, and child `identify` responses carry a `profile`
-  field. `intellect gateway status` renders the topology; `intellect doctor` checks
+  paths → default child, `/a/<name>/…` (or legacy `/p/<name>/…`) → that child (prefix
+  stripped). HTTP keys, webhook HMAC secrets and WS tokens are enforced by each child
+  from its own home.
+- **Per-agent WS tokens (MP-05):** `tui_gateway/ws.py` resolves `TUI_AUTH_TOKEN_<AGENT>`
+  (uppercased, `-`→`_`) first, falling back to global `TUI_AUTH_TOKEN`. The `^/p/` /
+  `^/a/` → WS close 4404 guard is the fail-closed default and stays: children under the
+  supervisor never see prefixed paths (the front end strips them), and direct `/a/` or
+  `/p/` hits stay rejected.
+- **Observability:** the supervisor writes `gateway_state="multiplex"` + `served_agents`
+  (also mirrored as `served_profiles` during transition) runtime status, claims the home
+  pid file, serves a control socket with `role: supervisor` + live topology, and child
+  `identify` responses carry a `profile` field (agent id). `intellect gateway status`
+  renders the topology; `intellect doctor` checks
   serve-set pinning/credential conflicts.
 
 **Rule 3 precondition (revised for multiplex):** module-level caching of

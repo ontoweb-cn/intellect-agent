@@ -17,6 +17,7 @@ def test_default_config_management_enabled_is_false():
     from intellect_cli.config import DEFAULT_CONFIG
     from intellect_cli.profile_gate import is_profile_management_enabled
 
+    assert DEFAULT_CONFIG["agents"]["management_enabled"] is False
     assert DEFAULT_CONFIG["profiles"]["management_enabled"] is False
     assert is_profile_management_enabled(DEFAULT_CONFIG) is False
 
@@ -63,3 +64,21 @@ def test_cmd_profile_create_blocked_when_disabled(monkeypatch, capsys):
         main_mod.cmd_profile(args)
     assert exc.value.code == 1
     assert "temporarily disabled" in capsys.readouterr().err.lower()
+
+
+def test_agents_or_profiles_management_enabled():
+    from intellect_cli.profile_gate import is_profile_management_enabled
+
+    assert is_profile_management_enabled({
+        "agents": {"management_enabled": True},
+        "profiles": {"management_enabled": False},
+    }) is True
+    # Legacy profiles.* alone still enables (deep-merge leaves agents=false).
+    assert is_profile_management_enabled({
+        "agents": {"management_enabled": False},
+        "profiles": {"management_enabled": True},
+    }) is True
+    assert is_profile_management_enabled({
+        "agents": {"management_enabled": False},
+        "profiles": {"management_enabled": False},
+    }) is False

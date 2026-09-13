@@ -17,6 +17,7 @@ from intellect_cli.profiles import (
     normalize_profile_name,
     validate_profile_name,
     get_profile_dir,
+    profile_exists,
     create_profile,
     delete_profile,
     list_profiles,
@@ -44,7 +45,7 @@ from intellect_cli.profiles import (
 def profile_env(tmp_path, monkeypatch):
     """Set up an isolated environment for profile tests.
 
-    * Path.home() -> tmp_path  (so _get_profiles_root() = tmp_path/.intellect/profiles)
+    * Path.home() -> tmp_path  (so _get_profiles_root() = tmp_path/.intellect/agents)
     * INTELLECT_HOME  -> tmp_path/.intellect  (so get_intellect_home() agrees)
     * Creates the bare-minimum ~/.intellect directory.
     """
@@ -134,14 +135,14 @@ class TestGetProfileDir:
         result = get_profile_dir("default")
         assert result == tmp_path / ".intellect"
 
-    def test_named_profile_returns_profiles_subdir(self, profile_env):
+    def test_named_profile_returns_agents_subdir(self, profile_env):
         tmp_path = profile_env
         result = get_profile_dir("coder")
-        assert result == tmp_path / ".intellect" / "profiles" / "coder"
+        assert result == tmp_path / ".intellect" / "agents" / "coder"
 
     def test_named_profile_matching_is_case_insensitive(self, profile_env):
         tmp_path = profile_env
-        assert get_profile_dir("Coder") == tmp_path / ".intellect" / "profiles" / "coder"
+        assert get_profile_dir("Coder") == tmp_path / ".intellect" / "agents" / "coder"
 
 
 # ===================================================================
@@ -228,10 +229,14 @@ class TestCreateProfile:
         """--clone-all from default ~/.intellect must not copy profiles/* (nested explosion)."""
         tmp_path = profile_env
         default_home = tmp_path / ".intellect"
+        agents_root = default_home / "agents"
+        agents_root.mkdir(exist_ok=True)
+        (agents_root / "other").mkdir(parents=True, exist_ok=True)
+        (agents_root / "other" / "marker.txt").write_text("sibling data")
         profiles_root = default_home / "profiles"
         profiles_root.mkdir(exist_ok=True)
-        (profiles_root / "other").mkdir(parents=True, exist_ok=True)
-        (profiles_root / "other" / "marker.txt").write_text("sibling data")
+        (profiles_root / "legacy").mkdir(parents=True, exist_ok=True)
+        (profiles_root / "legacy" / "marker.txt").write_text("legacy sibling")
 
         (default_home / "memories").mkdir(exist_ok=True)
         (default_home / "memories" / "note.md").write_text("remember this")
@@ -239,6 +244,7 @@ class TestCreateProfile:
         profile_dir = create_profile("coder", clone_all=True, no_alias=True)
 
         assert (profile_dir / "memories" / "note.md").read_text() == "remember this"
+        assert not (profile_dir / "agents").exists()
         assert not (profile_dir / "profiles").exists()
 
     def test_clone_all_excludes_default_infrastructure(self, profile_env):
@@ -255,8 +261,10 @@ class TestCreateProfile:
         (default_home / "intellect-agent" / "venv" / "bin").mkdir(parents=True)
         (default_home / "intellect-agent" / "README.md").write_text("repo")
         (default_home / ".worktrees" / "some-tree").mkdir(parents=True)
-        (default_home / "profiles" / "other").mkdir(parents=True)
-        (default_home / "profiles" / "other" / "config.yaml").write_text("x")
+        (default_home / "agents" / "other").mkdir(parents=True)
+        (default_home / "agents" / "other" / "config.yaml").write_text("x")
+        (default_home / "profiles" / "legacy").mkdir(parents=True)
+        (default_home / "profiles" / "legacy" / "config.yaml").write_text("x")
         (default_home / "bin").mkdir(exist_ok=True)
         (default_home / "bin" / "tool").write_text("binary")
         (default_home / "node_modules" / ".package-lock.json").mkdir(parents=True)
@@ -282,6 +290,7 @@ class TestCreateProfile:
         # Infrastructure must be excluded
         assert not (profile_dir / "intellect-agent").exists()
         assert not (profile_dir / ".worktrees").exists()
+        assert not (profile_dir / "agents").exists()
         assert not (profile_dir / "profiles").exists()
         assert not (profile_dir / "bin").exists()
         assert not (profile_dir / "node_modules").exists()
@@ -495,7 +504,7 @@ class TestActiveProfile:
 
     def test_empty_file_returns_default(self, profile_env):
         tmp_path = profile_env
-        active_path = tmp_path / ".intellect" / "active_profile"
+        active_path = tmp_path / ".intellect" / "active_agent"
         active_path.write_text("")
         assert get_active_profile() == "default"
 
@@ -503,7 +512,7 @@ class TestActiveProfile:
         tmp_path = profile_env
         create_profile("coder", no_alias=True)
         set_active_profile("coder")
-        active_path = tmp_path / ".intellect" / "active_profile"
+        active_path = tmp_path / ".intellect" / "active_agent"
         assert active_path.exists()
 
         set_active_profile("default")
@@ -528,7 +537,7 @@ class TestGetActiveProfileName:
     def test_profile_path_returns_profile_name(self, profile_env, monkeypatch):
         tmp_path = profile_env
         create_profile("coder", no_alias=True)
-        profile_dir = tmp_path / ".intellect" / "profiles" / "coder"
+        profile_dir = tmp_path / ".intellect" / "agents" / "coder"
         monkeypatch.setenv("INTELLECT_HOME", str(profile_dir))
         assert get_active_profile_name() == "coder"
 
@@ -555,7 +564,7 @@ class TestResolveProfileEnv:
         tmp_path = profile_env
         create_profile("coder", no_alias=True)
         result = resolve_profile_env("coder")
-        assert result == str(tmp_path / ".intellect" / "profiles" / "coder")
+        assert result == str(tmp_path / ".intellect" / "agents" / "coder")
 
     def test_default_returns_default_home(self, profile_env):
         tmp_path = profile_env
@@ -621,7 +630,7 @@ class TestAliasCollision:
         wrapper_dir = profile_env / ".local" / "bin"
         wrapper_dir.mkdir(parents=True, exist_ok=True)
         bat_path = wrapper_dir / "mybot.bat"
-        bat_path.write_text("@echo off\r\nintellect -p mybot %*\r\n")
+        bat_path.write_text("@echo off\r\nintellect -a mybot %*\r\n")
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0, stdout=str(bat_path),
@@ -645,7 +654,7 @@ class TestWrapperScript:
         assert wrapper.name == "mybot"
         content = wrapper.read_text()
         assert content.startswith("#!/bin/sh")
-        assert "intellect -p mybot" in content
+        assert "intellect -a mybot" in content
 
     def test_creates_bat_on_windows(self, profile_env, monkeypatch):
         monkeypatch.setattr("sys.platform", "win32")
@@ -655,7 +664,7 @@ class TestWrapperScript:
         assert wrapper.name == "mybot.bat"
         content = wrapper.read_text()
         assert "@echo off" in content
-        assert "intellect -p mybot" in content
+        assert "intellect -a mybot" in content
         assert "%*" in content
 
     def test_remove_finds_bat_on_windows(self, profile_env, monkeypatch):
@@ -692,7 +701,7 @@ class TestWrapperScript:
         assert wrapper.name == "rq"
         content = wrapper.read_text()
         assert content.startswith("#!/bin/sh")
-        assert "intellect -p redqueen" in content
+        assert "intellect -a redqueen" in content
 
     def test_custom_alias_target_on_windows(self, profile_env, monkeypatch):
         # Regression: custom-name aliases must still produce an executable
@@ -704,7 +713,7 @@ class TestWrapperScript:
         assert wrapper.name == "rq.bat"
         content = wrapper.read_text()
         assert "@echo off" in content
-        assert "intellect -p redqueen" in content
+        assert "intellect -a redqueen" in content
         assert "%*" in content
         assert "#!/bin/sh" not in content
 
@@ -719,7 +728,7 @@ class TestRenameProfile:
     def test_renames_directory(self, profile_env):
         tmp_path = profile_env
         create_profile("oldname", no_alias=True)
-        old_dir = tmp_path / ".intellect" / "profiles" / "oldname"
+        old_dir = tmp_path / ".intellect" / "agents" / "oldname"
         assert old_dir.is_dir()
 
         # Mock alias collision to avoid subprocess calls
@@ -728,7 +737,7 @@ class TestRenameProfile:
 
         assert not old_dir.is_dir()
         assert new_dir.is_dir()
-        assert new_dir == tmp_path / ".intellect" / "profiles" / "newname"
+        assert new_dir == tmp_path / ".intellect" / "agents" / "newname"
 
     def test_renames_root_honcho_host_without_changing_ai_peer(self, profile_env):
         tmp_path = profile_env
@@ -987,7 +996,7 @@ class TestExportImport:
         (default_dir / "config.yaml").write_text("ok")
 
         # Create dirs/files that should be excluded
-        for d in ("intellect-agent", ".worktrees", "profiles", "bin",
+        for d in ("intellect-agent", ".worktrees", "agents", "profiles", "bin",
                   "image_cache", "logs", "sandboxes", "checkpoints"):
             sub = default_dir / d
             sub.mkdir(exist_ok=True)
@@ -995,7 +1004,7 @@ class TestExportImport:
 
         for f in ("state.db", "gateway.pid", "gateway_state.json",
                   "processes.json", "errors.log", ".intellect_history",
-                  "active_profile", ".update_check", "auth.lock"):
+                  "active_agent", ".update_check", "auth.lock"):
             (default_dir / f).write_text("excluded")
 
         output = tmp_path / "export" / "default.tar.gz"
@@ -1010,7 +1019,7 @@ class TestExportImport:
 
         # Infrastructure excluded
         excluded_prefixes = [
-            "default/intellect-agent", "default/.worktrees", "default/profiles",
+            "default/intellect-agent", "default/.worktrees", "default/agents", "default/profiles",
             "default/bin", "default/image_cache", "default/logs",
             "default/sandboxes", "default/checkpoints",
         ]
@@ -1022,7 +1031,7 @@ class TestExportImport:
             "default/state.db", "default/gateway.pid",
             "default/gateway_state.json", "default/processes.json",
             "default/errors.log", "default/.intellect_history",
-            "default/active_profile", "default/.update_check",
+            "default/active_agent", "default/.update_check",
             "default/auth.lock",
         ]
         for f in excluded_files:
@@ -1128,7 +1137,7 @@ class TestInternalHelpers:
     def test_profiles_root_under_home(self, profile_env):
         tmp_path = profile_env
         root = _get_profiles_root()
-        assert root == tmp_path / ".intellect" / "profiles"
+        assert root == tmp_path / ".intellect" / "agents"
 
     def test_default_intellect_home(self, profile_env):
         tmp_path = profile_env
@@ -1136,13 +1145,13 @@ class TestInternalHelpers:
         assert home == tmp_path / ".intellect"
 
     def test_profiles_root_docker_deployment(self, tmp_path, monkeypatch):
-        """In Docker (INTELLECT_HOME outside ~/.intellect), profiles go under INTELLECT_HOME."""
+        """In Docker (INTELLECT_HOME outside ~/.intellect), agents go under INTELLECT_HOME."""
         docker_home = tmp_path / "opt" / "data"
         docker_home.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("INTELLECT_HOME", str(docker_home))
         root = _get_profiles_root()
-        assert root == docker_home / "profiles"
+        assert root == docker_home / "agents"
 
     def test_default_intellect_home_docker(self, tmp_path, monkeypatch):
         """In Docker, _get_default_intellect_home() returns INTELLECT_HOME itself."""
@@ -1154,33 +1163,33 @@ class TestInternalHelpers:
         assert home == docker_home
 
     def test_profiles_root_profile_mode(self, tmp_path, monkeypatch):
-        """In profile mode (INTELLECT_HOME under ~/.intellect), profiles root is still ~/.intellect/profiles."""
+        """In agent mode (INTELLECT_HOME under ~/.intellect), agents root is still ~/.intellect/agents."""
         native = tmp_path / ".intellect"
-        profile_dir = native / "profiles" / "coder"
+        profile_dir = native / "agents" / "coder"
         profile_dir.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("INTELLECT_HOME", str(profile_dir))
         root = _get_profiles_root()
-        assert root == native / "profiles"
+        assert root == native / "agents"
 
     def test_active_profile_path_docker(self, tmp_path, monkeypatch):
-        """In Docker, active_profile file lives under INTELLECT_HOME."""
+        """In Docker, active_agent file lives under INTELLECT_HOME."""
         from intellect_cli.profiles import _get_active_profile_path
         docker_home = tmp_path / "opt" / "data"
         docker_home.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("INTELLECT_HOME", str(docker_home))
         path = _get_active_profile_path()
-        assert path == docker_home / "active_profile"
+        assert path == docker_home / "active_agent"
 
     def test_create_profile_docker(self, tmp_path, monkeypatch):
-        """Profile created in Docker lands under INTELLECT_HOME/profiles/."""
+        """Agent created in Docker lands under INTELLECT_HOME/agents/."""
         docker_home = tmp_path / "opt" / "data"
         docker_home.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("INTELLECT_HOME", str(docker_home))
         result = create_profile("orchestrator", no_alias=True)
-        expected = docker_home / "profiles" / "orchestrator"
+        expected = docker_home / "agents" / "orchestrator"
         assert result == expected
         assert expected.is_dir()
 
@@ -1195,7 +1204,7 @@ class TestInternalHelpers:
     def test_active_profile_name_docker_profile(self, tmp_path, monkeypatch):
         """In Docker with a profile active, get_active_profile_name() returns the profile name."""
         docker_home = tmp_path / "opt" / "data"
-        profile = docker_home / "profiles" / "orchestrator"
+        profile = docker_home / "agents" / "orchestrator"
         profile.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("INTELLECT_HOME", str(profile))
@@ -1212,7 +1221,7 @@ class TestEdgeCases:
     def test_create_profile_returns_correct_path(self, profile_env):
         tmp_path = profile_env
         result = create_profile("mybot", no_alias=True)
-        expected = tmp_path / ".intellect" / "profiles" / "mybot"
+        expected = tmp_path / ".intellect" / "agents" / "mybot"
         assert result == expected
 
     def test_list_profiles_default_info_fields(self, profile_env):
@@ -1288,3 +1297,40 @@ class TestEdgeCases:
             delete_profile("coder", yes=True)
 
         assert get_active_profile() == "default"
+
+
+class TestLegacyProfilesDualRead:
+    """Legacy ~/.intellect/profiles/<id> remains resolvable after rename."""
+
+    def test_get_dir_prefers_agents_over_legacy(self, profile_env):
+        tmp_path = profile_env
+        agents = tmp_path / ".intellect" / "agents" / "coder"
+        legacy = tmp_path / ".intellect" / "profiles" / "coder"
+        agents.mkdir(parents=True)
+        legacy.mkdir(parents=True)
+        (agents / "marker").write_text("new")
+        (legacy / "marker").write_text("old")
+        assert get_profile_dir("coder") == agents
+
+    def test_get_dir_falls_back_to_legacy_profiles(self, profile_env):
+        tmp_path = profile_env
+        legacy = tmp_path / ".intellect" / "profiles" / "legacybot"
+        legacy.mkdir(parents=True)
+        assert get_profile_dir("legacybot") == legacy
+        assert get_profile_dir("legacybot").is_dir()
+
+    def test_list_includes_legacy_and_canonical(self, profile_env):
+        tmp_path = profile_env
+        (tmp_path / ".intellect" / "agents" / "a1").mkdir(parents=True)
+        (tmp_path / ".intellect" / "profiles" / "p1").mkdir(parents=True)
+        names = {p.name for p in list_profiles()}
+        assert "a1" in names and "p1" in names
+
+    def test_sticky_active_agent_preferred(self, profile_env):
+        tmp_path = profile_env
+        create_profile("coder", no_alias=True, no_skills=True)
+        (tmp_path / ".intellect" / "active_profile").write_text("coder\n")
+        assert get_active_profile() == "coder"
+        set_active_profile("coder")
+        assert (tmp_path / ".intellect" / "active_agent").exists()
+        assert not (tmp_path / ".intellect" / "active_profile").exists()
