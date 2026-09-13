@@ -43,6 +43,9 @@ def test_resolve_multiplex_includes_secondaries(monkeypatch, tmp_path):
     default_home = tmp_path / "home"
     monkeypatch.setenv("INTELLECT_HOME", str(default_home))
     monkeypatch.setattr(
+        "intellect_cli.agents_home._get_profiles_root", lambda: root, raising=False
+    )
+    monkeypatch.setattr(
         "intellect_cli.profiles._get_profiles_root", lambda: root, raising=False
     )
     served = dict(resolve_serve_set(None))
@@ -57,6 +60,9 @@ def test_resolve_multiplex_allowlist_filters(monkeypatch, tmp_path):
     for name in ("coder", "writer"):
         (root / name).mkdir(parents=True)
     monkeypatch.setenv("INTELLECT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(
+        "intellect_cli.agents_home._get_profiles_root", lambda: root, raising=False
+    )
     monkeypatch.setattr(
         "intellect_cli.profiles._get_profiles_root", lambda: root, raising=False
     )

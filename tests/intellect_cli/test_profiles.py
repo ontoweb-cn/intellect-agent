@@ -53,6 +53,12 @@ def profile_env(tmp_path, monkeypatch):
     default_home = tmp_path / ".intellect"
     default_home.mkdir(exist_ok=True)
     monkeypatch.setenv("INTELLECT_HOME", str(default_home))
+    try:
+        from intellect_cli.agents_home import reset_legacy_agent_homes_migration_state
+
+        reset_legacy_agent_homes_migration_state()
+    except Exception:
+        pass
     return tmp_path
 
 
@@ -1300,10 +1306,13 @@ class TestEdgeCases:
 
 
 class TestLegacyProfilesDualRead:
-    """Legacy ~/.intellect/profiles/<id> remains resolvable after rename."""
+    """Legacy ~/.intellect/profiles/<id> remains resolvable / migrates to agents/."""
 
     def test_get_dir_prefers_agents_over_legacy(self, profile_env):
         tmp_path = profile_env
+        from intellect_cli.agents_home import reset_legacy_agent_homes_migration_state
+
+        reset_legacy_agent_homes_migration_state()
         agents = tmp_path / ".intellect" / "agents" / "coder"
         legacy = tmp_path / ".intellect" / "profiles" / "coder"
         agents.mkdir(parents=True)
@@ -1311,23 +1320,40 @@ class TestLegacyProfilesDualRead:
         (agents / "marker").write_text("new")
         (legacy / "marker").write_text("old")
         assert get_profile_dir("coder") == agents
+        # Conflict: both exist → migrate leaves legacy in place
+        assert legacy.is_dir()
 
-    def test_get_dir_falls_back_to_legacy_profiles(self, profile_env):
+    def test_get_dir_migrates_legacy_profiles(self, profile_env):
         tmp_path = profile_env
+        from intellect_cli.agents_home import reset_legacy_agent_homes_migration_state
+
+        reset_legacy_agent_homes_migration_state()
         legacy = tmp_path / ".intellect" / "profiles" / "legacybot"
         legacy.mkdir(parents=True)
-        assert get_profile_dir("legacybot") == legacy
-        assert get_profile_dir("legacybot").is_dir()
+        (legacy / "config.yaml").write_text("model: x\n")
+        resolved = get_profile_dir("legacybot")
+        assert resolved == tmp_path / ".intellect" / "agents" / "legacybot"
+        assert resolved.is_dir()
+        assert (resolved / "config.yaml").read_text() == "model: x\n"
+        assert not legacy.exists()
 
-    def test_list_includes_legacy_and_canonical(self, profile_env):
+    def test_list_migrates_legacy_into_agents(self, profile_env):
         tmp_path = profile_env
+        from intellect_cli.agents_home import reset_legacy_agent_homes_migration_state
+
+        reset_legacy_agent_homes_migration_state()
         (tmp_path / ".intellect" / "agents" / "a1").mkdir(parents=True)
         (tmp_path / ".intellect" / "profiles" / "p1").mkdir(parents=True)
         names = {p.name for p in list_profiles()}
         assert "a1" in names and "p1" in names
+        assert (tmp_path / ".intellect" / "agents" / "p1").is_dir()
+        assert not (tmp_path / ".intellect" / "profiles" / "p1").exists()
 
     def test_sticky_active_agent_preferred(self, profile_env):
         tmp_path = profile_env
+        from intellect_cli.agents_home import reset_legacy_agent_homes_migration_state
+
+        reset_legacy_agent_homes_migration_state()
         create_profile("coder", no_alias=True, no_skills=True)
         (tmp_path / ".intellect" / "active_profile").write_text("coder\n")
         assert get_active_profile() == "coder"

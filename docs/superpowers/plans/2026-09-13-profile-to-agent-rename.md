@@ -45,9 +45,14 @@
 ### Task 4: Module rename + shims
 
 **Files:**
-- Create: `intellect_cli/agents_home.py` (move content)
-- Modify: `intellect_cli/profiles.py` → re-export shim
-- Rename helpers: `get_agent_dir`, `list_agents`, etc. with old names as aliases
+- Create: `intellect_cli/agents_home.py` (moved from profiles.py)
+- Modify: `intellect_cli/profiles.py` → rebind shim (`sys.modules[__name__] = agents_home`)
+- Helpers: `get_agent_dir`, `list_agents`, etc. already aliased
+
+- [x] `git mv` profiles.py → agents_home.py
+- [x] Shim re-exports / module identity for patches
+- [x] Disk migration `migrate_legacy_agent_homes` + once-per-process latch
+- [x] Tests: `test_agents_home_migration.py` + dual-read updates
 
 ### Task 5: Gateway `/a/` + status fields
 

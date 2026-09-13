@@ -353,7 +353,7 @@ def _apply_profile_override() -> None:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
         except Exception as exc:
-            # A bug in profiles.py must NEVER prevent intellect from starting
+            # A bug in agents_home must NEVER prevent intellect from starting
             print(
                 f"Warning: agent override failed ({exc}), using default",
                 file=sys.stderr,

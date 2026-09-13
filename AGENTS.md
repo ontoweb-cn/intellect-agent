@@ -1021,7 +1021,9 @@ instances, each with its own `INTELLECT_HOME` directory (config, API keys, memor
 sessions, skills, gateway, etc.).
 
 Canonical on-disk layout: ``~/.intellect/agents/<name>/``.
-Legacy ``~/.intellect/profiles/<name>/`` is still discovered (dual-read).
+Legacy ``~/.intellect/profiles/<name>/`` is dual-read and migrated into
+``agents/`` on access (``migrate_legacy_agent_homes`` in
+``intellect_cli/agents_home.py``; ``intellect_cli/profiles.py`` is a shim).
 CLI: ``intellect agent`` (canonical); ``intellect profile`` is a deprecated alias.
 Flags: ``-a`` / ``--agent`` (canonical); ``-p`` / ``--profile`` still accepted.
 Sticky default: ``active_agent`` (legacy ``active_profile`` still read).
