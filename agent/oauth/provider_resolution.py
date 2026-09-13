@@ -77,11 +77,10 @@ def open_members_db(config: dict[str, Any] | None, db: Any = None) -> Any | None
     if not is_oauth_enabled(config):
         return None
     try:
-        # (single-user: MembershipDB removed)
-def _noop_db(*a, **kw): return None
-MembershipDB = _noop_db
+        # single-user: the shared state DB carries the oauth_* tables.
+        from intellect_state import SessionDB
 
-        return MembershipDB(config=config or {})
+        return SessionDB()
     except Exception as exc:
         logger.debug("MembershipDB unavailable for OAuth resolution: %s", exc)
         return None

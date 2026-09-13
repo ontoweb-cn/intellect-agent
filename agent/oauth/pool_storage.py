@@ -228,12 +228,11 @@ def delete_pool_entries(db: Any, runtime_provider_id: str, *, profile_scope: str
 def read_all_pool_entries_grouped() -> dict[str, list[dict[str, Any]]]:
     """Return ``{runtime_provider_id: [pool dicts]}`` from ``oauth_pool_entries``."""
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
         from agent.oauth.model_tokens import runtime_provider_id
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             rows = store._conn.execute(
                 "SELECT * FROM oauth_pool_entries ORDER BY provider_id, priority ASC, updated_at DESC"
@@ -251,11 +250,10 @@ MembershipStore = _noop_store
 
 def try_read_pool_entries(runtime_provider_id: str) -> list[dict[str, Any]]:
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             return read_pool_entries(store, runtime_provider_id)
         finally:
@@ -266,11 +264,10 @@ MembershipStore = _noop_store
 
 def try_write_pool_entries(runtime_provider_id: str, entries: list[dict[str, Any]]) -> None:
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             write_pool_entries(store, runtime_provider_id, entries)
         finally:

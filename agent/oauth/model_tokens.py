@@ -128,12 +128,11 @@ def persist_model_token(
 def try_load_model_token_row(provider_id: str) -> dict[str, Any] | None:
     """Load decrypted ``oauth_tokens`` row for a runtime provider id."""
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
         from agent.oauth.storage import get_oauth_token
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             return get_oauth_token(db_provider_id(provider_id), store, member_id=None)
         finally:
@@ -153,11 +152,10 @@ def try_persist_model_token(
 ) -> None:
     """Best-effort persist to ``oauth_tokens`` (opens its own store)."""
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             ensure_model_oauth_provider_row(store, provider_id)
             persist_model_token(
@@ -177,11 +175,10 @@ MembershipStore = _noop_store
 def try_delete_model_token(provider_id: str) -> bool:
     """Best-effort delete of model OAuth token row(s)."""
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             return delete_model_token(store, provider_id)
         finally:
@@ -202,14 +199,15 @@ def delete_model_token(
     affected = [0]
 
     def _delete(conn):
-        cur = conn.cursor()
+        # Use conn.execute() directly — the state DB runs on the Rust backend,
+        # whose cursor object has no .execute() method (only fetchall/rowcount).
         if member_id:
-            cur.execute(
+            cur = conn.execute(
                 "DELETE FROM oauth_tokens WHERE provider_id=? AND member_id=?",
                 (pid, member_id),
             )
         else:
-            cur.execute(
+            cur = conn.execute(
                 "DELETE FROM oauth_tokens WHERE provider_id=? AND member_id IS NULL",
                 (pid,),
             )
@@ -290,12 +288,11 @@ def oauth_token_row_to_pool_entry(
 def load_credential_pool_entries_from_db(provider_id: str) -> list[dict[str, Any]]:
     """Return pool-shaped entries from ``oauth_tokens``, or []."""
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
         from agent.oauth.storage import get_oauth_token
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             row = get_oauth_token(db_provider_id(provider_id), store, member_id=None)
             if not row or not row.get("access_token"):
@@ -311,12 +308,11 @@ MembershipStore = _noop_store
 def resolve_runtime_access_token(provider_id: str) -> str | None:
     """Return decrypted access token from DB for a runtime provider id."""
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
         from agent.oauth.storage import get_oauth_token
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             row = get_oauth_token(db_provider_id(provider_id), store, member_id=None)
             if row and row.get("access_token"):
@@ -331,11 +327,10 @@ MembershipStore = _noop_store
 def try_model_token_auth_status(provider_id: str) -> dict[str, Any] | None:
     """Open a store and return DB token status, or None if unavailable."""
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             return model_token_auth_status(store, provider_id)
         finally:
@@ -352,11 +347,10 @@ MembershipStore = _noop_store
 def read_provider_extra_metadata(provider_id: str) -> dict[str, Any]:
     """Read extra_metadata JSON from ``oauth_providers`` table."""
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             pid = db_provider_id(provider_id)
             row = store._conn.execute(
@@ -378,11 +372,10 @@ MembershipStore = _noop_store
 def write_provider_extra_metadata(provider_id: str, data: dict[str, Any]) -> None:
     """Write extra_metadata JSON to ``oauth_providers`` table."""
     try:
-        # (single-user: MembershipStore removed; using stub)
-def _noop_store(*a, **kw): return None
-MembershipStore = _noop_store
+        # single-user: token rows live in the shared state DB (oauth_* tables).
+        from intellect_state import SessionDB
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             pid = db_provider_id(provider_id)
             store._execute_write(lambda cur: cur.execute(

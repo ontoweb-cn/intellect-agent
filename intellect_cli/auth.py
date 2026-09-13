@@ -1638,15 +1638,12 @@ def clear_provider_auth(provider_id: Optional[str] = None) -> bool:
             _save_auth_store(auth_store)
 
     try:
-        # (single-user: MembershipStore removed; stub with close method)
-        class _NoopStore:
-            def close(self): pass
-            def __getattr__(self, name): return lambda *a, **kw: None
-        MembershipStore = _NoopStore
+        # single-user: oauth_* tables live in the shared state DB.
+        from intellect_state import SessionDB
         from agent.oauth.model_tokens import delete_model_token
         from agent.oauth.pool_storage import delete_pool_entries
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             if delete_model_token(store, target):
                 cleared = True
@@ -3658,14 +3655,11 @@ def _print_loopback_ssh_hint(redirect_uri: str, *, docs_url: str | None = None) 
 def _read_codex_tokens_from_db() -> Optional[Dict[str, Any]]:
     """PR-A5: load Codex tokens from ``oauth_tokens`` when auth.json is empty."""
     try:
-        # (single-user: MembershipStore removed; stub with close method)
-        class _NoopStore:
-            def close(self): pass
-            def __getattr__(self, name): return lambda *a, **kw: None
-        MembershipStore = _NoopStore
+        # single-user: oauth_* tables live in the shared state DB.
+        from intellect_state import SessionDB
         from agent.oauth.storage import get_oauth_token
 
-        store = MembershipStore()
+        store = SessionDB()
         try:
             row = get_oauth_token("openai_codex", store, member_id=None)
         finally:
@@ -3873,14 +3867,11 @@ def _save_codex_tokens(tokens: Dict[str, str], last_refresh: str = None) -> None
     refresh = str(tokens.get("refresh_token") or "").strip()
     if access:
         try:
-            # (single-user: MembershipStore removed; stub with close method)
-            class _NoopStore:
-                def close(self): pass
-                def __getattr__(self, name): return lambda *a, **kw: None
-            MembershipStore = _NoopStore
+            # single-user: oauth_* tables live in the shared state DB.
+            from intellect_state import SessionDB
             from agent.oauth.model_tokens import persist_model_token
 
-            store = MembershipStore()
+            store = SessionDB()
             try:
                 persist_model_token(
                     store,
@@ -4300,14 +4291,11 @@ def _save_xai_oauth_tokens(
     refresh = str(tokens.get("refresh_token") or "").strip()
     if access:
         try:
-            # (single-user: MembershipStore removed; stub with close method)
-            class _NoopStore:
-                def close(self): pass
-                def __getattr__(self, name): return lambda *a, **kw: None
-            MembershipStore = _NoopStore
+            # single-user: oauth_* tables live in the shared state DB.
+            from intellect_state import SessionDB
             from agent.oauth.model_tokens import persist_model_token
 
-            store = MembershipStore()
+            store = SessionDB()
             try:
                 persist_model_token(
                     store,
