@@ -153,13 +153,26 @@ jobs:
         run: |
           uv venv .venv --python 3.12
           source .venv/bin/activate
-          uv pip install maturin pyyaml python-dotenv
+          # The verify steps run pytest and import the project, so install the
+          # project (+ dev extras) rather than a hand-picked trio — the old
+          # `maturin pyyaml python-dotenv` list left pytest missing entirely,
+          # which the job never reached because the build step failed first.
+          uv pip install -e ".[dev]"
 
-      - name: Build and install Rust extension
+      - name: Install Rust extension from the built wheel
+        # Consume the release wheel rust-full already produced instead of
+        # rebuilding, so this job verifies the artifact that actually ships.
+        # Installing it lands the module in site-packages, but the repo's own
+        # intellect_community_core/ directory shadows that when running from
+        # the repo root (cwd is sys.path[0]), so the .so must also be copied
+        # into the source tree — scripts/sync_rust_extension.sh is the repo's
+        # helper for exactly this (HP-205e). Without the sync the handshake
+        # below dies with ModuleNotFoundError:
+        # intellect_community_core.intellect_community_core.
         run: |
           source .venv/bin/activate
-          cd rust-core
-          maturin develop
+          uv pip install rust-core/target/wheels/*.whl
+          bash scripts/sync_rust_extension.sh
 
       - name: Binding handshake smoke test (P0-1)
         run: |

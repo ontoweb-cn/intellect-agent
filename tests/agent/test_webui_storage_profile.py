@@ -13,10 +13,12 @@ def two_profiles(tmp_path, monkeypatch):
     root = tmp_path / ".intellect"
     root.mkdir()
     monkeypatch.setenv("INTELLECT_HOME", str(root))
+    # Canonical agent layout; the legacy profiles/ migration has its own
+    # coverage in tests/intellect_cli/test_agents_home_migration.py.
     for name in ("work", "personal"):
-        profile_dir = root / "profiles" / name
-        profile_dir.mkdir(parents=True)
-        (profile_dir / "config.yaml").write_text(
+        agent_dir = root / "agents" / name
+        agent_dir.mkdir(parents=True)
+        (agent_dir / "config.yaml").write_text(
             f"display:\n  skin: {name}\n",
             encoding="utf-8",
         )
@@ -30,7 +32,7 @@ def test_webui_profile_scope_sets_context_override(two_profiles):
     with webui_profile_scope("work"):
         cfg = load_config_for_webui()
         assert cfg["display"]["skin"] == "work"
-        assert get_intellect_home() == two_profiles / "profiles" / "work"
+        assert get_intellect_home() == two_profiles / "agents" / "work"
 
     assert get_intellect_home() == two_profiles
 
@@ -58,7 +60,7 @@ def test_concurrent_profiles_do_not_cross_contaminate(two_profiles, monkeypatch)
                 home = get_intellect_home()
                 if cfg["display"]["skin"] != expected_skin:
                     errors.append(f"{profile}: skin={cfg['display']['skin']!r}")
-                expected_home = two_profiles / "profiles" / profile
+                expected_home = two_profiles / "agents" / profile
                 if home != expected_home:
                     errors.append(f"{profile}: home={home}")
         except Exception as exc:

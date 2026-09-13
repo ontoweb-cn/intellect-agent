@@ -983,9 +983,12 @@ class TestProfileRestoration:
         assert (wrapper_dir / "coder").exists()
         assert (wrapper_dir / "researcher").exists()
 
-        # Wrappers should contain the right content
+        # Wrappers should contain the right content — the canonical agent
+        # flag since the profile → agent rename (legacy -p still works as an
+        # alias at the CLI, but the wrapper is generated canonical-first).
         coder_wrapper = (wrapper_dir / "coder").read_text()
-        assert "intellect -p coder" in coder_wrapper
+        assert "intellect -a coder" in coder_wrapper
+        assert "intellect -p coder" not in coder_wrapper
 
     def test_import_skips_profile_dirs_without_config(self, tmp_path, monkeypatch):
         """Import doesn't create wrappers for profile dirs without config."""
