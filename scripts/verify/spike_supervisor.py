@@ -47,7 +47,7 @@ def _wait_for(condition, timeout: float, interval: float = 0.5) -> bool:
 
 def _pid_alive(pid: int) -> bool:
     try:
-        os.kill(pid, 0)
+        os.kill(pid, 0)  # windows-footgun: ok — POSIX-only spike (spawns gateway children, SIGKILLs process groups)
         return True
     except (OSError, ProcessLookupError):
         return False
@@ -138,7 +138,7 @@ def main() -> int:
         # ── Kill B; A must be unaffected ────────────────────────────────
         pid_b = children["profile-b"].pid
         try:
-            os.killpg(os.getpgid(pid_b), signal.SIGKILL)
+            os.killpg(os.getpgid(pid_b), signal.SIGKILL)  # windows-footgun: ok — POSIX-only spike (process-group teardown)
         except OSError:
             children["profile-b"].kill()
         time.sleep(2.0)
@@ -153,7 +153,7 @@ def main() -> int:
     finally:
         for proc in children.values():
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)  # windows-footgun: ok — POSIX-only spike (process-group teardown)
             except OSError:
                 try:
                     proc.kill()

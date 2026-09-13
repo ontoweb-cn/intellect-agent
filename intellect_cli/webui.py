@@ -72,7 +72,7 @@ def _is_pid_alive(pid: int) -> bool:
     # POSIX but NOT on Windows.  On Windows this code path should never
     # be reached because psutil is a core dependency.
     try:
-        os.kill(int(pid), 0)  # windows-footgun: safe only on POSIX
+        os.kill(int(pid), 0)  # windows-footgun: ok — POSIX-only fallback; the psutil path above handles Windows
         return True
     except (ProcessLookupError, PermissionError, OSError):
         return False

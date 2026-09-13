@@ -70,7 +70,7 @@ def _load_cache() -> Any:
     cache_path = _cache_path()
     if cache_path.exists():
         try:
-            with open(cache_path, "r") as f:
+            with open(cache_path, "r", encoding="utf-8") as f:
                 cache.deserialize(f.read())
         except Exception:
             logger.debug("Failed to load MSAL token cache; starting fresh", exc_info=True)

@@ -107,7 +107,7 @@ def terminate_pid(pid: int, *, force: bool = False, process_group: bool = False)
     if process_group and not _IS_WINDOWS:
         try:
             pgid = os.getpgid(pid)
-            os.killpg(pgid, sig)
+            os.killpg(pgid, sig)  # windows-footgun: ok — inside `if process_group and not _IS_WINDOWS` above
             return
         except (ProcessLookupError, PermissionError, OSError):
             pass  # Fall through to single-PID kill

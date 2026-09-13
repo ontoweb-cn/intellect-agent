@@ -334,7 +334,7 @@ class Supervisor:
             if self._child_alive(child):
                 try:
                     if hasattr(os, "killpg"):
-                        os.killpg(os.getpgid(child.proc.pid), signal.SIGTERM)
+                        os.killpg(os.getpgid(child.proc.pid), signal.SIGTERM)  # windows-footgun: ok — inside `if hasattr(os, "killpg")` above
                     else:
                         child.proc.terminate()
                 except (OSError, ProcessLookupError):
@@ -540,7 +540,7 @@ class Supervisor:
             logger.warning("Child %r ignored SIGTERM — SIGKILL", child.name)
             try:
                 if hasattr(os, "killpg"):
-                    os.killpg(os.getpgid(child.proc.pid), signal.SIGKILL)
+                    os.killpg(os.getpgid(child.proc.pid), signal.SIGKILL)  # windows-footgun: ok — inside `if hasattr(os, "killpg")` above
                 else:
                     child.proc.kill()
             except (OSError, ProcessLookupError):
