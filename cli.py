@@ -2755,7 +2755,7 @@ class IntellectCLI:
         "paste": "_handle_paste_command",
         "personality": "_handle_personality_command",
         "platforms": "_show_gateway_status",
-        "profile": "_handle_profile_command",
+        "agent": "_handle_profile_command",
         "reasoning": "_handle_reasoning_command",
         "review": "_handle_review_command",
         "reload-mcp": "_confirm_and_reload_mcp",

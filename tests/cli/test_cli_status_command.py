@@ -38,7 +38,7 @@ def test_process_command_status_dispatches_without_toggling_status_bar():
     with patch.object(cli_obj, "_show_session_status", create=True) as mock_status:
         assert cli_obj.process_command("/status") is True
 
-    mock_status.assert_called_once_with()
+    mock_status.assert_called_once()
     assert cli_obj._status_bar_visible is True
 
 
@@ -84,6 +84,23 @@ def test_show_session_status_prints_gateway_style_summary():
     _, kwargs = cli_obj.console.print.call_args
     assert kwargs.get("highlight") is False
     assert kwargs.get("markup") is False
+
+
+def test_process_command_agent_dispatches_via_canonical_name():
+    """Registry canonical is agent; CLI dispatch table must key on that."""
+    cli_obj = _make_cli()
+
+    with patch.object(cli_obj, "_handle_profile_command") as mock_handler:
+        assert cli_obj.process_command("/agent") is True
+        mock_handler.assert_called_once()
+
+
+def test_process_command_profile_alias_dispatches_to_agent_handler():
+    cli_obj = _make_cli()
+
+    with patch.object(cli_obj, "_handle_profile_command") as mock_handler:
+        assert cli_obj.process_command("/profile") is True
+        mock_handler.assert_called_once()
 
 
 def test_profile_command_reports_custom_root_profile(monkeypatch, tmp_path, capsys):

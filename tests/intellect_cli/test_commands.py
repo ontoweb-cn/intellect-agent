@@ -109,6 +109,8 @@ class TestResolveCommand:
         assert resolve_command("reload_mcp").name == "reload-mcp"
         assert resolve_command("codex_runtime").name == "codex-runtime"
         assert resolve_command("tasks").name == "agents"
+        assert resolve_command("agent").name == "agent"
+        assert resolve_command("profile").name == "agent"
 
     def test_topic_is_gateway_command(self):
         topic = resolve_command("topic")
@@ -257,6 +259,24 @@ class TestTelegramBotCommands:
         names = {name for name, _ in telegram_bot_commands()}
         assert "codex_runtime" in names
         assert "codex-runtime" not in names
+
+    def test_agent_command_keeps_telegram_menu_priority_slot(self):
+        """Canonical /agent must remain in the prioritized Telegram menu set."""
+        from intellect_cli.commands.registry import (
+            _TELEGRAM_MENU_PRIORITY,
+            _prioritize_telegram_menu_commands,
+        )
+
+        assert "agent" in _TELEGRAM_MENU_PRIORITY
+        assert "profile" not in _TELEGRAM_MENU_PRIORITY
+        names = [name for name, _ in telegram_bot_commands()]
+        assert "agent" in names
+        assert "profile" not in names
+
+        prioritized = [
+            name for name, _ in _prioritize_telegram_menu_commands(list(telegram_bot_commands()))
+        ]
+        assert prioritized.index("agent") < prioritized.index("whoami")
 
 
 class TestSlackSubcommandMap:
