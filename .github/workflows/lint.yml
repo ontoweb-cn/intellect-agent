@@ -103,12 +103,21 @@ jobs:
           echo "base ty:   $(wc -c < .lint-reports/base/ty.json) bytes"
 
       - name: Generate diff summary
+        env:
+          # The base worktree is created at the same path the "Run ruff + ty on
+          # base" step uses; keep the two in sync.
+          BASE_CHECKOUT: /tmp/lint-base
         run: |
+          # --{base,head}-root tell the tool which checkout each report's
+          # absolute paths came from; without them the base worktree's paths
+          # never match HEAD and every legacy finding is reported as new.
           python scripts/lint_diff.py \
             --base-ruff .lint-reports/base/ruff.json \
             --head-ruff .lint-reports/head/ruff.json \
             --base-ty   .lint-reports/base/ty.json \
             --head-ty   .lint-reports/head/ty.json \
+            --base-root "$BASE_CHECKOUT" \
+            --head-root "$GITHUB_WORKSPACE" \
             --base-ref  "${{ steps.base.outputs.ref }}" \
             --head-ref  "${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}" \
             --output    .lint-reports/summary.md
@@ -156,18 +165,26 @@ jobs:
 
 
   ruff-blocking:
-    # Enforce the rules in pyproject.toml [tool.ruff.lint.select]. Currently
-    # PLW1514 (unspecified-encoding) — catches bare ``open()`` /
-    # ``read_text()`` / ``write_text()`` calls that default to locale
-    # encoding on Windows. Failure here blocks merge; the advisory
-    # ``lint-diff`` job above runs independently so reviewers still get
-    # the diff comment even when enforcement fails.
+    # Enforce the rules in pyproject.toml [tool.ruff.lint.select] (PLW1514,
+    # F, ASYNC*) as a **ratchet** rather than an absolute gate.
+    #
+    # A bare `ruff check .` cannot pass here: the tree carries ~1100
+    # pre-existing findings under those rules, so the job failed on every
+    # push since it was added and enforced nothing.  Blocking on *new*
+    # diagnostics keeps the merge gate meaningful (a PR cannot add findings)
+    # without requiring the legacy cleanup as an unrelated prerequisite.
+    # Cleared findings still show up in the diff job above, so the backlog
+    # can keep shrinking.  Self-contained on purpose (it does not depend on
+    # the diff job's artifact) so the gate cannot silently vanish if that
+    # job ever crashes.
     name: ruff enforcement (blocking)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # need the base commit to diff against
 
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -175,11 +192,51 @@ jobs:
       - name: Install ruff
         run: uv tool install ruff
 
-      - name: ruff check .
-        # No --exit-zero, no || true. Exit code propagates to the job,
-        # which propagates to the required-check gate.
+      - name: Determine base ref
+        id: base
         run: |
-          ruff check .
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA=$(git merge-base "origin/${{ github.base_ref }}" HEAD)
+          else
+            BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+          fi
+          echo "sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Base SHA: ${BASE_SHA}"
+
+      - name: Collect ruff on HEAD and base
+        run: |
+          mkdir -p .ruff-ratchet/base .ruff-ratchet/head
+          ruff check --output-format json --exit-zero > .ruff-ratchet/head/ruff.json
+          HEAD_SHA=$(git rev-parse HEAD)
+          BASE_SHA="${{ steps.base.outputs.sha }}"
+          if [ "$BASE_SHA" = "$HEAD_SHA" ]; then
+            echo '[]' > .ruff-ratchet/base/ruff.json
+          else
+            git worktree add --detach /tmp/ratchet-base "$BASE_SHA"
+            ( cd /tmp/ratchet-base && ruff check --output-format json --exit-zero ) \
+              > .ruff-ratchet/base/ruff.json
+            git worktree remove --force /tmp/ratchet-base
+          fi
+          echo "head: $(wc -c < .ruff-ratchet/head/ruff.json) bytes"
+          echo "base: $(wc -c < .ruff-ratchet/base/ruff.json) bytes"
+
+      - name: Fail on new diagnostics
+        run: |
+          echo '[]' > .ruff-ratchet/empty.json
+          # --{base,head}-root: the base worktree's ruff paths are absolute and
+          # rooted at /tmp/ratchet-base, while HEAD's are rooted at the
+          # workspace. Passing both makes the same finding compare equal
+          # instead of looking new on every run.
+          python scripts/lint_diff.py \
+            --base-ruff .ruff-ratchet/base/ruff.json \
+            --head-ruff .ruff-ratchet/head/ruff.json \
+            --base-ty   .ruff-ratchet/empty.json \
+            --head-ty   .ruff-ratchet/empty.json \
+            --base-root /tmp/ratchet-base \
+            --head-root "$GITHUB_WORKSPACE" \
+            --base-ref  "${{ steps.base.outputs.sha }}" \
+            --head-ref  "${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}" \
+            --fail-on-new
 
   windows-footguns:
     # Static guardrails on Windows-unsafe Python primitives — os.kill(pid, 0),

@@ -39,17 +39,33 @@ def _load_json(path: Path | None) -> list[dict]:
     return data
 
 
-def _normalize_ruff(entries: list[dict]) -> list[dict]:
+def _relativize(path: str, root: Path) -> str:
+    """Make *path* relative to *root*, tolerating symlinked roots.
+
+    Both sides are resolved first: macOS maps /tmp → /private/tmp, and a base
+    worktree created under /tmp would otherwise relativize into a chain of
+    ``../`` segments instead of a repo-relative path — which makes every base
+    finding look new.
+    """
+    if not path:
+        return path
+    try:
+        return os.path.relpath(os.path.realpath(path), os.path.realpath(root))
+    except ValueError:
+        return path
+
+
+def _normalize_ruff(entries: list[dict], root: Path) -> list[dict]:
     """Ruff JSON: {code, filename, location.row, message}."""
     out: list[dict] = []
     for e in entries:
         code = e.get("code") or "unknown"
-        # ruff emits absolute paths; relativize to repo root if possible
-        filename = e.get("filename", "")
-        try:
-            filename = os.path.relpath(filename)
-        except ValueError:
-            pass
+        # ruff emits absolute paths. Relativize against this side's own root
+        # (the repo checkout for HEAD, the base worktree for the base ref) so
+        # the same finding compares equal across the two scans. Relativizing
+        # against the *current* directory does not work: the base worktree
+        # lives elsewhere, so every base path would look new.
+        filename = _relativize(e.get("filename", ""), root)
         line = (e.get("location") or {}).get("row", 0)
         out.append(
             {
@@ -63,7 +79,7 @@ def _normalize_ruff(entries: list[dict]) -> list[dict]:
     return out
 
 
-def _normalize_ty(entries: list[dict]) -> list[dict]:
+def _normalize_ty(entries: list[dict], root: Path) -> list[dict]:
     """ty gitlab JSON: {check_name, location.path, location.positions.begin.line, description}."""
     out: list[dict] = []
     for e in entries:
@@ -73,7 +89,7 @@ def _normalize_ty(entries: list[dict]) -> list[dict]:
             {
                 "tool": "ty",
                 "rule": e.get("check_name", "unknown"),
-                "path": loc.get("path", ""),
+                "path": _relativize(loc.get("path", ""), root),
                 "line": begin.get("line", 0),
                 "message": e.get("description", ""),
             }
@@ -170,7 +186,31 @@ def main() -> int:
     ap.add_argument("--base-ref", default="base")
     ap.add_argument("--head-ref", default="HEAD")
     ap.add_argument(
+        "--base-root",
+        type=Path,
+        default=Path("."),
+        help=(
+            "Checkout root the base report's absolute paths belong to "
+            "(e.g. the base worktree). Defaults to the current directory."
+        ),
+    )
+    ap.add_argument(
+        "--head-root",
+        type=Path,
+        default=Path("."),
+        help="Checkout root the head report's absolute paths belong to.",
+    )
+    ap.add_argument(
         "--output", type=Path, help="Write summary to this file instead of stdout"
+    )
+    ap.add_argument(
+        "--fail-on-new",
+        action="store_true",
+        help=(
+            "Exit 1 when the head ref introduces diagnostics the base ref did "
+            "not have (ruff or ty). Used by the blocking ratchet job so legacy "
+            "findings stay advisory while new ones cannot land."
+        ),
     )
     args = ap.parse_args()
 
@@ -179,10 +219,10 @@ def main() -> int:
     base_ty_raw = _load_json(args.base_ty)
     head_ty_raw = _load_json(args.head_ty)
 
-    base_ruff = _normalize_ruff(base_ruff_raw)
-    head_ruff = _normalize_ruff(head_ruff_raw)
-    base_ty = _normalize_ty(base_ty_raw)
-    head_ty = _normalize_ty(head_ty_raw)
+    base_ruff = _normalize_ruff(base_ruff_raw, args.base_root)
+    head_ruff = _normalize_ruff(head_ruff_raw, args.head_root)
+    base_ty = _normalize_ty(base_ty_raw, args.base_root)
+    head_ty = _normalize_ty(head_ty_raw, args.head_root)
 
     base_ruff_avail = args.base_ruff.exists() and args.base_ruff.stat().st_size > 0
     base_ty_avail = args.base_ty.exists() and args.base_ty.stat().st_size > 0
@@ -200,6 +240,17 @@ def main() -> int:
         args.output.write_text(summary)
     else:
         print(summary)
+
+    if args.fail_on_new:
+        new_ruff, _, _ = _diff(base_ruff, head_ruff)
+        new_ty, _, _ = _diff(base_ty, head_ty)
+        total_new = len(new_ruff) + len(new_ty)
+        if total_new:
+            print(
+                f"::error::{total_new} new lint diagnostic(s) introduced "
+                f"({len(new_ruff)} ruff, {len(new_ty)} ty) — see the report above"
+            )
+            return 1
     return 0
 
 
