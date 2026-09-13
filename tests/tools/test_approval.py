@@ -223,19 +223,21 @@ class TestSessionKeyContext:
             approval_module.reset_current_session_key(token)
 
     def test_gateway_runner_binds_session_key_to_context_before_agent_run(self):
-        run_py = Path(__file__).resolve().parents[2] / "gateway" / "run.py"
-        module = ast.parse(run_py.read_text(encoding="utf-8"))
+        # The gateway agent lifecycle lives in the GatewayAgentRunner mixin
+        # (gateway/agent_runner.py::_run_agent) since the run.py split.
+        runner_py = Path(__file__).resolve().parents[2] / "gateway" / "agent_runner.py"
+        module = ast.parse(runner_py.read_text(encoding="utf-8"))
 
-        run_sync = None
+        run_agent = None
         for node in ast.walk(module):
-            if isinstance(node, ast.FunctionDef) and node.name == "run_sync":
-                run_sync = node
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_run_agent":
+                run_agent = node
                 break
 
-        assert run_sync is not None, "gateway.run.run_sync not found"
+        assert run_agent is not None, "gateway.agent_runner._run_agent not found"
 
         called_names = set()
-        for node in ast.walk(run_sync):
+        for node in ast.walk(run_agent):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 called_names.add(node.func.id)
 

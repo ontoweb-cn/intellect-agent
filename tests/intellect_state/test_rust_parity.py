@@ -447,74 +447,118 @@ class TestDetectDangerous:
 
 
 class TestIsForbiddenPath:
-    """Tests for rust_is_forbidden_path."""
+    """Tests for rust_is_forbidden_path.
+
+    Contract: a non-empty reason string when the path is forbidden, ``None``
+    when it is safe.  This guards secrets/credentials specifically — files
+    like ``/etc/passwd`` are not secrets and are handled by the write-side
+    deny list in ``agent/file_safety`` instead.
+    """
 
     def test_blocks_system_paths(self):
         from intellect_rust import rust_is_forbidden_path
 
-        assert rust_is_forbidden_path("/etc/passwd") is True
-        assert rust_is_forbidden_path("C:\\Windows\\System32\\config\\SAM") is True
+        assert rust_is_forbidden_path("/etc/shadow") is not None
+        assert rust_is_forbidden_path("/etc/sudoers") is not None
+        assert rust_is_forbidden_path("/proc/kcore") is not None
+        assert rust_is_forbidden_path("/dev/mem") is not None
+
+    def test_blocks_credential_files(self):
+        from intellect_rust import rust_is_forbidden_path
+
+        assert rust_is_forbidden_path("/home/user/.ssh/id_rsa") is not None
+        assert rust_is_forbidden_path("/home/user/.aws/credentials") is not None
+        assert rust_is_forbidden_path("/home/user/.kube/config") is not None
+        assert rust_is_forbidden_path("/home/user/.netrc") is not None
+
+    def test_private_key_extension_blocked_on_absolute_paths_only(self):
+        from intellect_rust import rust_is_forbidden_path
+
+        assert rust_is_forbidden_path("/home/user/certs/server.key") is not None
+        # A relative path is more likely a project file than a credential.
+        assert rust_is_forbidden_path("./certs/server.key") is None
 
     def test_allows_normal_paths(self):
         from intellect_rust import rust_is_forbidden_path
 
-        assert rust_is_forbidden_path("/home/user/docs") is False
-        assert rust_is_forbidden_path("./myfile.txt") is False
+        assert rust_is_forbidden_path("/home/user/docs") is None
+        assert rust_is_forbidden_path("./myfile.txt") is None
 
 
 class TestIsIpBlocked:
-    """Tests for rust_is_ip_blocked."""
+    """Tests for rust_is_ip_blocked.
+
+    Contract: a non-empty reason string when the IP is blocked, ``None`` when
+    it looks safe.  Production callers treat it as a truthiness check.
+    """
 
     def test_blocks_loopback(self):
         from intellect_rust import rust_is_ip_blocked
 
-        assert rust_is_ip_blocked("127.0.0.1") is True
-        assert rust_is_ip_blocked("::1") is True
+        assert rust_is_ip_blocked("127.0.0.1") is not None
+        assert rust_is_ip_blocked("::1") is not None
 
     def test_blocks_private_ranges(self):
         from intellect_rust import rust_is_ip_blocked
 
-        assert rust_is_ip_blocked("10.0.0.1") is True
-        assert rust_is_ip_blocked("192.168.1.1") is True
-        assert rust_is_ip_blocked("172.16.0.1") is True
+        assert rust_is_ip_blocked("10.0.0.1") is not None
+        assert rust_is_ip_blocked("192.168.1.1") is not None
+        assert rust_is_ip_blocked("172.16.0.1") is not None
+
+    def test_blocks_cloud_metadata(self):
+        from intellect_rust import rust_is_ip_blocked
+
+        assert rust_is_ip_blocked("169.254.169.254") is not None
 
     def test_allows_public_ips(self):
         from intellect_rust import rust_is_ip_blocked
 
-        assert rust_is_ip_blocked("8.8.8.8") is False
-        assert rust_is_ip_blocked("1.1.1.1") is False
+        assert rust_is_ip_blocked("8.8.8.8") is None
+        assert rust_is_ip_blocked("1.1.1.1") is None
 
 
 class TestCheckSudoStdin:
-    """Tests for rust_check_sudo_stdin."""
+    """Tests for rust_check_sudo_stdin.
+
+    Contract: ``(normalized_command, sudo_password_set) -> reason | None``.
+    The guard is only relevant when no SUDO_PASSWORD is configured — with a
+    password set, piping is legitimate and the check short-circuits.
+    """
 
     def test_detects_sudo_stdin(self):
         from intellect_rust import rust_check_sudo_stdin
 
-        assert rust_check_sudo_stdin("echo password | sudo -S command") is True
-        assert rust_check_sudo_stdin("echo pwd | sudo --stdin cmd") is True
+        assert rust_check_sudo_stdin("echo password | sudo -S command", False) is not None
+
+    def test_short_circuits_when_password_configured(self):
+        from intellect_rust import rust_check_sudo_stdin
+
+        assert rust_check_sudo_stdin("echo password | sudo -S command", True) is None
 
     def test_allows_normal_sudo(self):
         from intellect_rust import rust_check_sudo_stdin
 
-        assert rust_check_sudo_stdin("sudo ls") is False
+        assert rust_check_sudo_stdin("sudo ls", False) is None
 
 
 # ── Usage / Token normalization ─────────────────────────────────────────────
 
 
 class TestNormalizeUsage:
-    """Tests for rust_normalize_usage."""
+    """Tests for rust_normalize_usage.
+
+    Positional contract: ``(api_mode, provider_name, input_tokens,
+    output_tokens, prompt_tokens, completion_tokens, cache_read_input_tokens,
+    cache_creation_input_tokens, cached_tokens_detail, cache_write_tokens_detail,
+    reasoning_tokens_detail) -> (input, output, cache_read, cache_write, reasoning)``
+    """
 
     def test_anthropic_mode(self):
         from intellect_rust import rust_normalize_usage
 
         result = rust_normalize_usage(
-            "anthropic", "anthropic",
-            input_tokens=100, output_tokens=50,
-            prompt_tokens=0, completion_tokens=0,
-            cache_read_input_tokens=10, cache_creation_input_tokens=5,
-            cached_detail=0, cache_write_detail=0, reasoning_tokens=0,
+            "anthropic_messages", "anthropic",
+            100, 50, 0, 0, 10, 5, 0, 0, 0,
         )
         assert result is not None
         assert len(result) == 5
@@ -523,101 +567,184 @@ class TestNormalizeUsage:
         from intellect_rust import rust_normalize_usage
 
         result = rust_normalize_usage(
-            "openai", "openai",
-            input_tokens=0, output_tokens=0,
-            prompt_tokens=200, completion_tokens=100,
-            cache_read_input_tokens=0, cache_creation_input_tokens=0,
-            cached_detail=0, cache_write_detail=0, reasoning_tokens=0,
+            "chat_completions", "openai",
+            0, 0, 200, 100, 0, 0, 0, 0, 0,
         )
         assert result is not None
         assert len(result) == 5
 
-    def test_preserves_token_counts(self):
+    def test_anthropic_buckets_pass_through(self):
         from intellect_rust import rust_normalize_usage
 
         i, o, cr, cw, r = rust_normalize_usage(
-            "anthropic", "anthropic",
-            input_tokens=100, output_tokens=50,
-            prompt_tokens=0, completion_tokens=0,
-            cache_read_input_tokens=10, cache_creation_input_tokens=5,
-            cached_detail=0, cache_write_detail=0, reasoning_tokens=3,
+            "anthropic_messages", "anthropic",
+            100, 50, 0, 0, 10, 5, 0, 0, 3,
         )
-        assert i + o + cr + cw + r > 0
+        assert (i, o, cr, cw, r) == (100, 50, 10, 5, 3)
+
+    def test_openai_derives_input_by_subtracting_cached(self):
+        from intellect_rust import rust_normalize_usage
+
+        # prompt_tokens is the inclusive total; details break out the cached
+        # portion, which must be subtracted from the input bucket.
+        i, o, cr, _cw, _r = rust_normalize_usage(
+            "chat_completions", "openai",
+            0, 0, 200, 100, 0, 0, 30, 0, 0,
+        )
+        assert (i, o, cr) == (170, 100, 30)
 
 
 class TestNormalizeModelName:
-    """Tests for rust_normalize_model_name."""
+    """Tests for rust_normalize_model_name.
+
+    Contract: ``(model, preserve_dots) -> str``.  When ``preserve_dots`` is
+    False, dots are converted to hyphens for Anthropic model IDs (except
+    Bedrock IDs, which use dots as namespace separators).
+    """
 
     def test_returns_string(self):
         from intellect_rust import rust_normalize_model_name
 
-        result = rust_normalize_model_name("claude-sonnet-4-6")
+        result = rust_normalize_model_name("claude-sonnet-4-6", False)
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_passthrough_unknown(self):
         from intellect_rust import rust_normalize_model_name
 
-        result = rust_normalize_model_name("unknown-model-xyz")
+        result = rust_normalize_model_name("unknown-model-xyz", False)
         assert result == "unknown-model-xyz"
+
+    def test_strips_openrouter_anthropic_prefix(self):
+        from intellect_rust import rust_normalize_model_name
+
+        result = rust_normalize_model_name("anthropic/claude-sonnet-4", False)
+        assert result == "claude-sonnet-4"
+
+    def test_preserve_dots_flag(self):
+        from intellect_rust import rust_normalize_model_name
+
+        # Dots are version separators → hyphens unless preserve_dots is set.
+        assert rust_normalize_model_name("claude-3.5-sonnet", False) == "claude-3-5-sonnet"
+        assert rust_normalize_model_name("claude-3.5-sonnet", True) == "claude-3.5-sonnet"
 
 
 # ── Gateway ─────────────────────────────────────────────────────────────────
 
 
 class TestBuildSessionKey:
-    """Tests for rust_build_session_key."""
+    """Tests for rust_build_session_key.
+
+    Positional contract: ``(platform, chat_type, chat_id, thread_id, user_id,
+    user_id_alt, group_sessions_per_user, thread_sessions_per_user, member_id,
+    team_id, project_id) -> str``.  The result is a structured session key
+    (``agent:main:<platform>:...``), not a hash.
+    """
+
+    @staticmethod
+    def _key(chat_id="c1", thread_id="", user_id="u1", user_id_alt="",
+             group_per_user=False, thread_per_user=False,
+             member_id="", team_id="", project_id="",
+             platform="cli", chat_type="dm"):
+        from intellect_rust import rust_build_session_key
+
+        return rust_build_session_key(
+            platform, chat_type, chat_id, thread_id, user_id, user_id_alt,
+            group_per_user, thread_per_user, member_id, team_id, project_id,
+        )
 
     def test_dm_session_key(self):
-        from intellect_rust import rust_build_session_key
+        key = self._key()
+        assert key == "agent:main:cli:dm:c1"
 
-        key = rust_build_session_key("user-alice", "user-bob")
-        assert isinstance(key, str)
-        assert len(key) == 64  # SHA-256 hex
+    def test_deterministic_for_same_inputs(self):
+        assert self._key() == self._key()
 
-    def test_deterministic_for_same_members(self):
-        from intellect_rust import rust_build_session_key
+    def test_group_sessions_per_user_isolates_participants(self):
+        alice = self._key(platform="telegram", chat_type="group", chat_id="g1",
+                          user_id="alice", user_id_alt="alice",
+                          group_per_user=True)
+        bob = self._key(platform="telegram", chat_type="group", chat_id="g1",
+                        user_id="bob", user_id_alt="bob",
+                        group_per_user=True)
+        shared = self._key(platform="telegram", chat_type="group", chat_id="g1",
+                           user_id="alice", user_id_alt="alice",
+                           group_per_user=False)
 
-        k1 = rust_build_session_key("alice", "bob")
-        k2 = rust_build_session_key("alice", "bob")
-        assert k1 == k2
+        assert alice != bob
+        # Without per-user grouping everyone shares one key.
+        assert shared == "agent:main:telegram:group:g1"
 
-    def test_order_independent(self):
-        from intellect_rust import rust_build_session_key
-
-        k1 = rust_build_session_key("alice", "bob")
-        k2 = rust_build_session_key("bob", "alice")
-        assert k1 == k2
-
-    def test_different_members_different_key(self):
-        from intellect_rust import rust_build_session_key
-
-        k1 = rust_build_session_key("alice", "bob")
-        k2 = rust_build_session_key("alice", "charlie")
-        assert k1 != k2
+    def test_optional_scopes_are_appended(self):
+        key = self._key(member_id="m1", team_id="t1", project_id="p1")
+        assert key == "agent:main:cli:dm:c1:member:m1:team:t1:project:p1"
 
 
 # ── Stream ──────────────────────────────────────────────────────────────────
 
 
 class TestStreamAccumulator:
-    """Tests for StreamAccumulator."""
+    """Tests for StreamAccumulator.
+
+    Contract: feed deltas via ``add_content`` / ``add_reasoning`` /
+    ``add_tool_delta`` / ``set_model`` / ``set_finish_reason``, then read the
+    assembled result from ``finalize()`` as a 5-tuple:
+    ``(content, tool_calls_json, reasoning, finish_reason, model)``.
+    """
 
     def test_accumulates_content_delta(self):
         from intellect_rust import StreamAccumulator
 
         acc = StreamAccumulator()
-        assert acc is not None
-        # Content delta event
-        result = acc.process_sse("content_block_delta", '{"type":"text_delta","text":"Hello"}')
-        assert result is not None
+        acc.add_content("Hello ")
+        acc.add_content("world")
 
-    def test_initial_state(self):
+        content, tool_calls, reasoning, finish_reason, model = acc.finalize()
+        assert content == "Hello world"
+        assert tool_calls == ""
+        assert reasoning == ""
+        assert finish_reason is None
+        assert model is None
+
+    def test_initial_state_is_empty(self):
         from intellect_rust import StreamAccumulator
 
         acc = StreamAccumulator()
-        state = acc.get_state()
-        assert isinstance(state, str)
+        content, tool_calls, reasoning, finish_reason, model = acc.finalize()
+        assert content == ""
+        assert tool_calls == ""
+        assert reasoning == ""
+        assert finish_reason is None
+        assert model is None
+
+    def test_tracks_reasoning_finish_reason_and_model(self):
+        from intellect_rust import StreamAccumulator
+
+        acc = StreamAccumulator()
+        acc.add_content("answer")
+        acc.add_reasoning("thinking")
+        acc.set_model("claude-sonnet-4")
+        acc.set_finish_reason("stop")
+
+        content, _tools, reasoning, finish_reason, model = acc.finalize()
+        assert content == "answer"
+        assert reasoning == "thinking"
+        assert finish_reason == "stop"
+        assert model == "claude-sonnet-4"
+
+    def test_accumulates_tool_call_arguments(self):
         import json
-        data = json.loads(state)
-        assert "text" in data
+
+        from intellect_rust import StreamAccumulator
+
+        acc = StreamAccumulator()
+        # Arguments arrive in fragments and must be concatenated.
+        acc.add_tool_delta(0, "call_1", "search", '{"q":')
+        acc.add_tool_delta(0, "call_1", None, '"hi"}')
+
+        _content, tool_calls, _reasoning, _finish, _model = acc.finalize()
+        entries = json.loads(tool_calls)
+        assert len(entries) == 1
+        assert entries[0]["id"] == "call_1"
+        assert entries[0]["function"]["name"] == "search"
+        assert json.loads(entries[0]["function"]["arguments"]) == {"q": "hi"}
