@@ -4085,3 +4085,70 @@ def test_bare_connect_does_not_close_on_context_exit(tmp_path):
     # Still usable after with-block exit (the leak).
     conn.execute("SELECT 1").fetchone()
     conn.close()  # explicit close to avoid leaking THIS test
+
+
+# ---------------------------------------------------------------------------
+# init_db(): must not disturb a connection already handed out by connect()
+# ---------------------------------------------------------------------------
+# `intellect kanban <verb>` calls init_db() before every subcommand
+# (intellect_cli/kanban.py), and the gateway serves those commands from the
+# long-lived process that also runs the kanban dispatcher. When init_db()
+# re-initialised through connect() it closed the pooled handle that the
+# dispatcher was still holding, so the next statement on it raised
+# "Cannot operate on a closed database" — and, because executescript()
+# commits first, it could also commit another thread's in-flight write.
+# ---------------------------------------------------------------------------
+
+
+def test_init_db_leaves_existing_connection_open(tmp_path):
+    """A connection from connect() survives a later init_db() call."""
+    db_path = tmp_path / "kanban.db"
+    kb._INITIALIZED_PATHS.discard(str(db_path.resolve()))
+
+    conn = kb.connect(db_path=db_path)
+    try:
+        tid = kb.create_task(conn, title="survives re-init")
+
+        kb.init_db(db_path=db_path)
+
+        # The handle must still work — this is what the dispatcher relies on.
+        assert kb.get_task(conn, tid) is not None
+        assert conn.execute("SELECT 1").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_init_db_re_runs_migration_for_legacy_rows(tmp_path):
+    """init_db() still forces the migration pass on a drifted DB."""
+    db_path = tmp_path / "kanban.db"
+    kb._INITIALIZED_PATHS.discard(str(db_path.resolve()))
+
+    conn = kb.connect(db_path=db_path)
+    try:
+        tid = kb.create_task(conn, title="legacy vocab")
+        now = int(time.time())
+        with kb.write_txn(conn):
+            for old in ("ready", "priority", "spawn_auto_blocked"):
+                conn.execute(
+                    "INSERT INTO task_events (task_id, kind, payload, created_at) "
+                    "VALUES (?, ?, NULL, ?)",
+                    (tid, old, now),
+                )
+
+        kb.init_db(db_path=db_path)
+
+        kinds = [
+            row["kind"]
+            for row in conn.execute(
+                "SELECT kind FROM task_events WHERE task_id = ? ORDER BY id", (tid,)
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+    assert "ready" not in kinds
+    assert "priority" not in kinds
+    assert "spawn_auto_blocked" not in kinds
+    assert "promoted" in kinds
+    assert "reprioritized" in kinds
+    assert "gave_up" in kinds

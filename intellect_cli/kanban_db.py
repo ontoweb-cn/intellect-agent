@@ -1523,6 +1523,45 @@ def connect_closing(
             pass  # intentionally silent — cleanup/teardown path
 
 
+def _force_schema_and_migrations(path: Path) -> None:
+    """Re-run the schema + additive-migration pass on a *private* connection.
+
+    ``init_db`` runs before every ``intellect kanban`` subcommand
+    (``intellect_cli/kanban.py``), so inside the gateway — a long-lived
+    process that also serves those commands — it runs repeatedly in-process.
+    It must therefore leave ``_KANBAN_CONN_POOL`` alone:
+
+    * the pool is keyed by path, not by thread, despite the "thread-local"
+      note above, so it hands the *same* connection to every caller in the
+      process. Closing it pulls the handle out from under whoever else holds
+      it (the gateway's dispatcher takes one via ``connect`` and keeps it for
+      the whole tick), and
+    * ``executescript`` commits any pending transaction before it runs, so
+      running it on a pooled connection could commit another thread's
+      in-flight work.
+
+    A private connection sidesteps both. Locks are taken in the same
+    file-then-process order ``connect`` uses, and WAL activation is
+    idempotent per database file.
+    """
+    resolved = str(path.resolve())
+    with _cross_process_init_lock(path):
+        _validate_sqlite_header(path)
+        _guard_existing_db_is_healthy(path)
+        conn = _sqlite_connect(path)
+        try:
+            conn.row_factory = sqlite3.Row
+            from intellect_state import apply_wal_with_fallback
+
+            apply_wal_with_fallback(conn, db_label=f"kanban.db ({path.name})")
+            conn.executescript(SCHEMA_SQL)
+            _migrate_add_optional_columns(conn)
+            with _INIT_LOCK:
+                _INITIALIZED_PATHS.add(resolved)
+        finally:
+            conn.close()
+
+
 def init_db(
     db_path: Optional[Path] = None,
     *,
@@ -1537,39 +1576,35 @@ def init_db(
     may have drifted — tests that write legacy event kinds directly,
     external tools that upgrade an old DB file — can call this to
     force re-migration.
+
+    The pass runs on a private connection, so a handle handed out earlier by
+    :func:`connect` stays usable — see :func:`_force_schema_and_migrations`.
     """
     if db_path is not None:
         path = db_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        resolved = str(path.resolve())
-        with _INIT_LOCK:
-            _INITIALIZED_PATHS.discard(resolved)
-        with contextlib.closing(connect(db_path=path)):
-            pass
+        _force_schema_and_migrations(path)
         return path
 
     try:
         from agent.kanban_unified import kanban_storage_mode, unified_db_path
 
         if kanban_storage_mode() == "unified":
-            with connect_closing(board=board):
-                pass
             try:
-                return unified_db_path(board=board)
+                unified_path = unified_db_path(board=board)
             except RuntimeError:
                 from intellect_constants import get_intellect_home
 
-                return get_intellect_home() / ".kanban-unified.sqlite"
+                unified_path = get_intellect_home() / ".kanban-unified.sqlite"
+            unified_path.parent.mkdir(parents=True, exist_ok=True)
+            _force_schema_and_migrations(unified_path)
+            return unified_path
     except ImportError:
         pass
 
     path = kanban_db_path(board=board)
     path.parent.mkdir(parents=True, exist_ok=True)
-    resolved = str(path.resolve())
-    with _INIT_LOCK:
-        _INITIALIZED_PATHS.discard(resolved)
-    with contextlib.closing(connect(db_path=path)):
-        pass
+    _force_schema_and_migrations(path)
     return path
 
 
