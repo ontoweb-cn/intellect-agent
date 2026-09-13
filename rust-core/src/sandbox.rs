@@ -386,6 +386,8 @@ fn is_forbidden_path_impl(path: &str) -> Option<String> {
 /// - CGNAT (100.64.0.0/10)
 /// - Unspecified (::, 0.0.0.0)
 /// - Multicast
+/// - IANA special-purpose blocks (0.0.0.0/8, 192.0.2.0/24, 240.0.0.0/4,
+///   2002::/16, non-global-unicast IPv6, ...)
 #[pyfunction]
 pub fn is_ip_blocked_rs(ip_str: &str) -> Option<String> {
     is_ip_blocked_impl(ip_str)
@@ -456,6 +458,47 @@ fn check_ipv4(ip: std::net::Ipv4Addr) -> Option<String> {
         return Some("benchmark range address (198.18.0.0/15)".to_string());
     }
 
+    // IANA special-purpose blocks. Explicit because the standard library
+    // predicates above do not cover them (``is_reserved``/``is_broadcast``/
+    // ``is_documentation`` are still nightly-only in Rust).
+    check_ipv4_special_purpose(octets).map(str::to_string)
+}
+
+/// IANA special-purpose IPv4 blocks that are never legitimate SSRF targets.
+///
+/// Mirrors the pre-Rust `_is_blocked_ip` baseline (the Python ``ipaddress``
+/// private/reserved tables) so switching to the native fast path did not
+/// silently widen what the guard allows.
+fn check_ipv4_special_purpose(o: [u8; 4]) -> Option<&'static str> {
+    // 0.0.0.0/8 — "this network". On some stacks 0.0.0.1 is routed to the
+    // local host, making it a loopback bypass.
+    if o[0] == 0 {
+        return Some("this-network address (0.0.0.0/8)");
+    }
+
+    // 192.0.0.0/24 — IETF protocol assignments, except the two anycast
+    // addresses (192.0.0.9/32, 192.0.0.10/32) that are globally routable.
+    if o[0] == 192 && o[1] == 0 && o[2] == 0 && o[3] != 9 && o[3] != 10 {
+        return Some("IETF protocol assignment (192.0.0.0/24)");
+    }
+
+    // 192.0.2.0/24 (TEST-NET-1), 198.51.100.0/24 (TEST-NET-2),
+    // 203.0.113.0/24 (TEST-NET-3) — documentation ranges.
+    if o[0] == 192 && o[1] == 0 && o[2] == 2 {
+        return Some("documentation range (192.0.2.0/24)");
+    }
+    if o[0] == 198 && o[1] == 51 && o[2] == 100 {
+        return Some("documentation range (198.51.100.0/24)");
+    }
+    if o[0] == 203 && o[1] == 0 && o[2] == 113 {
+        return Some("documentation range (203.0.113.0/24)");
+    }
+
+    // 240.0.0.0/4 — reserved; includes the 255.255.255.255 broadcast address.
+    if o[0] >= 240 {
+        return Some("reserved address (240.0.0.0/4)");
+    }
+
     None
 }
 
@@ -494,6 +537,59 @@ fn check_ipv6(ip: std::net::Ipv6Addr) -> Option<String> {
     let segs = ip.segments();
     if segs[0] == 0xfd00 && segs[1] == 0xec2 && segs[7] == 0x254 {
         return Some("cloud metadata endpoint (IPv6)".to_string());
+    }
+
+    // IANA special-purpose blocks (see check_ipv6_special_purpose).
+    check_ipv6_special_purpose(segs).map(str::to_string)
+}
+
+/// IANA special-purpose IPv6 blocks that are never legitimate SSRF targets.
+///
+/// Mirrors the pre-Rust `_is_blocked_ip` baseline (the Python ``ipaddress``
+/// private/reserved tables). Only global unicast (2000::/3) is routable on
+/// the public internet, so everything else is rejected.
+fn check_ipv6_special_purpose(seg: [u16; 8]) -> Option<&'static str> {
+    // Anything outside 2000::/3 — the global unicast range — has no public
+    // routing. This covers NAT64 well-known prefix 64:ff9b::/96, discard-only
+    // 100::/64, ORCHID, SRv6 SIDs, and the whole `is_reserved` table.
+    if seg[0] < 0x2000 || seg[0] > 0x3fff {
+        return Some("non-global-unicast address");
+    }
+
+    // 2001::/23 — IETF protocol assignments (Teredo, benchmarking, ORCHID).
+    // A handful of assignments in this block ARE globally routable and must
+    // stay reachable: 2001:1::1/::2 (anycast), 2001:3::/32 (AMT),
+    // 2001:4:112::/48 (AS112), 2001:20::/28 (ORCHIDv2), 2001:30::/28.
+    if seg[0] == 0x2001 && (seg[1] & 0xfe00) == 0 {
+        let routable = (seg[1] == 0x0001
+            && seg[2] == 0
+            && seg[3] == 0
+            && seg[4] == 0
+            && seg[5] == 0
+            && seg[6] == 0
+            && (seg[7] == 1 || seg[7] == 2))
+            || seg[1] == 0x0003
+            || (seg[1] == 0x0004 && seg[2] == 0x0112)
+            || (seg[1] & 0xfff0) == 0x0020
+            || (seg[1] & 0xfff0) == 0x0030;
+        if !routable {
+            return Some("IETF protocol assignment (2001::/23)");
+        }
+    }
+
+    // 2001:db8::/32 — documentation.
+    if seg[0] == 0x2001 && seg[1] == 0x0db8 {
+        return Some("documentation range (2001:db8::/32)");
+    }
+
+    // 2002::/16 — 6to4, which embeds an IPv4 address (an SSRF pivot).
+    if seg[0] == 0x2002 {
+        return Some("6to4 address (2002::/16)");
+    }
+
+    // 3fff::/20 — documentation (RFC 9637).
+    if seg[0] == 0x3fff && (seg[1] & 0xf000) == 0 {
+        return Some("documentation range (3fff::/20)");
     }
 
     None
@@ -775,6 +871,59 @@ mod tests {
         assert!(is_ip_blocked_impl("::ffff:169.254.169.254").is_some());
         assert!(is_ip_blocked_impl("::ffff:10.0.0.1").is_some());
         assert!(is_ip_blocked_impl("::ffff:8.8.8.8").is_none());
+    }
+
+    #[test]
+    fn test_ip_blocked_iana_special_purpose_v4() {
+        // 0.0.0.0/8 — on some stacks 0.0.0.1 routes to the local host
+        assert!(is_ip_blocked_impl("0.0.0.1").is_some());
+        assert!(is_ip_blocked_impl("0.255.255.255").is_some());
+        // Documentation ranges (TEST-NET-1/2/3)
+        assert!(is_ip_blocked_impl("192.0.2.1").is_some());
+        assert!(is_ip_blocked_impl("198.51.100.1").is_some());
+        assert!(is_ip_blocked_impl("203.0.113.1").is_some());
+        // IETF protocol assignments (192.0.0.0/24)
+        assert!(is_ip_blocked_impl("192.0.0.1").is_some());
+        // Reserved 240.0.0.0/4, including the broadcast address
+        assert!(is_ip_blocked_impl("240.0.0.1").is_some());
+        assert!(is_ip_blocked_impl("250.1.2.3").is_some());
+        assert!(is_ip_blocked_impl("255.255.255.255").is_some());
+    }
+
+    #[test]
+    fn test_ip_allowed_routable_anycast_in_192_0_0_0_24() {
+        // 192.0.0.9/32 and 192.0.0.10/32 are globally routable anycast
+        // (PCP anycast / TURN anycast) — must NOT be blocked.
+        assert!(is_ip_blocked_impl("192.0.0.9").is_none());
+        assert!(is_ip_blocked_impl("192.0.0.10").is_none());
+    }
+
+    #[test]
+    fn test_ip_blocked_special_purpose_v6() {
+        // Non-global-unicast (outside 2000::/3)
+        assert!(is_ip_blocked_impl("64:ff9b::1.2.3.4").is_some());  // NAT64
+        assert!(is_ip_blocked_impl("100::5").is_some());            // discard-only
+        assert!(is_ip_blocked_impl("5f00::5").is_some());           // SRv6 SIDs
+        // IETF protocol assignments (2001::/23)
+        assert!(is_ip_blocked_impl("2001::5").is_some());           // Teredo
+        assert!(is_ip_blocked_impl("2001:2::5").is_some());         // benchmarking
+        assert!(is_ip_blocked_impl("2001:10::5").is_some());        // ORCHID
+        // Documentation
+        assert!(is_ip_blocked_impl("2001:db8::5").is_some());
+        assert!(is_ip_blocked_impl("3fff::5").is_some());
+        // 6to4 embeds an IPv4 address — SSRF pivot
+        assert!(is_ip_blocked_impl("2002::5").is_some());
+    }
+
+    #[test]
+    fn test_ip_allowed_routable_exceptions_in_2001_prefix() {
+        // These 2001::/23 assignments are globally routable and stay reachable.
+        assert!(is_ip_blocked_impl("2001:1::1").is_none());
+        assert!(is_ip_blocked_impl("2001:1::2").is_none());
+        assert!(is_ip_blocked_impl("2001:3::5").is_none());
+        assert!(is_ip_blocked_impl("2001:4:112::5").is_none());
+        assert!(is_ip_blocked_impl("2001:20::5").is_none());
+        assert!(is_ip_blocked_impl("2001:30::5").is_none());
     }
 
     #[test]
