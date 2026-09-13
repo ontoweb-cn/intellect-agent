@@ -506,12 +506,12 @@ intellect gateway status
 intellect gateway stop
 
 # 命名配置文件
-intellect -p research gateway start
-intellect -p research gateway status
-intellect -p research gateway stop
+intellect -a research gateway start
+intellect -a research gateway status
+intellect -a research gateway stop
 ```
 
-对于小型固定机器人集群，使用 shell 循环或脚本，对默认配置文件调用 `intellect gateway <action>`，对每个命名配置文件调用 `intellect -p <profile> gateway <action>`。这比假设单个进程级命令在每个服务管理器上控制所有命名配置文件更可靠。
+对于小型固定机器人集群，使用 shell 循环或脚本，对默认配置文件调用 `intellect gateway <action>`，对每个命名配置文件调用 `intellect -a <profile> gateway <action>`。这比假设单个进程级命令在每个服务管理器上控制所有命名配置文件更可靠。
 
 ### 故障排除：私聊正常但群组无响应
 

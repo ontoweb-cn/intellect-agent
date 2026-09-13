@@ -168,7 +168,7 @@ rag:
 
 ## Profile 与 Workspace 隔离
 
-- 插件配置位于 `$INTELLECT_HOME/lightrag/`，每个[配置档案](/user-guide/profiles)有独立的 `config.json` 与凭据。
+- 插件配置位于 `$INTELLECT_HOME/lightrag/`，每个[配置档案](/user-guide/agents)有独立的 `config.json` 与凭据。
 - 文档 **workspace** 由运行时上下文推导（`member_*`、`team_*`、`project_*`、`session_*`），按请求发给 server。Compose 中 `WORKSPACE` 留空即可，由 Intellect 自动设置 scope。
 
 ## 第三方 RAG 插件

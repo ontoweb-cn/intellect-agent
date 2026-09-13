@@ -387,13 +387,13 @@ function _cronProfileName(profile){
 
 function _cronProfileLabel(profile){
   const name = _cronProfileName(profile);
-  return name || (t('cron_profile_server_default') || 'server default');
+  return name || (t('cron_agent_server_default') || 'server default');
 }
 
 function _cronProfileTitle(profile){
   const name = _cronProfileName(profile);
-  if (name) return (t('cron_profile_label') || 'Profile') + ': ' + name;
-  return t('cron_profile_server_default_hint') || 'Uses the WebUI server default profile at run time';
+  if (name) return (t('cron_agent_label') || 'Profile') + ': ' + name;
+  return t('cron_agent_server_default_hint') || 'Uses the WebUI server default profile at run time';
 }
 
 async function loadCronProfiles(){
@@ -411,7 +411,7 @@ function _cronProfileOptions(selected){
   const current = _cronProfileName(selected);
   const profiles = Array.isArray(_cronProfilesCache) ? _cronProfilesCache : [];
   const seen = new Set(['']);
-  const opts = [`<option value=""${current ? '' : ' selected'}>${esc(t('cron_profile_server_default') || 'server default')}</option>`];
+  const opts = [`<option value=""${current ? '' : ' selected'}>${esc(t('cron_agent_server_default') || 'server default')}</option>`];
   for (const p of profiles) {
     const name = _cronProfileName(p && p.name);
     if (!name || seen.has(name)) continue;
@@ -637,7 +637,7 @@ function _renderCronDetail(job){
         <div class="detail-row"><div class="detail-row-label">Deliver</div><div class="detail-row-value">${esc(deliver)}</div></div>
         <div class="detail-row"><div class="detail-row-label">Mode</div><div class="detail-row-value"><span class="detail-badge" id="cronJobMode">${esc(cronJobMode)}</span>${modelProvider ? ` <code>${modelProvider}</code>` : ''}</div></div>
         ${isNoAgent ? `<div class="detail-row"><div class="detail-row-label">No-agent script</div><div class="detail-row-value"><code>${esc(script || '—')}</code></div></div>` : ''}
-        <div class="detail-row"><div class="detail-row-label">${esc(t('cron_profile_label') || 'Profile')}</div><div class="detail-row-value"><span class="detail-badge active" title="${esc(profileTitle)}">${esc(profileLabel)}</span></div></div>
+        <div class="detail-row"><div class="detail-row-label">${esc(t('cron_agent_label') || 'Profile')}</div><div class="detail-row-value"><span class="detail-badge active" title="${esc(profileTitle)}">${esc(profileLabel)}</span></div></div>
         <div class="detail-row"><div class="detail-row-label">${esc(t('cron_toast_notifications_label') || 'Completion toasts')}</div><div class="detail-row-value"><span class="detail-badge ${toastNotifications ? 'active' : ''}">${esc(toastNotifications ? (t('cron_toast_notifications_enabled') || 'Enabled') : (t('cron_toast_notifications_disabled') || 'Disabled'))}</span></div></div>
         <div class="detail-row"><div class="detail-row-label">Skills</div><div class="detail-row-value">${esc(skills)}</div></div>
         ${lastError}
@@ -943,11 +943,11 @@ function _renderCronForm({ name, schedule, prompt, deliver, profile, toast_notif
           </select>
         </div>
         <div class="detail-form-row">
-          <label for="cronFormProfile">${esc(t('cron_profile_label') || 'Profile')}</label>
+          <label for="cronFormProfile">${esc(t('cron_agent_label') || 'Profile')}</label>
           <select id="cronFormProfile">
             ${_cronProfileOptions(profile)}
           </select>
-          <div class="detail-form-hint">${esc(t('cron_profile_server_default_hint') || 'Uses the WebUI server default profile at run time')}</div>
+          <div class="detail-form-hint">${esc(t('cron_agent_server_default_hint') || 'Uses the WebUI server default profile at run time')}</div>
         </div>
         <div class="detail-form-row">
           <label for="cronFormToastNotifications">${esc(t('cron_toast_notifications_label') || 'Completion toasts')}</label>
@@ -2081,7 +2081,7 @@ async function _kanbanPopulateAssigneeSelect(currentValue){
   // it last so the default-selected option is the first profile, not "no one".
   let html = '';
   if (profiles.length) {
-    html += `<optgroup label="${esc(t('kanban_assignee_profiles_label') || 'Intellect profiles')}">`;
+    html += `<optgroup label="${esc(t('kanban_assignee_agents_label') || 'Intellect profiles')}">`;
     html += profiles.map(v => `<option value="${esc(v)}"${v === currentValue ? ' selected' : ''}>${esc(v)}</option>`).join('');
     html += '</optgroup>';
   }
@@ -4694,7 +4694,7 @@ function renderWorkspacesPanel(workspaces){
     row.dataset.path = w.path;
     row.draggable=true;
     const isActive = w.path === activePath;
-    const activeBadge = isActive ? `<span class="detail-badge active" style="margin-left:6px;font-size:9px;padding:1px 6px">${esc(t('profile_active'))}</span>` : '';
+    const activeBadge = isActive ? `<span class="detail-badge active" style="margin-left:6px;font-size:9px;padding:1px 6px">${esc(t('agent_active'))}</span>` : '';
     row.innerHTML=`
       <span class="ws-drag-handle" title="${esc(t('workspace_drag_hint'))}">${li('grip-vertical',12)}</span>
       <div class="ws-row-info">
@@ -4782,9 +4782,9 @@ function _renderWorkspaceDetail(ws){
   const isActive = ws.path === activePath;
   const isDefault = !!ws.is_default;
   const statusBadge = isActive
-    ? `<span class="detail-badge active">${esc(t('profile_active'))}</span>`
+    ? `<span class="detail-badge active">${esc(t('agent_active'))}</span>`
     : `<span class="detail-badge">Inactive</span>`;
-  const defaultBadge = isDefault ? ` <span class="detail-badge">${esc(t('profile_default_label'))}</span>` : '';
+  const defaultBadge = isDefault ? ` <span class="detail-badge">${esc(t('agent_default_label'))}</span>` : '';
   body.innerHTML = `
     <div class="main-view-content">
       <div class="detail-card">
@@ -5178,7 +5178,7 @@ async function loadProfilesPanel() {
     if (!data.profiles || !data.profiles.length) {
       const emptyMsg = document.createElement('div');
       emptyMsg.style.cssText = 'padding:16px;color:var(--muted);font-size:12px';
-      emptyMsg.textContent = t('profiles_no_profiles');
+      emptyMsg.textContent = t('agents_no_agents');
       panel.appendChild(emptyMsg);
       if (_profileMode !== 'create') _clearProfileDetail();
       return;
@@ -5193,18 +5193,18 @@ async function loadProfilesPanel() {
       const meta = [];
       if (p.model) meta.push(p.model.split('/').pop());
       if (p.provider) meta.push(p.provider);
-      if (p.skill_count) meta.push(t('profile_skill_count', p.skill_count));
+      if (p.skill_count) meta.push(t('agent_skill_count', p.skill_count));
       const gwDot = p.gateway_running
-        ? `<span class="profile-opt-badge running" title="${esc(t('profile_gateway_running'))}"></span>`
-        : `<span class="profile-opt-badge stopped" title="${esc(t('profile_gateway_stopped'))}"></span>`;
+        ? `<span class="profile-opt-badge running" title="${esc(t('agent_gateway_running'))}"></span>`
+        : `<span class="profile-opt-badge stopped" title="${esc(t('agent_gateway_stopped'))}"></span>`;
       const isActive = p.name === activeName;
-      const activeBadge = isActive ? `<span style="color:var(--link);font-size:10px;font-weight:600;margin-left:6px">${esc(t('profile_active'))}</span>` : '';
-      const defaultBadge = p.is_default ? ` <span style="opacity:.5">${esc(t('profile_default_label'))}</span>` : '';
+      const activeBadge = isActive ? `<span style="color:var(--link);font-size:10px;font-weight:600;margin-left:6px">${esc(t('agent_active'))}</span>` : '';
+      const defaultBadge = p.is_default ? ` <span style="opacity:.5">${esc(t('agent_default_label'))}</span>` : '';
       card.innerHTML = `
         <div class="profile-card-header">
           <div style="min-width:0;flex:1">
             <div class="profile-card-name${isActive ? ' is-active' : ''}">${gwDot}${esc(p.name)}${defaultBadge}${activeBadge}</div>
-            ${meta.length ? `<div class="profile-card-meta">${esc(meta.join(' \u00b7 '))}</div>` : `<div class="profile-card-meta">${esc(t('profile_no_configuration'))}</div>`}
+            ${meta.length ? `<div class="profile-card-meta">${esc(meta.join(' \u00b7 '))}</div>` : `<div class="profile-card-meta">${esc(t('agent_no_configuration'))}</div>`}
           </div>
         </div>`;
       card.onclick = () => openProfileDetail(p.name, card);
@@ -5254,20 +5254,20 @@ function _renderProfileDetail(p, activeName){
   const isActive = p.name === activeName;
   const isDefault = !!p.is_default;
   const statusBadge = isActive
-    ? `<span class="detail-badge active">${esc(t('profile_active'))}</span>`
+    ? `<span class="detail-badge active">${esc(t('agent_active'))}</span>`
     : `<span class="detail-badge">Inactive</span>`;
-  const defaultBadge = isDefault ? ` <span class="detail-badge">${esc(t('profile_default_label'))}</span>` : '';
+  const defaultBadge = isDefault ? ` <span class="detail-badge">${esc(t('agent_default_label'))}</span>` : '';
   const gwBadge = p.gateway_running
-    ? `<span class="detail-badge ok">${esc(t('profile_gateway_running'))}</span>`
-    : `<span class="detail-badge">${esc(t('profile_gateway_stopped'))}</span>`;
+    ? `<span class="detail-badge ok">${esc(t('agent_gateway_running'))}</span>`
+    : `<span class="detail-badge">${esc(t('agent_gateway_stopped'))}</span>`;
   const rows = [];
   rows.push(`<div class="detail-row"><div class="detail-row-label">Status</div><div class="detail-row-value">${statusBadge}${defaultBadge}</div></div>`);
   rows.push(`<div class="detail-row"><div class="detail-row-label">Gateway</div><div class="detail-row-value">${gwBadge}</div></div>`);
   if (p.model) rows.push(`<div class="detail-row"><div class="detail-row-label">Model</div><div class="detail-row-value"><code>${esc(p.model)}</code></div></div>`);
   if (p.provider) rows.push(`<div class="detail-row"><div class="detail-row-label">Provider</div><div class="detail-row-value">${esc(p.provider)}</div></div>`);
   if (p.base_url) rows.push(`<div class="detail-row"><div class="detail-row-label">Base URL</div><div class="detail-row-value"><code>${esc(p.base_url)}</code></div></div>`);
-  rows.push(`<div class="detail-row"><div class="detail-row-label">API key</div><div class="detail-row-value">${p.has_env ? esc(t('profile_api_keys_configured')) : '<span style="color:var(--muted)">Not configured</span>'}</div></div>`);
-  if (typeof p.skill_count === 'number') rows.push(`<div class="detail-row"><div class="detail-row-label">Skills</div><div class="detail-row-value">${esc(t('profile_skill_count', p.skill_count))}</div></div>`);
+  rows.push(`<div class="detail-row"><div class="detail-row-label">API key</div><div class="detail-row-value">${p.has_env ? esc(t('agent_api_keys_configured')) : '<span style="color:var(--muted)">Not configured</span>'}</div></div>`);
+  if (typeof p.skill_count === 'number') rows.push(`<div class="detail-row"><div class="detail-row-label">Skills</div><div class="detail-row-value">${esc(t('agent_skill_count', p.skill_count))}</div></div>`);
   if (p.default_workspace) rows.push(`<div class="detail-row"><div class="detail-row-label">Default space</div><div class="detail-row-value"><code>${esc(p.default_workspace)}</code></div></div>`);
   body.innerHTML = `
     <div class="main-view-content">
@@ -5337,14 +5337,14 @@ async function activateCurrentProfile(){
 async function deleteCurrentProfile(){
   if (!_currentProfileDetail) return;
   const name = _currentProfileDetail.name;
-  const _ok = await showConfirmDialog({title:t('profile_delete_confirm_title',name),message:t('profile_delete_confirm_message'),confirmLabel:t('delete_title'),danger:true,focusCancel:true});
+  const _ok = await showConfirmDialog({title:t('agent_delete_confirm_title',name),message:t('agent_delete_confirm_message'),confirmLabel:t('delete_title'),danger:true,focusCancel:true});
   if(!_ok) return;
   try {
     await api('/api/profile/delete', { method: 'POST', body: JSON.stringify({ name }) });
     _invalidateKanbanProfileCache();
     _clearProfileDetail();
     await loadProfilesPanel();
-    showToast(t('profile_deleted', name));
+    showToast(t('agent_deleted', name));
   } catch (e) { showToast(t('delete_failed') + e.message); }
 }
 
@@ -5361,10 +5361,10 @@ function renderProfileDropdown(data) {
     opt.className = 'profile-opt' + (p.name === active ? ' active' : '');
     const meta = [];
     if (p.model) meta.push(p.model.split('/').pop());
-    if (p.skill_count) meta.push(t('profile_skill_count', p.skill_count));
+    if (p.skill_count) meta.push(t('agent_skill_count', p.skill_count));
     const gwDot = `<span class="profile-opt-badge ${p.gateway_running ? 'running' : 'stopped'}"></span>`;
     const checkmark = p.name === active ? ' <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--link)" stroke-width="3" style="vertical-align:-1px"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-    const defaultBadge = p.is_default ? ` <span style="opacity:.5;font-weight:400">${esc(t('profile_default_label'))}</span>` : '';
+    const defaultBadge = p.is_default ? ` <span style="opacity:.5;font-weight:400">${esc(t('agent_default_label'))}</span>` : '';
     opt.innerHTML = `<div class="profile-opt-name">${gwDot}${esc(p.name)}${defaultBadge}${checkmark}</div>` +
       (meta.length ? `<div class="profile-opt-meta">${esc(meta.join(' \u00b7 '))}</div>` : '');
     opt.onclick = async () => {
@@ -5377,7 +5377,7 @@ function renderProfileDropdown(data) {
   // Divider + Manage link
   const div = document.createElement('div'); div.className = 'ws-divider'; dd.appendChild(div);
   const mgmt = document.createElement('div'); mgmt.className = 'profile-opt ws-manage';
-  mgmt.innerHTML = `${li('settings',12)} ${esc(t('manage_profiles'))}`;
+  mgmt.innerHTML = `${li('settings',12)} ${esc(t('manage_agents'))}`;
   mgmt.onclick = () => { closeProfileDropdown(); mobileSwitchPanel('profiles'); };
   dd.appendChild(mgmt);
 }
@@ -5398,7 +5398,7 @@ function toggleProfileDropdown() {
     _positionProfileDropdown();
     const chip=$('profileChip');
     if(chip) chip.classList.add('active');
-  }).catch(e => { showToast(t('profiles_load_failed')); });
+  }).catch(e => { showToast(t('agents_load_failed')); });
 }
 
 function closeProfileDropdown() {
@@ -5515,7 +5515,7 @@ async function switchToProfile(name) {
       // new profile-scoped session.
       syncTopbar();
       await renderSessionList();
-      showToast(t('profile_switched_new_conversation', name));
+      showToast(t('agent_switched_new_conversation', name));
     } else {
       // No messages yet — just refresh the list and topbar in place
       await renderSessionList();
@@ -5527,7 +5527,7 @@ async function switchToProfile(name) {
         const dirLoad = loadDir('.');
         if (typeof _workspacePanelMode !== 'undefined' && _workspacePanelMode !== 'closed') await dirLoad;
       }
-      showToast(t('profile_switched', name));
+      showToast(t('agent_switched', name));
     }
 
     await _profileSwitchPanelLoad();
@@ -5564,27 +5564,27 @@ function _renderProfileForm(){
     <div class="main-view-content">
       <form class="detail-form" onsubmit="event.preventDefault(); saveProfileForm();">
         <div class="detail-form-row">
-          <label for="profileFormName">${esc(t('profile_name_label') || 'Name')}</label>
-          <input type="text" id="profileFormName" placeholder="${esc(t('profile_name_placeholder') || 'lowercase, a-z 0-9 hyphens')}" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" required>
-          <div class="detail-form-hint">${esc(t('profile_name_rule') || 'Lowercase letters, numbers, hyphens, underscores only.')}</div>
+          <label for="profileFormName">${esc(t('agent_name_label') || 'Name')}</label>
+          <input type="text" id="profileFormName" placeholder="${esc(t('agent_name_placeholder') || 'lowercase, a-z 0-9 hyphens')}" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          <div class="detail-form-hint">${esc(t('agent_name_rule') || 'Lowercase letters, numbers, hyphens, underscores only.')}</div>
         </div>
         <div class="detail-form-row">
           <label class="detail-form-check" for="profileFormClone">
-            <input type="checkbox" id="profileFormClone"> <span>${esc(t('profile_clone_label') || 'Clone config from active profile')}</span>
+            <input type="checkbox" id="profileFormClone"> <span>${esc(t('agent_clone_label') || 'Clone config from active profile')}</span>
           </label>
         </div>
         <div class="detail-form-row">
-          <label for="profileFormModel">${esc(t('profile_model_label') || 'Model / provider')}</label>
+          <label for="profileFormModel">${esc(t('agent_model_label') || 'Model / provider')}</label>
           <select id="profileFormModel"></select>
-          <div class="detail-form-hint">${esc(t('profile_model_hint') || 'Choose from configured providers and models for this new profile.')}</div>
+          <div class="detail-form-hint">${esc(t('agent_model_hint') || 'Choose from configured providers and models for this new profile.')}</div>
         </div>
         <div class="detail-form-row">
-          <label for="profileFormBaseUrl">${esc(t('profile_base_url_label') || 'Base URL')}</label>
-          <input type="text" id="profileFormBaseUrl" placeholder="${esc(t('profile_base_url_placeholder') || 'Optional, e.g. http://localhost:11434')}" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+          <label for="profileFormBaseUrl">${esc(t('agent_base_url_label') || 'Base URL')}</label>
+          <input type="text" id="profileFormBaseUrl" placeholder="${esc(t('agent_base_url_placeholder') || 'Optional, e.g. http://localhost:11434')}" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
         </div>
         <div class="detail-form-row">
-          <label for="profileFormApiKey">${esc(t('profile_api_key_label') || 'API key')}</label>
-          <input type="password" id="profileFormApiKey" placeholder="${esc(t('profile_api_key_placeholder') || 'Optional')}" autocomplete="off">
+          <label for="profileFormApiKey">${esc(t('agent_api_key_label') || 'API key')}</label>
+          <input type="password" id="profileFormApiKey" placeholder="${esc(t('agent_api_key_placeholder') || 'Optional')}" autocomplete="off">
         </div>
         <div id="profileFormError" class="detail-form-error" style="display:none"></div>
       </form>
@@ -5600,7 +5600,7 @@ function _renderProfileForm(){
 async function _populateProfileFormModelSelect(){
   const sel = $('profileFormModel');
   if (!sel) return;
-  sel.innerHTML = `<option value="">${esc(t('profile_model_use_default') || 'Use active profile default')}</option>`;
+  sel.innerHTML = `<option value="">${esc(t('agent_model_use_default') || 'Use active profile default')}</option>`;
   try {
     const data = await api('/api/models');
     const groups = (Array.isArray(data && data.groups) && data.groups.length) ? data.groups : [];
@@ -5652,10 +5652,10 @@ async function saveProfileForm(){
   const cloneConfig = !!(cloneEl && cloneEl.checked);
   errEl.style.display = 'none';
   if (!name) { errEl.textContent = t('name_required'); errEl.style.display = ''; return; }
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) { errEl.textContent = t('profile_name_rule'); errEl.style.display = ''; return; }
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) { errEl.textContent = t('agent_name_rule'); errEl.style.display = ''; return; }
   const baseUrl = (baseEl ? (baseEl.value || '') : '').trim();
   const apiKey = (apiKeyEl ? (apiKeyEl.value || '') : '').trim();
-  if (baseUrl && !/^https?:\/\//.test(baseUrl)) { errEl.textContent = t('profile_base_url_rule'); errEl.style.display = ''; return; }
+  if (baseUrl && !/^https?:\/\//.test(baseUrl)) { errEl.textContent = t('agent_base_url_rule'); errEl.style.display = ''; return; }
   try {
     const payload = { name, clone_config: cloneConfig };
     const selectedModel = modelEl ? (modelEl.value || '').trim() : '';
@@ -5672,7 +5672,7 @@ async function saveProfileForm(){
     _invalidateKanbanProfileCache();
     _profilePreFormDetail = null;
     await loadProfilesPanel();
-    showToast(t('profile_created', name));
+    showToast(t('agent_created', name));
     openProfileDetail(name);
   } catch (e) {
     errEl.textContent = e.message || t('create_failed');
@@ -5690,13 +5690,13 @@ async function deleteProfile(name) {
   if (typeof isProfileManagementEnabled === 'function' && !isProfileManagementEnabled()) {
     return;
   }
-  const _delProf=await showConfirmDialog({title:t('profile_delete_confirm_title',name),message:t('profile_delete_confirm_message'),confirmLabel:t('delete_title'),danger:true,focusCancel:true});
+  const _delProf=await showConfirmDialog({title:t('agent_delete_confirm_title',name),message:t('agent_delete_confirm_message'),confirmLabel:t('delete_title'),danger:true,focusCancel:true});
   if(!_delProf) return;
   try {
     await api('/api/profile/delete', { method: 'POST', body: JSON.stringify({ name }) });
     _invalidateKanbanProfileCache();
     await loadProfilesPanel();
-    showToast(t('profile_deleted', name));
+    showToast(t('agent_deleted', name));
   } catch (e) { showToast(t('delete_failed') + e.message); }
 }
 

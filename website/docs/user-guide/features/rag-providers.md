@@ -168,7 +168,7 @@ Built-in `memory` tool is unchanged. Same turn: memory prefetch first, then RAG 
 
 ## Profile & Workspace Isolation
 
-- Plugin config lives under `$INTELLECT_HOME/lightrag/` — each [profile](/user-guide/profiles) has its own `config.json` and credentials.
+- Plugin config lives under `$INTELLECT_HOME/lightrag/` — each [profile](/user-guide/agents) has its own `config.json` and credentials.
 - Document **workspaces** are derived from runtime context (`member_*`, `team_*`, `project_*`, `session_*`) and sent per request to the server. Leave `WORKSPACE` empty in server compose; Intellect sets scope automatically.
 
 ## Third-Party RAG Plugins

@@ -158,7 +158,7 @@ intellect vault tick --json       # 机器可读输出
 ## 相关文档
 
 - [Llm Wiki 技能参考](/user-guide/skills/bundled/research/research-llm-wiki) — Agent 可见的完整 SKILL.md
-- [Profiles](../profiles.md) — 按实例隔离
+- [Profiles](../agents.md) — 按实例隔离
 - [RAG 提供商](rag-providers.md) — 文档语料检索（互补）
 - [Obsidian 技能](/user-guide/skills/bundled/note-taking/note-taking-obsidian) — 可选 vault 同步模式
 

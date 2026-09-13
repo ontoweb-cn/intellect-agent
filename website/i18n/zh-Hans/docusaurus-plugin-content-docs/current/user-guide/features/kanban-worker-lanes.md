@@ -30,7 +30,7 @@ Intellect Kanban 拥有生命周期的真实状态——`ready` → `running` �
 
 ### 2. 生成机制
 
-对于 Intellect profile 通道，调度器的 `_default_spawn` 会在任务固定的工作区内运行 `intellect -p <assignee> chat -q <prompt>`（或当 `intellect` shim 不在 `$PATH` 时使用等效的模块形式），并设置以下环境变量：
+对于 Intellect profile 通道，调度器的 `_default_spawn` 会在任务固定的工作区内运行 `intellect -a <assignee> chat -q <prompt>`（或当 `intellect` shim 不在 `$PATH` 时使用等效的模块形式），并设置以下环境变量：
 
 | 变量 | 携带内容 |
 |---|---|
@@ -80,9 +80,9 @@ kanban 内核强制要求每次运行恰好由其中一项终止。既未调用�
 
 ### Intellect profile 通道（默认）
 
-当前所有 kanban worker 采用的形态：assignee 是 profile 名称，调度器生成 `intellect -p <profile>`，worker 自动加载 [`kanban-worker`](https://gitee.com/ontoweb/intellect-agent/blob/main/skills/devops/kanban-worker/SKILL.md) skill 以及 `KANBAN_GUIDANCE` 系统提示块，并使用 `kanban_*` 工具终止运行。除定义 profile 外无需任何额外配置。
+当前所有 kanban worker 采用的形态：assignee 是 profile 名称，调度器生成 `intellect -a <profile>`，worker 自动加载 [`kanban-worker`](https://gitee.com/ontoweb/intellect-agent/blob/main/skills/devops/kanban-worker/SKILL.md) skill 以及 `KANBAN_GUIDANCE` 系统提示块，并使用 `kanban_*` 工具终止运行。除定义 profile 外无需任何额外配置。
 
-为你的 fleet 创建 profile 时，选择与你希望 orchestrator 路由到的*角色*相匹配的名称。orchestrator（如果存在）通过 `intellect profile list` 发现你的 profile 名称——系统不假设固定的名单（orchestrator 侧的契约请参阅 [`kanban-orchestrator`](https://gitee.com/ontoweb/intellect-agent/blob/main/skills/devops/kanban-orchestrator/SKILL.md) skill）。
+为你的 fleet 创建 profile 时，选择与你希望 orchestrator 路由到的*角色*相匹配的名称。orchestrator（如果存在）通过 `intellect agent list` 发现你的 profile 名称——系统不假设固定的名单（orchestrator 侧的契约请参阅 [`kanban-orchestrator`](https://gitee.com/ontoweb/intellect-agent/blob/main/skills/devops/kanban-orchestrator/SKILL.md) skill）。
 
 ### Orchestrator profile 通道
 

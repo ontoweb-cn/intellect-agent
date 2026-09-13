@@ -18,7 +18,7 @@ Intellect 使用两类模型槽位：
 :::
 
 :::note `model:` schema — 空字符串 vs. 映射
-全新安装时，内置默认配置中 `model: ""`（空字符串哨兵值，表示"尚未配置"）。首次运行 `intellect setup` 或 `intellect model` 后，该键会被原地升级为包含 `provider`、`default`、`base_url` 和 `api_mode` 子键的映射——即本页及 [`profiles.md`](./profiles.md) / [`configuration.md`](./configuration.md) 中展示的格式。如果你在 `config.yaml` 中看到空字符串，运行 `intellect model` 即可自动写入字典形式。
+全新安装时，内置默认配置中 `model: ""`（空字符串哨兵值，表示"尚未配置"）。首次运行 `intellect setup` 或 `intellect model` 后，该键会被原地升级为包含 `provider`、`default`、`base_url` 和 `api_mode` 子键的映射——即本页及 [`profiles.md`](./agents.md) / [`configuration.md`](./configuration.md) 中展示的格式。如果你在 `config.yaml` 中看到空字符串，运行 `intellect model` 即可自动写入字典形式。
 :::
 
 ## 设置主模型

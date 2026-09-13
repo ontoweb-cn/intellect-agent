@@ -41,7 +41,7 @@ Intellect 的配置因人而异。有些用户运行单个 profile 处理所有�
 
 使用以下方法之一：
 
-- `intellect profile list` — 打印此机器上已配置的 profile 表。如果有终端工具，通过终端工具运行；否则询问用户。
+- `intellect agent list` — 打印此机器上已配置的 profile 表。如果有终端工具，通过终端工具运行；否则询问用户。
 - `kanban_list(assignee="<some-name>")` — 验证单个名称。对于未知 assignee 返回空列表（而非报错），因此只能确认你已在考虑的名称。
 - **直接询问用户。** 当目标需要多个专家时，"你配置了哪些 profile？"是一个合理的开场问题。
 
@@ -202,6 +202,6 @@ kanban_complete(
 
 1. **Reclaim**（或 `intellect kanban reclaim <task_id>`）——立即中止正在运行的 worker 并将任务重置为 `ready`。现有认领 TTL 约为 15 分钟；这是最快的解决路径。
 2. **Reassign**（或 `intellect kanban reassign <task_id> <new-profile> --reclaim`）——将任务切换到不同的 profile（此配置上存在的 profile）并让调度器用新 worker 认领它。
-3. **更改 profile 模型**——仪表板会打印 `intellect -p <profile> model` 的复制粘贴提示，因为 profile 配置存储在磁盘上；在终端中编辑它，然后 Reclaim 以使用新模型重试。
+3. **更改 profile 模型**——仪表板会打印 `intellect -a <profile> model` 的复制粘贴提示，因为 profile 配置存储在磁盘上；在终端中编辑它，然后 Reclaim 以使用新模型重试。
 
 当 worker 的 `kanban_complete(created_cards=[...])` 声明包含不存在或非该 worker profile 创建的卡片 id 时（门控会阻止完成），或者自由格式摘要引用了无法解析的 `t_<hex>` id 时（建议性文本扫描，非阻塞），会出现幻觉警告。两者都会产生审计事件，即使在恢复操作后也会持久保存——追踪记录保留用于调试。

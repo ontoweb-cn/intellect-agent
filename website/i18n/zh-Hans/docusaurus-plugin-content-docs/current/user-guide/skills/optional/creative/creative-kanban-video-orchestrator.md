@@ -98,7 +98,7 @@ DISCOVER  →  BRIEF  →  TEAM DESIGN  →  SETUP  →  EXECUTE  →  MONITOR
 
 1. 创建项目工作区（`~/projects/video-pipeline/<slug>/`）
 2. 将提供的资产复制到 `taste/`、`audio/`、`assets/`
-3. 通过 `intellect profile create --clone` 创建每个 Intellect profile
+3. 通过 `intellect agent create --clone` 创建每个 Intellect profile
 4. 编写各 profile 的 `SOUL.md`（个性 + 角色定义）
 5. 配置 profile YAML（工具集、always_load 技能、cwd）
 6. 编写 `brief.md`、`TEAM.md` 和 `taste/` 内容

@@ -208,15 +208,15 @@ intellect webhook test NAME    Send a test POST
 ### Profiles
 
 ```
-intellect profile list         List all profiles
-intellect profile create NAME  Create (--clone, --clone-all, --clone-from)
-intellect profile use NAME     Set sticky default
-intellect profile delete NAME  Delete a profile
-intellect profile show NAME    Show details
-intellect profile alias NAME   Manage wrapper scripts
-intellect profile rename A B   Rename a profile
-intellect profile export NAME  Export to tar.gz
-intellect profile import FILE  Import from archive
+intellect agent list         List all profiles
+intellect agent create NAME  Create (--clone, --clone-all, --clone-from)
+intellect agent use NAME     Set sticky default
+intellect agent delete NAME  Delete a profile
+intellect agent show NAME    Show details
+intellect agent alias NAME   Manage wrapper scripts
+intellect agent rename A B   Rename a profile
+intellect agent export NAME  Export to tar.gz
+intellect agent import FILE  Import from archive
 ```
 
 ### Credential Pools
@@ -362,7 +362,7 @@ $INTELLECT_HOME/skills/        Installed skills
 ~/.intellect/intellect-agent/     Source code (if git-installed)
 ```
 
-Profiles use `~/.intellect/profiles/<name>/` with the same layout.
+Profiles use `~/.intellect/agents/<name>/` with the same layout.
 
 ### Config Sections
 
@@ -880,7 +880,7 @@ intellect config set auxiliary.vision.model <model_name>
 | Provider setup | `intellect model` or [Providers guide](https://intellect.ontoweb.cn/docs/integrations/providers) |
 | Platform setup | `intellect gateway setup` or [Messaging docs](https://intellect.ontoweb.cn/docs/user-guide/messaging/) |
 | MCP servers | `intellect mcp list` or [MCP guide](https://intellect.ontoweb.cn/docs/user-guide/features/mcp) |
-| Profiles | `intellect profile list` or [Profiles docs](https://intellect.ontoweb.cn/docs/user-guide/profiles) |
+| Profiles | `intellect agent list` or [Profiles docs](https://intellect.ontoweb.cn/docs/user-guide/agents) |
 | Cron jobs | `intellect cron list` or [Cron docs](https://intellect.ontoweb.cn/docs/user-guide/features/cron) |
 | Memory | `intellect memory status` or [Memory docs](https://intellect.ontoweb.cn/docs/user-guide/features/memory) |
 | Env variables | `intellect config env-path` or [Env vars reference](https://intellect.ontoweb.cn/docs/reference/environment-variables) |

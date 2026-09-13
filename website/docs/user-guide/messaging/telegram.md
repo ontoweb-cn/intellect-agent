@@ -511,12 +511,12 @@ intellect gateway status
 intellect gateway stop
 
 # named profiles
-intellect -p research gateway start
-intellect -p research gateway status
-intellect -p research gateway stop
+intellect -a research gateway start
+intellect -a research gateway status
+intellect -a research gateway stop
 ```
 
-For a small fixed fleet, use a shell loop or script that calls `intellect gateway <action>` for the default profile and `intellect -p <profile> gateway <action>` for each named profile. This is more reliable than assuming a single process-level command controls every named profile on every service manager.
+For a small fixed fleet, use a shell loop or script that calls `intellect gateway <action>` for the default profile and `intellect -a <profile> gateway <action>` for each named profile. This is more reliable than assuming a single process-level command controls every named profile on every service manager.
 
 ### Troubleshooting: works in DMs but not groups
 

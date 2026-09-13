@@ -6,7 +6,7 @@ description: Let your profiles talk to each other — DM-able bots with a local 
 
 # Bot Mode
 
-Bot Mode (opt-in) treats your [profiles](./profiles.md) as DM-able agents:
+Bot Mode (opt-in) treats your [profiles](./agents.md) as DM-able agents:
 one roster, one `message_agent` tool, and a fire-and-forget DM transport —
 so `alpha` can hand work to `coder`, and the answer comes back as a later
 message. Same single-owner boundary as multiplex: bots are YOUR profiles,

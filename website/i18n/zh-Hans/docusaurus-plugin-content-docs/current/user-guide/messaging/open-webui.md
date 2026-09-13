@@ -271,22 +271,22 @@ Open WebUI 在首次启动后会将 OpenAI 兼容连接设置持久化到其自�
 
 ## 多用户设置与 Profiles
 
-要为每个用户运行独立的 Intellect 实例——各自拥有独立的配置、记忆和技能——请使用 [profiles](/user-guide/profiles)。每个 profile 在不同端口上运行自己的 API 服务器，并自动将 profile 名称作为模型名称公告给 Open WebUI。
+要为每个用户运行独立的 Intellect 实例——各自拥有独立的配置、记忆和技能——请使用 [profiles](/user-guide/agents)。每个 profile 在不同端口上运行自己的 API 服务器，并自动将 profile 名称作为模型名称公告给 Open WebUI。
 
 ### 1. 创建 profiles 并配置 API 服务器
 
 `API_SERVER_*` 是环境变量，而非 YAML 配置键，因此请将它们写入每个 profile 的 `.env`。选择默认平台范围之外的端口（`8644` 是 webhook 适配器，`8645` 是 wecom-callback，`8646` 是 msgraph-webhook），例如 `8650+`：
 
 ```bash
-intellect profile create alice
-cat >> ~/.intellect/profiles/alice/.env <<EOF
+intellect agent create alice
+cat >> ~/.intellect/agents/alice/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8650
 API_SERVER_KEY=alice-secret
 EOF
 
-intellect profile create bob
-cat >> ~/.intellect/profiles/bob/.env <<EOF
+intellect agent create bob
+cat >> ~/.intellect/agents/bob/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8651
 API_SERVER_KEY=bob-secret
@@ -296,8 +296,8 @@ EOF
 ### 2. 启动各 gateway
 
 ```bash
-intellect -p alice gateway &
-intellect -p bob gateway &
+intellect -a alice gateway &
+intellect -a bob gateway &
 ```
 
 ### 3. 在 Open WebUI 中添加连接
@@ -314,7 +314,7 @@ intellect -p bob gateway &
 :::tip 自定义模型名称
 模型名称默认为 profile 名称。如需覆盖，请在 profile 的 `.env` 中设置 `API_SERVER_MODEL_NAME`：
 ```bash
-intellect -p alice config set API_SERVER_MODEL_NAME "Alice's Agent"
+intellect -a alice config set API_SERVER_MODEL_NAME "Alice's Agent"
 ```
 :::
 

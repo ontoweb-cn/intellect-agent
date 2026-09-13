@@ -682,7 +682,7 @@ delegation:
 
 4. **改用 Telegram 或 Discord。** 这些平台更自然地支持按聊天绑定 — 每个 Telegram 群组或 Discord 频道获得自己的会话，您可以在同一账户上运行多个 bot token（每个 profile 一个）。
 
-详情请参阅 [Profiles](../user-guide/profiles.md) 和 [WhatsApp 设置](../user-guide/messaging/whatsapp.md)。
+详情请参阅 [Profiles](../user-guide/agents.md) 和 [WhatsApp 设置](../user-guide/messaging/whatsapp.md)。
 
 ### 控制 Telegram 中显示的内容（隐藏日志和推理过程）
 

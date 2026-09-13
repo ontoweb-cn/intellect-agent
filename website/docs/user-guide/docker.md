@@ -116,9 +116,9 @@ Never run two Intellect **gateway** containers against the same data directory s
 
 ## Multi-profile support
 
-Intellect supports [multiple profiles](../reference/profile-commands.md) — separate `~/.intellect/` subdirectories that let you run independent agents (different SOUL, skills, memory, sessions, credentials) from a single installation. **Inside the official Docker image, the s6 supervision tree treats each profile as a first-class supervised service**, so the recommended deployment is **one container hosting all profiles**.
+Intellect supports [multiple profiles](../reference/agent-commands.md) — separate `~/.intellect/` subdirectories that let you run independent agents (different SOUL, skills, memory, sessions, credentials) from a single installation. **Inside the official Docker image, the s6 supervision tree treats each profile as a first-class supervised service**, so the recommended deployment is **one container hosting all profiles**.
 
-Each profile created with `intellect profile create <name>` gets:
+Each profile created with `intellect agent create <name>` gets:
 
 - A dedicated s6 service slot at `/run/service/gateway-<name>/`, registered dynamically by the runtime — no container rebuild required.
 - Auto-restart on crash, backoff-managed by `s6-supervise`.
@@ -129,18 +129,18 @@ The lifecycle commands you'd run on the host work the same way from inside the c
 
 ```sh
 # Create a profile — registers the gateway-<name> s6 slot.
-docker exec intellect intellect profile create coder
+docker exec intellect intellect agent create coder
 
 # Start / stop / restart — dispatches s6-svc; the gateway lifecycle survives docker restart.
-docker exec intellect intellect -p coder gateway start
-docker exec intellect intellect -p coder gateway stop
-docker exec intellect intellect -p coder gateway restart
+docker exec intellect intellect -a coder gateway start
+docker exec intellect intellect -a coder gateway stop
+docker exec intellect intellect -a coder gateway restart
 
 # Status — reports `Manager: s6 (container supervisor)` inside the container.
-docker exec intellect intellect -p coder gateway status
+docker exec intellect intellect -a coder gateway status
 
 # Remove a profile — tears down the s6 slot too.
-docker exec intellect intellect profile delete coder
+docker exec intellect intellect agent delete coder
 ```
 
 Under the hood, `intellect gateway start/stop/restart` inside the container is intercepted and routed to `s6-svc` against the right service directory; you don't need to learn the s6 commands directly. For raw supervisor state, use `/command/s6-svstat /run/service/gateway-<name>` (note `/command/` is on PATH only for processes spawned by the supervision tree — when calling from `docker exec`, pass the absolute path).
@@ -153,7 +153,7 @@ Before the s6 migration, "one container per profile" was the recommended pattern
 |---|---|---|
 | Disk overhead | One image, one bundled venv, one Playwright cache | N images / N caches |
 | Memory overhead | Shared Python interpreter cache, shared node_modules | Duplicated per container |
-| Profile creation | `docker exec ... intellect profile create <name>` (seconds) | New `docker run` invocation + port allocation + bind-mount config |
+| Profile creation | `docker exec ... intellect agent create <name>` (seconds) | New `docker run` invocation + port allocation + bind-mount config |
 | Per-profile crash recovery | `s6-supervise` auto-restart | Docker's `--restart unless-stopped` (slower, kills sibling work) |
 | Logs | Per-profile rotated file via `s6-log`, plus container-boot audit log | `docker logs <name>` per container — no built-in rotation |
 | Backup | One `~/.intellect` directory | N directories to coordinate |
@@ -392,7 +392,7 @@ Do not override the image entrypoint unless you keep `/init` (or, equivalently, 
 
 ### `docker exec` automatically drops to the `intellect` user
 
-`docker exec intellect <cmd>` defaults to running as root inside the container, but the image ships a thin shim at `/opt/intellect/bin/intellect` (earliest on PATH) that detects root callers and transparently re-execs through `s6-setuidgid intellect`. So `docker exec intellect login`, `docker exec intellect profile create …`, `docker exec intellect setup`, etc. all write files owned by UID 10000 — i.e. readable by the supervised gateway — with no extra `--user` flag needed. Non-root callers (the supervised processes themselves, `docker exec --user intellect`, kanban subagents inside the container) hit a short-circuit that exec's the venv binary directly, so there's no overhead on the hot paths.
+`docker exec intellect <cmd>` defaults to running as root inside the container, but the image ships a thin shim at `/opt/intellect/bin/intellect` (earliest on PATH) that detects root callers and transparently re-execs through `s6-setuidgid intellect`. So `docker exec intellect login`, `docker exec intellect agent create …`, `docker exec intellect setup`, etc. all write files owned by UID 10000 — i.e. readable by the supervised gateway — with no extra `--user` flag needed. Non-root callers (the supervised processes themselves, `docker exec --user intellect`, kanban subagents inside the container) hit a short-circuit that exec's the venv binary directly, so there's no overhead on the hot paths.
 
 If you specifically need a `docker exec` that retains root semantics (diagnostic sessions, inspecting root-only state, files outside `/opt/data` that root happens to own), opt out per invocation:
 
@@ -404,7 +404,7 @@ The shim accepts `1` / `true` / `yes` (case-insensitive). Anything else — incl
 
 ### Per-profile gateway supervision
 
-Each profile created with `intellect profile create <name>` automatically gets an s6-supervised gateway service registered at `/run/service/gateway-<name>/`, with state-persistent auto-restart across container restarts. See [Multi-profile support](#multi-profile-support) above for the user-facing workflow and the lifecycle commands.
+Each profile created with `intellect agent create <name>` automatically gets an s6-supervised gateway service registered at `/run/service/gateway-<name>/`, with state-persistent auto-restart across container restarts. See [Multi-profile support](#multi-profile-support) above for the user-facing workflow and the lifecycle commands.
 
 **Supervision benefits over the pre-s6 image:**
 

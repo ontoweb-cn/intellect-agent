@@ -763,7 +763,7 @@ The same command works in chat as a slash command:
 ```
 
 :::note Profiles
-Each profile has its own `.bundled_manifest` under its own `INTELLECT_HOME`, so `intellect -p coder skills reset <name>` only affects that profile.
+Each profile has its own `.bundled_manifest` under its own `INTELLECT_HOME`, so `intellect -a coder skills reset <name>` only affects that profile.
 :::
 
 ### Slash commands (inside chat)

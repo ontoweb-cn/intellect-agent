@@ -156,7 +156,7 @@ The mapping:
 ### New profile, fresh Honcho peer
 
 ```bash
-intellect profile create coder --clone
+intellect agent create coder --clone
 ```
 
 `--clone` creates a `intellect.coder` host block in `honcho.json` with `aiPeer: "coder"`, shared `workspace`, inherited `peerName`, `recallMode`, `writeFrequency`, `observation`, etc. The AI peer is eagerly created in Honcho so it exists before the first message.
@@ -610,7 +610,7 @@ intellect memory setup
 
 ## Profile Isolation
 
-Each provider's data is isolated per [profile](/user-guide/profiles):
+Each provider's data is isolated per [profile](/user-guide/agents):
 
 - **Local storage providers** (Holographic, ByteRover) use `$INTELLECT_HOME/` paths which differ per profile
 - **Config file providers** (Honcho, Graphiti, Mem0, Hindsight, Supermemory) store config in `$INTELLECT_HOME/` so each profile has its own credentials

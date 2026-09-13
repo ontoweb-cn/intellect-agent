@@ -4,14 +4,14 @@ sidebar_position: 4
 
 # Running Many Gateways at Once
 
-Operate multiple [profiles](./profiles.md) — each with its own bot tokens,
+Operate multiple [profiles](./agents.md) — each with its own bot tokens,
 sessions, and memory — as managed services on a single machine. This page
 covers the operational concerns: starting them all together, viewing logs
 across profiles, preventing the host from sleeping, and recovering from common
 launchd/systemd quirks.
 
 If you only run one Intellect agent, you don't need this page — see
-[Profiles](./profiles.md) for the basics.
+[Profiles](./agents.md) for the basics.
 
 ## When to use this
 
@@ -33,9 +33,9 @@ them collectively.
 
 ```bash
 # Create profiles (once)
-intellect profile create coder
-intellect profile create personal-bot
-intellect profile create research
+intellect agent create coder
+intellect agent create personal-bot
+intellect agent create research
 
 # Configure each
 coder setup
@@ -79,7 +79,7 @@ run_for_profile() {
   if [ "$profile" = "default" ]; then
     intellect gateway "$action"
   else
-    intellect -p "$profile" gateway "$action"
+    intellect -a "$profile" gateway "$action"
   fi
 }
 
@@ -113,7 +113,7 @@ intellect-gateways list       # delegates to `intellect gateway list`
 
 :::tip
 The `default` profile is targeted with `intellect gateway <action>` (no `-p`),
-not `intellect -p default gateway <action>`. The wrapper above handles both forms.
+not `intellect -a default gateway <action>`. The wrapper above handles both forms.
 :::
 
 ## Manage one profile
@@ -130,7 +130,7 @@ coder gateway install    # create the LaunchAgent / systemd unit
 coder gateway uninstall  # remove the service file
 ```
 
-These are equivalent to `intellect -p coder gateway <action>` — useful if a
+These are equivalent to `intellect -a coder gateway <action>` — useful if a
 profile alias is not on `PATH` or if you target profiles dynamically from a
 script.
 
@@ -157,28 +157,28 @@ tail -f ~/.intellect/logs/gateway.log
 tail -f ~/.intellect/logs/gateway.error.log
 
 # Named profile
-tail -f ~/.intellect/profiles/<name>/logs/gateway.log
-tail -f ~/.intellect/profiles/<name>/logs/gateway.error.log
+tail -f ~/.intellect/agents/<name>/logs/gateway.log
+tail -f ~/.intellect/agents/<name>/logs/gateway.error.log
 ```
 
 Stream every profile's log simultaneously:
 
 ```bash
-tail -f ~/.intellect/logs/gateway.log ~/.intellect/profiles/*/logs/gateway.log
+tail -f ~/.intellect/logs/gateway.log ~/.intellect/agents/*/logs/gateway.log
 ```
 
 The CLI also has a structured log viewer:
 
 ```bash
 intellect logs --tail              # follow default profile
-intellect -p coder logs --tail     # follow one profile
+intellect -a coder logs --tail     # follow one profile
 intellect logs --help              # filters, levels, JSON output
 ```
 
 ## Identify what's actually running
 
 ```bash
-intellect profile list             # profiles + model + gateway state
+intellect agent list             # profiles + model + gateway state
 intellect-gateways status          # full status across every profile
 launchctl list | grep intellect    # macOS — PIDs and labels
 systemctl --user list-units 'intellect-gateway-*'   # Linux — units
@@ -189,7 +189,7 @@ systemctl --user list-units 'intellect-gateway-*'   # Linux — units
 Every profile keeps its config inside its own directory:
 
 ```
-~/.intellect/profiles/<name>/
+~/.intellect/agents/<name>/
 ├── .env              # API keys, bot tokens (chmod 600)
 ├── config.yaml       # model, provider, toolsets, gateway settings
 └── SOUL.md           # personality / system prompt
@@ -276,7 +276,7 @@ To audit:
 
 ```bash
 grep -H 'TELEGRAM_BOT_TOKEN\|DISCORD_BOT_TOKEN' \
-     ~/.intellect/.env ~/.intellect/profiles/*/.env
+     ~/.intellect/.env ~/.intellect/agents/*/.env
 ```
 
 ## Updating the code
@@ -307,7 +307,7 @@ If a profile's gateway shows `not running` but a process is still alive:
 
 ```bash
 ps -ef | grep "intellect_cli.*-p <profile>"
-cat ~/.intellect/profiles/<profile>/gateway.pid
+cat ~/.intellect/agents/<profile>/gateway.pid
 kill -TERM <pid>          # graceful
 kill -KILL <pid>          # if that fails after a few seconds
 <profile> gateway start
@@ -328,5 +328,5 @@ systemctl --user restart intellect-gateway-<profile>.service
 
 ```bash
 intellect doctor                  # default profile
-intellect -p <profile> doctor     # one profile
+intellect -a <profile> doctor     # one profile
 ```

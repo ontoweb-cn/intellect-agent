@@ -295,16 +295,16 @@ Anything you add **inside** the managed block will get clobbered on the next mig
 
 ## Multi-profile / multi-tenant setups
 
-By default, Intellect points the codex subprocess at `~/.codex/` regardless of which Intellect profile is active. This means `intellect -p work` and `intellect -p personal` share the same Codex auth, plugins, and config. For most users this is the right behavior — it matches what running `codex` CLI directly would do.
+By default, Intellect points the codex subprocess at `~/.codex/` regardless of which Intellect profile is active. This means `intellect -a work` and `intellect -a personal` share the same Codex auth, plugins, and config. For most users this is the right behavior — it matches what running `codex` CLI directly would do.
 
 If you want per-profile Codex isolation (separate auth, separate installed plugins, separate config), set `CODEX_HOME` explicitly per profile. The cleanest way is to point at a directory under your `INTELLECT_HOME`:
 
 ```bash
 # Inside the work profile, you might wrap intellect:
-CODEX_HOME=~/.intellect/profiles/work/codex intellect chat
+CODEX_HOME=~/.intellect/agents/work/codex intellect chat
 ```
 
-You'll need to re-run `codex login` once with that `CODEX_HOME` set so the OAuth tokens land in the profile-scoped location. After that, `intellect -p work` will operate on isolated Codex state.
+You'll need to re-run `codex login` once with that `CODEX_HOME` set so the OAuth tokens land in the profile-scoped location. After that, `intellect -a work` will operate on isolated Codex state.
 
 We don't auto-scope this because moving an existing user's `~/.codex/` would silently invalidate their Codex CLI auth — anyone who already ran `codex login` would have to re-authenticate. Opt-in feels safer than surprising users.
 

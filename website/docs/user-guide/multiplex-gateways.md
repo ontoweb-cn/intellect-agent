@@ -13,7 +13,7 @@ HTTP/WebSocket listener and routes traffic by profile URL prefix.
 
 This is a single-owner feature: profiles are isolated **from each other**,
 not from each other's administrator. Multi-user members/teams remain out of
-scope. See [Profiles](./profiles.md) for profile basics.
+scope. See [Profiles](./agents.md) for profile basics.
 
 ## Quick start
 

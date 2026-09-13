@@ -123,7 +123,7 @@ OAuth needs a browser, but the loopback callback runs on the machine where Intel
 
 ### Profile setup
 
-If you use [Intellect profiles](/user-guide/profiles), the Portal refresh token is automatically shared across all profiles via a shared token store. Sign in once on any profile, and the rest pick it up automatically — no need to repeat the OAuth flow per profile.
+If you use [Intellect profiles](/user-guide/agents), the Portal refresh token is automatically shared across all profiles via a shared token store. Sign in once on any profile, and the rest pick it up automatically — no need to repeat the OAuth flow per profile.
 
 ## Using the Portal day-to-day
 
@@ -269,4 +269,4 @@ Check `intellect portal status` first — if it shows you're using a different p
 - **[Voice mode](/user-guide/features/voice-mode)** — Voice conversations using the Portal's OpenAI TTS
 - **[AI Providers](/integrations/providers)** — Full provider catalog if you want to compare alternatives
 - **[OAuth over SSH](/guides/oauth-over-ssh)** — Login from remote hosts or browser-only environments
-- **[Profiles](/user-guide/profiles)** — Multiple Intellect configurations sharing one Portal login
+- **[Profiles](/user-guide/agents)** — Multiple Intellect configurations sharing one Portal login

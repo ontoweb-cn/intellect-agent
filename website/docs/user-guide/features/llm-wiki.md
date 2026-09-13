@@ -158,7 +158,7 @@ Isolation is **profile-based** (`INTELLECT_HOME` / `intellect -p`); multi-user m
 ## Related docs
 
 - [Llm Wiki skill reference](/docs/user-guide/skills/bundled/research/research-llm-wiki) — full SKILL.md the agent sees
-- [Profiles](../profiles.md) — per-instance isolation
+- [Profiles](../agents.md) — per-instance isolation
 - [RAG Providers](rag-providers.md) — document corpora retrieval (complementary)
 - [Obsidian skill](/docs/user-guide/skills/bundled/note-taking/note-taking-obsidian) — optional vault sync patterns
 

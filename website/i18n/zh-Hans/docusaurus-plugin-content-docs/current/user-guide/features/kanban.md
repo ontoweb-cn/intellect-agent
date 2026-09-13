@@ -284,13 +284,13 @@ kanban_complete(summary="decomposed into 2 research tasks + 1 writer; linked dep
 `kanban-worker` 是一个内置 skill，在安装和更新期间同步到每个配置文件 —— 无需单独的 Skills Hub 安装步骤。验证它是否存在于你用于 kanban worker 的配置文件中（`researcher`、`writer`、`ops` 等）：
 
 ```bash
-intellect -p <your-worker-profile> skills list | grep kanban-worker
+intellect -a <your-worker-profile> skills list | grep kanban-worker
 ```
 
 如果内置副本丢失，为该配置文件恢复它：
 
 ```bash
-intellect -p <your-worker-profile> skills reset kanban-worker --restore
+intellect -a <your-worker-profile> skills reset kanban-worker --restore
 ```
 
 调度器在启动每个 worker 时也会自动传递 `--skills kanban-worker`，因此即使配置文件的默认 skills 配置不包含它，worker 也始终拥有该模式库。
@@ -358,13 +358,13 @@ kanban_complete(
 `kanban-orchestrator` 是一个内置 skill。它在安装和更新期间同步到每个配置文件，因此无需单独的 Skills Hub 安装步骤。验证它是否存在于你的编排器配置文件中：
 
 ```bash
-intellect -p orchestrator skills list | grep kanban-orchestrator
+intellect -a orchestrator skills list | grep kanban-orchestrator
 ```
 
 如果内置副本丢失，为该配置文件恢复它：
 
 ```bash
-intellect -p orchestrator skills reset kanban-orchestrator --restore
+intellect -a orchestrator skills reset kanban-orchestrator --restore
 ```
 
 为获得最佳效果，将其与工具集限制为看板操作（`kanban`、`gateway`、`memory`）的配置文件配对，这样编排器即使尝试也无法执行实现任务。
@@ -411,7 +411,7 @@ intellect dashboard        # 导航栏中出现 "Kanban" 标签页，位于 "Ski
 
 从 kanban 页面顶部的 **Orchestration: Auto/Manual** 切换按钮（翠绿色 = 自动，静音灰色 = 手动）在两种模式之间切换，或直接编辑 `config.yaml`。两种模式都与 `intellect kanban specify` 共存 —— 当你不想扇出时，它仍然可用作单任务规格重写。
 
-分解器的路由决策依赖于配置文件描述，这是一个每配置文件的标签原语，通过 `intellect profile create --description "..."`、`intellect profile describe <name> --text "..."`、`intellect profile describe <name> --auto`（LLM 从配置文件安装的 skill + 模型自动生成），或仪表盘展开的 **Orchestration settings** 面板中的每配置文件编辑器来设置。没有描述的配置文件仍然出现在名册中 —— 它们可以按名称路由，只是精度较低。分解器**绝不**会将子任务落地为 `assignee=None`：当 LLM 选择未知配置文件时，子任务路由到 `kanban.default_assignee`（如果未设置，则路由到活动默认配置文件）。
+分解器的路由决策依赖于配置文件描述，这是一个每配置文件的标签原语，通过 `intellect agent create --description "..."`、`intellect agent describe <name> --text "..."`、`intellect agent describe <name> --auto`（LLM 从配置文件安装的 skill + 模型自动生成），或仪表盘展开的 **Orchestration settings** 面板中的每配置文件编辑器来设置。没有描述的配置文件仍然出现在名册中 —— 它们可以按名称路由，只是精度较低。分解器**绝不**会将子任务落地为 `assignee=None`：当 LLM 选择未知配置文件时，子任务路由到 `kanban.default_assignee`（如果未设置，则路由到活动默认配置文件）。
 
 配置项（均在 `~/.intellect/config.yaml` 的 `kanban:` 下）：
 
@@ -427,7 +427,7 @@ intellect dashboard        # 导航栏中出现 "Kanban" 标签页，位于 "Ski
 | 键 | 用途 |
 |---|---|
 | `auxiliary.kanban_decomposer` | 生成任务图的模型（由 Decompose 调用）。设置 `provider`/`model` 以覆盖主聊天模型。 |
-| `auxiliary.profile_describer` | 自动生成配置文件描述的模型（由 `intellect profile describe --auto` 调用）。 |
+| `auxiliary.profile_describer` | 自动生成配置文件描述的模型（由 `intellect agent describe --auto` 调用）。 |
 
 ### 架构
 
@@ -505,7 +505,7 @@ WebSocket 额外增加了一步：它要求仪表盘的临时会话 token 作为
 
 如果你运行 `intellect dashboard --host 0.0.0.0`，每个插件路由 —— 包括 kanban —— 都可以从网络访问。**不要在共享主机上这样做。** 看板包含任务正文、评论和工作区路径；攻击者访问这些路由可以读取你整个协作界面，还可以创建 / 重新分配 / 归档任务。
 
-`~/.intellect/kanban.db` 中的任务是有意与配置文件无关的（这是协调原语）。如果你用 `intellect -p <profile> dashboard` 打开仪表盘，看板仍然显示主机上任何其他配置文件创建的任务。同一用户拥有所有配置文件，但如果多个角色共存，这一点值得了解。
+`~/.intellect/kanban.db` 中的任务是有意与配置文件无关的（这是协调原语）。如果你用 `intellect -a <profile> dashboard` 打开仪表盘，看板仍然显示主机上任何其他配置文件创建的任务。同一用户拥有所有配置文件，但如果多个角色共存，这一点值得了解。
 
 ### 实时更新
 

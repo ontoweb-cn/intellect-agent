@@ -291,16 +291,16 @@ default_permissions = ":workspace"
 
 ## 多配置文件 / 多租户设置
 
-默认情况下，无论哪个 Intellect 配置文件处于活跃状态，Intellect 都将 Codex 子进程指向 `~/.codex/`。这意味着 `intellect -p work` 和 `intellect -p personal` 共享相同的 Codex 认证、插件和配置。对大多数用户来说这是正确的行为——与直接运行 `codex` CLI 的效果一致。
+默认情况下，无论哪个 Intellect 配置文件处于活跃状态，Intellect 都将 Codex 子进程指向 `~/.codex/`。这意味着 `intellect -a work` 和 `intellect -a personal` 共享相同的 Codex 认证、插件和配置。对大多数用户来说这是正确的行为——与直接运行 `codex` CLI 的效果一致。
 
 如果你需要按配置文件隔离 Codex（独立的认证、独立的已安装插件、独立的配置），请为每个配置文件显式设置 `CODEX_HOME`。最简洁的方式是指向你 `INTELLECT_HOME` 下的某个目录：
 
 ```bash
 # 在 work 配置文件中，你可以这样包装 intellect：
-CODEX_HOME=~/.intellect/profiles/work/codex intellect chat
+CODEX_HOME=~/.intellect/agents/work/codex intellect chat
 ```
 
-你需要在设置了该 `CODEX_HOME` 的情况下重新运行一次 `codex login`，以便 OAuth token 落入配置文件范围的位置。之后，`intellect -p work` 将在隔离的 Codex 状态下运行。
+你需要在设置了该 `CODEX_HOME` 的情况下重新运行一次 `codex login`，以便 OAuth token 落入配置文件范围的位置。之后，`intellect -a work` 将在隔离的 Codex 状态下运行。
 
 我们不自动限定此范围，因为移动现有用户的 `~/.codex/` 会静默地使其 Codex CLI 认证失效——任何已运行过 `codex login` 的用户都需要重新认证。选择加入比给用户带来意外更安全。
 

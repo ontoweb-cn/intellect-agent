@@ -156,7 +156,7 @@ Honcho 将对话建模为 peer 之间的消息交换——每个 Intellect profi
 ### 新建 profile，创建新 Honcho peer
 
 ```bash
-intellect profile create coder --clone
+intellect agent create coder --clone
 ```
 
 `--clone` 在 `honcho.json` 中创建一个 `intellect.coder` host 块，包含 `aiPeer: "coder"`、共享的 `workspace`、继承的 `peerName`、`recallMode`、`writeFrequency`、`observation` 等。AI peer 会在 Honcho 中提前创建，确保在第一条消息之前就已存在。
@@ -588,7 +588,7 @@ echo 'SUPERMEMORY_API_KEY=***' >> ~/.intellect/.env
 
 ## Profile 隔离
 
-每个提供者的数据按 [profile](/user-guide/profiles) 隔离：
+每个提供者的数据按 [profile](/user-guide/agents) 隔离：
 
 - **本地存储提供者**（Holographic、ByteRover）使用 `$INTELLECT_HOME/` 路径，各 profile 路径不同
 - **配置文件提供者**（Honcho、Graphiti、Mem0、Hindsight、Supermemory）将配置存储在 `$INTELLECT_HOME/` 中，每个 profile 拥有独立凭证

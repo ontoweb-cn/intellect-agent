@@ -220,7 +220,7 @@ Honcho 的辩证行为由三个独立维度控制。每个维度可单独调整�
 ### 创建带 Honcho peer 的配置文件
 
 ```bash
-intellect profile create coder --clone
+intellect agent create coder --clone
 # creates host block intellect.coder, AI peer "coder", inherits config from default
 ```
 
@@ -410,7 +410,7 @@ Honcho 在注入前对 `memory-context` 块进行净化，以防止 prompt 注�
 检查 `intellect honcho status` -- 验证 `saveMessages: true` 且 `writeFrequency` 不是 `session`（该选项仅在退出时写入）。
 
 ### 配置文件未获得自己的 peer
-创建时使用 `--clone`：`intellect profile create <name> --clone`。对于现有配置文件：`intellect honcho sync`。
+创建时使用 `--clone`：`intellect agent create <name> --clone`。对于现有配置文件：`intellect honcho sync`。
 
 ### 控制台中的观察更改未生效
 观察配置在每次会话初始化时从服务器同步。在 Honcho UI 中更改设置后，启动新会话。

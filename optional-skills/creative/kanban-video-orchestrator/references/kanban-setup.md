@@ -60,9 +60,9 @@ Example: `q3-product-teaser`, `ascii-mood-loop`, `interview-cut-2026-q1`.
 The setup script does six things in order:
 
 1. **Create workspace tree** — all directories above
-2. **Create profiles** — `intellect profile create <name> --clone`
+2. **Create profiles** — `intellect agent create <name> --clone`
 3. **Configure profiles** — patch each profile's
-   `~/.intellect/profiles/<name>/config.yaml` to set toolsets, always_load skills,
+   `~/.intellect/agents/<name>/config.yaml` to set toolsets, always_load skills,
    and `cwd`
 4. **Write SOUL.md per profile** — the personality + role definition
 5. **Copy any provided assets + write `brief.md`, `TEAM.md`, and `taste/`**
@@ -73,7 +73,7 @@ See `assets/setup.sh.tmpl` for the skeleton.
 ### Profile creation pattern
 
 ```bash
-intellect profile create director --clone 2>/dev/null || true
+intellect agent create director --clone 2>/dev/null || true
 ```
 
 The `--clone` flag clones from the active profile (preserving model, base
@@ -82,7 +82,7 @@ the profile already exists.
 
 ### Profile config patching
 
-Each profile has a YAML config at `~/.intellect/profiles/<name>/config.yaml`. The
+Each profile has a YAML config at `~/.intellect/agents/<name>/config.yaml`. The
 setup script edits exactly two keys:
 
 1. `toolsets:` — replace the default with the role's required toolsets
@@ -105,7 +105,7 @@ configure_profile() {
     python3 - "$profile" "$toolsets_json" "$skills_json" <<'PY'
 import json, os, sys, yaml
 profile, ts_json, sk_json = sys.argv[1:4]
-p = os.path.expanduser(f"~/.intellect/profiles/{profile}/config.yaml")
+p = os.path.expanduser(f"~/.intellect/agents/{profile}/config.yaml")
 with open(p) as f:
     cfg = yaml.safe_load(f) or {}
 cfg["toolsets"] = json.loads(ts_json)
@@ -124,7 +124,7 @@ and comparing — see `assets/setup.sh.tmpl` for the validation pattern.
 
 ### SOUL.md per profile
 
-Each profile gets a `SOUL.md` at `~/.intellect/profiles/<name>/SOUL.md` that
+Each profile gets a `SOUL.md` at `~/.intellect/agents/<name>/SOUL.md` that
 defines its role, voice, and rules. See `assets/soul.md.tmpl` for the
 template. Customize per role and per project.
 

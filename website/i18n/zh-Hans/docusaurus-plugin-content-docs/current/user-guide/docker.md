@@ -97,7 +97,7 @@ docker run -it --rm \
 
 ## 多 profile 支持
 
-Intellect 支持[多个 profile](../reference/profile-commands.md)——独立的 `~/.intellect/` 目录，让你可以从单个安装运行独立的 agent（不同的 SOUL、技能、记忆、会话、凭据）。**在 Docker 下运行时，不建议使用 Intellect 内置的多 profile 功能。**
+Intellect 支持[多个 profile](../reference/agent-commands.md)——独立的 `~/.intellect/` 目录，让你可以从单个安装运行独立的 agent（不同的 SOUL、技能、记忆、会话、凭据）。**在 Docker 下运行时，不建议使用 Intellect 内置的多 profile 功能。**
 
 推荐的模式是**每个 profile 一个容器**，每个容器将各自的宿主机目录绑定挂载为 `/opt/data`：
 
@@ -257,14 +257,14 @@ docker run -d \
 
 ### Per-profile gateway 监管
 
-在容器内，每个通过 `intellect profile create <name>` 创建的 profile 都会自动在 `/run/service/gateway-<name>/` 注册一个受 s6 监管的 gateway 服务。你在宿主机上运行的生命周期命令在此同样适用：
+在容器内，每个通过 `intellect agent create <name>` 创建的 profile 都会自动在 `/run/service/gateway-<name>/` 注册一个受 s6 监管的 gateway 服务。你在宿主机上运行的生命周期命令在此同样适用：
 
 ```sh
-intellect profile create coder            # 注册 gateway-coder s6 槽
-intellect -p coder gateway start          # s6-svc -u  → 受监管的 gateway
-intellect -p coder gateway stop           # s6-svc -d  → 服务停止
-intellect -p coder gateway restart        # s6-svc -t  → 向 supervisor 发送 SIGTERM
-intellect profile delete coder            # 拆除 s6 槽
+intellect agent create coder            # 注册 gateway-coder s6 槽
+intellect -a coder gateway start          # s6-svc -u  → 受监管的 gateway
+intellect -a coder gateway stop           # s6-svc -d  → 服务停止
+intellect -a coder gateway restart        # s6-svc -t  → 向 supervisor 发送 SIGTERM
+intellect agent delete coder            # 拆除 s6 槽
 ```
 
 **相比 pre-s6 镜像的监管优势：**

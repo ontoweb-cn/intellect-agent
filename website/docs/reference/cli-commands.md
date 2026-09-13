@@ -79,7 +79,7 @@ intellect [global-options] <command> [subcommand/options]
 | `intellect sessions` | Browse, export, prune, rename, and delete sessions. |
 | `intellect insights` | Show token/cost/activity analytics. |
 | `intellect claw` | OpenClaw migration helpers. |
-| `intellect agent` | Manage agents — multiple isolated Intellect homes. (`intellect profile` is a legacy alias.) |
+| `intellect agent` | Manage agents — multiple isolated Intellect homes. (`intellect agent` is a legacy alias.) |
 | `intellect completion` | Print shell completion scripts (bash/zsh/fish). |
 | `intellect version` | Show version information. |
 | `intellect update` | Pull latest code and reinstall dependencies (git installs), or check PyPI and `pip install --upgrade` (pip installs). `--check` previews without installing; `--backup` takes a pre-pull `INTELLECT_HOME` snapshot. |
@@ -1333,7 +1333,7 @@ intellect claw migrate --source /home/user/old-openclaw
 intellect agent <subcommand>
 ```
 
-Manage agents — multiple isolated Intellect instances, each with its own config, sessions, skills, and home directory. (`intellect profile` remains a deprecated alias.)
+Manage agents — multiple isolated Intellect instances, each with its own config, sessions, skills, and home directory. (`intellect agent` remains a deprecated alias.)
 
 | Subcommand | Description |
 |------------|-------------|

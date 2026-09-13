@@ -196,7 +196,7 @@ Delete a stored response.
 
 ### GET /v1/models
 
-Lists the agent as an available model. The advertised model name defaults to the [profile](/user-guide/profiles) name (or `intellect-agent` for the default profile). Required by most frontends for model discovery.
+Lists the agent as an available model. The advertised model name defaults to the [profile](/user-guide/agents) name (or `intellect-agent` for the default profile). Required by most frontends for model discovery.
 
 ### GET /v1/capabilities
 
@@ -522,7 +522,7 @@ Any frontend that supports the OpenAI API format works. Tested/documented integr
 
 ## Multi-User Setup with Profiles
 
-To give multiple users their own isolated Intellect instance (separate config, memory, skills), use [profiles](/user-guide/profiles):
+To give multiple users their own isolated Intellect instance (separate config, memory, skills), use [profiles](/user-guide/agents):
 
 ```bash
 # Create a profile per user

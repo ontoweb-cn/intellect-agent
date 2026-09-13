@@ -169,7 +169,7 @@ intellect cron add "Daily AI news summary" "every day at 9am" \
 
 ## Profiles 与多用户配置
 
-如果你使用 [Intellect profiles](/user-guide/profiles)（例如每个项目单独一套配置），Portal refresh token 会通过共享 token 存储自动在所有 profiles 之间共享。在任意 profile 上登录一次，其余 profiles 会自动获取。
+如果你使用 [Intellect profiles](/user-guide/agents)（例如每个项目单独一套配置），Portal refresh token 会通过共享 token 存储自动在所有 profiles 之间共享。在任意 profile 上登录一次，其余 profiles 会自动获取。
 
 对于多人共用一台机器的团队场景，每个人有自己的 Portal 账号 → 每个 home 目录保存各自的 `~/.intellect/auth.json` → 用户之间不共享 token。这是正确的边界划分。
 
@@ -240,7 +240,7 @@ Portal 目录镜像了 OpenRouter 的模型列表（300+ 个）。如果某个�
 
 - `model.provider` 设置为 `openrouter`/`anthropic`/等，而非 `ontoweb`
 - OAuth refresh 失败后回退到了其他已配置的 provider
-- 存在多个 Intellect profiles，你使用的是错误的那个（检查 `intellect profile current`）
+- 存在多个 Intellect profiles，你使用的是错误的那个（检查 `intellect agent current`）
 
 ### 想要撤销并重新开始
 
@@ -270,4 +270,4 @@ intellect auth remove ontoweb       # 清除本地 refresh token
 - **[订阅代理](/user-guide/features/subscription-proxy)** — 在非 Intellect 工具中使用你的 Portal 订阅
 - **[语音模式](/user-guide/features/voice-mode)** — 在 Portal 订阅上配置语音对话
 - **[OAuth over SSH](/guides/oauth-over-ssh)** — 远程/无头主机登录方案
-- **[Profiles](/user-guide/profiles)** — 在多个 Intellect 配置之间共享一个 Portal 登录
+- **[Profiles](/user-guide/agents)** — 在多个 Intellect 配置之间共享一个 Portal 登录

@@ -205,7 +205,7 @@ Each Intellect profile gets its own Honcho AI peer while sharing the same worksp
 ### Create a profile with Honcho peer
 
 ```bash
-intellect profile create coder --clone
+intellect agent create coder --clone
 # creates host block intellect.coder, AI peer "coder", inherits config from default
 ```
 
@@ -395,7 +395,7 @@ Run `intellect honcho setup`. Ensure `memory.provider: honcho` is in `~/.intelle
 Check `intellect honcho status` -- verify `saveMessages: true` and `writeFrequency` isn't `session` (which only writes on exit).
 
 ### Profile not getting its own peer
-Use `--clone` when creating: `intellect profile create <name> --clone`. For existing profiles: `intellect honcho sync`.
+Use `--clone` when creating: `intellect agent create <name> --clone`. For existing profiles: `intellect honcho sync`.
 
 ### Observation changes in dashboard not reflected
 Observation config is synced from the server on each session init. Start a new session after changing settings in the Honcho UI.

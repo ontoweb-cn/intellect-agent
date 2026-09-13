@@ -18,7 +18,7 @@ This page covers configuring both from the CLI and config files.
 :::
 
 :::note `model:` schema — empty string vs. mapping
-On a brand-new install the bundled default config has `model: ""` (an empty string sentinel meaning "not configured yet"). The first time you run `intellect setup` or `intellect model`, that key is upgraded in-place to a mapping with `provider`, `default`, `base_url`, and `api_mode` sub-keys — the shape shown throughout this page and in [`profiles.md`](./profiles.md) / [`configuration.md`](./configuration.md). If you ever see an empty string in `config.yaml`, run `intellect model` and Intellect will write the dict form for you.
+On a brand-new install the bundled default config has `model: ""` (an empty string sentinel meaning "not configured yet"). The first time you run `intellect setup` or `intellect model`, that key is upgraded in-place to a mapping with `provider`, `default`, `base_url`, and `api_mode` sub-keys — the shape shown throughout this page and in [`profiles.md`](./agents.md) / [`configuration.md`](./configuration.md). If you ever see an empty string in `config.yaml`, run `intellect model` and Intellect will write the dict form for you.
 :::
 
 ## Setting the main model

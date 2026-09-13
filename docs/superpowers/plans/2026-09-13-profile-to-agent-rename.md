@@ -65,17 +65,17 @@
 - [x] CLI user-facing strings in `cmd_agent`
 
 **Optional later (not blocking B):**
-- [ ] Rename doc slug `profiles.md` → `agents.md` + redirect
-- [ ] Exhaustive zh-Hans / skill SKILL.md path sweeps
-- [ ] WebUI i18n keys `profile_*` → `agent_*` (keep aliases)
+- [x] Rename doc slug `profiles.md` → `agents.md` + redirect stubs
+- [x] Exhaustive zh-Hans / skill SKILL.md path sweeps
+- [x] WebUI i18n keys `profile_*` → `agent_*` (aliases via `I18N_AGENT_HOME_ALIASES`)
 
 ### Task 7: Test sweep — MOSTLY DONE
 
 **Done:** focused suites for profiles, gate, migration, completion, container_boot, ProfileArg, systemd preflight stubs; key fixtures prefer `agents/` (file_safety, file_operations, bot_mode_roster, update_check).
 
 **Optional later:**
-- [ ] Remaining test files that mkdir only `profiles/` for intentional legacy dual-read coverage
-- [ ] Broader bot_mode / gateway e2e path audit
+- [x] Document intentional legacy `profiles/` fixtures (`tests/LEGACY_AGENT_HOME_FIXTURES.md`)
+- [ ] Broader bot_mode / gateway e2e path audit (optional)
 
 **Status:** Core B rename is functionally complete; leftover items are polish / optional.
 

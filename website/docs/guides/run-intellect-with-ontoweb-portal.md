@@ -172,7 +172,7 @@ The cron job runs unattended, calls the model + web search + summarization all t
 
 ## Profiles and multi-user setups
 
-If you use [Intellect profiles](/user-guide/profiles) (e.g. a separate config per project), the Portal refresh token is automatically shared across all profiles via a shared token store. Sign in once on any profile, and the rest pick it up automatically.
+If you use [Intellect profiles](/user-guide/agents) (e.g. a separate config per project), the Portal refresh token is automatically shared across all profiles via a shared token store. Sign in once on any profile, and the rest pick it up automatically.
 
 For team setups where multiple humans share a machine, each human has their own Portal account → each home directory holds its own `~/.intellect/auth.json` → no token sharing across users. This is the right boundary.
 
@@ -243,7 +243,7 @@ If a model is genuinely unavailable, [open an issue](https://gitee.com/ontoweb/i
 
 - `model.provider` set to `openrouter`/`anthropic`/etc. instead of `ontoweb`
 - An OAuth refresh failure that fell back to a different configured provider
-- Multiple Intellect profiles where you're using the wrong one (check `intellect profile current`)
+- Multiple Intellect profiles where you're using the wrong one (check `intellect agent current`)
 
 ### Want to revoke and start clean
 
@@ -273,4 +273,4 @@ That's the deal. If you're using more than two of those backends anyway, the sub
 - **[Subscription proxy](/user-guide/features/subscription-proxy)** — Use your Portal subscription from non-Intellect tools
 - **[Voice mode](/user-guide/features/voice-mode)** — Set up voice conversations on the Portal subscription
 - **[OAuth over SSH](/guides/oauth-over-ssh)** — Remote / headless login patterns
-- **[Profiles](/user-guide/profiles)** — Share one Portal login across multiple Intellect configurations
+- **[Profiles](/user-guide/agents)** — Share one Portal login across multiple Intellect configurations

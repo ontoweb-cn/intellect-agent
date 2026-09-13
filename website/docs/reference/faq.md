@@ -683,7 +683,7 @@ See [Subagent Delegation](../user-guide/features/delegation.md) for more on how 
 
 4. **Use Telegram or Discord instead.** These platforms support per-chat binding more naturally — each Telegram group or Discord channel gets its own session, and you can run multiple bot tokens (one per profile) on the same account.
 
-See [Profiles](../user-guide/profiles.md) and [WhatsApp setup](../user-guide/messaging/whatsapp.md) for more details.
+See [Profiles](../user-guide/agents.md) and [WhatsApp setup](../user-guide/messaging/whatsapp.md) for more details.
 
 ### Controlling what shows up in Telegram (hiding logs and reasoning)
 

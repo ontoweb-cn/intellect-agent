@@ -119,7 +119,7 @@ OAuth 需要浏览器，但回调的 loopback 运行在 Intellect 所在的机�
 
 ### Profile 配置
 
-如果你使用 [Intellect profiles（配置文件）](/user-guide/profiles)，Portal 的 refresh token 会通过共享令牌存储自动在所有 profile 间共享。在任意 profile 上登录一次，其余 profile 自动获取——无需为每个 profile 重复 OAuth 流程。
+如果你使用 [Intellect profiles（配置文件）](/user-guide/agents)，Portal 的 refresh token 会通过共享令牌存储自动在所有 profile 间共享。在任意 profile 上登录一次，其余 profile 自动获取——无需为每个 profile 重复 OAuth 流程。
 
 ## 日常使用 Portal
 
@@ -265,4 +265,4 @@ Portal 通过 OpenRouter 代理，因此 OpenRouter 支持的所有模型通常�
 - **[语音模式](/user-guide/features/voice-mode)** —— 使用 Portal 的 OpenAI TTS 进行语音对话
 - **[AI 提供商](/integrations/providers)** —— 完整提供商目录，供对比参考
 - **[OAuth over SSH](/guides/oauth-over-ssh)** —— 从远程主机或纯浏览器环境登录
-- **[Profiles](/user-guide/profiles)** —— 多个 Intellect 配置共享一个 Portal 登录
+- **[Profiles](/user-guide/agents)** —— 多个 Intellect 配置共享一个 Portal 登录

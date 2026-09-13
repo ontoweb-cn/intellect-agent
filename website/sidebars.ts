@@ -37,8 +37,8 @@ const sidebars: SidebarsConfig = {
           ],
         },
         'user-guide/sessions',
-        'user-guide/profiles',
-        'user-guide/profile-distributions',
+        'user-guide/agents',
+        'user-guide/agent-distributions',
         'user-guide/multi-profile-gateways',
         'user-guide/multiplex-gateways',
         'user-guide/bot-mode',
@@ -782,7 +782,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'reference/cli-commands',
             'reference/slash-commands',
-            'reference/profile-commands',
+            'reference/agent-commands',
           ],
         },
         {

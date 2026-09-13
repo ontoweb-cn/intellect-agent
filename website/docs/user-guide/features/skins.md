@@ -259,7 +259,7 @@ npm start
 6. Click **Save** to write the skin YAML to `~/.intellect/skins/`.
 7. Click **Activate** to set it as the current skin (updates `display.skin` in `config.yaml`).
 
-Intellect Mod respects the `INTELLECT_HOME` environment variable, so it works with [profiles](/user-guide/profiles) too.
+Intellect Mod respects the `INTELLECT_HOME` environment variable, so it works with [profiles](/user-guide/agents) too.
 
 ## Operational notes
 

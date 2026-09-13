@@ -196,7 +196,7 @@ OpenAI Responses API 格式。通过 `previous_response_id` 支持服务端对�
 
 ### GET /v1/models
 
-将 agent 列为可用模型。广播的模型名称默认为 [profile](/user-guide/profiles) 名称（默认 profile 则为 `intellect-agent`）。大多数前端进行模型发现时需要此端点。
+将 agent 列为可用模型。广播的模型名称默认为 [profile](/user-guide/agents) 名称（默认 profile 则为 `intellect-agent`）。大多数前端进行模型发现时需要此端点。
 
 ### GET /v1/capabilities
 
@@ -464,30 +464,30 @@ API_SERVER_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
 ## 使用 Profiles 的多用户设置
 
-要为多个用户提供各自隔离的 Intellect 实例（独立的配置、记忆、技能），请使用 [profiles](/user-guide/profiles)：
+要为多个用户提供各自隔离的 Intellect 实例（独立的配置、记忆、技能），请使用 [profiles](/user-guide/agents)：
 
 ```bash
 # 为每个用户创建 profile
-intellect profile create alice
-intellect profile create bob
+intellect agent create alice
+intellect agent create bob
 
 # 在不同端口上配置每个 profile 的 API 服务器。API_SERVER_* 是环境变量
 # （不是 config.yaml 键），因此将它们写入每个 profile 的 .env：
-cat >> ~/.intellect/profiles/alice/.env <<EOF
+cat >> ~/.intellect/agents/alice/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8643
 API_SERVER_KEY=alice-secret
 EOF
 
-cat >> ~/.intellect/profiles/bob/.env <<EOF
+cat >> ~/.intellect/agents/bob/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8644
 API_SERVER_KEY=bob-secret
 EOF
 
 # 启动每个 profile 的 gateway
-intellect -p alice gateway &
-intellect -p bob gateway &
+intellect -a alice gateway &
+intellect -a bob gateway &
 ```
 
 每个 profile 的 API 服务器自动将 profile 名称作为模型 ID 广播：
