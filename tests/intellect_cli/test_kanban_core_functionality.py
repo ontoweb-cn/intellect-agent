@@ -3730,7 +3730,13 @@ def test_gateway_dispatcher_retries_corrupt_board_after_quarantine(
         caller = inspect.currentframe().f_back  # type: ignore[union-attr]
         code = caller.f_code if caller is not None else None
         filename = code.co_filename if code is not None else ""
-        if filename.endswith("gateway/run.py"):
+        # The A1 split (5858667) moved the dispatcher out of gateway/run.py
+        # into the infrastructure_handlers mixin, so the fake clock has to
+        # gate that file too — otherwise its monotonic() calls fall through
+        # to the real clock and the quarantine TTL never appears to expire.
+        if filename.endswith(
+            ("gateway/run.py", "gateway/infrastructure_handlers.py")
+        ):
             return next(time_values, 1301.0)
         return real_monotonic()
 
@@ -3768,6 +3774,26 @@ def test_gateway_dispatcher_retries_corrupt_board_after_quarantine(
     assert sum("not a valid SQLite database" in msg for msg in messages) == 2
     assert any("database fingerprint unchanged" in msg for msg in messages)
     assert calls["tick"] == 3
+
+
+def test_infrastructure_handlers_binds_sqlite3_for_corrupt_board_guard():
+    """The corrupt-board guard needs ``sqlite3`` bound in the module namespace.
+
+    ``gateway/infrastructure_handlers.py`` opens with ``# ruff: noqa: F821``
+    because many of its names resolve through the GatewayRunner MRO — which
+    also switches off undefined-name linting for the whole file.  A missing
+    ``import sqlite3`` therefore ships a NameError that only fires on the
+    corrupt-board path, where the ``except sqlite3.DatabaseError`` clause
+    catches it and reports board corruption as a generic watcher error
+    instead of the actionable "not a valid SQLite database" message.
+    Assert the binding directly, since no lint rule will.
+    """
+    from gateway import infrastructure_handlers as _ih
+
+    assert getattr(_ih, "sqlite3", None) is not None, (
+        "gateway.infrastructure_handlers raises sqlite3.DatabaseError in its "
+        "corrupt-board handler but no longer imports sqlite3"
+    )
 
 
 # ---------------------------------------------------------------------------
