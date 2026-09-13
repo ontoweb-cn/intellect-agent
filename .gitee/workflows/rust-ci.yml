@@ -158,13 +158,16 @@ stages:
           - name: Verify sandbox patterns
             run: |
               PYTHONPATH=. python3 -c "
-              from tools.approval import _normalize_command_for_detection, _HAS_RUST_SANDBOX
-              assert _HAS_RUST_SANDBOX, 'Rust sandbox not loaded'
-              import intellect_community_core
+              # Mirrors .github/workflows/rust-ci.yml: `_HAS_RUST_SANDBOX` was
+              # deleted from tools/approval.py in 4d3c9f9, so this import used
+              # to raise ImportError.  The flag now lives in intellect_rust.
+              from intellect_rust import HAS_SANDBOX, rust_detect_hardline, rust_detect_dangerous
+              from tools.approval import _normalize_command_for_detection
+              assert HAS_SANDBOX, 'Rust sandbox not loaded'
               n = _normalize_command_for_detection('rm -rf /').lower()
-              assert intellect_community_core.detect_hardline_command_rs(n) is not None
+              assert rust_detect_hardline(n) is not None
               n = _normalize_command_for_detection('echo hello').lower()
-              assert intellect_community_core.detect_dangerous_command_rs(n) is None
+              assert rust_detect_dangerous(n) is None
               print('Sandbox patterns OK')
               "
 
