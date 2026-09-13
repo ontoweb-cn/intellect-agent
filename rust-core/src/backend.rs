@@ -1309,26 +1309,50 @@ fn apply_wal(conn: &Connection) -> bool {
 mod tests {
     use super::*;
 
-    fn temp_db_path() -> String {
-        // Use a temp file path (not :memory:) for realistic WAL testing
+    /// Temp *file* DB path, distinct per test — deliberately not ``:memory:``,
+    /// since these tests exercise WAL mode and checkpointing, which need a real
+    /// file on disk.
+    ///
+    /// The label is load-bearing: libtest runs tests on parallel threads inside
+    /// a single process, so a path keyed only on the process id is shared by
+    /// every test in this module.  One test's ``remove_file`` or
+    /// ``ensure_schema`` then clobbers another's mid-run, producing a failure
+    /// count that changes from run to run.
+    fn temp_db_path(label: &str) -> String {
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("intellect_test_{}.db", std::process::id()));
+        let path = dir.join(format!(
+            "intellect_test_{}_{}.db",
+            std::process::id(),
+            label
+        ));
+        cleanup_db(&path.to_string_lossy()); // stale file from a crashed run
         path.to_string_lossy().to_string()
+    }
+
+    /// Remove a test DB together with the sidecar files SQLite leaves behind
+    /// when a test panics mid-transaction: ``-wal``/``-shm`` in WAL mode, plus
+    /// ``-journal`` on the DELETE-mode fallback (``apply_wal`` returns false on
+    /// WAL-incompatible filesystems).  A stale sidecar next to a freshly
+    /// created ``.db`` confuses SQLite, so they have to clear as a set.
+    fn cleanup_db(path: &str) {
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            let _ = std::fs::remove_file(format!("{}{}", path, suffix));
+        }
     }
 
     #[test]
     fn test_open_and_close() {
-        let path = temp_db_path();
+        let path = temp_db_path("open_and_close");
         let backend = SQLiteBackend::new(&path).unwrap();
         assert!(!backend.db_path_str().is_empty());
         backend.close().unwrap();
         // Clean up
-        let _ = std::fs::remove_file(&path);
+        cleanup_db(&path);
     }
 
     #[test]
     fn test_execute_write_commits_and_checkpoints() {
-        let path = temp_db_path();
+        let path = temp_db_path("execute_write_commits");
         let backend = SQLiteBackend::new(&path).unwrap();
 
         // Use the backend's own connection to set up a table
@@ -1345,12 +1369,12 @@ mod tests {
         }
 
         backend.close().unwrap();
-        let _ = std::fs::remove_file(&path);
+        cleanup_db(&path);
     }
 
     #[test]
     fn test_fts_utilities_on_backend() {
-        let path = temp_db_path();
+        let path = temp_db_path("fts_utilities");
         let backend = SQLiteBackend::new(&path).unwrap();
 
         // Set up schema via ensure_schema (simulates SessionDB._init_schema)
@@ -1385,12 +1409,12 @@ mod tests {
         backend.rebuild_fts_indexes().unwrap();
 
         backend.close().unwrap();
-        let _ = std::fs::remove_file(&path);
+        cleanup_db(&path);
     }
 
     #[test]
     fn test_compression_tip_on_backend() {
-        let path = temp_db_path();
+        let path = temp_db_path("compression_tip");
         let backend = SQLiteBackend::new(&path).unwrap();
 
         backend.ensure_schema(
@@ -1407,12 +1431,12 @@ mod tests {
         assert_eq!(tip.as_deref(), Some("no-such-session"));
 
         backend.close().unwrap();
-        let _ = std::fs::remove_file(&path);
+        cleanup_db(&path);
     }
 
     #[test]
     fn test_append_message() {
-        let path = temp_db_path();
+        let path = temp_db_path("append_message");
         let backend = SQLiteBackend::new(&path).unwrap();
 
         // Set up schema (same as SessionDB._init_schema)
@@ -1471,6 +1495,6 @@ mod tests {
 
         drop(conn);
         backend.close().unwrap();
-        let _ = std::fs::remove_file(&path);
+        cleanup_db(&path);
     }
 }

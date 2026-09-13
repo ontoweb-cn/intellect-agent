@@ -270,11 +270,13 @@ def _seed_oauth_providers(cursor) -> None:
 # existing references (FTS_TRIGRAM_SQL) don't break at import time.
 
 
-# Feature flag: set to 1 to route all SessionDB reads AND writes through
-# the Rust backend instead of Python sqlite3.  Python fallback is preserved
-# until full test coverage confirms parity.
-# 0 = Python sqlite3 for both reads and writes (safe default)
-# 1 = Rust rusqlite for both reads and writes
+# Feature flag: routes all SessionDB reads AND writes through the Rust
+# backend (rusqlite) instead of Python sqlite3.
+#
+# 1 = Rust rusqlite for both reads and writes — default since e2c26bf
+#     (2026-06-20), flipped once Rust 156/156, SessionDB 31/31 and CRUD
+#     12/12 passed.
+# 0 = Python sqlite3 for both reads and writes — still supported.
 SESSIONDB_USE_RUST_RW = 1
 
 
