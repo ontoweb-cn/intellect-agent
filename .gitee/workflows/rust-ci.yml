@@ -14,11 +14,13 @@ triggers:
       - main
     paths:
       - 'rust-core/**'
+      - '.gitee/workflows/rust-ci.yml'
   pull_request:
     branches:
       - main
     paths:
       - 'rust-core/**'
+      - '.gitee/workflows/rust-ci.yml'
 
 stages:
   # ── Stage 1: Pure Rust unit tests ───────────────────────────────────────
