@@ -163,6 +163,125 @@ def test_migration_is_idempotent(tmp_path, monkeypatch):
         assert len(conn.execute("SELECT * FROM task_events").fetchall()) == 2
 
 
+def test_migration_backfills_agent_from_legacy_profile(tmp_path, monkeypatch):
+    """profile → agent rename: legacy rows carrying only ``profile`` get
+    ``agent`` back-filled, and the legacy column is preserved (never dropped)."""
+    db_path = _setup_home(tmp_path, monkeypatch)
+    _make_legacy_db(db_path)
+
+    with kb.connect(db_path) as conn:
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(task_runs)")}
+        assert {"profile", "agent"} <= cols
+        row = conn.execute("SELECT profile, agent FROM task_runs").fetchone()
+        assert row["agent"] == "default"
+        assert row["profile"] == "default"
+
+
+def test_agent_backfill_does_not_clobber_existing_agent(tmp_path, monkeypatch):
+    """The copy is guarded by ``agent IS NULL`` — an existing ``agent`` value
+    is never overwritten by the (possibly stale) legacy ``profile``."""
+    db_path = _setup_home(tmp_path, monkeypatch)
+    _make_legacy_db(db_path)
+
+    # Migrate once so ``agent`` exists, then diverge the two columns the way
+    # a newer writer would (agent set, legacy profile stale). The handle is
+    # closed so the next ``connect()`` re-runs the migration pass instead of
+    # handing back the pooled connection — otherwise this would not exercise
+    # the copy at all.
+    conn = kb.connect(db_path)
+    conn.execute("UPDATE task_runs SET agent = 'coder' WHERE task_id = 'task-1'")
+    conn.commit()
+    conn.close()
+
+    kb._INITIALIZED_PATHS.discard(str(db_path.resolve()))
+    with kb.connect(db_path) as conn:
+        row = conn.execute("SELECT profile, agent FROM task_runs").fetchone()
+        assert row["agent"] == "coder"
+        assert row["profile"] == "default"
+
+
+_V1_TASK_RUNS_SQL = """
+DROP TABLE task_runs;
+CREATE TABLE task_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL, profile TEXT, step_key TEXT,
+    status TEXT NOT NULL, claim_lock TEXT, claim_expires INTEGER,
+    worker_pid INTEGER, max_runtime_seconds INTEGER,
+    last_heartbeat_at INTEGER, started_at INTEGER NOT NULL,
+    ended_at INTEGER, outcome TEXT, summary TEXT, metadata TEXT, error TEXT);
+"""
+
+
+def _make_v1_runs_db(path: Path) -> None:
+    """A v1 board: ``task_runs`` with INTEGER ids and no ``agent`` column —
+    the shape ``ALTER TABLE ADD COLUMN`` appends to."""
+    conn = sqlite3.connect(str(path))
+    conn.executescript(kb.SCHEMA_SQL)
+    conn.executescript(_V1_TASK_RUNS_SQL)
+    conn.execute(
+        "INSERT INTO tasks (id, title, status, created_at, current_run_id) "
+        "VALUES ('task-1', 'T', 'running', 1000, 7)"
+    )
+    conn.execute(
+        "INSERT INTO task_events (id, task_id, run_id, kind, payload, created_at) "
+        "VALUES (1, 'task-1', 7, 'claimed', NULL, 1000)"
+    )
+    conn.execute(
+        "INSERT INTO task_runs (id, task_id, profile, step_key, status, started_at) "
+        "VALUES (7, 'task-1', 'alice', 's1', 'running', 1000)"
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_agent_backfill_repairs_partially_migrated_rows(tmp_path, monkeypatch):
+    """A board whose ``agent`` column exists but was never populated (an
+    interrupted migration, a racing process) is repaired on the next open:
+    the copy is not gated on "this call added the column"."""
+    db_path = _setup_home(tmp_path, monkeypatch)
+    _make_v1_runs_db(db_path)
+
+    with kb.connect(db_path):
+        pass
+
+    # Rewind to the half-migrated state: column present, value never copied.
+    # Close the handle so the migration pass really re-runs — ``connect()``
+    # otherwise hands back the pooled connection and skips init entirely.
+    conn = kb.connect(db_path)
+    conn.execute("UPDATE task_runs SET agent = NULL")
+    conn.commit()
+    conn.close()
+    kb._INITIALIZED_PATHS.discard(str(db_path.resolve()))
+
+    with kb.connect(db_path) as conn:
+        row = conn.execute("SELECT profile, agent FROM task_runs").fetchone()
+        assert row["agent"] == "alice"
+        assert row["profile"] == "alice"
+
+
+def test_run_from_row_dual_reads_agent_and_profile(tmp_path, monkeypatch):
+    """``Run.from_row`` resolves either column: rows written before the rename
+    (profile only) and after it (agent only) both yield a populated pair."""
+    db_path = _setup_home(tmp_path, monkeypatch)
+
+    with kb.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO task_runs (task_id, profile, status, started_at) "
+            "VALUES ('t-legacy', 'old-reader', 'done', 1000)"
+        )
+        conn.execute(
+            "INSERT INTO task_runs (task_id, agent, status, started_at) "
+            "VALUES ('t-new', 'new-writer', 'done', 1001)"
+        )
+        conn.commit()
+
+        legacy = kb.latest_run(conn, "t-legacy")
+        assert legacy.agent == "old-reader" and legacy.profile == "old-reader"
+
+        new = kb.latest_run(conn, "t-new")
+        assert new.agent == "new-writer" and new.profile == "new-writer"
+
+
 def test_unseen_events_for_sub_survives_migrated_db(tmp_path, monkeypatch):
     """The crash that motivated #35096 — ``int(None)`` on a NULL cursor — is
     gone after migration; the notifier query returns an integer cursor."""

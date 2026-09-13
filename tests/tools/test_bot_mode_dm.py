@@ -164,7 +164,10 @@ def test_delivery_attribution_and_transport(tmp_path, bot_env):
     # home (P2-2), with every variable part shell-quoted.
     assert "-m tools.bot_mode_dm" in command
     assert "--turn-lock" in command
-    assert "-p alpha" in command
+    # Canonical ``-a`` flag (profile → agent rename); ``-p`` is legacy and
+    # must not be emitted by the dispatcher any more.
+    assert "-a alpha" in command
+    assert "-p alpha" not in command
     assert "--continue" in command and "'Bot Chat'" in command
     assert "--query-file" in command
     assert "status report" not in command  # body never in argv

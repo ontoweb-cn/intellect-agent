@@ -399,8 +399,8 @@ function _cronProfileTitle(profile){
 async function loadCronProfiles(){
   if (_cronProfilesCache) return _cronProfilesCache;
   try {
-    const data = await api('/api/profiles');
-    _cronProfilesCache = Array.isArray(data.profiles) ? data.profiles : [];
+    const data = await api('/api/agents');
+    _cronProfilesCache = _agentList(data);
   } catch(e) {
     _cronProfilesCache = [];
   }
@@ -1994,7 +1994,7 @@ async function createKanbanTask(){
 // #kanbanTaskModal — see the section just above </body>.
 //
 // The assignee field auto-completes against the union of (a) live Intellect
-// profile names from /api/profiles and (b) historical assignees on the
+// profile names from /api/agents and (b) historical assignees on the
 // active board, with an inline hint that explains the dispatcher claim
 // contract — most users will pick a profile name from the dropdown rather
 // than type one.
@@ -2021,7 +2021,7 @@ let _kanbanTaskModalInitialDisplayedStatus = null;
 let _kanbanBoardModalFocusCleanup = null;
 
 async function _kanbanLoadProfileNames(){
-  // Hit /api/profiles once per session and cache for a short TTL.
+  // Hit /api/agents once per session and cache for a short TTL.
   // Returns an array of profile names (sorted, default first if present).
   const hasFreshCache = (
     Array.isArray(_kanbanProfileNamesCache) &&
@@ -2029,8 +2029,8 @@ async function _kanbanLoadProfileNames(){
   );
   if (hasFreshCache) return _kanbanProfileNamesCache;
   try {
-    const data = await api('/api/profiles');
-    const profiles = Array.isArray(data && data.profiles) ? data.profiles : [];
+    const data = await api('/api/agents');
+    const profiles = _agentList(data);
     const names = profiles.map(p => p && p.name).filter(Boolean);
     // Stable order: default first, then alphabetical.
     names.sort((a, b) => {
@@ -2208,7 +2208,7 @@ function _kanbanResetTaskModalFields(values){
   set('kanbanTaskModalBody', v.body || '');
   set('kanbanTaskModalStatus', v.status || 'triage');
   // Assignee handled separately by _kanbanPopulateAssigneeSelect() because
-  // it's a <select> populated from /api/profiles + board history; setting
+  // it's a <select> populated from /api/agents + board history; setting
   // .value before the options exist would silently fail.
   set('kanbanTaskModalTenant', v.tenant || '');
   set('kanbanTaskModalPriority', v.priority != null ? v.priority : 0);
@@ -4481,7 +4481,7 @@ function _positionComposerWsDropdown(){
   dd.style.left=`${left}px`;
 }
 
-// TEMPORARY: profiles.management_enabled gate (config.yaml + api/profile/active).
+// TEMPORARY: agents.management_enabled gate (config.yaml + api/agent/active).
 // Hides Profiles nav/panel and composer chip; blocks client-side switch/create/delete.
 let _profileManagementEnabled = true;
 
@@ -5120,6 +5120,14 @@ async function switchToWorkspace(path,name){
 let _profilesCache = null;
 let _profileSwitchGeneration = 0;
 
+// The agent-list APIs return ``agents`` (canonical after the profile → agent
+// rename) alongside the legacy ``profiles`` alias. Read canonical first and
+// fall back, so a client still works against an older server.
+function _agentList(data){
+  if (Array.isArray(data && data.agents)) return data.agents;
+  return Array.isArray(data && data.profiles) ? data.profiles : [];
+}
+
 async function _profileSwitchPanelLoad(){
   if (_currentPanel === 'skills') await loadSkills();
   if (_currentPanel === 'memory') await loadMemory();
@@ -5161,8 +5169,9 @@ async function loadProfilesPanel() {
   const panel = $('profilesPanel');
   if (!panel) return;
   try {
-    const data = await api('/api/profiles');
+    const data = await api('/api/agents');
     _profilesCache = data;
+    const agents = _agentList(data);
     panel.innerHTML = '';
     const explainer = document.createElement('div');
     explainer.className = 'profile-card profile-help-card';
@@ -5175,7 +5184,7 @@ async function loadProfilesPanel() {
       </div>`;
     explainer.onclick = () => _renderProfileConceptHelp(data.active || 'default');
     panel.appendChild(explainer);
-    if (!data.profiles || !data.profiles.length) {
+    if (!agents.length) {
       const emptyMsg = document.createElement('div');
       emptyMsg.style.cssText = 'padding:16px;color:var(--muted);font-size:12px';
       emptyMsg.textContent = t('agents_no_agents');
@@ -5183,10 +5192,10 @@ async function loadProfilesPanel() {
       if (_profileMode !== 'create') _clearProfileDetail();
       return;
     }
-    const activeName = (S.activeProfile && data.profiles.some(p => p.name === S.activeProfile))
+    const activeName = (S.activeProfile && agents.some(p => p.name === S.activeProfile))
       ? S.activeProfile
       : (data.active || 'default');
-    for (const p of data.profiles) {
+    for (const p of agents) {
       const card = document.createElement('div');
       card.className = 'profile-card';
       card.dataset.name = p.name;
@@ -5213,7 +5222,7 @@ async function loadProfilesPanel() {
     }
     // Re-render detail with fresh data if we have one and we're not in a form
     if (_currentProfileDetail && _profileMode !== 'create') {
-      const refreshed = data.profiles.find(p => p.name === _currentProfileDetail.name);
+      const refreshed = agents.find(p => p.name === _currentProfileDetail.name);
       if (refreshed) _renderProfileDetail(refreshed, data.active);
       else _clearProfileDetail();
     }
@@ -5303,8 +5312,8 @@ function _setProfileHeaderButtons(mode, p, activeName){
 }
 
 function openProfileDetail(name, el){
-  if (!_profilesCache || !_profilesCache.profiles) return;
-  const p = _profilesCache.profiles.find(x => x.name === name);
+  if (!_profilesCache) return;
+  const p = _agentList(_profilesCache).find(x => x.name === name);
   if (!p) return;
   document.querySelectorAll('.profile-card').forEach(e => e.classList.remove('active'));
   const target = el || document.querySelector(`.profile-card[data-name="${CSS.escape(name)}"]`);
@@ -5340,7 +5349,7 @@ async function deleteCurrentProfile(){
   const _ok = await showConfirmDialog({title:t('agent_delete_confirm_title',name),message:t('agent_delete_confirm_message'),confirmLabel:t('delete_title'),danger:true,focusCancel:true});
   if(!_ok) return;
   try {
-    await api('/api/profile/delete', { method: 'POST', body: JSON.stringify({ name }) });
+    await api('/api/agent/delete', { method: 'POST', body: JSON.stringify({ name }) });
     _invalidateKanbanProfileCache();
     _clearProfileDetail();
     await loadProfilesPanel();
@@ -5352,7 +5361,7 @@ function renderProfileDropdown(data) {
   const dd = $('profileDropdown');
   if (!dd) return;
   dd.innerHTML = '';
-  const profiles = data.profiles || [];
+  const profiles = _agentList(data);
   const active = (S.activeProfile && profiles.some(p => p.name === S.activeProfile))
     ? S.activeProfile
     : (data.active || 'default');
@@ -5392,7 +5401,7 @@ function toggleProfileDropdown() {
   if (dd.classList.contains('open')) { closeProfileDropdown(); return; }
   closeWsDropdown(); // close workspace dropdown if open
   if(typeof closeModelDropdown==='function') closeModelDropdown();
-  api('/api/profiles').then(data => {
+  api('/api/agents').then(data => {
     renderProfileDropdown(data);
     dd.classList.add('open');
     _positionProfileDropdown();
@@ -5445,7 +5454,7 @@ async function switchToProfile(name) {
   );
 
   try {
-    const data = await api('/api/profile/switch', { method: 'POST', body: JSON.stringify({ name }) });
+    const data = await api('/api/agent/switch', { method: 'POST', body: JSON.stringify({ name }) });
     S.activeProfile = data.active || name;
 
     // Update composer placeholder and title bar while the core profile-switch
@@ -5668,7 +5677,7 @@ async function saveProfileForm(){
     }
     if (baseUrl) payload.base_url = baseUrl;
     if (apiKey) payload.api_key = apiKey;
-    await api('/api/profile/create', { method: 'POST', body: JSON.stringify(payload) });
+    await api('/api/agent/create', { method: 'POST', body: JSON.stringify(payload) });
     _invalidateKanbanProfileCache();
     _profilePreFormDetail = null;
     await loadProfilesPanel();
@@ -5693,7 +5702,7 @@ async function deleteProfile(name) {
   const _delProf=await showConfirmDialog({title:t('agent_delete_confirm_title',name),message:t('agent_delete_confirm_message'),confirmLabel:t('delete_title'),danger:true,focusCancel:true});
   if(!_delProf) return;
   try {
-    await api('/api/profile/delete', { method: 'POST', body: JSON.stringify({ name }) });
+    await api('/api/agent/delete', { method: 'POST', body: JSON.stringify({ name }) });
     _invalidateKanbanProfileCache();
     await loadProfilesPanel();
     showToast(t('agent_deleted', name));

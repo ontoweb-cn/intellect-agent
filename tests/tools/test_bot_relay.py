@@ -158,8 +158,11 @@ def test_relay_delivery_full_roundtrip(tmp_path, monkeypatch, sender_home):
 
     gets = [c for c in calls if c[0] == "GET"]
     posts = [c for c in calls if c[0] == "POST"]
-    # /p/beta prefix on every request
-    assert all("/p/beta/" in c[1] for c in gets + posts)
+    # The relay targets the peer's configured base URL verbatim. The
+    # multiplex prefix — canonical ``/a/<agent>/`` or legacy ``/p/<agent>/``
+    # — belongs in the peer's own url, never appended here.
+    assert all(c[1].startswith("https://peer.example/") for c in gets + posts)
+    assert all("/p/" not in c[1] and "/a/" not in c[1] for c in gets + posts)
     # create with the deterministic id + title
     assert any(c[1].endswith("/api/sessions")
                and c[3] == {"id": "bot_chat", "title": BOT_CHAT_SESSION_TITLE}
@@ -175,6 +178,49 @@ def test_relay_delivery_full_roundtrip(tmp_path, monkeypatch, sender_home):
     msgs = db.get_messages("bot_chat")
     assert any("Reply from 🤖 beta: peer says hi" in m["content"]
                for m in msgs)
+
+
+def test_relay_honors_canonical_agent_prefix_in_peer_url(
+    tmp_path, monkeypatch, sender_home
+):
+    """A peer behind a multiplex front carries the canonical ``/a/<agent>/``
+    prefix in its own url; the relay must pass it through verbatim (and the
+    legacy ``/p/<agent>/`` spelling must work the same way)."""
+    from tools.bot_relay import relay_delivery
+
+    for prefix in ("/a/beta", "/p/beta"):
+        calls = []
+
+        class _Client:
+            def __init__(self, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def get(self, url, headers=None):
+                calls.append(url)
+                return _Resp(404, {})  # session absent → create
+
+            def post(self, url, json=None, headers=None):
+                calls.append(url)
+                if url.endswith("/api/sessions"):
+                    return _Resp(201, {"object": "intellect.session"})
+                return _Resp(200, {"message": {"role": "assistant",
+                                               "content": "peer says hi"}})
+
+        monkeypatch.setattr(httpx, "Client", _Client)
+        peer = dict(PEER, url=f"https://peer.example{prefix}")
+
+        out = relay_delivery("beta", peer, "alpha", "status report",
+                             sender_home, timeout=30)
+        assert out["delivered"] is True, prefix
+        assert all(c.startswith(f"https://peer.example{prefix}/") for c in calls)
+        # The prefix is neither stripped nor duplicated.
+        assert all(c.count(prefix + "/") == 1 for c in calls)
 
 
 def test_relay_unreachable_writes_visible_error(

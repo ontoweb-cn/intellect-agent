@@ -94,7 +94,9 @@ def test_bot_mode_dm_transport_and_roster(tmp_path, monkeypatch):
     home_root = Path("/tmp") / f"intellect-bt-{os.getpid()}-{uuid.uuid4().hex[:6]}"
     shutil.rmtree(home_root, ignore_errors=True)
     root_home = home_root / ".intellect"
-    alpha_home = root_home / "profiles" / "alpha"
+    # Canonical agent home (``agents/``); the legacy ``profiles/`` tree is
+    # still dual-read but new fixtures should prefer the canonical path.
+    alpha_home = root_home / "agents" / "alpha"
     alpha_home.mkdir(parents=True)
 
     monkeypatch.setenv("INTELLECT_HOME", str(root_home))

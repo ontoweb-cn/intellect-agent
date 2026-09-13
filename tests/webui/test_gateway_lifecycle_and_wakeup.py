@@ -182,6 +182,41 @@ def test_gateway_lifecycle_paths_not_csrf_exempt():
         assert not _csrf_exempt_path(path)
 
 
+def test_profile_args_passes_canonical_agent_flag(monkeypatch):
+    """Gateway lifecycle dispatches ``--agent`` (canonical), not ``--profile``."""
+    import api.gateway_lifecycle as gl
+    import api.profiles as profiles_api
+
+    monkeypatch.setattr(profiles_api, "get_active_profile_name", lambda: "coder")
+    assert gl._profile_args() == ["--agent", "coder"]
+
+
+def test_profile_args_recognizes_agents_and_legacy_profiles_parent(monkeypatch, tmp_path):
+    """Both ``agents/`` (canonical) and ``profiles/`` (legacy) parent dirs
+    yield the instance name — the canonical tree must not be missed."""
+    import api.gateway_lifecycle as gl
+    import api.profiles as profiles_api
+
+    # Force the sticky-name branch to fall through to the parent-dir probe.
+    monkeypatch.setattr(profiles_api, "get_active_profile_name", lambda: "default")
+
+    for dirname in ("agents", "profiles"):
+        home = tmp_path / ".intellect" / dirname / "coder"
+        home.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(gl, "_active_home", lambda h=home: h)
+        assert gl._profile_args() == ["--agent", "coder"], dirname
+
+
+def test_profile_args_empty_at_root_home(monkeypatch, tmp_path):
+    """The built-in root home has no named instance to pass."""
+    import api.gateway_lifecycle as gl
+    import api.profiles as profiles_api
+
+    monkeypatch.setattr(profiles_api, "get_active_profile_name", lambda: "default")
+    monkeypatch.setattr(gl, "_active_home", lambda: tmp_path / ".intellect")
+    assert gl._profile_args() == []
+
+
 def test_l3_stale_active_prefers_fresh_root(monkeypatch, tmp_path):
     """Active home has stale runtime; root has fresh → probe_scope root_fallback."""
     import importlib

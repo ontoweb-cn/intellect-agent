@@ -1503,6 +1503,8 @@ def _cmd_show(args: argparse.Namespace) -> int:
             "runs": [
                 {
                     "id": r.id,
+                    # Canonical ``agent`` first; legacy ``profile`` kept.
+                    "agent": r.agent or r.profile,
                     "profile": r.profile,
                     "step_key": r.step_key,
                     "status": r.status,
@@ -1620,7 +1622,7 @@ def _cmd_show(args: argparse.Namespace) -> int:
                        if r.ended_at else None)
             el = f"{elapsed}s" if elapsed is not None else "active"
             outcome = r.outcome or r.status or "active"
-            print(f"  #{r.id:<3} {outcome:<12} @{r.profile or '-'}  {el}  "
+            print(f"  #{r.id:<3} {outcome:<12} @{r.agent or r.profile or '-'}  {el}  "
                   f"{_fmt_ts(r.started_at)}")
             if r.summary:
                 print(f"        → {r.summary.splitlines()[0][:160]}")
@@ -2504,7 +2506,8 @@ def _cmd_runs(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         print(json.dumps([
             {
-                "id": r.id, "profile": r.profile, "status": r.status,
+                "id": r.id, "agent": r.agent or r.profile,
+                "profile": r.profile, "status": r.status,
                 "outcome": r.outcome, "started_at": r.started_at,
                 "ended_at": r.ended_at, "summary": r.summary,
                 "error": r.error, "metadata": r.metadata,
@@ -2515,7 +2518,7 @@ def _cmd_runs(args: argparse.Namespace) -> int:
     if not runs:
         print(f"(no runs yet for {args.task_id})")
         return 0
-    print(f"{'#':3s}  {'OUTCOME':12s}  {'PROFILE':16s}  {'ELAPSED':>8s}  STARTED")
+    print(f"{'#':3s}  {'OUTCOME':12s}  {'AGENT':16s}  {'ELAPSED':>8s}  STARTED")
     for i, r in enumerate(runs, 1):
         end = r.ended_at or int(time.time())
         # Clamp to 0 so NTP backward-jumps don't print negative durations.
@@ -2527,7 +2530,7 @@ def _cmd_runs(args: argparse.Namespace) -> int:
         else:
             el = f"{elapsed / 3600:.1f}h"
         outcome = r.outcome or ("(running)" if not r.ended_at else r.status)
-        print(f"{i:3d}  {outcome:12s}  {(r.profile or '-'):16s}  {el:>8s}  {_fmt_ts(r.started_at)}")
+        print(f"{i:3d}  {outcome:12s}  {(r.agent or r.profile or '-'):16s}  {el:>8s}  {_fmt_ts(r.started_at)}")
         if r.summary:
             # Indent and truncate long summaries to keep the table readable.
             summary = r.summary.splitlines()[0][:100]

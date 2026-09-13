@@ -83,19 +83,25 @@ def _active_home() -> Path:
 
 
 def _profile_args() -> list[str]:
-    """Pass ``--profile`` for the request-scoped active profile when named."""
+    """Pass ``--agent`` for the request-scoped active agent when named.
+
+    Canonical flag is ``--agent``; ``--profile`` remains accepted by the CLI
+    for older callers. The instance name is derived from the sticky active
+    agent, falling back to the ``agents/`` (canonical) or legacy
+    ``profiles/`` parent directory of the active home.
+    """
     try:
         from api.profiles import get_active_profile_name
 
         name = str(get_active_profile_name() or "").strip()
         if name and name != "default":
-            return ["--profile", name]
+            return ["--agent", name]
     except Exception:
         pass
     home = _active_home()
     try:
-        if home.parent.name == "profiles":
-            return ["--profile", home.name]
+        if home.parent.name in {"agents", "profiles"}:
+            return ["--agent", home.name]
     except Exception:
         pass
     return []

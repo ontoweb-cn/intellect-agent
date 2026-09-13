@@ -291,11 +291,11 @@ def is_profile_management_enabled() -> bool:
 
 
 def _require_profile_management_enabled() -> None:
-    """Raise ValueError when create/switch/delete profiles is temporarily disabled."""
+    """Raise ValueError when create/switch/delete agents is temporarily disabled."""
     if not is_profile_management_enabled():
         raise ValueError(
-            "Profile management is temporarily disabled "
-            "(set profiles.management_enabled: true in config.yaml to re-enable)."
+            "Agent management is temporarily disabled "
+            "(set agents.management_enabled: true in config.yaml to re-enable)."
         )
 
 
@@ -912,7 +912,8 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
             _active_profile.  Set to False for per-client switches from the
             WebUI where the profile is managed via cookie + thread-local (#798).
 
-    Returns: {'profiles': [...], 'active': name}
+    Returns: {'agents': [...], 'profiles': [...], 'active': name}
+        (``profiles`` is the legacy alias of ``agents``)
     Raises ValueError if profile doesn't exist or agent is busy.
     """
     # TEMPORARY: WebUI/CLI profile switching disabled via profiles.management_enabled.
@@ -932,7 +933,7 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
         with STREAMS_LOCK:
             if len(STREAMS) > 0:
                 raise RuntimeError(
-                    'Cannot switch profiles while an agent is running. '
+                    'Cannot switch agents while an agent is running. '
                     'Cancel or wait for it to finish.'
                 )
 
@@ -942,7 +943,7 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
     else:
         home = _resolve_named_profile_home(name)
         if not home.is_dir():
-            raise ValueError(f"Profile '{name}' does not exist.")
+            raise ValueError(f"Agent '{name}' does not exist.")
 
     with _profile_lock:
         if process_wide:
@@ -1042,8 +1043,14 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
         except Exception:
             default_workspace = str(Path.home())
 
+    # ``agents`` is canonical after the profile → agent rename; ``profiles`` is
+    # retained as an alias so existing clients keep working (strategy A). Both
+    # keys carry the same list, matching GET /api/agents and POST
+    # /api/agent/create.
+    agents_payload = list_profiles_api()
     return {
-        'profiles': list_profiles_api(),
+        'agents': agents_payload,
+        'profiles': agents_payload,
         'active': name,
         'default_model': default_model,
         'default_model_provider': default_model_provider,
@@ -1093,13 +1100,13 @@ def _default_profile_dict() -> dict:
 
 
 def _validate_profile_name(name: str):
-    """Validate profile name format (matches intellect_cli.profiles upstream)."""
+    """Validate agent name format (matches intellect_cli.agents_home upstream)."""
     if name == 'default':
-        raise ValueError("Cannot create a profile named 'default' -- it is the built-in profile.")
+        raise ValueError("Cannot create an agent named 'default' -- it is the built-in agent.")
     # Use fullmatch (not match) so a trailing newline can't sneak past the $ anchor
     if not _PROFILE_ID_RE.fullmatch(name):
         raise ValueError(
-            f"Invalid profile name {name!r}. "
+            f"Invalid agent name {name!r}. "
             "Must match [a-z0-9][a-z0-9_-]{0,63}"
         )
 
@@ -1143,7 +1150,7 @@ def _create_profile_fallback(name: str, clone_from: str = None,
     """Create an agent directory without intellect_cli (Docker/standalone fallback)."""
     profile_dir = _DEFAULT_INTELLECT_HOME / 'agents' / name
     if profile_dir.exists():
-        raise FileExistsError(f"Profile '{name}' already exists.")
+        raise FileExistsError(f"Agent '{name}' already exists.")
 
     # Bootstrap directory structure (exist_ok=False so a concurrent create raises)
     profile_dir.mkdir(parents=True, exist_ok=False)
@@ -1428,11 +1435,11 @@ def create_profile_api(name: str, clone_from: str = None,
 
 
 def delete_profile_api(name: str) -> dict:
-    """Delete a profile. Switches to default first if it's the active one."""
-    # TEMPORARY: profile deletion disabled via profiles.management_enabled.
+    """Delete an agent. Switches to default first if it's the active one."""
+    # TEMPORARY: agent deletion disabled via agents.management_enabled.
     _require_profile_management_enabled()
     if _is_root_profile(name):
-        raise ValueError("Cannot delete the default profile.")
+        raise ValueError("Cannot delete the default agent.")
     _validate_profile_name(name)
 
     # If deleting the active profile, switch to default first
@@ -1441,7 +1448,7 @@ def delete_profile_api(name: str) -> dict:
             switch_profile('default')
         except RuntimeError:
             raise RuntimeError(
-                f"Cannot delete active profile '{name}' while an agent is running. "
+                f"Cannot delete active agent '{name}' while an agent is running. "
                 "Cancel or wait for it to finish."
             )
 
@@ -1455,7 +1462,7 @@ def delete_profile_api(name: str) -> dict:
         if profile_dir.is_dir():
             shutil.rmtree(str(profile_dir))
         else:
-            raise ValueError(f"Profile '{name}' does not exist.")
+            raise ValueError(f"Agent '{name}' does not exist.")
 
     # Drop cached root-profile-name lookup — list_profiles_api() shape changed.
     _invalidate_root_profile_cache()

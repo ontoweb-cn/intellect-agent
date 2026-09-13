@@ -4,7 +4,7 @@
 Transport (B2-1): a DM to profile X is delivered by (1) ensuring X's
 "Bot Chat" session exists — deterministic id ``bot_chat`` in X's own
 state.db, titled ``Bot Chat`` (Hermes ``-c "Bot Chat" --create-if-missing``
-equivalent) — and (2) spawning ``intellect -p X chat -Q --continue
+equivalent) — and (2) spawning ``intellect -a X chat -Q --continue
 "Bot Chat" --query-file <tmp>`` as a background process
 (``notify_on_complete``), so the reply lands in the sender's next turn.
 The message body NEVER enters shell arguments: it is written to a 0o600
@@ -370,7 +370,7 @@ def handle_message_agent_call(agent, function_args) -> str:
     command = (
         f"{_shlex.quote(_sys.executable)} -m tools.bot_mode_dm "
         f"--turn-lock {_shlex.quote(str(turn_lock))} -- "
-        f"-p {target} chat -Q "
+        f"-a {_shlex.quote(target)} chat -Q "
         f"--continue {_shlex.quote(BOT_CHAT_SESSION_TITLE)} "
         f"--query-file {_shlex.quote(str(query_file))}"
     )

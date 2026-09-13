@@ -378,7 +378,8 @@ def _handle_show(args: dict, **kw) -> str:
 
             def _run_dict(r):
                 return {
-                    "id": r.id, "profile": r.profile,
+                    "id": r.id, "agent": r.agent or r.profile,
+                    "profile": r.profile,
                     "status": r.status, "outcome": r.outcome,
                     "summary": r.summary, "error": r.error,
                     "metadata": r.metadata,

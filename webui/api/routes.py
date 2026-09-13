@@ -6778,16 +6778,19 @@ def handle_get(handler, parsed) -> bool:
     if parsed.path == "/api/memory":
         return _handle_memory_read(handler)
 
-    # ── Profile API (GET) ──
-    if parsed.path == "/api/profiles":
+    # ── Agent API (GET) ──
+    # Canonical paths are ``/api/agents`` + ``/api/agent/*``; the legacy
+    # ``/api/profiles`` + ``/api/profile/*`` spellings remain mounted as
+    # aliases for existing clients (profile → agent rename).
+    if parsed.path in ("/api/agents", "/api/profiles"):
         from api.profiles import (
             get_active_profile_name,
             is_profile_management_enabled,
             list_profiles_api,
         )
 
-        # TEMPORARY: hide profile list from UI while management is disabled.
-        profiles_payload = (
+        # TEMPORARY: hide agent list from UI while management is disabled.
+        agents_payload = (
             list_profiles_api()
             if is_profile_management_enabled()
             else []
@@ -6795,13 +6798,15 @@ def handle_get(handler, parsed) -> bool:
         return j(
             handler,
             {
-                "profiles": profiles_payload,
+                # ``agents`` is canonical; ``profiles`` retained as alias.
+                "agents": agents_payload,
+                "profiles": agents_payload,
                 "active": get_active_profile_name(),
                 "management_enabled": is_profile_management_enabled(),
             },
         )
 
-    if parsed.path == "/api/profile/active":
+    if parsed.path in ("/api/agent/active", "/api/profile/active"):
         from api.profiles import (
             get_active_profile_name,
             get_active_intellect_home,
@@ -8054,15 +8059,15 @@ def handle_post(handler, parsed) -> bool:
     if parsed.path == "/api/code/execute":
         return _handle_code_execute(handler, body)
 
-    # ── Profile API (POST) ──
-    if parsed.path == "/api/profile/switch":
-        # TEMPORARY: profile switching disabled (profiles.management_enabled).
+    # ── Agent API (POST) ──
+    if parsed.path in ("/api/agent/switch", "/api/profile/switch"):
+        # TEMPORARY: agent switching disabled (agents.management_enabled).
         from api.profiles import is_profile_management_enabled
 
         if not is_profile_management_enabled():
             return bad(
                 handler,
-                "Profile management is temporarily disabled",
+                "Agent management is temporarily disabled",
                 status=403,
             )
         name = body.get("name", "").strip()
@@ -8089,14 +8094,14 @@ def handle_post(handler, parsed) -> bool:
         except RuntimeError as e:
             return bad(handler, str(e), 409)
 
-    if parsed.path == "/api/profile/create":
-        # TEMPORARY: profile creation disabled (profiles.management_enabled).
+    if parsed.path in ("/api/agent/create", "/api/profile/create"):
+        # TEMPORARY: agent creation disabled (agents.management_enabled).
         from api.profiles import is_profile_management_enabled
 
         if not is_profile_management_enabled():
             return bad(
                 handler,
-                "Profile management is temporarily disabled",
+                "Agent management is temporarily disabled",
                 status=403,
             )
         name = body.get("name", "").strip()
@@ -8107,7 +8112,7 @@ def handle_post(handler, parsed) -> bool:
         if not _re.match(r"^[a-z0-9][a-z0-9_-]{0,63}$", name):
             return bad(
                 handler,
-                "Invalid profile name: lowercase letters, numbers, hyphens, underscores only",
+                "Invalid agent name: lowercase letters, numbers, hyphens, underscores only",
             )
         clone_from = body.get("clone_from")
         if clone_from is not None:
@@ -8132,18 +8137,19 @@ def handle_post(handler, parsed) -> bool:
                 default_model=default_model,
                 model_provider=model_provider,
             )
-            return j(handler, {"ok": True, "profile": result})
+            # ``agent`` is canonical; ``profile`` retained as alias.
+            return j(handler, {"ok": True, "agent": result, "profile": result})
         except (ValueError, FileExistsError, RuntimeError) as e:
             return bad(handler, str(e))
 
-    if parsed.path == "/api/profile/delete":
-        # TEMPORARY: profile deletion disabled (profiles.management_enabled).
+    if parsed.path in ("/api/agent/delete", "/api/profile/delete"):
+        # TEMPORARY: agent deletion disabled (agents.management_enabled).
         from api.profiles import is_profile_management_enabled
 
         if not is_profile_management_enabled():
             return bad(
                 handler,
-                "Profile management is temporarily disabled",
+                "Agent management is temporarily disabled",
                 status=403,
             )
         name = body.get("name", "").strip()

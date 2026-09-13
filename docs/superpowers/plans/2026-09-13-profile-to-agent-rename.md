@@ -6,7 +6,9 @@
 **Architecture:** Canonical on-disk `agents/`, sticky `active_agent`, CLI `intellect agent`, flags `--agent`/`-a`, config `agents.*`, HTTP `/a/`. Legacy `profiles/`, `active_profile`, `intellect profile`, `--profile`/`-p`, `/p/` remain accepted.  
 **Tech Stack:** Python CLI (`intellect_cli`), gateway multiplex, WebUI APIs, pytest via `scripts/run_tests.sh`.  
 **Branch:** `rename/profile-to-agent`  
-**Status:** Tasks 1–7 core complete; optional polish listed under Task 6/7.
+**Status:** Tasks 1–8 complete. Strategy A: canonical names are written; legacy
+paths/columns/keys stay readable long-term (no DB column drop, no unmounting of
+old APIs).
 
 ---
 
@@ -75,15 +77,59 @@
 
 **Optional later:**
 - [x] Document intentional legacy `profiles/` fixtures (`tests/LEGACY_AGENT_HOME_FIXTURES.md`)
-- [ ] Broader bot_mode / gateway e2e path audit (optional)
-
-**Status:** Core B rename is functionally complete; leftover items are polish / optional.
+- [x] Broader bot_mode / gateway e2e path audit — covered by Task 8
 
 ### Out of scope (design follow-ups — do not block B)
 
-- Kanban DB column rename `profile` → `agent`
-- Renaming WebUI REST `/api/profiles` paths
+- DROP-ing the legacy `profile` column (deliberately kept; dual-read forever)
 - `ProviderProfile` / `user_profile` / `.hindsight/profiles/`
+
+---
+
+### Task 8: Kanban DB column + WebUI REST + bot_mode/gateway dispatch — DONE
+
+Compatibility strategy **A**: canonical names are what new code writes; legacy
+names stay readable long-term and the legacy DB column is never dropped.
+
+**Kanban `task_runs.profile` → `agent`** (`intellect_cli/kanban_db.py`)
+
+- [x] `SCHEMA_SQL` `task_runs` gains `agent TEXT` (and `_REBUILD_SPECS` stays in sync — `test_rebuilt_schema_matches_fresh` guards this)
+- [x] `_migrate_add_optional_columns`: ADD `agent` + one-shot `UPDATE … SET agent = profile`; only copies when the column was just added, so an existing `agent` is never clobbered
+- [x] All four INSERT sites (backfill, `_synthesize_ended_run`, `claim_task`, `claim_review_task`) write **both** columns
+- [x] `Run` dataclass + `Run.from_row` dual-read either column
+- [x] `build_worker_context` reads `run.agent or run.profile`; role-history SQL uses `COALESCE(r.agent, r.profile) = ?`
+- [x] Consumers emit both keys: `intellect_cli/kanban.py` (`show`/`runs` JSON + text), `tools/kanban_tools.py`; `webui/api/kanban_bridge.py` picks up `agent` via `asdict`
+- [x] Tests: backfill, no-clobber, `from_row` dual-read, dual-write on claim
+
+**WebUI REST** (`webui/api/routes.py`) — canonical `/api/agents` + `/api/agent/*`
+
+- [x] GET `/api/agents` (aliases `/api/profiles`), payload emits `agents` + `profiles`
+- [x] GET `/api/agent/active` (aliases `/api/profile/active`)
+- [x] POST `/api/agent/{switch,create,delete}` (alias `/api/profile/*`); create returns `agent` + `profile`
+- [x] User-visible strings say “agent” (both spellings routed; CSRF gate unchanged)
+- [x] Tests: `tests/webui/test_agents_api_alias.py`
+
+**bot_mode / gateway dispatch**
+
+- [x] `tools/bot_mode_dm.py` spawns `-a <target>` (canonical) instead of `-p`
+- [x] `webui/api/gateway_lifecycle.py` passes `--agent` and recognises the `agents/` parent dir (was `profiles/`-only)
+- [x] `tests/gateway/test_bot_mode_e2e.py` fixture uses `agents/`
+- [x] `/a/` e2e coverage: `tests/gateway/test_multiplex_front.py` (parse + HTTP + 404) and `tests/gateway/test_multiplex_e2e.py` (real supervisor, key isolation both prefixes)
+- [x] `tests/tools/test_bot_relay.py`: stale `/p/`-prefix assertion corrected (relay targets the peer URL verbatim) + canonical `/a/` prefix pass-through test
+
+**Verification**
+
+```bash
+scripts/run_tests.sh tests/intellect_cli/test_kanban_db_init.py \
+  tests/intellect_cli/test_kanban_core_functionality.py \
+  tests/gateway/test_multiplex_front.py tests/gateway/test_multiplex_e2e.py \
+  tests/gateway/test_bot_mode_e2e.py tests/webui/test_agents_api_alias.py \
+  tests/webui/test_gateway_lifecycle_and_wakeup.py tests/tools/test_bot_relay.py
+
+# Opt-in real-process e2e (runner blanks env):
+INTELLECT_BOT_MODE_E2E=1 ./venv/bin/python -m pytest tests/gateway/test_bot_mode_e2e.py -q
+INTELLECT_MULTIPLEX_E2E=1 ./venv/bin/python -m pytest tests/gateway/test_multiplex_e2e.py -q
+```
 
 ### Verification gate (before calling B complete)
 
@@ -95,3 +141,70 @@ scripts/run_tests.sh \
   tests/intellect_cli/test_agents_home_migration.py \
   tests/intellect_cli/test_completion.py
 ```
+
+---
+
+### Post-review reconciliation (strategy A)
+
+A code review of Task 8 raised ten findings. Disposition, so the judgment calls
+are not re-litigated:
+
+**Fixed**
+
+- `switch_profile` returned only ``profiles``, so ``POST /api/agent/switch`` was
+  the one canonical endpoint with no canonical key while GET/create emitted
+  both — a migrated client got ``undefined`` from ``data.agents`` on a
+  *successful* switch. Now returns ``agents`` + ``profiles``.
+- The ``agent`` backfill is no longer gated on "this call added the column":
+  the ``ALTER`` commits on its own, so a crash between ADD and UPDATE (or a row
+  written by an older binary afterwards) left ``agent IS NULL`` forever. Now a
+  NULL-guarded repair behind a read-only probe.
+- ``tools/bot_mode_dm.py`` interpolated the model-supplied ``target`` into a
+  shell line unquoted while every sibling argument used ``_shlex.quote``.
+- The WebUI **client** still called the legacy routes: 9 fetch sites in
+  ``panels.js``/``boot.js`` moved to ``/api/agents`` + ``/api/agent/*``, with
+  reads via ``_agentList()`` (canonical key, legacy fallback). The canonical
+  surface now has real callers, not just mounted aliases.
+- ``tests/webui/test_agents_api_alias.py`` gained a **real-dispatch** test
+  (real serializer, real ``j``, JSON body parsed) plus switch coverage. The
+  rest of that module mocks ``j``, which is why it asserted ``is True``: the
+  real ``j`` returns ``None`` and the server's contract is ``False → 404``.
+
+**Rejected**
+
+- **A canonical error vocabulary on the multiplex wire.** A change was drafted
+  that mirrored ``ERROR_UNREADY``-style codes by string surgery
+  (``unknown_profile`` → ``unknown_agent``) and emitted ``agent``/``agent_code``
+  beside ``profile``/``code``. Reverted: it invents wire vocabulary no consumer
+  asked for, and the mapping is synthesized rather than derived from a client.
+  ``_error_response`` keeps ``code``/``profile`` only. ``/multiplex/status``
+  keeps its ``agents``/``profiles`` dual key — that one is a renamed *field*,
+  not an invented name.
+- **Reconciling ``task_runs`` physical column order.** On an upgraded board
+  ``agent`` is last (``ALTER`` appends) while a fresh board has it 4th. Every
+  in-tree reader is name-based, so the divergence is invisible; normalizing it
+  means rewriting the table on upgrade for a hypothetical positional reader.
+  Accepted and documented at the migration site instead: read ``task_runs`` by
+  name, never by ``SELECT *`` ordinal.
+
+**Latent, left alone** — two independent ``Run`` fields can disagree only for an
+out-of-tree writer; ``Run``'s ``agent`` field sits mid-dataclass so positional
+construction shifts (no in-tree callers); the dual JSON keys double-encode each
+payload, which is the deliberate cost of strategy A.
+
+---
+
+### Known remaining legacy naming (deliberately NOT in Task 8)
+
+Scoped out of this round; each is its own follow-up.
+
+- **Kanban CLI assignment vocabulary.** `intellect kanban assign <profile>`,
+  `--assignee`/`--new-assignee` help strings (`intellect_cli/kanban.py:440,
+  455, 460, 662, 690, 721`), and the swarm spec field `workers[].profile`
+  (`intellect_cli/kanban_swarm.py:108,164`). These describe
+  ``tasks.assignee`` — the *assignment target* — which Task 8 intentionally
+  left alone (`tasks` has no ``profile`` column; only ``task_runs`` did).
+- **Dropping the legacy `task_runs.profile` column.** Strategy A keeps it
+  forever; there is no scheduled removal.
+- `ProviderProfile`, WebUI `user_profile`, `.hindsight/profiles/` — unrelated
+  namespaces, never in scope.

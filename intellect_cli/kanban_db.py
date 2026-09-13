@@ -850,6 +850,7 @@ class Run:
     id: int
     task_id: str
     profile: Optional[str]
+    agent: Optional[str]
     step_key: Optional[str]
     status: str
     claim_lock: Optional[str]
@@ -870,10 +871,22 @@ class Run:
             meta = json.loads(row["metadata"]) if row["metadata"] else None
         except Exception:
             meta = None
+        # Dual-read during the profile → agent rename: prefer the canonical
+        # ``agent`` column, fall back to legacy ``profile`` for rows written
+        # before the additive migration or by an older binary. Rows written
+        # since the rename carry both, so either name resolves.
+        keys = row.keys()
+        profile = row["profile"] if "profile" in keys else None
+        agent = row["agent"] if "agent" in keys else None
+        if not agent:
+            agent = profile
+        if not profile:
+            profile = agent
         return cls(
             id=int(row["id"]),
             task_id=row["task_id"],
-            profile=row["profile"],
+            profile=profile,
+            agent=agent,
             step_key=row["step_key"],
             status=row["status"],
             claim_lock=row["claim_lock"],
@@ -1033,6 +1046,10 @@ CREATE TABLE IF NOT EXISTS task_runs (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id             TEXT NOT NULL,
     profile             TEXT,
+    -- agent: canonical name for the row's isolation unit (profile → agent
+    -- rename). ``profile`` is retained as the legacy column and is kept in
+    -- sync on write; read ``COALESCE(agent, profile)`` for old rows.
+    agent               TEXT,
     step_key            TEXT,
     status              TEXT NOT NULL,
     -- status: running | done | blocked | crashed | timed_out | failed | released
@@ -1733,6 +1750,51 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
         "ON task_events(run_id, id)"
     )
 
+    # task_runs.profile → agent (profile → agent rename). ADD + copy, never
+    # DROP: ``profile`` remains writable and is kept in sync by every INSERT,
+    # so both columns stay readable for legacy consumers. ADD-first-then-copy
+    # (same rationale as ``spawn_failures`` → ``consecutive_failures`` above)
+    # tolerates DBs that predate the legacy column entirely.
+    runs_table_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='task_runs'"
+    ).fetchone() is not None
+    if runs_table_exists:
+        run_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(task_runs)")
+        }
+        if "agent" not in run_cols:
+            _add_column_if_missing(conn, "task_runs", "agent", "agent TEXT")
+        if "profile" in run_cols:
+            # Not gated on "this call added the column": gating it left every
+            # row NULL forever on a board whose ``agent`` column already
+            # existed but was never populated (interrupted migration, a
+            # racing second process, a partial manual ALTER), which
+            # contradicts the documented promise that legacy rows are
+            # back-filled from ``profile`` once.
+            #
+            # ``WHERE agent IS NULL``: the legacy ``profile`` column must
+            # never overwrite a canonical ``agent`` value written by a
+            # newer binary — the two columns legitimately diverge, and a
+            # rolling upgrade stops writing the legacy one first. The probe
+            # keeps the steady-state cost to one LIMIT-1 scan per process.
+            #
+            # Column *order* is deliberately not reconciled: on an upgraded
+            # board ``agent`` is physically last (ALTER appends) while a fresh
+            # board has it 4th, per ``_REBUILD_SPECS``. Every in-tree reader is
+            # name-based, so the divergence is invisible today; rewriting the
+            # table to normalize ordinals would be a destructive migration
+            # bought against a hypothetical positional reader. Read task_runs
+            # by name, never by ``SELECT *`` ordinal.
+            pending = conn.execute(
+                "SELECT 1 FROM task_runs "
+                "WHERE agent IS NULL AND profile IS NOT NULL LIMIT 1"
+            ).fetchone()
+            if pending is not None:
+                conn.execute(
+                    "UPDATE task_runs SET agent = profile "
+                    "WHERE agent IS NULL AND profile IS NOT NULL"
+                )
+
     notify_table_exists = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='kanban_notify_subs'"
     ).fetchone() is not None
@@ -1768,14 +1830,14 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
                 cur = conn.execute(
                     """
                     INSERT INTO task_runs (
-                        task_id, profile, status,
+                        task_id, profile, agent, status,
                         claim_lock, claim_expires, worker_pid,
                         max_runtime_seconds, last_heartbeat_at,
                         started_at
-                    ) VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        row["id"], row["assignee"], row["claim_lock"],
+                        row["id"], row["assignee"], row["assignee"], row["claim_lock"],
                         row["claim_expires"], row["worker_pid"],
                         row["max_runtime_seconds"], row["last_heartbeat_at"],
                         started,
@@ -1852,7 +1914,7 @@ _REBUILD_SPECS = {
     "task_runs": (
         "CREATE TABLE task_runs ("
         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        " task_id TEXT NOT NULL, profile TEXT, step_key TEXT,"
+        " task_id TEXT NOT NULL, profile TEXT, agent TEXT, step_key TEXT,"
         " status TEXT NOT NULL, claim_lock TEXT, claim_expires INTEGER,"
         " worker_pid INTEGER, max_runtime_seconds INTEGER,"
         " last_heartbeat_at INTEGER, started_at INTEGER NOT NULL,"
@@ -2861,14 +2923,14 @@ def _synthesize_ended_run(
     cur = conn.execute(
         """
         INSERT INTO task_runs (
-            task_id, profile, step_key,
+            task_id, profile, agent, step_key,
             status, outcome,
             summary, error, metadata,
             started_at, ended_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            task_id, profile, step_key,
+            task_id, profile, profile, step_key,
             outcome, outcome,
             summary, error,
             json.dumps(metadata, ensure_ascii=False) if metadata else None,
@@ -3097,13 +3159,14 @@ def claim_task(
         run_cur = conn.execute(
             """
             INSERT INTO task_runs (
-                task_id, profile, step_key, status,
+                task_id, profile, agent, step_key, status,
                 claim_lock, claim_expires, max_runtime_seconds,
                 started_at
-            ) VALUES (?, ?, ?, 'running', ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?)
             """,
             (
                 task_id,
+                trow["assignee"] if trow else None,
                 trow["assignee"] if trow else None,
                 trow["current_step_key"] if trow else None,
                 lock,
@@ -3171,13 +3234,14 @@ def claim_review_task(
         run_cur = conn.execute(
             """
             INSERT INTO task_runs (
-                task_id, profile, step_key, status,
+                task_id, profile, agent, step_key, status,
                 claim_lock, claim_expires, max_runtime_seconds,
                 started_at
-            ) VALUES (?, ?, ?, 'running', ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?)
             """,
             (
                 task_id,
+                trow["assignee"] if trow else None,
                 trow["assignee"] if trow else None,
                 trow["current_step_key"] if trow else None,
                 lock,
@@ -6846,7 +6910,8 @@ def build_worker_context(conn: sqlite3.Connection, task_id: str) -> str:
         for offset, run in enumerate(shown):
             idx = first_shown_idx + offset
             ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(run.started_at))
-            profile = run.profile or "(unknown)"
+            # Dual-read: rows written before the rename carry only ``profile``.
+            profile = run.agent or run.profile or "(unknown)"
             outcome = run.outcome or run.status
             lines.append(f"### Attempt {idx} — {outcome} ({profile}, {ts})")
             if run.summary and run.summary.strip():
@@ -6912,7 +6977,9 @@ def build_worker_context(conn: sqlite3.Connection, task_id: str) -> str:
         role_rows = conn.execute(
             "SELECT t.id, t.title, r.summary, r.ended_at "
             "FROM task_runs r JOIN tasks t ON r.task_id = t.id "
-            "WHERE r.profile = ? AND r.task_id != ? "
+            # COALESCE dual-read: an older binary can still write ``profile``
+            # without ``agent`` after the additive migration has run.
+            "WHERE COALESCE(r.agent, r.profile) = ? AND r.task_id != ? "
             "  AND r.outcome = 'completed' "
             "ORDER BY r.ended_at DESC LIMIT 5",
             (task.assignee, task_id),

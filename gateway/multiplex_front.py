@@ -308,9 +308,9 @@ class MultiplexFront:
         return app
 
     async def _handle_status(self, request: web.Request) -> web.Response:
-        profiles = []
+        agents = []
         for child in self._sup.children.values():
-            profiles.append(
+            agents.append(
                 {
                     "name": child.name,
                     "pid": child.proc.pid if child.proc is not None else None,
@@ -331,7 +331,10 @@ class MultiplexFront:
                 "front_end": {
                     kind: f"{host}:{port}" for kind, (host, port) in self.bound.items()
                 },
-                "profiles": profiles,
+                # ``agents`` is canonical; ``profiles`` retained as alias for
+                # consumers built before the profile → agent rename.
+                "agents": agents,
+                "profiles": agents,
             }
         )
 

@@ -1415,10 +1415,31 @@ def test_run_created_on_claim(kanban_home):
         r = runs[0]
         assert r.id == task.current_run_id
         assert r.profile == "worker"
+        assert r.agent == "worker"
         assert r.status == "running"
         assert r.outcome is None
         assert r.ended_at is None
         assert r.claim_lock is not None and r.claim_expires is not None
+    finally:
+        conn.close()
+
+
+def test_run_writes_both_agent_and_profile_columns(kanban_home):
+    """profile → agent rename: a claim writes BOTH columns.
+
+    ``agent`` is canonical but ``profile`` is retained (and kept in sync) so
+    readers built against the old column keep working during the transition.
+    """
+    conn = kb.connect()
+    try:
+        tid = kb.create_task(conn, title="x", assignee="worker")
+        assert kb.claim_task(conn, tid) is not None
+
+        row = conn.execute(
+            "SELECT profile, agent FROM task_runs WHERE task_id = ?", (tid,)
+        ).fetchone()
+        assert row["agent"] == "worker"
+        assert row["profile"] == "worker"
     finally:
         conn.close()
 

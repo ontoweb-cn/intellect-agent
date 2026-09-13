@@ -1682,7 +1682,7 @@ function applyBotName(){
   }
   // Fetch active profile (management_enabled gates create/switch/delete UI)
   try{
-    const p=await api('/api/profile/active');
+    const p=await api('/api/agent/active');
     if(typeof _applyProfileManagementUiGate==='function'){
       _applyProfileManagementUiGate(p.management_enabled!==false);
     }

@@ -862,7 +862,7 @@ main conversation's message-role alternation stays intact.
 
 ## Kanban (multi-agent work queue)
 
-Durable SQLite-backed board that lets multiple profiles / workers
+Durable SQLite-backed board that lets multiple agents / workers
 collaborate on shared tasks. Users drive it via `intellect kanban <verb>`;
 workers spawned by the dispatcher drive it via a dedicated `kanban_*`
 toolset so their schema footprint is zero when they're not inside a
@@ -875,12 +875,12 @@ kanban task.
   `assignees`, `heartbeat`, `notify-*`, `dispatch`, `daemon`, `gc`.
 - **Worker/orchestrator toolset:** `tools/kanban_tools.py` exposes
   `kanban_show`, `kanban_complete`, `kanban_block`, `kanban_heartbeat`,
-  `kanban_comment`, `kanban_create`, `kanban_link`; profiles that
+  `kanban_comment`, `kanban_create`, `kanban_link`; agents that
   explicitly enable the `kanban` toolset outside a dispatcher-spawned
   task also get `kanban_list` and `kanban_unblock` for board routing.
 - **Dispatcher:** long-lived loop that (default every 60s) reclaims
   stale claims, promotes ready tasks, atomically claims, and spawns
-  assigned profiles. Runs **inside the gateway** by default via
+  assigned agents. Runs **inside the gateway** by default via
   `kanban.dispatch_in_gateway: true`.
 - **Systemd unit:** `plugins/kanban/systemd/` (`intellect-kanban-dispatcher.service`
   for standalone dispatcher deployment; DEPRECATED — dispatcher now runs inside the gateway).
@@ -1021,13 +1021,35 @@ instances, each with its own `INTELLECT_HOME` directory (config, API keys, memor
 sessions, skills, gateway, etc.).
 
 Canonical on-disk layout: ``~/.intellect/agents/<name>/``.
-Legacy ``~/.intellect/agents/<name>/`` is dual-read and migrated into
+Legacy ``~/.intellect/profiles/<name>/`` is dual-read and migrated into
 ``agents/`` on access (``migrate_legacy_agent_homes`` in
 ``intellect_cli/agents_home.py``; ``intellect_cli/profiles.py`` is a shim).
-CLI: ``intellect agent`` (canonical); ``intellect agent`` is a deprecated alias.
+CLI: ``intellect agent`` (canonical); ``intellect profile`` is a deprecated alias.
 Flags: ``-a`` / ``--agent`` (canonical); ``-p`` / ``--profile`` still accepted.
 Sticky default: ``active_agent`` (legacy ``active_profile`` still read).
 Config gate: ``agents.management_enabled`` (legacy ``profiles.management_enabled`` OR'd).
+
+### Other surfaces carrying the old name (dual-read, strategy A)
+
+The rename is canonical-name-first everywhere; legacy spellings stay readable
+long-term rather than being removed in lockstep. When adding code in these
+areas, write the canonical name and keep reading the legacy one.
+
+| Surface | Canonical | Legacy (still accepted) |
+|---------|-----------|-------------------------|
+| HTTP (multiplex front) | ``/a/<agent>/…`` | ``/p/<agent>/…`` |
+| Gateway status JSON | ``served_agents`` | ``served_profiles`` |
+| WebUI REST | ``/api/agents``, ``/api/agent/{active,switch,create,delete}`` | ``/api/profiles``, ``/api/profile/…`` |
+| WebUI list payload | ``agents`` | ``profiles`` |
+| Kanban ``task_runs`` column | ``agent`` | ``profile`` |
+| Kanban run JSON/CLI | ``agent`` | ``profile`` |
+
+**Kanban column.** ``task_runs.agent`` was added by an additive migration
+(``_migrate_add_optional_columns``); existing rows are back-filled from
+``profile`` once. Every INSERT writes *both* columns, so readers either way
+stay correct. Read ``Run.agent`` (``Run.from_row`` dual-reads), or
+``COALESCE(agent, profile)`` in SQL. The legacy column is deliberately **not**
+dropped — see ``docs/superpowers/plans/2026-09-13-profile-to-agent-rename.md``.
 
 The core mechanism: `_apply_profile_override()` in `intellect_cli/main.py` sets
 `INTELLECT_HOME` before any module imports. All `get_intellect_home()` references

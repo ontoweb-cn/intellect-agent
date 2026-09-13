@@ -84,7 +84,9 @@ def _status(url: str):
     _, payload = _http(url, timeout=3.0)
     if not isinstance(payload, dict) or not payload.get("ok"):
         return None
-    return {p["name"]: p for p in payload.get("profiles", [])}
+    # ``agents`` is canonical; ``profiles`` still emitted as an alias.
+    assert payload["agents"] == payload["profiles"]
+    return {p["name"]: p for p in payload.get("agents", [])}
 
 
 def test_multiplex_isolation_kill_and_shutdown(tmp_path):
@@ -184,6 +186,14 @@ def test_multiplex_isolation_kill_and_shutdown(tmp_path):
         assert status == 200, "default key must open the unprefixed route"
         status, _ = _http(f"{base}/v1/models", key=key_alpha)
         assert status == 401, "alpha's key must NOT open the default profile"
+
+        # ── clause 1b: canonical /a/<agent>/ prefix ─────────────────────
+        # ``/a/`` is the canonical spelling after the profile → agent rename
+        # and must reach the same child (and enforce the same key) as /p/.
+        status, _ = _http(f"{base}/a/alpha/v1/models", key=key_alpha)
+        assert status == 200, "alpha key must open canonical /a/alpha/ prefix"
+        status, _ = _http(f"{base}/a/alpha/v1/models", key=key_beta)
+        assert status == 401, "beta's key must NOT open canonical /a/alpha/"
 
         # ── clause 2: kill -9 beta — alpha unaffected, beta restarts ────
         os.kill(pids["beta"], signal.SIGKILL)

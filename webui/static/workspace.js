@@ -38,7 +38,7 @@ async function api(path,opts={}){
         }
         const text=await res.text();
         // Parse JSON error body and surface the human-readable message,
-        // rather than showing raw JSON like {"error":"Profile 'x' does not exist."}
+        // rather than showing raw JSON like {"error":"Agent 'x' does not exist."}
         let message=text;
         let payload=null;
         try{

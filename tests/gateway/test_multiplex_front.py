@@ -1,4 +1,7 @@
-"""Tests for the multiplex front end (B1-4): /p/<profile>/ prefix routing.
+"""Tests for the multiplex front end (B1-4): ``/a/<agent>/`` prefix routing.
+
+``/a/<agent>/…`` is canonical (profile → agent rename); ``/p/<agent>/…``
+remains accepted as the legacy alias and must route identically.
 
 Real loopback sockets on ephemeral ports only — upstreams are aiohttp
 TestServers, the front end binds 127.0.0.1:0. No fixed ports, no external
@@ -91,6 +94,26 @@ def test_prefix_parse_rejects_invalid():
         _split_profile_prefix("/p/bad!name/x")  # outside the profile id charset
 
 
+def test_prefix_parse_canonical_agent_prefix():
+    """``/a/<agent>/`` is canonical; it parses identically to legacy ``/p/``."""
+    assert _split_profile_prefix("/a/alpha/v1/health") == ("alpha", "/v1/health")
+    assert _split_profile_prefix("/a/Alpha/v1/health") == ("alpha", "/v1/health")
+    assert _split_profile_prefix("/a/alpha") == ("alpha", "/")
+    assert _split_profile_prefix("/a/alpha/") == ("alpha", "/")
+    assert _split_profile_prefix("/a/alpha/webhooks/r1") == ("alpha", "/webhooks/r1")
+    for tail in ("/v1/health", "/alpha", "/alpha/", "/alpha/webhooks/r1"):
+        assert _split_profile_prefix("/a" + tail) == _split_profile_prefix("/p" + tail)
+
+
+def test_prefix_parse_rejects_invalid_agent_prefix():
+    with pytest.raises(ValueError):
+        _split_profile_prefix("/a/")
+    with pytest.raises(ValueError):
+        _split_profile_prefix("/a/root/x")  # reserved name
+    with pytest.raises(ValueError):
+        _split_profile_prefix("/a/bad!name/x")  # outside the agent id charset
+
+
 # ── HTTP routing ────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -126,6 +149,34 @@ async def test_unprefixed_routes_to_default_and_prefix_routes_to_named(tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_canonical_a_prefix_routes_identically_to_legacy_p(tmp_path):
+    """``/a/<agent>/…`` reaches the same child as legacy ``/p/<agent>/…``."""
+    sup = _make_sup(tmp_path)
+    ups = {"alpha": await _start_upstream("alpha")}
+    for name, server in ups.items():
+        sup.children[name].listeners["api_server"] = server.port
+    front, task = await _start_front(sup, [("api", "127.0.0.1", 0)])
+    try:
+        _, port = front.bound["api"]
+        async with aiohttp.ClientSession() as http:
+            for prefix in ("a", "p"):
+                async with http.get(
+                    f"http://127.0.0.1:{port}/{prefix}/alpha/v1/health?x=1",
+                    headers={"X-Custom": "abc"},
+                ) as resp:
+                    assert resp.status == 200
+                    data = await resp.json()
+                    # Prefix stripped, query + app-level headers forwarded —
+                    # identical for both spellings.
+                    assert data["marker"] == "alpha"
+                    assert data["path"] == "/v1/health"
+                    assert data["query"] == {"x": "1"}
+                    assert data["x_custom"] == "abc"
+    finally:
+        await _stop_front(front, task, ups.values())
+
+
+@pytest.mark.asyncio
 async def test_unknown_and_invalid_profiles_404(tmp_path):
     sup = _make_sup(tmp_path)
     front, task = await _start_front(sup, [("api", "127.0.0.1", 0)])
@@ -138,6 +189,15 @@ async def test_unknown_and_invalid_profiles_404(tmp_path):
                 assert err["code"] == "unknown_profile"
                 assert err["profile"] == "ghost"
             async with http.get(f"http://127.0.0.1:{port}/p/root/v1/x") as resp:
+                assert resp.status == 404
+                assert (await resp.json())["error"]["code"] == "invalid_profile"
+            # Same failures through the canonical prefix.
+            async with http.get(f"http://127.0.0.1:{port}/a/ghost/v1/x") as resp:
+                assert resp.status == 404
+                err = (await resp.json())["error"]
+                assert err["code"] == "unknown_profile"
+                assert err["profile"] == "ghost"
+            async with http.get(f"http://127.0.0.1:{port}/a/root/v1/x") as resp:
                 assert resp.status == 404
                 assert (await resp.json())["error"]["code"] == "invalid_profile"
     finally:
