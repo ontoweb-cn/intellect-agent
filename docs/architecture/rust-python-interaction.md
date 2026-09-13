@@ -1,7 +1,7 @@
 # Intellect Agent：Rust ↔ Python 架构梳理
 
 > 文档日期：2026-09-14（上一版 2026-07-08）  
-> 适用版本：Python `intellect-agent` 0.6.9 / Rust `intellect-community-core` 0.6.9
+> 适用版本：Python `intellect-agent` 0.7.0 / Rust `intellect-community-core` 0.7.0
 
 ## 1. 总体定位
 
@@ -23,7 +23,7 @@ Intellect Agent 是一个 **Python 为主进程、Rust 为性能/安全核心** 
 | 维度 | Python | Rust |
 |------|--------|------|
 | **包名** | `intellect-agent` | `intellect-community-core` (Cargo) |
-| **当前版本** | `0.6.9` (`pyproject.toml`) | `0.6.9` (`rust-core/Cargo.toml`) |
+| **当前版本** | `0.7.0` (`pyproject.toml`) | `0.7.0` (`rust-core/Cargo.toml`) |
 | **版本是否绑定** | **是（发布对齐）** — Python 与 Rust crate 版本号同步发布；逻辑耦合仍通过 API 契约 |
 | **Python 模块名** | — | `intellect_community_core` (编译产物 `.so`/`.pyd`) |
 | **Python 版本要求** | `>=3.12` | PyO3 0.29 自身下限是 CPython 3.8；本项目在 `pyproject.toml` 里收紧到 3.12 |
@@ -45,7 +45,7 @@ intellect-agent 0.6.x          intellect-community-core 0.6.x
 
 **关键结论：**
 
-- **发布版本对齐**：Python 与 Rust crate 同步 semver（当前 `0.6.9`）；二者通过 **函数/类 API 契约** 耦合。
+- **发布版本对齐**：Python 与 Rust crate 同步 semver（当前 `0.7.0`）；二者通过 **函数/类 API 契约** 耦合。
 - **运行时依赖（v0.6.2+）**：Rust 扩展从「可选加速」变为 **硬性依赖**（见 `RELEASE_v0.6.2.md`）。缺少扩展时，各模块在调用 Rust 函数时会直接失败，不再走 Python 回退。
 - **构建与安装分离**：`pyproject.toml` 的构建后端是 setuptools，**不会**自动编译 Rust；`[tool.maturin]` 只声明 manifest/module-name，供 maturin 定位。v0.6.2 起运行必须手动构建：
 
@@ -65,7 +65,7 @@ intellect-agent 0.6.x          intellect-community-core 0.6.x
 ```mermaid
 flowchart LR
     subgraph Build["构建阶段"]
-        Cargo["rust-core/Cargo.toml\nintellect-community-core 0.6.9"]
+        Cargo["rust-core/Cargo.toml\nintellect-community-core 0.7.0"]
         PyO3["PyO3 0.29\nextension-module"]
         Maturin["maturin develop/build\n(pyproject [tool.maturin])"]
         SO["intellect_community_core.so"]
@@ -515,7 +515,7 @@ Intellect Agent 采用 **「Python 编排 + Rust 热路径加速」** 的 PyO3 �
 
 | 维度 | 说明 |
 |------|------|
-| **版本** | Python 与 Rust crate **同步编号**（当前 `0.6.9`），通过 API 契约耦合 |
+| **版本** | Python 与 Rust crate **同步编号**（当前 `0.7.0`），通过 API 契约耦合 |
 | **构建** | maturin 单独编译，不随 `pip install` 自动完成 |
 | **运行** | v0.6.2 起 Rust 为 **硬性依赖**，经 `intellect_rust.py` 统一接入 |
 | **已迁移** | 存储读写与批写、沙箱安全检测、流解析、Token 累计、加密、Gateway 调度、错误分类、消息净化、模型元数据、迭代预算、验证证据、Blueprint、委派注册表 — 共 8,141 行 / 21 个源文件 |

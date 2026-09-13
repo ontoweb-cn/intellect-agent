@@ -4,6 +4,53 @@ All notable changes to Intellect Agent are documented in per-version release not
 (`RELEASE_vX.Y.Z.md`).  This file provides a high-level index and forward-looking
 roadmap.
 
+## v0.7.0 (2026-09-14)
+
+profile → agent 正名（带旧名双读）+ PyO3 0.21 → 0.29.2 迁移 + Rust 流水线与安全修复。
+详见 `RELEASE_v0.7.0.md`。
+
+### 身份重命名（profile → agent）
+
+- canonical 名统一为 `agent`，`profile` 旧拼写在所有入口**继续可读**：CLI（`intellect agent`
+  / `-a`，旧 `intellect profile` / `-p`）、配置键（`agents.management_enabled`，旧
+  `profiles.*` 为 OR 关系）、HTTP 前缀（`/a/<agent>/`，旧 `/p/`）、WebUI REST（`/api/agents`，
+  旧 `/api/profiles`）、网关状态（`served_agents`，旧 `served_profiles`）、WS 鉴权
+  （`TUI_AUTH_TOKEN_<AGENT>`）。
+- 磁盘布局 `~/.intellect/profiles/<name>/` 在首次访问时迁移到 `~/.intellect/agents/<name>/`。
+- 看板 `task_runs.profile` 列**刻意保留**：`task_runs.agent` 为增量迁移新增并回填一次，
+  新行两列同写，读者任选其一都正确（不 DROP 旧列）。
+- `intellect_cli/profiles.py`（1680 行）瘦身为兼容 shim，实体逻辑转入新的
+  `intellect_cli/agents_home.py`（1880 行）。
+
+### PyO3 0.21 → 0.29.2（破坏性）
+
+- `Bound<'py, T>` API、GIL 语义与 trait 签名的变化波及 `connection.rs`、`backend.rs`、
+  `error_classifier.rs`、`prompt_caching.rs`、`lib.rs` 等模块。
+- **附带收益**：pyo3 0.21 下 `cargo test --no-default-features`（CI 的调用方式）会在
+  `pyo3-0.21.2/src/gil.rs:201` abort；迁移后同一命令 **198 passed / 0 failed**。
+
+### Rust 流水线与安全
+
+- **sandbox-patterns 步骤从未通过**：该步骤在 `_HAS_RUST_SANDBOX` 删除（4d3c9f9）之后编写，
+  引用旧名始终 ImportError。已改用 `intellect_rust.HAS_SANDBOX`。
+- **`is_ip_blocked_rs` 真实 SSRF 回归**：切到 Rust 快速路径时丢失 Python `ipaddress` 表覆盖的
+  IANA 特殊用途段，随后 Python 兜底被删使缺口固化。已恢复 0.0.0.0/8、192.0.0.0/24
+  （放行可路由 anycast .9/.10）、三段 TEST-NET 文档段、240.0.0.0/4，以及全球单播
+  2000::/3 之外的全部 IPv6 段，并与 Rust 之前的基线逐项核对（零漏拦、零误拦）。
+- deny.toml 迁移到 cargo-deny 0.16+ schema；Rust CI 在自身 workflow 文件变更时也运行；
+  rust-full job 移除无法链接的 extension-module 测试步骤。
+
+### 静默缺陷修复
+
+- **gateway**: `infrastructure_handlers.py` 两处引用 `sqlite3.DatabaseError` 却未导入
+  `sqlite3`。文件头部 `# ruff: noqa: F821` 关闭了整个文件的未定义名检查，故无 lint 可拦。
+  看板板面损坏时 `except` 子句自身抛 NameError，把可操作的损坏信息降级为通用 watcher 错误。
+- **kanban**: `init_db()` 经 `connect()` 重初始化后关闭该连接，而连接池按**路径**共享
+  （注释误写 thread-local），进程内是同一个 connection。`intellect kanban <verb>` 每条子命令
+  前都调用 `init_db()`，而网关长驻进程同时服务这些命令——一条 kanban 命令即关掉 dispatcher
+  正在使用的连接；`executescript()` 还会先 commit，可能提交他线程的在途写入。现改为私有连接
+  执行 schema/迁移。
+
 ## v0.6.9 (2026-09-12)
 
 对外通道补齐 + MCP SDK 2.x 迁移 + 依赖升级清扫。详见 `RELEASE_v0.6.9.md`。
@@ -199,6 +246,11 @@ hardening. Detailed milestone notes below.
 
 | Date | Highlights |
 |------|------------|
+| **2026-09-14** | **v0.7.0 — profile → agent 正名 + PyO3 0.29 迁移 + Rust 流水线/安全修复** |
+|                | Agents: profile → agent 重命名（canonical-first，旧名全入口双读），磁盘布局自动迁移，看板列双写回填 |
+|                | Rust: pyo3 0.21 → 0.29.2（Bound API / GIL 语义改写）；顺带消除 pyo3 0.21 下 `cargo test` 的 abort |
+|                | 安全: 恢复 `is_ip_blocked_rs` 的 IANA 特殊用途 IP 段（真实 SSRF 回归）；sandbox-patterns 步骤首次真正生效 |
+|                | 修复: 网关缺失 `import sqlite3`；`init_db()` 关闭连接池共享连接 |
 | **2026-09-12** | **v0.6.9 — 对外通道补齐 + MCP SDK 2.x 迁移 + 依赖清扫** |
 |                | api_server/ACP: 逐回合 model 覆盖 + 真实回显 (#126), clarify 交付 + subagent_progress 透出 (#125) |
 |                | MCP: 迁移到 SDK 2.x（破坏性大版本）经 tools/mcp_compat.py 双版本适配层, 2.1.1/1.28.1 测试面一致 |
