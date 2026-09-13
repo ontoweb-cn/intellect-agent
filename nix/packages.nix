@@ -48,10 +48,9 @@
         };
 
         tui = intellectAgent.intellectTui;
-        web = intellectAgent.intellectWeb;
 
         fix-lockfiles = intellectAgent.intellectNpmLib.mkFixLockfiles {
-          packages = [ intellectAgent.intellectTui intellectAgent.intellectWeb ];
+          packages = [ intellectAgent.intellectTui ];
         };
       };
     };

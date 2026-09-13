@@ -49,10 +49,6 @@ let
     inherit intellectNpmLib;
   };
 
-  intellectWeb = callPackage ./web.nix {
-    inherit intellectNpmLib;
-  };
-
   bundledSkills = lib.cleanSourceWith {
     src = ../skills;
     filter = path: _type: !(lib.hasInfix "/index-cache/" path);
@@ -150,7 +146,6 @@ stdenv.mkDerivation {
     mkdir -p $out/share/intellect-agent $out/bin
     cp -r ${bundledSkills} $out/share/intellect-agent/skills
     cp -r ${bundledPlugins} $out/share/intellect-agent/plugins
-    cp -r ${intellectWeb} $out/share/intellect-agent/web_dist
 
     mkdir -p $out/ui-tui
     cp -r ${intellectTui}/lib/intellect-tui/* $out/ui-tui/
@@ -161,7 +156,6 @@ stdenv.mkDerivation {
           --suffix PATH : "${runtimePath}" \
           --set INTELLECT_BUNDLED_SKILLS $out/share/intellect-agent/skills \
           --set INTELLECT_BUNDLED_PLUGINS $out/share/intellect-agent/plugins \
-          --set INTELLECT_WEB_DIST $out/share/intellect-agent/web_dist \
           --set INTELLECT_TUI_DIR $out/ui-tui \
           --set INTELLECT_PYTHON ${intellectVenv}/bin/python3 \
           --set INTELLECT_NODE ${lib.getExe nodejs} \
@@ -187,7 +181,6 @@ stdenv.mkDerivation {
   passthru = {
     inherit
       intellectTui
-      intellectWeb
       intellectNpmLib
       intellectVenv
       ;
