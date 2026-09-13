@@ -18,7 +18,7 @@ scope. See [Profiles](./profiles.md) for profile basics.
 ## Quick start
 
 ```bash
-# serve the default profile plus every valid profile under ~/.intellect/profiles/
+# serve the default profile plus every valid profile under ~/.intellect/agents/
 intellect gateway run --multiplex
 
 # restrict secondaries (the default profile is always served)

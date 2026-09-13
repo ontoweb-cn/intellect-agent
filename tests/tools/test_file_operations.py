@@ -119,10 +119,10 @@ class TestIsWriteDenied:
         for .env.
         """
         # Simulate a profile-mode INTELLECT_HOME layout:
-        #   <root>/profiles/coder/{auth.json,config.yaml,...}
+        #   <root>/agents/coder/{auth.json,config.yaml,...}
         #   <root>/{auth.json,config.yaml,...}        ← must also be denied
         root = tmp_path / "intellect"
-        profile = root / "profiles" / "coder"
+        profile = root / "agents" / "coder"
         profile.mkdir(parents=True)
         monkeypatch.setenv("INTELLECT_HOME", str(profile))
 
@@ -134,7 +134,7 @@ class TestIsWriteDenied:
     def test_mcp_tokens_dir_protected_in_profile_mode(self, tmp_path, monkeypatch):
         """mcp-tokens/ under profile AND under root must both be denied."""
         root = tmp_path / "intellect"
-        profile = root / "profiles" / "coder"
+        profile = root / "agents" / "coder"
         profile.mkdir(parents=True)
         monkeypatch.setenv("INTELLECT_HOME", str(profile))
 
@@ -153,7 +153,7 @@ class TestIsWriteDenied:
         threat class that motivated protecting webhook_subscriptions.json.
         """
         root = tmp_path / "intellect"
-        profile = root / "profiles" / "coder"
+        profile = root / "agents" / "coder"
         profile.mkdir(parents=True)
         monkeypatch.setenv("INTELLECT_HOME", str(profile))
 

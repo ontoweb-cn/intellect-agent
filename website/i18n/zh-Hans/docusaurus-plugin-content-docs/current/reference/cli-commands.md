@@ -21,7 +21,7 @@ intellect [global-options] <command> [subcommand/options]
 | 选项 | 说明 |
 |--------|-------------|
 | `--version`, `-V` | 显示版本并退出。 |
-| `--profile <name>`, `-p <name>` | 选择本次调用使用的 Intellect profile（配置文件）。覆盖 `intellect profile use` 设置的粘性默认值。 |
+| `--agent <name>`, `-a <name>` (legacy: `--profile` / `-p`) | 选择本次调用使用的 Intellect profile（配置文件）。覆盖 `intellect agent use` 设置的粘性默认值。 |
 | `--resume <session>`, `-r <session>` | 通过 ID 或标题恢复之前的会话。 |
 | `--continue [name]`, `-c [name]` | 恢复最近的会话，或恢复最近一个匹配标题的会话。 |
 | `--worktree`, `-w` | 在隔离的 git worktree 中启动，用于并行 agent 工作流。 |
@@ -75,7 +75,7 @@ intellect [global-options] <command> [subcommand/options]
 | `intellect sessions` | 浏览、导出、修剪、重命名和删除会话。 |
 | `intellect insights` | 显示 token/费用/活动分析。 |
 | `intellect claw` | OpenClaw 迁移辅助工具。 |
-| `intellect profile` | 管理 profile——多个隔离的 Intellect 实例。 |
+| `intellect agent` | 管理 profile——多个隔离的 Intellect 实例。 |
 | `intellect completion` | 打印 shell 补全脚本（bash/zsh/fish）。 |
 | `intellect version` | 显示版本信息。 |
 | `intellect update` | 拉取最新代码并重新安装依赖（git 安装），或检查 PyPI 并执行 `pip install --upgrade`（pip 安装）。`--check` 预览而不安装；`--backup` 在拉取前对 `INTELLECT_HOME` 进行快照。 |
@@ -1137,10 +1137,10 @@ intellect claw migrate --preset user-data --overwrite
 intellect claw migrate --source /home/user/old-openclaw
 ```
 
-## `intellect profile`
+## `intellect agent`
 
 ```bash
-intellect profile <subcommand>
+intellect agent <subcommand>
 ```
 
 管理 profile——多个隔离的 Intellect 实例，每个实例拥有自己的 config、会话、skill 和主目录。
@@ -1163,15 +1163,15 @@ intellect profile <subcommand>
 示例：
 
 ```bash
-intellect profile list
-intellect profile create work --clone
-intellect profile use work
-intellect profile alias work --name h-work
-intellect profile export work -o work-backup.tar.gz
-intellect profile import work-backup.tar.gz --name restored
-intellect profile install github.com/user/my-distro --alias
-intellect profile update work
-intellect -p work chat -q "Hello from work profile"
+intellect agent list
+intellect agent create work --clone
+intellect agent use work
+intellect agent alias work --name h-work
+intellect agent export work -o work-backup.tar.gz
+intellect agent import work-backup.tar.gz --name restored
+intellect agent install github.com/user/my-distro --alias
+intellect agent update work
+intellect -a work chat -q "Hello from work profile"
 ```
 
 ## `intellect completion`

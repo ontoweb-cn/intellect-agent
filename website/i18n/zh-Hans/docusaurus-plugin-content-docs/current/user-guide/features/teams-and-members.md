@@ -6,7 +6,7 @@ description: "单个 Intellect 配置文件内的多用户访问——成员、�
 
 # 团队、项目与成员
 
-> **范围：** 一个 **配置文件**（`~/.intellect` 或 `~/.intellect/profiles/<name>`），多个 **成员**。这与 [配置文件（Profiles）](./../profiles) 不同——后者是在同一台机器上运行多个独立的 Intellect 主目录。
+> **范围：** 一个 **配置文件**（`~/.intellect` 或 `~/.intellect/agents/<name>`），多个 **成员**。这与 [配置文件（Profiles）](./../profiles) 不同——后者是在同一台机器上运行多个独立的 Intellect 主目录。
 
 当 `members.enabled` 为 `true` 时，一个 Intellect 配置文件可承载多名用户。每名成员有独立 id、可选密码、OAuth 身份、记忆（可按成员隔离）和 API token。**团队**提供共享协作上下文；**项目**提供共享工作区（常为 git 仓库）及项目级密钥与约定。
 

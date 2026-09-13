@@ -278,15 +278,15 @@ To run separate Intellect instances per user — each with their own config, mem
 `API_SERVER_*` are env vars, not YAML config keys, so write them to each profile's `.env`. Pick ports outside the default-platform range (`8644` is the webhook adapter, `8645` is wecom-callback, `8646` is msgraph-webhook), e.g. `8650+`:
 
 ```bash
-intellect profile create alice
-cat >> ~/.intellect/profiles/alice/.env <<EOF
+intellect agent create alice
+cat >> ~/.intellect/agents/alice/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8650
 API_SERVER_KEY=alice-secret
 EOF
 
-intellect profile create bob
-cat >> ~/.intellect/profiles/bob/.env <<EOF
+intellect agent create bob
+cat >> ~/.intellect/agents/bob/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8651
 API_SERVER_KEY=bob-secret
@@ -296,8 +296,8 @@ EOF
 ### 2. Start each gateway
 
 ```bash
-intellect -p alice gateway &
-intellect -p bob gateway &
+intellect -a alice gateway &
+intellect -a bob gateway &
 ```
 
 ### 3. Add connections in Open WebUI
@@ -314,7 +314,7 @@ The model dropdown will show `alice` and `bob` as distinct models. You can assig
 :::tip Custom Model Names
 The model name defaults to the profile name. To override it, set `API_SERVER_MODEL_NAME` in the profile's `.env`:
 ```bash
-intellect -p alice config set API_SERVER_MODEL_NAME "Alice's Agent"
+intellect -a alice config set API_SERVER_MODEL_NAME "Alice's Agent"
 ```
 :::
 

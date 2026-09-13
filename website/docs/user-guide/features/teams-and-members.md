@@ -6,7 +6,7 @@ description: "Multi-user access inside one Intellect profile — members, invite
 
 # Teams, Projects & Members
 
-> **Scope:** One **profile** (`~/.intellect` or `~/.intellect/profiles/<name>`), many **members**. This is not the same as [Profiles](./../profiles) (separate Intellect homes on one machine).
+> **Scope:** One **profile** (`~/.intellect` or `~/.intellect/agents/<name>`), many **members**. This is not the same as [Profiles](./../profiles) (separate Intellect homes on one machine).
 
 When `members.enabled` is true, a single Intellect profile can host multiple human users. Each member has their own id, optional password, OAuth identities, memories (when scoped per member), and API tokens. **Teams** add shared collaboration context; **projects** add shared workspaces (often git repos) with their own secrets and conventions.
 

@@ -161,7 +161,7 @@ def test_invalidate_update_cache_clears_all_profiles(tmp_path):
     default_home.mkdir()
     (default_home / ".update_check").write_text('{"ts":1,"behind":50}')
 
-    profiles_root = default_home / "profiles"
+    profiles_root = default_home / "agents"
     for name in ("ops", "dev"):
         p = profiles_root / name
         p.mkdir(parents=True)

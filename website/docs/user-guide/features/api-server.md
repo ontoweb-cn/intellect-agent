@@ -526,26 +526,26 @@ To give multiple users their own isolated Intellect instance (separate config, m
 
 ```bash
 # Create a profile per user
-intellect profile create alice
-intellect profile create bob
+intellect agent create alice
+intellect agent create bob
 
 # Configure each profile's API server on a different port. API_SERVER_* are env
 # vars (not config.yaml keys), so write them to each profile's .env:
-cat >> ~/.intellect/profiles/alice/.env <<EOF
+cat >> ~/.intellect/agents/alice/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8643
 API_SERVER_KEY=alice-secret
 EOF
 
-cat >> ~/.intellect/profiles/bob/.env <<EOF
+cat >> ~/.intellect/agents/bob/.env <<EOF
 API_SERVER_ENABLED=true
 API_SERVER_PORT=8644
 API_SERVER_KEY=bob-secret
 EOF
 
 # Start each profile's gateway
-intellect -p alice gateway &
-intellect -p bob gateway &
+intellect -a alice gateway &
+intellect -a bob gateway &
 ```
 
 Each profile's API server automatically advertises the profile name as the model ID:

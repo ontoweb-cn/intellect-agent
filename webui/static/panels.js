@@ -5169,8 +5169,8 @@ async function loadProfilesPanel() {
     explainer.innerHTML = `
       <div class="profile-card-header">
         <div style="min-width:0;flex:1">
-          <div class="profile-card-name">Profiles vs workspaces</div>
-          <div class="profile-card-meta">Use profiles for how the agent works; use workspaces for what files it works on.</div>
+          <div class="profile-card-name">Agents vs workspaces</div>
+          <div class="profile-card-meta">Use agents for how the instance works; use workspaces for what files it works on.</div>
         </div>
       </div>`;
     explainer.onclick = () => _renderProfileConceptHelp(data.active || 'default');
@@ -5227,14 +5227,14 @@ function _renderProfileConceptHelp(activeName){
   const body = $('profileDetailBody');
   const empty = $('profileDetailEmpty');
   if (!title || !body) return;
-  title.textContent = 'Profiles vs workspaces';
+  title.textContent = 'Agents vs workspaces';
   body.innerHTML = `
     <div class="main-view-content">
       <div class="detail-card">
         <div class="detail-card-title">Use profiles for how; workspaces for what</div>
-        <div class="detail-row"><div class="detail-row-label">Profiles</div><div class="detail-row-value">Agent identity, memory, skills, model/provider config, and connected tools. Create profiles for roles like researcher, writer, marketer, or developer when those roles should carry different context or capabilities.</div></div>
+        <div class="detail-row"><div class="detail-row-label">Agents</div><div class="detail-row-value">Agent identity, memory, skills, model/provider config, and connected tools. Create agents for roles like researcher, writer, marketer, or developer when those roles should carry different context or capabilities.</div></div>
         <div class="detail-row"><div class="detail-row-label">Workspaces</div><div class="detail-row-value">Project or product folders on disk. Use one workspace per repo/product so chat, terminal, and file browsing point at the right files.</div></div>
-        <div class="detail-row"><div class="detail-row-label">Together</div><div class="detail-row-value">A profile can have a default workspace, but you can still switch workspaces for a session. Profiles answer “who is working?”; workspaces answer “where are they working?”</div></div>
+        <div class="detail-row"><div class="detail-row-label">Together</div><div class="detail-row-value">An agent can have a default workspace, but you can still switch workspaces for a session. Agents answer “who is working?”; workspaces answer “where are they working?”</div></div>
       </div>
     </div>`;
   body.style.display = '';

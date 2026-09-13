@@ -21,7 +21,7 @@ intellect [global-options] <command> [subcommand/options]
 | Option | Description |
 |--------|-------------|
 | `--version`, `-V` | Show version and exit. |
-| `--profile <name>`, `-p <name>` | Select which Intellect profile to use for this invocation. Overrides the sticky default set by `intellect profile use`. |
+| `--agent <name>`, `-a <name>` (legacy: `--profile` / `-p`) | Select which Intellect agent home to use for this invocation. Overrides the sticky default set by `intellect agent use`. |
 | `--resume <session>`, `-r <session>` | Resume a previous session by ID or title. |
 | `--continue [name]`, `-c [name]` | Resume the most recent session, or the most recent session matching a title. |
 | `--worktree`, `-w` | Start in an isolated git worktree for parallel-agent workflows. |
@@ -79,7 +79,7 @@ intellect [global-options] <command> [subcommand/options]
 | `intellect sessions` | Browse, export, prune, rename, and delete sessions. |
 | `intellect insights` | Show token/cost/activity analytics. |
 | `intellect claw` | OpenClaw migration helpers. |
-| `intellect profile` | Manage profiles — multiple isolated Intellect instances. |
+| `intellect agent` | Manage agents — multiple isolated Intellect homes. (`intellect profile` is a legacy alias.) |
 | `intellect completion` | Print shell completion scripts (bash/zsh/fish). |
 | `intellect version` | Show version information. |
 | `intellect update` | Pull latest code and reinstall dependencies (git installs), or check PyPI and `pip install --upgrade` (pip installs). `--check` previews without installing; `--backup` takes a pre-pull `INTELLECT_HOME` snapshot. |
@@ -1327,41 +1327,41 @@ intellect claw migrate --preset user-data --overwrite
 intellect claw migrate --source /home/user/old-openclaw
 ```
 
-## `intellect profile`
+## `intellect agent`
 
 ```bash
-intellect profile <subcommand>
+intellect agent <subcommand>
 ```
 
-Manage profiles — multiple isolated Intellect instances, each with its own config, sessions, skills, and home directory.
+Manage agents — multiple isolated Intellect instances, each with its own config, sessions, skills, and home directory. (`intellect profile` remains a deprecated alias.)
 
 | Subcommand | Description |
 |------------|-------------|
-| `list` | List all profiles. |
-| `use <name>` | Set a sticky default profile. |
-| `create <name> [--clone] [--clone-all] [--clone-from <source>] [--no-alias]` | Create a new profile. `--clone` copies config, `.env`, and `SOUL.md` from the active profile. `--clone-all` copies all state. `--clone-from` specifies a source profile. |
-| `delete <name> [-y]` | Delete a profile. |
-| `show <name>` | Show profile details (home directory, config, etc.). |
-| `alias <name> [--remove] [--name NAME]` | Manage wrapper scripts for quick profile access. |
-| `rename <old> <new>` | Rename a profile. |
-| `export <name> [-o FILE]` | Export a profile to a `.tar.gz` archive (local backup). |
-| `import <archive> [--name NAME]` | Import a profile from a `.tar.gz` archive (local restore). |
-| `install <source> [--name N] [--alias] [--force] [-y]` | Install a profile distribution from a git URL or local directory. |
+| `list` | List all agents. |
+| `use <name>` | Set a sticky default agent. |
+| `create <name> [--clone] [--clone-all] [--clone-from <source>] [--no-alias]` | Create a new agent. `--clone` copies config, `.env`, and `SOUL.md` from the active agent. `--clone-all` copies all state. `--clone-from` specifies a source agent. |
+| `delete <name> [-y]` | Delete an agent. |
+| `show <name>` | Show agent details (home directory, config, etc.). |
+| `alias <name> [--remove] [--name NAME]` | Manage wrapper scripts for quick agent access. |
+| `rename <old> <new>` | Rename an agent. |
+| `export <name> [-o FILE]` | Export an agent to a `.tar.gz` archive (local backup). |
+| `import <archive> [--name NAME]` | Import an agent from a `.tar.gz` archive (local restore). |
+| `install <source> [--name N] [--alias] [--force] [-y]` | Install an agent distribution from a git URL or local directory. |
 | `update <name> [--force-config] [-y]` | Re-pull a distribution; preserves user data (memories, sessions, auth). |
-| `info <name>` | Show a profile's distribution manifest (version, requirements, source). |
+| `info <name>` | Show an agent's distribution manifest (version, requirements, source). |
 
 Examples:
 
 ```bash
-intellect profile list
-intellect profile create work --clone
-intellect profile use work
-intellect profile alias work --name h-work
-intellect profile export work -o work-backup.tar.gz
-intellect profile import work-backup.tar.gz --name restored
-intellect profile install github.com/user/my-distro --alias
-intellect profile update work
-intellect -p work chat -q "Hello from work profile"
+intellect agent list
+intellect agent create work --clone
+intellect agent use work
+intellect agent alias work --name h-work
+intellect agent export work -o work-backup.tar.gz
+intellect agent import work-backup.tar.gz --name restored
+intellect agent install github.com/user/my-distro --alias
+intellect agent update work
+intellect -a work chat -q "Hello from work profile"
 ```
 
 ## `intellect completion`

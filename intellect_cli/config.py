@@ -1235,7 +1235,7 @@ DEFAULT_CONFIG = {
     },
 
     # Agent homes (isolation units). Canonical key: agents.*
-    # Legacy profiles.* is still read by profile_gate / migrate for compat.
+    # Legacy profiles.* is still read by agent_gate / migrate for compat.
     # When management_enabled is false, mutating agent commands and WebUI
     # Agents UI are blocked; ``intellect -a <existing>`` still works.
     "agents": {
@@ -2064,7 +2064,7 @@ DEFAULT_CONFIG = {
         # Multiplex (B1-2/B1-4): restricts which SECONDARY profiles
         # `intellect gateway run --multiplex` serves. The default (active)
         # profile is always served. Empty/missing → every valid profile
-        # under ~/.intellect/profiles/.
+        # under ~/.intellect/agents/ (legacy profiles/ still dual-read).
         "multiplex_profile_allowlist": [],
         # Scale-to-zero (HP-406): idle self-stop + systemd socket-activation
         # wake. Disabled by default — when off, the gateway behaves exactly as
@@ -2321,7 +2321,7 @@ DEFAULT_CONFIG = {
 
 
     # Config schema version - bump this when adding new required fields
-    "_config_version": 25,
+    "_config_version": 26,
 }
 
 # =============================================================================
@@ -4531,6 +4531,36 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
             results["config_added"].append("model_catalog.ttl_hours 24→1")
             if not quiet:
                 print("  ✓ Lowered model_catalog.ttl_hours to 1 (hourly picker refresh)")
+
+    # ── Version 25 → 26: promote profiles.* → agents.* ──
+    # Canonical isolation-unit config is agents.management_enabled.
+    # Older configs may only set profiles.management_enabled=true; deep-merge
+    # would otherwise leave agents.management_enabled=false from DEFAULT_CONFIG.
+    # Gate code ORs both keys, but we still promote so subsequent saves /
+    # docs / tooling see the canonical section.
+    if current_ver < 26:
+        config = load_config()
+        profiles_sec = config.get("profiles") if isinstance(config.get("profiles"), dict) else {}
+        agents_sec = dict(config.get("agents") if isinstance(config.get("agents"), dict) else {})
+        promoted = []
+        for key, value in profiles_sec.items():
+            if key not in agents_sec or (
+                key == "management_enabled"
+                and value
+                and not agents_sec.get("management_enabled")
+            ):
+                if agents_sec.get(key) != value:
+                    agents_sec[key] = value
+                    promoted.append(f"agents.{key}")
+        if promoted:
+            config["agents"] = agents_sec
+            save_config(config)
+            results["config_added"].extend(promoted)
+            if not quiet:
+                print(
+                    "  ✓ Promoted profiles.* → agents.* "
+                    f"({', '.join(promoted)})"
+                )
 
     if current_ver < latest_ver and not quiet:
         print(f"Config version: {current_ver} → {latest_ver}")

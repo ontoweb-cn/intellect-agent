@@ -626,7 +626,7 @@ Profiles 是构建在 `INTELLECT_HOME` 之上的托管层。您*可以*在每次
 
 ### Profiles 共享记忆或会话吗？
 
-不共享。每个 profile 都有自己独立的记忆存储、会话数据库和技能目录，完全隔离。如果您想用现有的记忆和会话创建新 profile，请使用 `intellect profile create newname --clone-all` 从当前 profile 复制所有内容。
+不共享。每个 profile 都有自己独立的记忆存储、会话数据库和技能目录，完全隔离。如果您想用现有的记忆和会话创建新 profile，请使用 `intellect agent create newname --clone-all` 从当前 profile 复制所有内容。
 
 ### 运行 `intellect update` 时会发生什么？
 
@@ -634,7 +634,7 @@ Profiles 是构建在 `INTELLECT_HOME` 之上的托管层。您*可以*在每次
 
 ### 可以运行多少个 profiles？
 
-没有硬性限制。每个 profile 只是 `~/.intellect/profiles/` 下的一个目录。实际限制取决于您的磁盘空间以及系统能处理多少个并发网关（每个网关是一个轻量级 Python 进程）。运行数十个 profiles 完全没问题；每个空闲的 profile 不占用任何资源。
+没有硬性限制。每个 profile 只是 `~/.intellect/agents/` 下的一个目录。实际限制取决于您的磁盘空间以及系统能处理多少个并发网关（每个网关是一个轻量级 Python 进程）。运行数十个 profiles 完全没问题；每个空闲的 profile 不占用任何资源。
 
 ---
 
@@ -776,17 +776,17 @@ skills:
 
 ```bash
 # 在源机器上
-intellect profile export work ./work-backup.tar.gz
+intellect agent export work ./work-backup.tar.gz
 
 # 将文件复制到目标机器，然后：
-intellect profile import ./work-backup.tar.gz work
+intellect agent import ./work-backup.tar.gz work
 ```
 
 导入的 profile 将包含导出时的所有配置、记忆、会话和技能。如果新机器的设置不同，您可能需要更新路径或重新向提供商进行身份验证。
 
-### `intellect backup` 与 `intellect profile export` 的对比
+### `intellect backup` 与 `intellect agent export` 的对比
 
-| 功能 | `intellect backup` | `intellect profile export` |
+| 功能 | `intellect backup` | `intellect agent export` |
 | :--- | :--- | :--- |
 | **使用场景** | **整机迁移** | **移植/共享特定 profile** |
 | **范围** | 全局（整个 `~/.intellect` 目录） | 局部（单个 profile 目录） |

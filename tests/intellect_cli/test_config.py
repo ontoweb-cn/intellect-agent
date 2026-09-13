@@ -893,3 +893,32 @@ class TestEnvWriteDenylist:
         with pytest.raises(ValueError, match="denylist"):
             save_env_value("LD_PRELOAD", "/tmp/evil.so")
 
+
+class TestAgentsConfigPromotion:
+    """profiles.* → agents.* promote on migrate (profile→agent rename)."""
+
+    def test_promotes_management_enabled_from_profiles(self, tmp_path, monkeypatch):
+        import yaml
+        from intellect_cli import config as cfg_mod
+
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "_config_version": 25,
+                    "profiles": {"management_enabled": True},
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        cfg_mod.migrate_config(interactive=False, quiet=True)
+
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert raw["agents"]["management_enabled"] is True
+        # Legacy key retained for dual-read until users rewrite config.
+        assert raw["profiles"]["management_enabled"] is True
+        assert raw["_config_version"] == cfg_mod.DEFAULT_CONFIG["_config_version"]
+

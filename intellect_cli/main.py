@@ -10641,7 +10641,7 @@ def cmd_agent(args):
                 no_skills=no_skills,
                 description=getattr(args, "description", None),
             )
-            print(f"\nProfile '{name}' created at {profile_dir}")
+            print(f"\nAgent '{name}' created at {profile_dir}")
 
             if clone or clone_all:
                 source_label = (
@@ -10673,7 +10673,7 @@ def cmd_agent(args):
                 if result and result.get("skipped_opt_out"):
                     print(
                         "No bundled skills seeded (--no-skills). "
-                        "Delete .no-bundled-skills in the profile to opt back in."
+                        "Delete .no-bundled-skills in the agent home to opt back in."
                     )
                 elif result:
                     copied = len(result.get("copied", []))
@@ -10691,9 +10691,9 @@ def cmd_agent(args):
                 if collision:
                     print(f"\n⚠ Cannot create alias '{name}' — {collision}")
                     print(
-                        f"  Choose a custom alias:  intellect profile alias {name} --name <custom>"
+                        f"  Choose a custom alias:  intellect agent alias {name} --name <custom>"
                     )
-                    print(f"  Or access via flag:     intellect -p {name} chat")
+                    print(f"  Or access via flag:     intellect -a {name} chat")
                 else:
                     wrapper_path = create_wrapper_script(name)
                     if wrapper_path:
@@ -10753,20 +10753,20 @@ def cmd_agent(args):
         name = getattr(args, "profile_name", None)
 
         if all_flag and not auto_flag:
-            print("profile describe: --all requires --auto", file=sys.stderr)
+            print("agent describe: --all requires --auto", file=sys.stderr)
             sys.exit(2)
         if all_flag and (text_value or name):
             print(
-                "profile describe: --all is mutually exclusive with a profile name / --text",
+                "agent describe: --all is mutually exclusive with an agent name / --text",
                 file=sys.stderr,
             )
             sys.exit(2)
         if not all_flag and not name:
-            print("profile describe: profile name is required (or --all --auto)", file=sys.stderr)
+            print("agent describe: agent name is required (or --all --auto)", file=sys.stderr)
             sys.exit(2)
         if text_value and auto_flag:
             print(
-                "profile describe: --text is mutually exclusive with --auto",
+                "agent describe: --text is mutually exclusive with --auto",
                 file=sys.stderr,
             )
             sys.exit(2)
@@ -10783,7 +10783,7 @@ def cmd_agent(args):
                 print(f"Error: {exc}", file=sys.stderr)
                 sys.exit(1)
             if not profile_dir.is_dir():
-                print(f"Error: profile '{name}' not found", file=sys.stderr)
+                print(f"Error: agent '{name}' not found", file=sys.stderr)
                 sys.exit(1)
             meta = _profiles_mod.read_profile_meta(profile_dir)
             desc = meta.get("description") or ""
@@ -10819,7 +10819,7 @@ def cmd_agent(args):
         if all_flag:
             targets = _pd.list_describable_profiles(missing_only=True)
             if not targets:
-                print("All profiles already have descriptions.")
+                print("All agents already have descriptions.")
                 sys.exit(0)
         else:
             targets = [name]
@@ -10834,7 +10834,7 @@ def cmd_agent(args):
             else:
                 fail_count += 1
                 print(
-                    f"profile describe {outcome.profile_name}: {outcome.reason}",
+                    f"agent describe {outcome.profile_name}: {outcome.reason}",
                     file=sys.stderr,
                 )
         if not all_flag:
@@ -10853,7 +10853,7 @@ def cmd_agent(args):
         )
 
         if not profile_exists(name):
-            print(f"Error: Profile '{name}' does not exist.")
+            print(f"Error: Agent '{name}' does not exist.")
             sys.exit(1)
         profile_dir = get_profile_dir(name)
         model, provider = _read_config_model(profile_dir)
@@ -10878,7 +10878,7 @@ def cmd_agent(args):
             print(f"Distribution: {dist_name}@{dist_version or '?'}")
             if dist_source:
                 print(f"Installed from: {dist_source}")
-            print(f"  (run `intellect profile info {name}` for full manifest)")
+            print(f"  (run `intellect agent info {name}` for full manifest)")
         if wrapper.exists():
             print(f"Alias:   {wrapper}")
         print()
@@ -10891,7 +10891,7 @@ def cmd_agent(args):
         from intellect_cli.profiles import profile_exists
 
         if not profile_exists(name):
-            print(f"Error: Profile '{name}' does not exist.")
+            print(f"Error: Agent '{name}' does not exist.")
             sys.exit(1)
 
         alias_name = custom_name or name
@@ -10945,7 +10945,7 @@ def cmd_agent(args):
                 args.archive, name=getattr(args, "import_name", None)
             )
             name = profile_dir.name
-            print(f"✓ Imported profile '{name}' at {profile_dir}")
+            print(f"✓ Imported agent '{name}' at {profile_dir}")
 
             # Offer to create alias
             collision = check_alias_collision(name)
@@ -11003,9 +11003,9 @@ def cmd_agent(args):
             if plan.has_cron:
                 print(
                     "  Cron jobs were included but are NOT scheduled automatically.\n"
-                    f"  Review them with:  intellect -p {plan.manifest.name} cron list"
+                    f"  Review them with:  intellect -a {plan.manifest.name} cron list"
                 )
-            print(f"\n  Use with:      intellect -p {plan.manifest.name} chat")
+            print(f"\n  Use with:      intellect -a {plan.manifest.name} chat")
         except (DistributionError, ValueError) as e:
             print(f"Error: {e}")
             sys.exit(1)
@@ -11024,8 +11024,8 @@ def cmd_agent(args):
             current = read_manifest(get_profile_dir(canon))
             if current is None:
                 print(
-                    f"Error: Profile '{canon}' is not a distribution (no distribution.yaml). "
-                    "Only profiles installed via `intellect profile install` can be updated."
+                    f"Error: Agent '{canon}' is not a distribution (no distribution.yaml). "
+                    "Only agents installed via `intellect agent install` can be updated."
                 )
                 sys.exit(1)
 
@@ -11051,7 +11051,7 @@ def cmd_agent(args):
             if plan.has_cron:
                 print(
                     "  Cron files were refreshed.  Review with:  "
-                    f"intellect -p {plan.manifest.name} cron list"
+                    f"intellect -a {plan.manifest.name} cron list"
                 )
         except (DistributionError, ValueError) as e:
             print(f"Error: {e}")
@@ -11067,7 +11067,7 @@ def cmd_agent(args):
             sys.exit(1)
         if not data:
             print(
-                f"Profile '{args.profile_name}' is not a distribution "
+                f"Agent '{args.profile_name}' is not a distribution "
                 "(no distribution.yaml)."
             )
             return
@@ -14696,7 +14696,7 @@ Examples:
         default=None,
         help="One- or two-sentence description of what this profile is good at. "
              "Used by the kanban decomposer to route tasks based on role instead "
-             "of profile name alone. Skip and add later via `intellect profile describe`.",
+             "of agent name alone. Skip and add later via `intellect agent describe`.",
     )
 
     profile_delete = profile_subparsers.add_parser("delete", help="Delete a profile")

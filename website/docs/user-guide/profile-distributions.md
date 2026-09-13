@@ -36,10 +36,10 @@ my-research-agent/
 Recipients run:
 
 ```bash
-intellect profile install github.com/you/my-research-agent --alias
+intellect agent install github.com/you/my-research-agent --alias
 ```
 
-…and they now have the whole agent. They fill in their own API keys (`.env.EXAMPLE` → `.env`), and they can run `my-research-agent chat` or address it through Telegram / Discord / Slack / any gateway platform. When you push a new version, they run `intellect profile update my-research-agent` and pull your changes — their memories and sessions stay put.
+…and they now have the whole agent. They fill in their own API keys (`.env.EXAMPLE` → `.env`), and they can run `my-research-agent chat` or address it through Telegram / Discord / Slack / any gateway platform. When you push a new version, they run `intellect agent update my-research-agent` and pull your changes — their memories and sessions stay put.
 
 ## Why git?
 
@@ -65,7 +65,7 @@ Good fits:
 
 Not a fit:
 
-- **You just want to back up a profile on your own machine.** Use [`intellect profile export` / `import`](../reference/profile-commands.md#intellect-profile-export) — that's what those are for.
+- **You just want to back up a profile on your own machine.** Use [`intellect agent export` / `import`](../reference/profile-commands.md#intellect-profile-export) — that's what those are for.
 - **You want to share API keys alongside the agent.** `auth.json` and `.env` are deliberately excluded from distributions. Each installer brings their own credentials.
 - **You want to share memories / sessions / conversation history.** Those are user data, not distribution content. Never shipped.
 
@@ -82,16 +82,16 @@ Below is the full end-to-end flow. Pick the side you care about.
 Build and refine the agent like any other profile:
 
 ```bash
-intellect profile create research-bot
+intellect agent create research-bot
 research-bot setup                    # configure model, API keys
-# Edit ~/.intellect/profiles/research-bot/SOUL.md
+# Edit ~/.intellect/agents/research-bot/SOUL.md
 # Install skills, wire up MCP servers, schedule cron jobs, etc.
 research-bot chat                     # dogfood until it feels right
 ```
 
 ### Step 2 — Add a `distribution.yaml`
 
-Create `~/.intellect/profiles/research-bot/distribution.yaml`:
+Create `~/.intellect/agents/research-bot/distribution.yaml`:
 
 ```yaml
 name: research-bot
@@ -119,7 +119,7 @@ That's the whole manifest. Every field except `name` has a sensible default.
 ### Step 3 — Push to a git repo
 
 ```bash
-cd ~/.intellect/profiles/research-bot
+cd ~/.intellect/agents/research-bot
 git init
 git add .
 git commit -m "v1.0.0"
@@ -146,7 +146,7 @@ git tag v1.1.0
 git push --tags
 ```
 
-Recipients who run `intellect profile update research-bot` will pull the latest.
+Recipients who run `intellect agent update research-bot` will pull the latest.
 
 ### What the repo looks like
 
@@ -195,7 +195,7 @@ When omitted, the defaults above apply — which is what most distributions want
 ### Install
 
 ```bash
-intellect profile install github.com/you/research-bot --alias
+intellect agent install github.com/you/research-bot --alias
 ```
 
 What happens:
@@ -204,7 +204,7 @@ What happens:
 2. Reads `distribution.yaml`, shows you the manifest (name, version, description, author, required env vars).
 3. Checks each required env var against your shell environment and the target profile's existing `.env`. Marks each as `✓ set` or `needs setting` so you know exactly what to configure.
 4. Asks for confirmation. Pass `-y` / `--yes` to skip.
-5. Copies distribution-owned files into `~/.intellect/profiles/research-bot/` (or wherever the manifest's `name` resolves).
+5. Copies distribution-owned files into `~/.intellect/agents/research-bot/` (or wherever the manifest's `name` resolves).
 6. Writes `.env.EXAMPLE` with the required keys commented out — copy to `.env` and fill in.
 7. With `--alias`, creates a wrapper so you can run `research-bot chat` directly.
 
@@ -214,22 +214,22 @@ Any git URL works:
 
 ```bash
 # GitHub shorthand
-intellect profile install github.com/you/research-bot
+intellect agent install github.com/you/research-bot
 
 # Full HTTPS
-intellect profile install https://github.com/you/research-bot.git
+intellect agent install https://github.com/you/research-bot.git
 
 # SSH
-intellect profile install git@github.com:you/research-bot.git
+intellect agent install git@github.com:you/research-bot.git
 
 # Self-hosted, GitLab, Gitea, Forgejo — any Git host
-intellect profile install https://git.example.com/team/research-bot.git
+intellect agent install https://git.example.com/team/research-bot.git
 
 # Private repo using your configured git auth
-intellect profile install git@github.com:your-org/internal-bot.git
+intellect agent install git@github.com:your-org/internal-bot.git
 
 # Local directory during development (no git push needed)
-intellect profile install ~/my-profile-in-progress/
+intellect agent install ~/my-profile-in-progress/
 ```
 
 ### Override the profile name
@@ -238,9 +238,9 @@ Two users wanting the same distribution under different profile names:
 
 ```bash
 # Alice
-intellect profile install github.com/acme/support-bot --name support-us --alias
+intellect agent install github.com/acme/support-bot --name support-us --alias
 # Bob (same distribution, different local name)
-intellect profile install github.com/acme/support-bot --name support-eu --alias
+intellect agent install github.com/acme/support-bot --name support-eu --alias
 ```
 
 ### Fill in env vars
@@ -263,7 +263,7 @@ OPENAI_API_KEY=
 Copy it:
 
 ```bash
-cp ~/.intellect/profiles/research-bot/.env.EXAMPLE ~/.intellect/profiles/research-bot/.env
+cp ~/.intellect/agents/research-bot/.env.EXAMPLE ~/.intellect/agents/research-bot/.env
 # Edit .env, paste your real keys
 ```
 
@@ -272,7 +272,7 @@ Required keys that were already in your shell environment (e.g. `OPENAI_API_KEY`
 ### Check what you installed
 
 ```bash
-intellect profile info research-bot
+intellect agent info research-bot
 ```
 
 Shows:
@@ -291,7 +291,7 @@ Environment variables:
   SERPAPI_KEY (optional) — SerpAPI key for web search
 ```
 
-`intellect profile list` also shows a `Distribution` column so at a glance you can see which of your profiles came from repos and which you hand-built:
+`intellect agent list` also shows a `Distribution` column so at a glance you can see which of your profiles came from repos and which you hand-built:
 
 ```
  Profile          Model                        Gateway      Alias        Distribution
@@ -305,7 +305,7 @@ Environment variables:
 ### Update
 
 ```bash
-intellect profile update research-bot
+intellect agent update research-bot
 ```
 
 What happens:
@@ -320,14 +320,14 @@ No re-downloading the whole archive. No stomping your local changes to config. N
 ### Remove
 
 ```bash
-intellect profile delete research-bot
+intellect agent delete research-bot
 ```
 
 The delete prompt surfaces distribution info before asking you to confirm:
 
 ```
 Profile: research-bot
-Path:    ~/.intellect/profiles/research-bot
+Path:    ~/.intellect/agents/research-bot
 Model:   claude-opus-4 (anthropic)
 Skills:  12
 Distribution: research-bot@1.0.0
@@ -352,17 +352,17 @@ You built a research assistant on your laptop. You want the same agent on your w
 
 ```bash
 # Laptop
-cd ~/.intellect/profiles/research-bot
+cd ~/.intellect/agents/research-bot
 git init && git add . && git commit -m "initial"
 git remote add origin git@github.com:you/research-bot.git
 git push -u origin main
 
 # Workstation
-intellect profile install github.com/you/research-bot --alias
+intellect agent install github.com/you/research-bot --alias
 # Fill in .env. Done.
 ```
 
-Any iteration on the laptop (`git commit && push`) pulls onto the workstation with `intellect profile update research-bot`. Memories stay per-machine — the laptop remembers its own conversations, the workstation remembers its own, they don't collide.
+Any iteration on the laptop (`git commit && push`) pulls onto the workstation with `intellect agent update research-bot`. Memories stay per-machine — the laptop remembers its own conversations, the workstation remembers its own, they don't collide.
 
 ### Team: ship a reviewed internal agent
 
@@ -370,19 +370,19 @@ Your engineering team wants a shared PR-review bot with a specific SOUL, specifi
 
 ```bash
 # Engineering lead
-cd ~/.intellect/profiles/pr-reviewer
+cd ~/.intellect/agents/pr-reviewer
 # ... build and tune ...
 git init && git add . && git commit -m "v1.0 PR reviewer"
 git tag v1.0.0
 git push -u origin main --tags    # push to your company's internal Git host
 
 # Each engineer
-intellect profile install git@github.com:your-org/pr-reviewer.git --alias
+intellect agent install git@github.com:your-org/pr-reviewer.git --alias
 # Fill in .env with their own API key (billed to them), .env.EXAMPLE points at what's required
 pr-reviewer chat
 ```
 
-When the lead ships v1.1 (better SOUL, new skill), engineers run `intellect profile update pr-reviewer` and everyone's on the new version within minutes.
+When the lead ships v1.1 (better SOUL, new skill), engineers run `intellect agent update pr-reviewer` and everyone's on the new version within minutes.
 
 ### Community: publish a public agent
 
@@ -390,7 +390,7 @@ You built something novel — maybe a "Polymarket trader" or an "academic paper 
 
 ```bash
 # You
-cd ~/.intellect/profiles/polymarket-trader
+cd ~/.intellect/agents/polymarket-trader
 # Write a solid README.md at the repo root — GitHub shows it on the repo page
 git init && git add . && git commit -m "v1.0"
 git tag v1.0.0
@@ -399,7 +399,7 @@ git remote add origin https://github.com/you/intellect-polymarket-trader.git
 git push -u origin main --tags
 
 # Anyone
-intellect profile install github.com/you/intellect-polymarket-trader --alias
+intellect agent install github.com/you/intellect-polymarket-trader --alias
 ```
 
 Tweet the install command. People who try it send you issues and PRs. If someone wants to customize, they fork — same git workflow everyone already knows.
@@ -442,10 +442,10 @@ You're the ops lead. You want a temporary agent that diagnoses a production inci
 git push -u origin main
 
 # Each on-call
-intellect profile install git@github.com:your-org/incident-2026-q2.git --alias
+intellect agent install git@github.com:your-org/incident-2026-q2.git --alias
 
 # Incident resolved — tear it down
-intellect profile delete incident-2026-q2
+intellect agent delete incident-2026-q2
 ```
 
 The install-delete cycle is cheap enough to be disposable.
@@ -457,14 +457,14 @@ The install-delete cycle is cheap enough to be disposable.
 ### Pin to a specific version
 
 :::note
-Git ref pinning (`#v1.2.0`) is planned but not in the initial release — install currently tracks the default branch. Track your installed version via `intellect profile info <name>` and hold off on updates until you're ready.
+Git ref pinning (`#v1.2.0`) is planned but not in the initial release — install currently tracks the default branch. Track your installed version via `intellect agent info <name>` and hold off on updates until you're ready.
 :::
 
 ### Check what version you're on vs. latest
 
 ```bash
 # Your installed version
-intellect profile info research-bot | grep Version
+intellect agent info research-bot | grep Version
 
 # Latest upstream (without installing)
 git ls-remote --tags https://github.com/you/research-bot | tail -5
@@ -475,7 +475,7 @@ git ls-remote --tags https://github.com/you/research-bot | tail -5
 The default update behavior already does this: `config.yaml` is preserved. To be safe, write your local tweaks to a file the distribution doesn't own:
 
 ```yaml
-# ~/.intellect/profiles/research-bot/local/my-overrides.yaml
+# ~/.intellect/agents/research-bot/local/my-overrides.yaml
 # (distribution never touches local/)
 ```
 
@@ -485,11 +485,11 @@ The default update behavior already does this: `config.yaml` is preserved. To be
 
 ```bash
 # Nuke and re-install from scratch (loses memories/sessions too)
-intellect profile delete research-bot --yes
-intellect profile install github.com/you/research-bot --alias
+intellect agent delete research-bot --yes
+intellect agent install github.com/you/research-bot --alias
 
 # Update to current main but reset config.yaml to the distribution's default
-intellect profile update research-bot --force-config --yes
+intellect agent update research-bot --force-config --yes
 ```
 
 ### Fork and customize
@@ -498,9 +498,9 @@ The standard git workflow — distributions are just repos:
 
 ```bash
 # Fork the repo on GitHub, then install your fork
-intellect profile install github.com/yourname/forked-research-bot --alias
+intellect agent install github.com/yourname/forked-research-bot --alias
 
-# Iterate locally in ~/.intellect/profiles/forked-research-bot/
+# Iterate locally in ~/.intellect/agents/forked-research-bot/
 # Edit SOUL.md, commit, push to your fork
 # Upstream changes: pull them into your fork the usual way
 ```
@@ -511,11 +511,11 @@ From the author's machine:
 
 ```bash
 # Install from a local directory (no git push needed)
-intellect profile install ~/.intellect/profiles/research-bot --name research-bot-test --alias
+intellect agent install ~/.intellect/agents/research-bot --name research-bot-test --alias
 
 # Tweak, delete, re-install until it's right
-intellect profile delete research-bot-test --yes
-intellect profile install ~/.intellect/profiles/research-bot --name research-bot-test
+intellect agent delete research-bot-test --yes
+intellect agent install ~/.intellect/agents/research-bot --name research-bot-test
 ```
 
 ---
@@ -545,7 +545,7 @@ Profile distributions are unsigned by default. You're trusting:
 - **The git host** (GitHub / GitLab / wherever) to serve the bytes the author pushed.
 - **The author** to not ship a malicious SOUL, skills, or cron jobs.
 
-Cron jobs from a distribution are **not auto-scheduled** — the installer prints `intellect -p <name> cron list` and you enable them explicitly. SOUL.md and skills ARE active as soon as you start chatting with the profile, so read them before your first run if you're installing from someone you don't know.
+Cron jobs from a distribution are **not auto-scheduled** — the installer prints `intellect -a <name> cron list` and you enable them explicitly. SOUL.md and skills ARE active as soon as you start chatting with the profile, so read them before your first run if you're installing from someone you don't know.
 
 Rough analogy: installing a distribution is like installing a browser extension or a VS Code extension. Low friction, high power, trust the source. For internal company distributions, use a private repo and your normal git auth — nothing new to configure.
 
@@ -557,7 +557,7 @@ For implementation details, precise CLI behavior, and all flags, see the [Profil
 
 The short version:
 
-- `install`, `update`, `info` live inside `intellect profile` — not a parallel command tree.
+- `install`, `update`, `info` live inside `intellect agent` — not a parallel command tree.
 - The manifest format is YAML with a tiny required schema (`name` only).
 - The installer uses your local `git` binary for cloning, so any auth your shell already handles (SSH keys, credential helpers) works transparently.
 - After clone, `.git/` is stripped — the installed profile isn't itself a git checkout, avoiding "oh my, I accidentally committed my `.env` to the distribution's git history" traps.
@@ -567,7 +567,7 @@ The short version:
 
 - [Profiles: Running Multiple Agents](./profiles.md) — the base concept
 - [Profile Commands reference](../reference/profile-commands.md) — every flag, every option
-- [`intellect profile export` / `import`](../reference/profile-commands.md#intellect-profile-export) — local backup / restore (not distribution)
+- [`intellect agent export` / `import`](../reference/profile-commands.md#intellect-profile-export) — local backup / restore (not distribution)
 - [Using SOUL with Intellect](../guides/use-soul-with-intellect.md) — authoring personalities
 - [Personality & SOUL](./features/personality.md) — how SOUL fits into the agent
 - [Skills catalog](../reference/skills-catalog.md) — skills you can bundle

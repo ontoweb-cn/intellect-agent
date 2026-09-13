@@ -18,7 +18,7 @@ def profile_env(tmp_path, monkeypatch):
     """Root home + profiles/ layout, roster file under the ROOT home."""
     home_root = tmp_path / "root"
     (home_root / ".intellect").mkdir(parents=True)
-    (home_root / ".intellect" / "profiles").mkdir()
+    (home_root / ".intellect" / "agents").mkdir()
     monkeypatch.setattr("pathlib.Path.home", lambda: home_root)
     monkeypatch.setenv("INTELLECT_HOME", str(home_root / ".intellect"))
     monkeypatch.setenv("HOME", str(home_root))
@@ -26,7 +26,7 @@ def profile_env(tmp_path, monkeypatch):
 
 
 def _profile(root_home, name):
-    pdir = root_home / "profiles" / name
+    pdir = root_home / "agents" / name
     pdir.mkdir(parents=True, exist_ok=True)
     return pdir
 
@@ -45,7 +45,7 @@ def test_build_roster_defaults_and_liveness(profile_env, monkeypatch):
 
 def test_probe_online_false_without_socket(profile_env):
     _profile(profile_env, "alpha")
-    assert bmr._probe_online(profile_env / "profiles" / "alpha") is False
+    assert bmr._probe_online(profile_env / "agents" / "alpha") is False
 
 
 def test_persist_roster_writes_and_change_detects(profile_env):

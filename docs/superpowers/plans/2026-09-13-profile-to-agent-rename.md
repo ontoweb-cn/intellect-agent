@@ -4,74 +4,94 @@
 
 **Goal:** Full-stack rename of isolation *profile* → *agent* with dual-read compatibility.  
 **Architecture:** Canonical on-disk `agents/`, sticky `active_agent`, CLI `intellect agent`, flags `--agent`/`-a`, config `agents.*`, HTTP `/a/`. Legacy `profiles/`, `active_profile`, `intellect profile`, `--profile`/`-p`, `/p/` remain accepted.  
-**Tech Stack:** Python CLI (`intellect_cli`), gateway multiplex, WebUI APIs, pytest via `scripts/run_tests.sh`.
+**Tech Stack:** Python CLI (`intellect_cli`), gateway multiplex, WebUI APIs, pytest via `scripts/run_tests.sh`.  
+**Branch:** `rename/profile-to-agent`  
+**Status:** Tasks 1–7 core complete; optional polish listed under Task 6/7.
 
 ---
 
-### Task 1: Path root dual-read + sticky file
+### Task 1: Path root dual-read + sticky file — DONE
+
+**Files:** `intellect_cli/agents_home.py`, `intellect_constants.py`, `tests/intellect_cli/test_profiles.py`
+
+- [x] Add `_get_agents_root()` returning `<root>/agents`
+- [x] `_get_profiles_root()` returns canonical `agents/` (legacy via `_get_legacy_profiles_root`)
+- [x] Resolve agent dir: `agents/<id>` else `profiles/<id>`
+- [x] Sticky: read `active_agent` then `active_profile`; write `active_agent`
+- [x] Run focused profile path tests
+
+### Task 2: CLI `intellect agent` + flags — DONE
+
+**Files:** `intellect_cli/main.py`, `intellect_cli/agent_gate.py` (+ `profile_gate` shim), completion
+
+- [x] Accept `--agent`/`-a` in `_apply_profile_override` (keep `--profile`/`-p`)
+- [x] Register `agent` subcommand (same handlers as profile)
+- [x] Keep `profile` as deprecated alias
+- [x] Gate checks `agents.management_enabled` OR `profiles.management_enabled`
+- [x] `profile_gate` → `agent_gate` + shim
+
+### Task 3: Config migration — DONE
 
 **Files:**
-- Modify: `intellect_cli/profiles.py` (later shim to `agents_home.py`)
-- Modify: `intellect_constants.py` (warnings mentioning profile)
-- Test: `tests/intellect_cli/test_profiles.py`
+- Modify: `intellect_cli/config.py` (`DEFAULT_CONFIG`, `migrate_config`)
+- Test: `tests/intellect_cli/test_config.py` (`TestAgentsConfigPromotion`)
 
-- [ ] Add `_get_agents_root()` returning `<root>/agents`
-- [ ] `_get_profiles_root()` becomes alias that prefers `agents/`, falls back to `profiles/`
-- [ ] Resolve agent dir: `agents/<id>` else `profiles/<id>`
-- [ ] Sticky: read `active_agent` then `active_profile`; write `active_agent`
-- [ ] Run focused profile path tests
+- [x] Add `agents: { management_enabled: false }` to `DEFAULT_CONFIG` (legacy `profiles` kept)
+- [x] On migrate (`_config_version` 25 → 26): promote `profiles.*` → `agents.*` when needed
+- [x] Bump `_config_version` to 26 for that transform
+- [x] Test: migrate promotes; asserts version equals `DEFAULT_CONFIG["_config_version"]` (not a frozen literal alone)
 
-### Task 2: CLI `intellect agent` + flags
-
-**Files:**
-- Modify: `intellect_cli/main.py` (`_apply_profile_override`, parser, `cmd_profile`)
-- Modify: `intellect_cli/profile_gate.py` → also read `agents.management_enabled`
-- Modify: `intellect_cli/commands/registry.py`, `completion.py`
-
-- [ ] Accept `--agent`/`-a` in `_apply_profile_override` (keep `--profile`/`-p`)
-- [ ] Register `agent` subcommand (same handlers as profile)
-- [ ] Keep `profile` as deprecated alias
-- [ ] Gate checks `agents.management_enabled` with fallback to `profiles.management_enabled`
-
-### Task 3: Config migration
-
-**Files:**
-- Modify: `intellect_cli/config.py` (`DEFAULT_CONFIG`, migrate)
-
-- [ ] Add `agents: { management_enabled: false }`
-- [ ] On migrate/load: promote `profiles` → `agents` if needed
-- [ ] Bump `_config_version` only if transform required
-
-### Task 4: Module rename + shims
-
-**Files:**
-- Create: `intellect_cli/agents_home.py` (moved from profiles.py)
-- Modify: `intellect_cli/profiles.py` → rebind shim (`sys.modules[__name__] = agents_home`)
-- Helpers: `get_agent_dir`, `list_agents`, etc. already aliased
+### Task 4: Module rename + shims — DONE
 
 - [x] `git mv` profiles.py → agents_home.py
 - [x] Shim re-exports / module identity for patches
 - [x] Disk migration `migrate_legacy_agent_homes` + once-per-process latch
 - [x] Tests: `test_agents_home_migration.py` + dual-read updates
 
-### Task 5: Gateway `/a/` + status fields
+### Task 5: Gateway `/a/` + status fields — DONE
 
-**Files:**
-- Modify: `gateway/multiplex_front.py` (or equivalent)
-- Modify: `gateway/status.py`, bot_mode roster scanners
+- [x] Route `/a/<name>/` and keep `/p/<name>/`
+- [x] Emit `served_agents` (+ `served_profiles` alias)
+- [x] Service units / PID scan accept `--agent` (legacy `--profile` still matched)
 
-- [ ] Route `/a/<name>/` and keep `/p/<name>/`
-- [ ] Emit `served_agents` (+ `served_profiles` alias)
+### Task 6: WebUI + docs + AGENTS.md — MOSTLY DONE
 
-### Task 6: WebUI + docs + AGENTS.md
+**Done:**
+- [x] WebUI API: agents root, dual-read paths, sticky `active_agent`
+- [x] EN + zh-Hans `user-guide/profiles.md` + `reference/profile-commands.md` terminology
+- [x] `AGENTS.md` agents/homes section
+- [x] Remaining high-traffic docs: faq, cli-commands, profile-distributions, multiplex, open-webui, api-server, teams-and-members (+ zh-Hans mirrors for faq/cli/teams)
+- [x] WebUI user-visible “Profiles vs workspaces” → “Agents vs workspaces” (panel ids / API paths unchanged)
+- [x] CLI user-facing strings in `cmd_agent`
 
-**Files:**
-- Modify: `webui/api/profiles.py`, routes
-- Modify: `website/docs/user-guide/profiles.md` (redirect/rename)
-- Modify: `AGENTS.md` Profiles section
+**Optional later (not blocking B):**
+- [ ] Rename doc slug `profiles.md` → `agents.md` + redirect
+- [ ] Exhaustive zh-Hans / skill SKILL.md path sweeps
+- [ ] WebUI i18n keys `profile_*` → `agent_*` (keep aliases)
 
-### Task 7: Test sweep
+### Task 7: Test sweep — MOSTLY DONE
 
-- [ ] Update fixtures using `profiles/` paths
-- [ ] `scripts/run_tests.sh tests/intellect_cli/test_profiles.py tests/intellect_cli/test_apply_profile_override.py tests/intellect_cli/test_profile_gate.py -q`
-- [ ] Expand to gateway/bot_mode as needed
+**Done:** focused suites for profiles, gate, migration, completion, container_boot, ProfileArg, systemd preflight stubs; key fixtures prefer `agents/` (file_safety, file_operations, bot_mode_roster, update_check).
+
+**Optional later:**
+- [ ] Remaining test files that mkdir only `profiles/` for intentional legacy dual-read coverage
+- [ ] Broader bot_mode / gateway e2e path audit
+
+**Status:** Core B rename is functionally complete; leftover items are polish / optional.
+
+### Out of scope (design follow-ups — do not block B)
+
+- Kanban DB column rename `profile` → `agent`
+- Renaming WebUI REST `/api/profiles` paths
+- `ProviderProfile` / `user_profile` / `.hindsight/profiles/`
+
+### Verification gate (before calling B complete)
+
+```bash
+scripts/run_tests.sh \
+  tests/intellect_cli/test_profiles.py \
+  tests/intellect_cli/test_apply_profile_override.py \
+  tests/intellect_cli/test_profile_gate.py \
+  tests/intellect_cli/test_agents_home_migration.py \
+  tests/intellect_cli/test_completion.py
+```

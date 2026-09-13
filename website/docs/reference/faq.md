@@ -626,7 +626,7 @@ No. Each messaging platform (Telegram, Discord, etc.) requires exclusive access 
 
 ### Do profiles share memory or sessions?
 
-No. Each profile has its own memory store, session database, and skills directory. They are completely isolated. If you want to start a new profile with existing memories and sessions, use `intellect profile create newname --clone-all` to copy everything from the current profile.
+No. Each profile has its own memory store, session database, and skills directory. They are completely isolated. If you want to start a new profile with existing memories and sessions, use `intellect agent create newname --clone-all` to copy everything from the current profile.
 
 ### What happens when I run `intellect update`?
 
@@ -635,7 +635,7 @@ No. Each profile has its own memory store, session database, and skills director
 
 ### How many profiles can I run?
 
-There is no hard limit. Each profile is just a directory under `~/.intellect/profiles/`. The practical limit depends on your disk space and how many concurrent gateways your system can handle (each gateway is a lightweight Python process). Running dozens of profiles is fine; each idle profile uses no resources.
+There is no hard limit. Each profile is just a directory under `~/.intellect/agents/`. The practical limit depends on your disk space and how many concurrent gateways your system can handle (each gateway is a lightweight Python process). Running dozens of profiles is fine; each idle profile uses no resources.
 
 ---
 
@@ -777,17 +777,17 @@ Skills with very long descriptions are truncated to 40 characters in the Telegra
 
 ```bash
 # On the source machine
-intellect profile export work ./work-backup.tar.gz
+intellect agent export work ./work-backup.tar.gz
 
 # Copy the file to the target machine, then:
-intellect profile import ./work-backup.tar.gz work
+intellect agent import ./work-backup.tar.gz work
 ```
 
 The imported profile will have all config, memories, sessions, and skills from the export. You may need to update paths or re-authenticate with providers if the new machine has a different setup.
 
-### `intellect backup` vs `intellect profile export`
+### `intellect backup` vs `intellect agent export`
 
-| Feature | `intellect backup` | `intellect profile export` |
+| Feature | `intellect backup` | `intellect agent export` |
 | :--- | :--- | :--- |
 | **Use Case** | **Full machine migration** | **Porting/sharing a specific profile** |
 | **Scope** | Global (entire `~/.intellect` directory) | Local (single profile directory) |

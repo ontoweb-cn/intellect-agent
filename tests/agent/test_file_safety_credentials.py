@@ -296,13 +296,13 @@ def test_config_yaml_not_blocked(fake_home):
 
 
 def test_profile_mode_blocks_root_credentials(tmp_path, monkeypatch):
-    """Under a profile, INTELLECT_HOME = <root>/profiles/<name>, but
+    """Under a profile, INTELLECT_HOME = <root>/agents/<name>, but
     <root>/auth.json must ALSO be blocked — credentials at root are
     inherited by every profile."""
     import agent.file_safety as fs
 
     root = tmp_path / "intellect"
-    profile = root / "profiles" / "coder"
+    profile = root / "agents" / "coder"
     profile.mkdir(parents=True)
     monkeypatch.setattr(fs, "_intellect_home_path", lambda: profile)
     monkeypatch.setattr(fs, "_intellect_root_path", lambda: root)
