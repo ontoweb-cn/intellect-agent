@@ -195,7 +195,7 @@ impl DelegationRegistry {
         let filter = parent_session_key
             .map(str::trim)
             .filter(|s| !s.is_empty());
-        let list = PyList::empty_bound(py);
+        let list = PyList::empty(py);
         let mut ids: Vec<&String> = self.entries.keys().collect();
         ids.sort();
         for hid in ids {
@@ -262,7 +262,7 @@ fn entry_to_dict<'py>(
     py: Python<'py>,
     entry: &DelegationEntry,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let d = PyDict::new_bound(py);
+    let d = PyDict::new(py);
     d.set_item("handle_id", &entry.handle_id)?;
     d.set_item("parent_session_key", &entry.parent_session_key)?;
     d.set_item("goal", &entry.goal)?;
