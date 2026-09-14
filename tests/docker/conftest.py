@@ -137,3 +137,39 @@ def docker_exec_sh(
     return docker_exec(
         container, "sh", "-c", command, user=user, timeout=timeout,
     )
+
+
+def enable_agent_management(container: str, *, timeout: int = 30) -> None:
+    """Enable agent create/switch/delete inside the container.
+
+    The shipped default is ``agents.management_enabled: false``, so
+    ``intellect agent create`` (and the ``intellect profile create`` alias)
+    refuses. Tests that exercise the agent/profile lifecycle must turn the gate
+    on: they cover the feature, while the gate itself is covered by
+    tests/intellect_cli/test_profile_gate.py.
+
+    Writes INTELLECT_HOME/config.yaml (/opt/data in the image), flipping an
+    existing ``management_enabled: false`` when present and otherwise appending
+    the block. Uses python3 (guaranteed in the image) so no yq dependency.
+    """
+    script = (
+        "python3 - <<'PY'\n"
+        "import pathlib, re\n"
+        "p = pathlib.Path('/opt/data/config.yaml')\n"
+        "p.parent.mkdir(parents=True, exist_ok=True)\n"
+        "text = p.read_text() if p.exists() else ''\n"
+        "if re.search(r'management_enabled:\\s*(false|False)', text):\n"
+        "    text = re.sub(r'management_enabled:\\s*(false|False)',\n"
+        "                  'management_enabled: true', text)\n"
+        "elif 'management_enabled' not in text:\n"
+        "    if text and not text.endswith('\\n'):\n"
+        "        text += '\\n'\n"
+        "    text += 'agents:\\n  management_enabled: true\\n'\n"
+        "p.write_text(text)\n"
+        "PY"
+    )
+    r = docker_exec_sh(container, script, timeout=timeout)
+    assert r.returncode == 0, (
+        f"failed to enable agent management in {container}: {r.stderr}"
+    )
+

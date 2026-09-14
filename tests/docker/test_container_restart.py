@@ -21,7 +21,11 @@ import time
 
 import pytest
 
-from tests.docker.conftest import docker_exec, docker_exec_sh
+from tests.docker.conftest import (
+    docker_exec,
+    docker_exec_sh,
+    enable_agent_management,
+)
 
 
 def _docker(*args: str, **kw) -> subprocess.CompletedProcess[str]:
@@ -134,6 +138,9 @@ def restart_container(request, built_image: str):
         raise RuntimeError(
             f"container {name} did not finish cont-init within 30s"
         )
+    # The container ships agents.management_enabled: false; these tests drive
+    # profile create/start/stop, so the gate has to be on.
+    enable_agent_management(name)
     yield name
     _docker("rm", "-f", name)
     _docker("volume", "rm", "-f", volume)

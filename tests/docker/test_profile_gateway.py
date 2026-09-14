@@ -26,7 +26,7 @@ from __future__ import annotations
 import subprocess
 import time
 
-from tests.docker.conftest import docker_exec_sh
+from tests.docker.conftest import docker_exec_sh, enable_agent_management
 
 PROFILE = "test-harness-profile"
 
@@ -75,6 +75,7 @@ def test_profile_create_then_gateway_start(
         check=True, capture_output=True, timeout=30,
     )
     time.sleep(3)
+    enable_agent_management(container_name)
 
     r = _sh(container_name, f"intellect profile create {PROFILE}")
     assert r.returncode == 0, f"profile create failed: {r.stderr}"
@@ -120,6 +121,7 @@ def test_profile_delete_stops_gateway(
         check=True, capture_output=True, timeout=30,
     )
     time.sleep(3)
+    enable_agent_management(container_name)
 
     _sh(container_name, f"intellect profile create {PROFILE}")
     _sh(container_name, f"intellect -p {PROFILE} gateway start", timeout=60)
