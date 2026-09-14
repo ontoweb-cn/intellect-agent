@@ -41,28 +41,36 @@ jobs:
           print('No HIGH severity findings')
           "
       - name: Convert JSON to SARIF
+        # A quoted heredoc keeps this readable: the previous `python3 -c "..."`
+        # form was inside a shell double-quoted string, so any bare " in the
+        # script or even in a comment terminated it early (SyntaxError: '{' was
+        # never closed) and no SARIF was ever produced. With <<'PY' there is no
+        # shell interpolation or quote escaping to get wrong.
         run: |
-          python3 -c "
-          import json, sys
+          python3 <<'PY'
+          import json
+
           with open('bandit-results.json') as f:
               data = json.load(f)
+
           sarif = {
-              '\$schema': 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json',
+              '$schema': 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json',
               'version': '2.1.0',
               'runs': [{
                   'tool': {
                       'driver': {
                           'name': 'Bandit',
                           'informationUri': 'https://bandit.readthedocs.io/',
-                          'rules': []
+                          'rules': [],
                       }
                   },
-                  'results': []
-              }]
+                  'results': [],
+              }],
           }
+
           rules = {}
           for r in data.get('results', []):
-              rid = f\"bandit/{r['test_id']}\"
+              rid = 'bandit/' + r['test_id']
               if rid not in rules:
                   rules[rid] = {
                       'id': rid,
@@ -70,30 +78,44 @@ jobs:
                       'shortDescription': {'text': r['test_name']},
                       'fullDescription': {'text': r.get('issue_text', '')},
                       'helpUri': r.get('more_info', ''),
-                      'properties': {'security-severity': str(float(r['issue_severity'] == 'HIGH' and 8.0 or r['issue_severity'] == 'MEDIUM' and 5.0 or 3.0))}
+                      'properties': {
+                          'security-severity': str(float(
+                              r['issue_severity'] == 'HIGH' and 8.0
+                              or r['issue_severity'] == 'MEDIUM' and 5.0
+                              or 3.0
+                          ))
+                      },
                   }
                   sarif['runs'][0]['tool']['driver']['rules'].append(rules[rid])
+
+              # SARIF only permits none/note/warning/error. Bandit reports
+              # LOW/MEDIUM/HIGH, so passing the value through verbatim failed
+              # upload validation (level is not one of the enum values) and no
+              # Bandit finding ever reached the Security tab. Map it, keeping
+              # the raw severity in properties.
+              level = {'HIGH': 'error', 'MEDIUM': 'warning'}.get(
+                  r['issue_severity'], 'note'
+              )
               sarif['runs'][0]['results'].append({
                   'ruleId': rid,
-                  # SARIF only permits none|note|warning|error. Bandit says
-                  # LOW/MEDIUM/HIGH, and passing that through verbatim made
-                  # every upload fail validation ("level is not one of enum
-                  # values") — so no Bandit finding ever reached the Security
-                  # tab. Map it, and keep the raw severity in properties.
-                  'level': {'HIGH': 'error', 'MEDIUM': 'warning'}.get(r['issue_severity'], 'note'),
+                  'level': level,
                   'properties': {'bandit_severity': r['issue_severity']},
                   'message': {'text': r['issue_text']},
                   'locations': [{
                       'physicalLocation': {
                           'artifactLocation': {'uri': r['filename']},
-                          'region': {'startLine': r['line_number'], 'endLine': r['line_number']}
+                          'region': {
+                              'startLine': r['line_number'],
+                              'endLine': r['line_number'],
+                          },
                       }
-                  }]
+                  }],
               })
+
           with open('bandit-results.sarif', 'w') as f:
               json.dump(sarif, f, indent=2)
-          print(f'Converted {len(data.get(\"results\", []))} findings to SARIF')
-          "
+          print('Converted {} findings to SARIF'.format(len(data.get('results', []))))
+          PY
       - name: Upload SARIF
         if: success() || failure()
         uses: github/codeql-action/upload-sarif@v3
