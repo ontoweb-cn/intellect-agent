@@ -137,4 +137,8 @@ jobs:
             | sudo tar -xz -C /usr/local/bin gitleaks
           gitleaks version
       - name: Run gitleaks (full history)
-        run: gitleaks detect --source . --redact --verbose --exit-code 1
+        # --config .gitleaks.toml scopes out this repo's non-secrets (vendored
+        # upstream docs, test fixtures, documentation placeholders, and OAuth
+        # client IDs, which are public by protocol design). Verified locally
+        # that a planted real credential outside those paths is still caught.
+        run: gitleaks detect --source . --config .gitleaks.toml --redact --verbose --exit-code 1
