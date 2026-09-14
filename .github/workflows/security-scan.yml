@@ -8,6 +8,13 @@ on:
   schedule:
     - cron: '0 9 * * 1'  # weekly Monday 9am
 
+# Least privilege: read the repo, and write code-scanning results (the bandit
+# SARIF upload). Without security-events: write the upload is rejected with
+# "Resource not accessible by integration" even when the SARIF validates.
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   bandit:
     runs-on: ubuntu-latest
