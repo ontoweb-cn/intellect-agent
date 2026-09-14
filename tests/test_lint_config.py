@@ -76,30 +76,46 @@ class TestLintWorkflow:
         )
 
     def test_workflow_has_blocking_ruff_step(self):
-        """The workflow must run a blocking ``ruff check .`` step
-        (one without --exit-zero) so violations fail the job."""
+        """The workflow must FAIL on ruff violations.
+
+        Enforced as a ratchet rather than an absolute ``ruff check .``: the tree
+        carries ~1100 pre-existing findings under the selected rules, so an
+        absolute gate was red on every push and enforced nothing (a permanently
+        failing check is equivalent to no check).  The gate diffs against the
+        base commit and fails only on NEW diagnostics, which preserves the
+        intent — a PR cannot introduce a PLW1514/F violation — while letting the
+        backlog shrink incrementally.
+        """
         content = self.WORKFLOW_PATH.read_text(encoding="utf-8")
-        # Look for the blocking step's named line + its command.  We want
-        # at least one ``ruff check .`` that does NOT have ``--exit-zero``
-        # nearby.
-        # Split into lines and find ruff check invocations
-        lines = content.splitlines()
-        found_blocking = False
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("ruff check") and "--exit-zero" not in stripped:
-                # Also check it's not piped to `|| true` which would mask
-                # the exit code.
-                window = " ".join(lines[i:i + 3])
-                if "|| true" not in window:
-                    found_blocking = True
-                    break
-        assert found_blocking, (
-            "lint.yml no longer contains a blocking ``ruff check .`` step "
-            "(one without --exit-zero and not masked by || true).  "
-            "Restore it — the PLW1514 rule is only useful if CI actually "
-            "fails on violation."
+
+        # The collection step uses --exit-zero so the reports can be diffed;
+        # the blocking decision must come from --fail-on-new.
+        assert "--fail-on-new" in content, (
+            "lint.yml no longer blocks on new ruff diagnostics.  Without this, "
+            "PLW1514 and the F rules are advisory only and CI cannot fail on a "
+            "violation."
         )
+        for i, line in enumerate(content.splitlines()):
+            if "--fail-on-new" in line:
+                window = " ".join(content.splitlines()[i:i + 3])
+                assert "|| true" not in window, (
+                    "--fail-on-new is masked by `|| true`, so new lint findings "
+                    "would not fail the job."
+                )
+                break
+
+    def test_workflow_has_blocking_windows_footgun_step(self):
+        """The footgun checker must be wired in without being masked."""
+        content = self.WORKFLOW_PATH.read_text(encoding="utf-8")
+        assert "check-windows-footguns.py --all" in content, (
+            "lint.yml no longer runs the Windows footgun checker."
+        )
+        for line in content.splitlines():
+            if "check-windows-footguns.py --all" in line:
+                assert "--exit-zero" not in line and "|| true" not in line, (
+                    "the footgun check is masked and cannot fail the job."
+                )
+                break
 
     def test_workflow_yaml_is_valid(self):
         """Workflow file must parse as valid YAML (can't ship a broken

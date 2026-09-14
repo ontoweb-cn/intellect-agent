@@ -34,8 +34,18 @@ class TestCronJobCleanup:
 
     def test_keyboard_interrupt_in_end_session_does_not_skip_close(self):
         """If end_session raises KeyboardInterrupt, close() must still run."""
-        mock_db = MagicMock()
-        mock_db.end_session.side_effect = KeyboardInterrupt
+        made_dbs: list = []
+
+        def _mk_session_db(*_a, **_kw):
+            # run_job opens the cron DB and credential-pool resolution opens the
+            # state DB again, so each call needs its own mock. The FIRST one is
+            # the cron DB (created in _run_job_impl before the agent runs); that
+            # is the one whose end_session/close semantics this test pins.
+            db = MagicMock()
+            made_dbs.append(db)
+            if len(made_dbs) == 1:
+                db.end_session.side_effect = KeyboardInterrupt
+            return db
 
         from cron import scheduler
 
@@ -47,7 +57,7 @@ class TestCronJobCleanup:
             "model": "test/model",
         }
 
-        with patch("intellect_state.SessionDB", return_value=mock_db), \
+        with patch("intellect_state.SessionDB", side_effect=_mk_session_db), \
              patch.object(scheduler, "_build_job_prompt", return_value="hello"), \
              patch.object(scheduler, "_resolve_origin", return_value=None), \
              patch.object(scheduler, "_resolve_delivery_target", return_value=None), \
@@ -57,6 +67,9 @@ class TestCronJobCleanup:
             MockAgent.return_value.run_conversation.side_effect = RuntimeError("boom")
             scheduler.run_job(job)
 
+        mock_db = MockAgent.call_args.kwargs["session_db"]
+        assert mock_db is made_dbs[0]
+        # end_session raised KeyboardInterrupt; close() must still have run.
         mock_db.end_session.assert_called_once()
         mock_db.close.assert_called_once()
 

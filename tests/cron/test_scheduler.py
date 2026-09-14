@@ -874,12 +874,21 @@ class TestRunJobSessionPersistence:
             "name": "test",
             "prompt": "hello",
         }
-        fake_db = MagicMock()
+        # Every SessionDB() call now returns a distinct mock: credential-pool
+        # resolution also opens the state DB (it reads oauth_tokens), so a
+        # single shared mock conflated the cron DB's close() with those. The
+        # cron DB is the one handed to the agent as session_db.
+        made_dbs: list = []
+
+        def _mk_session_db(*_a, **_kw):
+            db = MagicMock()
+            made_dbs.append(db)
+            return db
 
         with patch("cron.scheduler._intellect_home", tmp_path), \
              patch("cron.scheduler._resolve_origin", return_value=None), \
              patch("dotenv.load_dotenv"), \
-             patch("intellect_state.SessionDB", return_value=fake_db), \
+             patch("intellect_state.SessionDB", side_effect=_mk_session_db), \
              patch(
                  "intellect_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
@@ -902,7 +911,8 @@ class TestRunJobSessionPersistence:
         assert "ok" in output
 
         kwargs = mock_agent_cls.call_args.kwargs
-        assert kwargs["session_db"] is fake_db
+        fake_db = kwargs["session_db"]
+        assert fake_db in made_dbs
         assert kwargs["platform"] == "cron"
         assert kwargs["session_id"].startswith("cron_test-job_")
         fake_db.end_session.assert_called_once()
@@ -1312,7 +1322,13 @@ class TestRunJobSessionPersistence:
             "prompt": "hello",
             "deliver": "telegram",
         }
-        fake_db = MagicMock()
+        made_dbs: list = []
+
+        def _mk_session_db(*_a, **_kw):
+            db = MagicMock()
+            made_dbs.append(db)
+            return db
+
         seen = {}
 
         (tmp_path / ".env").write_text("TELEGRAM_HOME_CHANNEL=-2002\n")
@@ -1321,9 +1337,11 @@ class TestRunJobSessionPersistence:
         monkeypatch.delenv("intellect_CRON_AUTO_DELIVER_CHAT_ID", raising=False)
         monkeypatch.delenv("intellect_CRON_AUTO_DELIVER_THREAD_ID", raising=False)
 
+        cron_dbs = []
+
         class FakeAgent:
             def __init__(self, *args, **kwargs):
-                pass
+                cron_dbs.append(kwargs["session_db"])
 
             def run_conversation(self, *args, **kwargs):
                 from gateway.session_context import get_session_env
@@ -1333,7 +1351,7 @@ class TestRunJobSessionPersistence:
                 return {"final_response": "ok"}
 
         with patch("cron.scheduler._intellect_home", tmp_path), \
-             patch("intellect_state.SessionDB", return_value=fake_db), \
+             patch("intellect_state.SessionDB", side_effect=_mk_session_db), \
              patch(
                  "intellect_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
@@ -1358,7 +1376,10 @@ class TestRunJobSessionPersistence:
         assert os.getenv("intellect_CRON_AUTO_DELIVER_PLATFORM") is None
         assert os.getenv("intellect_CRON_AUTO_DELIVER_CHAT_ID") is None
         assert os.getenv("intellect_CRON_AUTO_DELIVER_THREAD_ID") is None
-        fake_db.close.assert_called_once()
+        # The cron DB (not the credential-pool DBs) is the one closed here.
+        assert len(cron_dbs) == 1
+        assert cron_dbs[0] in made_dbs
+        cron_dbs[0].close.assert_called_once()
 
     def test_run_job_clears_stale_auto_delivery_thread_id_between_jobs(self, tmp_path, monkeypatch):
         jobs = [
@@ -1375,7 +1396,13 @@ class TestRunJobSessionPersistence:
                 "deliver": "telegram:-2002",
             },
         ]
-        fake_db = MagicMock()
+        made_dbs: list = []
+
+        def _mk_session_db(*_a, **_kw):
+            db = MagicMock()
+            made_dbs.append(db)
+            return db
+
         seen = []
 
         monkeypatch.delenv("intellect_CRON_AUTO_DELIVER_PLATFORM", raising=False)
@@ -1398,8 +1425,15 @@ class TestRunJobSessionPersistence:
                 )
                 return {"final_response": "ok"}
 
+        cron_dbs = []
+
+        class _RecordingAgent(FakeAgent):
+            def __init__(self, *args, **kwargs):
+                cron_dbs.append(kwargs["session_db"])
+                super().__init__(*args, **kwargs)
+
         with patch("cron.scheduler._intellect_home", tmp_path), \
-             patch("intellect_state.SessionDB", return_value=fake_db), \
+             patch("intellect_state.SessionDB", side_effect=_mk_session_db), \
              patch(
                  "intellect_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
@@ -1409,7 +1443,7 @@ class TestRunJobSessionPersistence:
                      "api_mode": "chat_completions",
                  },
              ), \
-             patch("run_agent.AIAgent", FakeAgent):
+             patch("run_agent.AIAgent", _RecordingAgent):
             for job in jobs:
                 success, output, final_response, error = run_job(job)
                 assert success is True
@@ -1432,7 +1466,10 @@ class TestRunJobSessionPersistence:
         assert os.getenv("intellect_CRON_AUTO_DELIVER_PLATFORM") is None
         assert os.getenv("intellect_CRON_AUTO_DELIVER_CHAT_ID") is None
         assert os.getenv("intellect_CRON_AUTO_DELIVER_THREAD_ID") is None
-        assert fake_db.close.call_count == 2
+        # One cron DB per job, each closed exactly once.
+        assert len(cron_dbs) == 2
+        assert all(db in made_dbs for db in cron_dbs)
+        assert [db.close.call_count for db in cron_dbs] == [1, 1]
 
 
 class TestRunJobConfigLogging:
