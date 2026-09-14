@@ -68,7 +68,25 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           echo "PASS: All binaries present"
 
           echo "=== Checking version ==="
-          ${intellect-agent}/bin/intellect version 2>&1 | grep -qi "intellect" || (echo "FAIL: version check"; exit 1)
+          # Capture to a file and report BOTH streams plus the exit status on
+          # failure. The previous form piped straight into `grep -qi`, so a
+          # failing run printed only "FAIL: version check" with no clue why
+          # (an empty output buffer, a crashed interpreter and a wrong binary
+          # are indistinguishable in the log). `|| true` keeps `set -e` from
+          # aborting before the diagnostics below print.
+          VERSION_OUT=$(mktemp)
+          ${intellect-agent}/bin/intellect version > "$VERSION_OUT" 2>&1 || VERSION_RC=$?
+          VERSION_RC=''${VERSION_RC:-0}
+          cat "$VERSION_OUT"
+          if [ "$VERSION_RC" != "0" ]; then
+            echo "FAIL: 'intellect version' exited $VERSION_RC (expected 0)"
+            exit 1
+          fi
+          grep -qi "intellect" "$VERSION_OUT" || {
+            echo "FAIL: 'intellect version' output does not mention intellect;"
+            echo "      captured $(wc -c < "$VERSION_OUT") byte(s) above"
+            exit 1
+          }
           echo "PASS: Version check"
 
           echo "=== All checks passed ==="
