@@ -442,6 +442,63 @@ def _content_blocks_to_openai_user_content(
     return parts
 
 
+def _stop_reason_for_result(result: dict[str, Any]) -> str:
+    """Map an agent run result onto an ACP ``PromptResponse.stop_reason``.
+
+    ACP has exactly one "finished normally" value (``end_turn``) plus the
+    ways a turn can end early, so the agent's own ``completed`` / ``partial``
+    / ``failed`` / ``error`` fields have to be folded into it. Reporting
+    every non-cancelled outcome as ``end_turn`` — which this adapter used to
+    do — tells the client a truncated, cut-off turn was a complete answer:
+    the client renders a partial reply as final and the human never learns
+    the agent stopped early. Every other Intellect surface already reads
+    those fields (``cli.py``, ``plugins/platforms/api_server/adapter.py``,
+    ``gateway/skill_session_helpers.py``, ``tui_gateway/server.py``,
+    ``webui/api/routes.py``); this is the ACP one.
+
+    The branches key off the result flags, not the error prose. The prose
+    differs per return site (~14 of them) and is reworded freely, so
+    matching on it silently mislabels every case it does not name — e.g.
+    "Model used all output tokens on reasoning…" is a token ceiling with no
+    "truncat" in it. Note this is deliberately *richer* than the
+    ``finish_reason`` derivation it mirrors: OpenAI has only
+    stop/length/error, so ``api_server`` folds everything non-length into
+    "error", while ACP can distinguish an exhausted turn budget.
+
+    ``cancelled`` is resolved by the caller from its cancel event, which is
+    authoritative for a client-requested stop.
+    """
+    error = str(result.get("error") or "")
+    partial = bool(result.get("partial"))
+    failed = bool(result.get("failed"))
+    completed = bool(result.get("completed", True))
+    exit_reason = str(result.get("turn_exit_reason") or "")
+
+    # Turn budget spent. Checked first because such a run is neither
+    # ``partial`` nor ``failed`` — it simply stopped — so the branches below
+    # would otherwise call it a refusal. The exit reason is the primary
+    # signal; the error text is the same condition from another field, for
+    # paths that set one but not the other.
+    if exit_reason.startswith("max_iterations") or "budget exhausted" in error.lower():
+        return "max_turn_requests"
+    # ``partial`` marks a run that stopped at a generation ceiling instead of
+    # breaking: the output token limit, reasoning that consumed the whole
+    # budget, an incomplete scratchpad or Codex continuation, the context
+    # window refusing to compress further. What streamed is a prefix, which
+    # is ACP's ``max_tokens``. ``failed`` is excluded here so a genuine
+    # failure stays a failure; the canonical result hardcodes
+    # ``partial: False``, so ``True`` always means "stopped short".
+    if partial and not failed:
+        return "max_tokens"
+    if failed or not completed:
+        # Ended without completing: a provider error, a context window it
+        # could not fit into, a model that would not emit a usable call.
+        # ACP has no finer value for these, and ``end_turn`` would be the
+        # one lie that matters.
+        return "refusal"
+    return "end_turn"
+
+
 class intellectACPAgent(acp.Agent):
     """ACP Agent implementation wrapping Intellect AIAgent."""
 
@@ -1577,7 +1634,9 @@ class intellectACPAgent(acp.Agent):
             with state.runtime_lock:
                 state.is_running = False
                 state.current_prompt_text = ""
-            return PromptResponse(stop_reason="end_turn")
+            # The run never produced anything. Reporting ``end_turn`` here
+            # made a crashed turn indistinguishable from a finished one.
+            return PromptResponse(stop_reason="refusal")
 
         # If the client closed this session while the turn was running, skip
         # persistence/auto-title/streaming — the session was removed and any
@@ -1657,7 +1716,13 @@ class intellectACPAgent(acp.Agent):
 
         await self._send_usage_update(state)
 
-        stop_reason = "cancelled" if state.cancel_event and state.cancel_event.is_set() else "end_turn"
+        # A client-requested stop outranks the run's own outcome; otherwise the
+        # result decides. A truncated or failed turn must not come back as
+        # ``end_turn`` — see ``_stop_reason_for_result``.
+        if state.cancel_event and state.cancel_event.is_set():
+            stop_reason = "cancelled"
+        else:
+            stop_reason = _stop_reason_for_result(result)
         return PromptResponse(stop_reason=stop_reason, usage=usage)
 
     # ---- Slash commands (headless) -------------------------------------------

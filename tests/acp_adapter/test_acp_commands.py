@@ -1,70 +1,11 @@
 import sys
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 import pytest
 from acp.schema import TextContentBlock
 
-from acp_adapter.server import intellectACPAgent
 from acp_adapter.session import SessionManager
-
-
-class FakeAgent:
-    def __init__(self):
-        self.model = "fake-model"
-        self.provider = "fake-provider"
-        self.enabled_toolsets = ["intellect-acp"]
-        self.disabled_toolsets = []
-        self.tools = []
-        self.valid_tool_names = set()
-        self.steers = []
-        self.runs = []
-
-    def steer(self, text):
-        self.steers.append(text)
-        return True
-
-    def run_conversation(self, *, user_message, conversation_history, task_id, **kwargs):
-        self.runs.append(user_message)
-        messages = list(conversation_history or [])
-        messages.append({"role": "user", "content": user_message})
-        final = f"ran: {user_message}"
-        messages.append({"role": "assistant", "content": final})
-        return {"final_response": final, "messages": messages}
-
-
-class CaptureConn:
-    def __init__(self):
-        self.updates = []
-
-    async def session_update(self, *args, **kwargs):
-        if kwargs:
-            self.updates.append((kwargs.get("session_id"), kwargs.get("update")))
-        else:
-            self.updates.append((args[0], args[1]))
-
-    async def request_permission(self, *args, **kwargs):
-        return SimpleNamespace(outcome="allow")
-
-
-class NoopDb:
-    def get_session(self, *_args, **_kwargs):
-        return None
-
-    def create_session(self, *_args, **_kwargs):
-        return None
-
-    def update_session(self, *_args, **_kwargs):
-        return None
-
-
-def make_agent_and_state():
-    fake = FakeAgent()
-    manager = SessionManager(agent_factory=lambda **kwargs: fake, db=NoopDb())
-    acp_agent = intellectACPAgent(session_manager=manager)
-    state = manager.create_session(cwd=".")
-    conn = CaptureConn()
-    acp_agent.on_connect(conn)
-    return acp_agent, state, fake, conn
+from conftest import FakeAgent, NoopDb, make_agent_and_state
 
 
 def test_acp_real_agent_gets_session_db_for_recall(monkeypatch):
