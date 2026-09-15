@@ -21,7 +21,63 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Rust extension ───────────────────────────────────────────────────────
+  # The intellect_community_core native extension has been a *mandatory*
+  # runtime dependency since v0.6.2, but it is NOT a declared pyproject
+  # dependency — the build backend is setuptools, maturin only supplies the
+  # [tool.maturin] config for manual builds — so `uv pip install -e
+  # ".[all,dev]"` never produced it. Every Python test job therefore ran with
+  # each `*_rs` symbol bound to None, and ~1900 tests failed with
+  # `TypeError: 'NoneType' object is not callable`. tests/intellect_state/
+  # test_rust_parity.py is the tell: 58 failures in CI, 58/58 green locally
+  # where the extension is built.
+  #
+  # Build the wheel once here and hand it to the Python jobs below, mirroring
+  # the rust-full -> rust-python-verify pattern in rust-ci.yml.
+  build-rust-ext:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust-core/target
+          key: rust-${{ runner.os }}-${{ hashFiles('rust-core/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Build release wheel
+        run: |
+          uv venv .venv --python 3.12
+          source .venv/bin/activate
+          uv pip install maturin
+          cd rust-core
+          maturin build --release
+          echo "Wheel built: $(ls target/wheels/*.whl)"
+
+      - name: Upload Rust wheel artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: intellect-community-core-wheel
+          path: rust-core/target/wheels/*.whl
+          retention-days: 7
+
   test:
+    needs: build-rust-ext
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -59,11 +115,26 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
+      - name: Download Rust extension wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: intellect-community-core-wheel
+          path: rust-wheel
+
       - name: Install dependencies
         run: |
           uv venv .venv --python 3.12
           source .venv/bin/activate
           uv pip install -e ".[all,dev]"
+          # The native extension is not a pyproject dependency, so install the
+          # wheel built by build-rust-ext. Installing it lands the module in
+          # site-packages, but the repo's own intellect_community_core/
+          # directory shadows that when running from the repo root (cwd is
+          # sys.path[0]), so the .so must also be copied into the source tree —
+          # scripts/sync_rust_extension.sh is the repo's helper for exactly
+          # this (HP-205e). Without the sync every `*_rs` symbol is None again.
+          uv pip install rust-wheel/*.whl
+          bash scripts/sync_rust_extension.sh
 
       - name: Run tests (slice ${{ matrix.slice }}/6)
         # Per-file isolation via scripts/run_tests_parallel.py: discovers
@@ -139,6 +210,7 @@ jobs:
           key: test-durations
 
   e2e:
+    needs: build-rust-ext
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -165,11 +237,19 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
+      - name: Download Rust extension wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: intellect-community-core-wheel
+          path: rust-wheel
+
       - name: Install dependencies
         run: |
           uv venv .venv --python 3.12
           source .venv/bin/activate
           uv pip install -e ".[all,dev]"
+          uv pip install rust-wheel/*.whl
+          bash scripts/sync_rust_extension.sh
 
       - name: Run e2e tests
         run: |
@@ -225,7 +305,7 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, build-rust-ext]
     steps:
       - uses: actions/checkout@v4
 
@@ -234,10 +314,20 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Download Rust extension wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: intellect-community-core-wheel
+          path: rust-wheel
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]" pytest-cov
+          # Same mandatory-native-extension gap as the test/e2e jobs: without
+          # this the whole suite reports ~1900 spurious NoneType failures.
+          pip install rust-wheel/*.whl
+          bash scripts/sync_rust_extension.sh
 
       - name: Run coverage
         run: |
@@ -290,9 +380,27 @@ jobs:
           echo "Rust unit tests (pure): OK"
 
       - name: Assert minimum Rust test count
+        # This step could never pass, for two independent reasons:
+        #
+        #  1. The pattern was `test .*\.rs:` — cargo's `--list` output prints
+        #     `module::path::test_name: test`, with no `.rs` anywhere on the
+        #     line. It matched nothing, so COUNT was always 0.
+        #  2. The `|| echo 0` then made it worse: `grep -c` prints `0` *and*
+        #     exits 1, so the fallback appended a second `0` and COUNT became
+        #     the two-line value "0\n0". That newline landed inside the
+        #     f-string and python died with `SyntaxError: unterminated string
+        #     literal` instead of reporting a count.
+        #
+        # Fix both: a pattern that matches the actual format, and a count
+        # passed to python via argv so neither a newline nor a stray zero can
+        # corrupt the program. `|| true` is kept because `grep -c` still exits
+        # 1 at zero matches, which `set -e` would turn into a silent abort
+        # before the assertion got a chance to explain itself.
         run: |
           cd rust-core
-          COUNT=$(cargo test --no-default-features -- --list 2>&1 | grep -c 'test .*\.rs:' || echo 0)
+          COUNT=$(cargo test --no-default-features -- --list 2>&1 | grep -c ': test$' || true)
           echo "Rust test count: $COUNT"
-          python3 -c "assert $COUNT >= 84, f'Expected >= 84 Rust tests, got {$COUNT}'"
-          echo "Test count assertion: OK"
+          python3 -c 'import sys
+          count = int(sys.argv[1])
+          assert count >= 84, f"Expected >= 84 Rust tests, got {count}"
+          print(f"Test count assertion: OK ({count} tests)")' "$COUNT"
