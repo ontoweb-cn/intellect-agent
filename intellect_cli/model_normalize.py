@@ -156,13 +156,20 @@ _DEEPSEEK_CANONICAL_MODELS: frozenset[str] = frozenset({
 #: reported model equals the one actually answering.
 _DEEPSEEK_DEFAULT_MODEL = "deepseek-flash"
 
-# First-class V-series IDs (``deepseek-v4-pro``, future ``deepseek-v5-*``,
-# dated variants like ``deepseek-v4-flash-20260423``).
-# Verified empirically 2026-04-24: DeepSeek's Chat Completions API returns
-# ``provider: DeepSeek`` / ``model: deepseek-v4-flash-20260423`` when called
-# with ``model=deepseek/deepseek-v4-flash``, so these names are not aliases
-# of the default and must not be folded into it.
-_DEEPSEEK_V_SERIES_RE = re.compile(r"^deepseek-v\d+([-.].+)?$")
+# First-class V-series IDs: a major version plus a single name segment
+# (``deepseek-v4-pro``, and future ``deepseek-v5-pro`` / ``deepseek-v10-ultra``
+# without needing a code change).
+#
+# Deliberately *not* ``(...)?$``-permissive: that also matched segmented
+# catalogue shapes like ``deepseek-v4-pro-0813`` and
+# ``deepseek-v4-flash-20260423``, and those are not names this API serves. It
+# says so outright — passing one returns
+# "The supported API model names are deepseek-flash, deepseek-v4-pro, but you
+# passed …" (verified 2026-09-15). They are aggregator slugs (OpenRouter lists
+# ``deepseek/deepseek-v4-pro-0813``), i.e. copies from a different namespace,
+# so they fold like any other unknown input rather than being forwarded to a
+# guaranteed 400.
+_DEEPSEEK_V_SERIES_RE = re.compile(r"^deepseek-v\d+-[a-z][a-z0-9]*$")
 
 
 def _normalize_for_deepseek(model_name: str) -> str:
@@ -173,8 +180,10 @@ def _normalize_for_deepseek(model_name: str) -> str:
       ``deepseek-v4-flash``) -> ``deepseek-flash``, which is what the server
       serves for them today.
     - Already canonical (``deepseek-flash``/``deepseek-v4-pro``) -> pass through.
-    - Matches the V-series pattern ``deepseek-v<digit>...`` -> pass through
-      (covers future ``deepseek-v5-*`` and dated variants without a release).
+    - A first-class V-series id — version plus one name segment
+      (``deepseek-v5-pro``) -> pass through, so a future model needs no code
+      change. Segmented catalogue shapes (``deepseek-v4-pro-0813``) do not
+      qualify; see the regex comment.
     - Contains a reasoner keyword (r1, think, reasoning, cot, reasoner)
       -> ``deepseek-reasoner`` when that is still served, else the default.
     - Everything else -> ``deepseek-flash``.

@@ -196,11 +196,14 @@ class TestDetectVendor:
 # ── DeepSeek V-series pass-through (bug: V4 models silently folded to V3) ──
 
 class TestDeepseekVSeriesPassThrough:
-    """DeepSeek's V-series IDs (``deepseek-v4-pro`` and future ``deepseek-v<N>-*``
-    variants) are first-class model IDs accepted directly by DeepSeek's Chat
-    Completions API. Earlier code folded every non-reasoner name into the V3
-    default, which on aggregators (OntoWeb portal, OpenRouter via DeepInfra)
-    routes to V3 — silently downgrading users who picked a newer model.
+    """DeepSeek's first-class V-series IDs are accepted by the API directly.
+
+    The shape is a version plus one name segment — ``deepseek-v4-pro``, and
+    future ``deepseek-v5-pro`` / ``deepseek-v10-ultra`` — so a new generation
+    needs no code change here. Earlier code folded every non-reasoner name
+    into the V3 default, which on aggregators (OntoWeb portal, OpenRouter via
+    DeepInfra) routes to V3, silently downgrading users who picked a newer
+    model.
 
     ``deepseek-v4-flash`` is deliberately *not* in this list: it was the
     pre-rename id for what the API now calls ``deepseek-flash`` (verified
@@ -223,6 +226,20 @@ class TestDeepseekVSeriesPassThrough:
         V4 Pro must reach DeepSeek's API as V4 Pro, not the default alias."""
         result = normalize_model_for_provider("deepseek-v4-pro", "deepseek")
         assert result == "deepseek-v4-pro"
+
+    @pytest.mark.parametrize("model", [
+        "deepseek-v4-pro-0813",              # OpenRouter slug shape
+        "deepseek-v4-flash-20260423",        # dated catalogue shape
+        "deepseek/deepseek-v4-pro-0813",     # vendor-prefixed
+    ])
+    def test_segmented_catalogue_names_fold(self, model):
+        """Segmented names are aggregator slugs, not names this API serves.
+
+        Verified 2026-09-15: passing one returns "The supported API model names
+        are deepseek-flash, deepseek-v4-pro, but you passed …". Forwarding it
+        would guarantee a 400; folding at least produces a working request.
+        """
+        assert _normalize_for_deepseek(model) == "deepseek-flash"
 
 
 # ── DeepSeek regressions (existing behaviour still holds) ──────────────
