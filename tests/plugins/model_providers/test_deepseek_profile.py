@@ -127,7 +127,7 @@ class TestDeepSeekModelGating:
     @pytest.mark.parametrize(
         "model",
         [
-            "deepseek-chat",         # V3 alias
+            "deepseek-chat",         # retired V3-era id (folded by normalize)
             "deepseek-v3-0324",      # explicit V3
             "deepseek-v3.1",         # V3 minor revisions
             "",                       # bare/unknown
@@ -195,12 +195,14 @@ class TestDeepSeekAuxModel:
     system.
     """
 
-    def test_profile_advertises_deepseek_chat(self, deepseek_profile):
-        assert deepseek_profile.default_aux_model == "deepseek-chat"
+    def test_profile_advertises_the_served_default(self, deepseek_profile):
+        # ``deepseek-chat`` was retired upstream; the served default is
+        # ``deepseek-flash`` (verified 2026-09-15).
+        assert deepseek_profile.default_aux_model == "deepseek-flash"
 
-    def test_consumer_api_returns_deepseek_chat(self):
+    def test_consumer_api_returns_the_served_default(self):
         from agent.auxiliary_client import _get_aux_model_for_provider
-        assert _get_aux_model_for_provider("deepseek") == "deepseek-chat"
+        assert _get_aux_model_for_provider("deepseek") == "deepseek-flash"
 
     def test_consumer_api_returns_non_empty(self):
         from agent.auxiliary_client import _get_aux_model_for_provider

@@ -28,13 +28,21 @@ from providers.base import ProviderProfile
 def _model_supports_thinking(model: str | None) -> bool:
     """DeepSeek thinking-capable model families.
 
-    Currently covers the V4 family (``deepseek-v4-pro``, ``deepseek-v4-flash``,
-    and any future ``deepseek-v4-*`` variants) and the legacy
-    ``deepseek-reasoner`` (R1).  ``deepseek-chat`` is V3 with no thinking mode.
+    Covers the V4 family (``deepseek-v4-pro``, ``deepseek-v4-flash``, and any
+    future ``deepseek-v4-*`` variants), its current default id
+    ``deepseek-flash``, and the legacy ``deepseek-reasoner`` (R1). The retired
+    V3 ``deepseek-chat`` had no thinking mode and stays excluded.
+
+    ``deepseek-flash`` is listed by name because it does not match the
+    ``deepseek-v<N>`` pattern yet is a thinking model: verified 2026-09-15
+    that the API returns ``reasoning_content`` for it by default, which is
+    exactly the condition this profile exists to manage.
     """
     m = (model or "").strip().lower()
     if not m:
         return False
+    if m == "deepseek-flash":
+        return True
     if m.startswith("deepseek-v") and not m.startswith("deepseek-v3"):
         # deepseek-v4-*, deepseek-v5-*, etc. — every V4+ generation has
         # thinking. v3 explicitly excluded.
@@ -84,17 +92,20 @@ class DeepSeekProfile(ProviderProfile):
 
 deepseek = DeepSeekProfile(
     name="deepseek",
-    aliases=("deepseek-chat",),
+    aliases=("deepseek-flash",),
     env_vars=("DEEPSEEK_API_KEY",),
     display_name="DeepSeek",
     description="DeepSeek — native DeepSeek API",
     signup_url="https://platform.deepseek.com/",
+    # Verified against the live ``GET /v1/models`` 2026-09-15: these two are
+    # what DeepSeek serves. The retired ``deepseek-chat`` / ``deepseek-reasoner``
+    # ids still get a 200 but are canonicalised to ``deepseek-flash`` server-side.
     fallback_models=(
-        "deepseek-chat",
-        "deepseek-reasoner",
+        "deepseek-flash",
+        "deepseek-v4-pro",
     ),
     base_url="https://api.deepseek.com/v1",
-    default_aux_model="deepseek-chat",
+    default_aux_model="deepseek-flash",
 )
 
 register_provider(deepseek)

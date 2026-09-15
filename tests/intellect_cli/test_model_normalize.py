@@ -196,21 +196,21 @@ class TestDetectVendor:
 # ── DeepSeek V-series pass-through (bug: V4 models silently folded to V3) ──
 
 class TestDeepseekVSeriesPassThrough:
-    """DeepSeek's V-series IDs (``deepseek-v4-pro``, ``deepseek-v4-flash``,
-    and future ``deepseek-v<N>-*`` variants) are first-class model IDs
-    accepted directly by DeepSeek's Chat Completions API. Earlier code
-    folded every non-reasoner name into ``deepseek-chat``, which on
-    aggregators (OntoWeb portal, OpenRouter via DeepInfra) routes to V3 —
-    silently downgrading users who picked V4.
+    """DeepSeek's V-series IDs (``deepseek-v4-pro`` and future ``deepseek-v<N>-*``
+    variants) are first-class model IDs accepted directly by DeepSeek's Chat
+    Completions API. Earlier code folded every non-reasoner name into the V3
+    default, which on aggregators (OntoWeb portal, OpenRouter via DeepInfra)
+    routes to V3 — silently downgrading users who picked a newer model.
+
+    ``deepseek-v4-flash`` is deliberately *not* in this list: it was the
+    pre-rename id for what the API now calls ``deepseek-flash`` (verified
+    2026-09-15), so it folds like the other retired names.
     """
 
     @pytest.mark.parametrize("model", [
         "deepseek-v4-pro",
-        "deepseek-v4-flash",
         "deepseek/deepseek-v4-pro",          # vendor-prefixed
-        "deepseek/deepseek-v4-flash",
         "DeepSeek-V4-Pro",                    # case-insensitive
-        "deepseek-v4-flash-20260423",         # dated variant
         "deepseek-v5-pro",                    # future V-series
         "deepseek-v10-ultra",                 # double-digit future
     ])
@@ -220,27 +220,39 @@ class TestDeepseekVSeriesPassThrough:
 
     def test_deepseek_provider_preserves_v4_pro(self):
         """End-to-end via normalize_model_for_provider — user selecting
-        V4 Pro must reach DeepSeek's API as V4 Pro, not V3 alias."""
+        V4 Pro must reach DeepSeek's API as V4 Pro, not the default alias."""
         result = normalize_model_for_provider("deepseek-v4-pro", "deepseek")
         assert result == "deepseek-v4-pro"
-
-    def test_deepseek_provider_preserves_v4_flash(self):
-        result = normalize_model_for_provider("deepseek-v4-flash", "deepseek")
-        assert result == "deepseek-v4-flash"
 
 
 # ── DeepSeek regressions (existing behaviour still holds) ──────────────
 
 class TestDeepseekCanonicalAndReasonerMapping:
-    """Canonical pass-through and reasoner-keyword folding stay intact."""
+    """Canonical pass-through, and retired names folding to the served model.
+
+    Verified against the live API 2026-09-15: it reports "The supported API
+    model names are deepseek-flash, deepseek-v4-pro". The V3-era default
+    (``deepseek-chat``), the R1-era ``deepseek-reasoner`` and the pre-rename
+    ``deepseek-v4-flash`` are all retired for the same underlying model, so
+    each must fold rather than be reported as reached.
+    """
 
     @pytest.mark.parametrize("model,expected", [
-        ("deepseek-chat", "deepseek-chat"),
-        ("deepseek-reasoner", "deepseek-reasoner"),
-        ("DEEPSEEK-CHAT", "deepseek-chat"),
+        ("deepseek-flash", "deepseek-flash"),
+        ("DEEPSEEK-FLASH", "deepseek-flash"),
+        ("deepseek-v4-pro", "deepseek-v4-pro"),
     ])
     def test_canonical_models_pass_through(self, model, expected):
         assert _normalize_for_deepseek(model) == expected
+
+    @pytest.mark.parametrize("model", [
+        "deepseek-chat",         # the retired V3-era default
+        "DEEPSEEK-CHAT",         # case-insensitive
+        "deepseek-reasoner",     # R1 era; the default reasons natively now
+        "deepseek-v4-flash",     # pre-rename id for deepseek-flash
+    ])
+    def test_retired_names_fold_to_the_served_default(self, model):
+        assert _normalize_for_deepseek(model) == "deepseek-flash"
 
     @pytest.mark.parametrize("model", [
         "deepseek-r1",
@@ -249,8 +261,14 @@ class TestDeepseekCanonicalAndReasonerMapping:
         "deepseek-reasoning-preview",
         "deepseek-cot-experimental",
     ])
-    def test_reasoner_keywords_map_to_reasoner(self, model):
-        assert _normalize_for_deepseek(model) == "deepseek-reasoner"
+    def test_reasoner_flavoured_names_also_fold(self, model):
+        """No separate reasoner model is served any more.
+
+        The default model reasons natively, so folding keeps a
+        ``deepseek-r1``-style name working instead of pointing at a retired id
+        the API would silently rewrite.
+        """
+        assert _normalize_for_deepseek(model) == "deepseek-flash"
 
     @pytest.mark.parametrize("model", [
         "deepseek-chat-v3.1",    # 'chat' prefix, not V-series pattern
@@ -258,5 +276,5 @@ class TestDeepseekCanonicalAndReasonerMapping:
         "something-random",
         "gpt-5",                 # non-DeepSeek names still fall through
     ])
-    def test_unknown_names_fall_back_to_chat(self, model):
-        assert _normalize_for_deepseek(model) == "deepseek-chat"
+    def test_unknown_names_fall_back_to_the_default(self, model):
+        assert _normalize_for_deepseek(model) == "deepseek-flash"

@@ -500,6 +500,38 @@ except ImportError:
     _cron_trigger = None
 
 
+def _run_completed_payload(
+    *, run_id: str, output: str, usage: Any, result: Any
+) -> Dict[str, Any]:
+    """Build the ``run.completed`` event, including how the run ended.
+
+    ``run.completed`` is emitted for anything that did not set ``failed``, but
+    "did not fail" is not the same as "finished": a run that hit its output
+    ceiling returns ``completed=False, partial=True`` with ``failed`` unset,
+    so without these fields the channel had no way to say so and a truncated
+    answer arrived indistinguishable from a complete one. ``chat/completions``
+    on this same result already reports them; this brings runs to parity.
+
+    Absent keys default to a clean finish, which is what an older/minimal
+    agent result means.
+    """
+    completed = bool(result.get("completed", True)) if isinstance(result, dict) else True
+    partial = bool(result.get("partial")) if isinstance(result, dict) else False
+    error = str((result.get("error") if isinstance(result, dict) else "") or "")
+    payload: Dict[str, Any] = {
+        "event": "run.completed",
+        "run_id": run_id,
+        "timestamp": time.time(),
+        "output": output,
+        "usage": usage,
+        "completed": completed,
+        "partial": partial,
+    }
+    if error:
+        payload["error"] = error
+    return payload
+
+
 class APIServerAdapter(BasePlatformAdapter):
     """
     OpenAI-compatible HTTP API server adapter.
@@ -4161,13 +4193,17 @@ class APIServerAdapter(BasePlatformAdapter):
                     )
                 else:
                     final_response = result.get("final_response", "") if isinstance(result, dict) else ""
-                    q.put_nowait({
-                        "event": "run.completed",
-                        "run_id": run_id,
-                        "timestamp": time.time(),
-                        "output": final_response,
-                        "usage": usage,
-                    })
+                    # Carry how the run actually ended, not just its text — a
+                    # run that stopped at a generation ceiling is not a clean
+                    # finish. See ``_run_completed_payload``.
+                    q.put_nowait(
+                        _run_completed_payload(
+                            run_id=run_id,
+                            output=final_response,
+                            usage=usage,
+                            result=result,
+                        )
+                    )
                     self._set_run_status(
                         run_id,
                         "completed",

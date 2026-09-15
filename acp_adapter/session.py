@@ -462,10 +462,17 @@ class SessionManager:
                 )
             else:
                 # Update model_config (contains cwd) if changed.
+                #
+                # ``?`` placeholders: Intellect's store is SQLite. This used
+                # ``%s`` (a style some other drivers accept), which SQLite
+                # rejects with "near \"%\": syntax error" — and because the
+                # failure was swallowed below, ``update_cwd`` silently never
+                # persisted. A resumed ACP session therefore came back with
+                # its previous working directory.
                 try:
                     with db._lock:
                         db._conn.execute(
-                            "UPDATE sessions SET model_config = %s, model = COALESCE(%s, model) WHERE id = %s",
+                            "UPDATE sessions SET model_config = ?, model = COALESCE(?, model) WHERE id = ?",
                             (cwd_json, model_str, state.session_id),
                         )
                         db._conn.commit()
