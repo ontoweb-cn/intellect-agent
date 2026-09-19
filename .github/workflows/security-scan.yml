@@ -76,7 +76,13 @@ jobs:
           }
 
           rules = {}
+          # LOW findings (try/except/pass, subprocess without shell, password-string
+          # heuristics) are not a work queue. They previously filled the Security
+          # tab (~1,400 open alerts) while the job only gates on HIGH. MEDIUM and
+          # HIGH still upload. The next scan closes alerts omitted from this SARIF.
           for r in data.get('results', []):
+              if r.get('issue_severity') == 'LOW':
+                  continue
               rid = 'bandit/' + r['test_id']
               if rid not in rules:
                   rules[rid] = {
@@ -121,7 +127,9 @@ jobs:
 
           with open('bandit-results.sarif', 'w') as f:
               json.dump(sarif, f, indent=2)
-          print('Converted {} findings to SARIF'.format(len(data.get('results', []))))
+          print('Converted {} findings to SARIF'.format(
+              len(sarif['runs'][0]['results'])
+          ))
           PY
       - name: Upload SARIF
         if: success() || failure()
@@ -146,6 +154,10 @@ jobs:
       - name: Run pip-audit
         run: |
           pip install pip-audit
+          # Non-blocking on purpose. This job audits the installed environment,
+          # not uv.lock. Packages we can move are pinned in the lockfile;
+          # failing here would still go red on toolchains and on discord.py's
+          # pynacl<1.6 cap, which has no compatible fix yet.
           pip-audit -r installed-packages.txt --ignore-vuln PYSEC-2024-999 || true
 
   gitleaks:

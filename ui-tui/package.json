@@ -41,6 +41,15 @@
     "prettier": "^3.9.6",
     "tsx": "^4.22.4",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "js-yaml": "4.3.2",
+    "brace-expansion@1": "1.1.18",
+    "brace-expansion@5": "5.0.9",
+    "browserslist": "4.28.7",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.23",
+    "baseline-browser-mapping": "2.11.0"
   }
 }

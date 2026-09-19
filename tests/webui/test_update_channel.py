@@ -98,3 +98,77 @@ def test_invalidate_update_cache(upd):
         assert upd._update_cache["checked_at"] == 0
         assert upd._update_cache["updates"] is None
         assert upd._update_cache["channel"] is None
+
+
+def test_rust_wheel_download_uses_mkstemp_and_unlinks(upd, tmp_path, monkeypatch):
+    """Wheel install must not use the racy tempfile.mktemp path."""
+    import io
+    import json
+    import os
+    import subprocess
+
+    monkeypatch.setattr("sys.platform", "linux")
+    wheel = tmp_path / "core.whl"
+    seen = {"urlopen_calls": 0, "wrote": False}
+
+    def fake_mkstemp(suffix="", prefix="", **kwargs):
+        wheel.write_bytes(b"")
+        seen["prefix"] = prefix
+        seen["suffix"] = suffix
+        # Real fd so os.fdopen works; contents written via the open handle.
+        return os.open(wheel, os.O_RDWR), str(wheel)
+
+    def fail_mktemp(*_a, **_k):
+        raise AssertionError("tempfile.mktemp is racy")
+
+    api_body = json.dumps(
+        [
+            {
+                "assets": [
+                    {
+                        "name": "intellect_community_core-0.1.0-manylinux_x86_64.whl",
+                        "browser_download_url": "https://example.invalid/core.whl",
+                    }
+                ]
+            }
+        ]
+    ).encode()
+
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    def fake_urlopen(url, *args, **kwargs):
+        seen["urlopen_calls"] += 1
+        url_s = str(url)
+        if "core.whl" in url_s:
+            seen["wrote"] = True
+            return _Resp(b"wheel-bytes")
+        return _Resp(api_body)
+
+    def fail_urlretrieve(*_a, **_k):
+        raise AssertionError("urlretrieve reopens by path")
+
+    def fake_run(args, **kwargs):
+        seen["args"] = list(args)
+        # Capture bytes written through the fd before unlink.
+        seen["wheel_bytes"] = wheel.read_bytes()
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr("tempfile.mkstemp", fake_mkstemp)
+    monkeypatch.setattr("tempfile.mktemp", fail_mktemp)
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("urllib.request.urlretrieve", fail_urlretrieve)
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    assert upd._try_download_gitee_rust_wheel() is True
+    assert seen["prefix"] == "intellect-rust-"
+    assert seen["suffix"] == ".whl"
+    assert seen["wrote"] is True
+    assert seen["urlopen_calls"] >= 2
+    assert seen["args"][-1] == str(wheel)
+    assert seen["wheel_bytes"] == b"wheel-bytes"
+    assert not wheel.exists()

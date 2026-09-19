@@ -746,3 +746,71 @@ termux = ["rich>=14"]
 
     assert hm._load_installable_optional_extras(group="all") == ["mcp"]
     assert hm._load_installable_optional_extras(group="termux-all") == ["termux", "mcp"]
+
+
+def test_rust_wheel_download_uses_mkstemp_and_unlinks(tmp_path, monkeypatch):
+    """CLI twin of the WebUI wheel-download safety check."""
+    import io
+    import json
+    import os
+
+    from intellect_cli import main as hm
+
+    monkeypatch.setattr("sys.platform", "linux")
+    wheel = tmp_path / "core.whl"
+    seen = {"urlopen_calls": 0}
+
+    def fake_mkstemp(suffix="", prefix="", **kwargs):
+        wheel.write_bytes(b"")
+        seen["prefix"] = prefix
+        seen["suffix"] = suffix
+        return os.open(wheel, os.O_RDWR), str(wheel)
+
+    def fail_mktemp(*_a, **_k):
+        raise AssertionError("tempfile.mktemp is racy")
+
+    api_body = json.dumps(
+        [
+            {
+                "assets": [
+                    {
+                        "name": "intellect_community_core-0.1.0-manylinux_x86_64.whl",
+                        "browser_download_url": "https://example.invalid/core.whl",
+                    }
+                ]
+            }
+        ]
+    ).encode()
+
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    def fake_urlopen(url, *args, **kwargs):
+        seen["urlopen_calls"] += 1
+        return _Resp(b"wheel-bytes" if "core.whl" in str(url) else api_body)
+
+    def fail_urlretrieve(*_a, **_k):
+        raise AssertionError("urlretrieve reopens by path")
+
+    def fake_run(args, **kwargs):
+        seen["args"] = list(args)
+        seen["wheel_bytes"] = wheel.read_bytes()
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr("tempfile.mkstemp", fake_mkstemp)
+    monkeypatch.setattr("tempfile.mktemp", fail_mktemp)
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("urllib.request.urlretrieve", fail_urlretrieve)
+    monkeypatch.setattr(hm.subprocess, "run", fake_run)
+
+    assert hm._try_download_gitee_rust_wheel() is True
+    assert seen["prefix"] == "intellect-rust-"
+    assert seen["suffix"] == ".whl"
+    assert seen["urlopen_calls"] >= 2
+    assert seen["args"][-1] == str(wheel)
+    assert seen["wheel_bytes"] == b"wheel-bytes"
+    assert not wheel.exists()

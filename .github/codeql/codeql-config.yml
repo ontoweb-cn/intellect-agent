@@ -1,0 +1,14 @@
+name: Intellect code scanning
+
+# tests/ and optional-skills/ are not the product trust surface. Scanning
+# them flooded the Security tab with path and protocol findings that do not
+# ship in the default agent. Production code stays in scope.
+#
+# py/clear-text-logging-sensitive-data is intentionally NOT excluded.
+# SECURITY.md §3.1 treats credential logging as in scope, and the query is
+# the only signal for that. It is noisy; triage it with path review, do not
+# delete the query.
+
+paths-ignore:
+  - "tests/**"
+  - "optional-skills/**"

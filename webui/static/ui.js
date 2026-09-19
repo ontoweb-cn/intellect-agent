@@ -8611,6 +8611,32 @@ function loadHtmlInline(container){
   });
 }
 
+function sanitizeMermaidSvg(svg){
+  // mermaid.render returns an SVG string that may contain script or
+  // foreignObject when the diagram source is model-controlled. Parse it
+  // and drop active content before inserting into the live DOM.
+  const doc=new DOMParser().parseFromString(String(svg||''),'image/svg+xml');
+  const root=doc.documentElement;
+  if(!root || root.localName!=='svg' || doc.querySelector('parsererror')) return null;
+  root.querySelectorAll('script,foreignObject,iframe,object,embed').forEach(n=>n.remove());
+  const isUrlAttr=(name)=>name==='href'||name==='src'||name.endsWith(':href')||name.endsWith(':src');
+  // Mermaid diagrams do not need javascript:/data:/vbscript: URL loads.
+  // Blocking all data: URLs closes the nested-SVG (data:image/svg+xml) bypass.
+  const badScheme=(raw)=>{
+    const val=String(raw||'').replace(/[\u0000-\u0020]+/g,'').toLowerCase();
+    return val.startsWith('javascript:')||val.startsWith('vbscript:')||val.startsWith('data:');
+  };
+  root.querySelectorAll('*').forEach(el=>{
+    [...el.attributes].forEach(attr=>{
+      const name=attr.name.toLowerCase();
+      if(name.startsWith('on') || (isUrlAttr(name) && badScheme(attr.value))){
+        el.removeAttribute(attr.name);
+      }
+    });
+  });
+  return root;
+}
+
 function renderMermaidBlocks(container){
   const root=container||document;
   const blocks=root.querySelectorAll('.mermaid-block:not([data-rendered])');
@@ -8624,7 +8650,7 @@ function renderMermaidBlocks(container){
       script.crossOrigin='anonymous';
       script.onload=()=>{
         if(typeof mermaid!=='undefined'){
-          mermaid.initialize({startOnLoad:false,theme:document.documentElement.classList.contains('dark')?'dark':'default',themeVariables:{
+          mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:document.documentElement.classList.contains('dark')?'dark':'default',themeVariables:{
             fontFamily:'inherit',fontSize:'14px',
             primaryColor:'#4a6fa5',primaryTextColor:'#e2e8f0',lineColor:'#718096',
             secondaryColor:'#2d3748',tertiaryColor:'#1a202c',primaryBorderColor:'#4a5568',
@@ -8648,7 +8674,10 @@ function renderMermaidBlocks(container){
       const {svg}=await mermaid.render(id,code);
       const tmp=document.getElementById('d'+id);
       if(tmp) tmp.remove();
-      block.innerHTML=svg;
+      const safeRoot=sanitizeMermaidSvg(svg);
+      if(!safeRoot) throw new Error('mermaid svg rejected');
+      // importNode avoids a second HTML parse of the SVG markup.
+      block.replaceChildren(document.importNode(safeRoot, true));
       block.classList.add('mermaid-rendered');
     }catch(e){
       const tmp=document.getElementById('d'+id);

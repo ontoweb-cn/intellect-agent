@@ -1073,13 +1073,25 @@ def _try_download_gitee_rust_wheel() -> bool:
             if not _wheel_url:
                 continue
 
-            _tmp = _tempfile.mktemp(suffix=".whl", prefix="intellect-rust-")
-            _ur.urlretrieve(_wheel_url, _tmp)
-            _sp.run(
-                [_sys.executable, "-m", "pip", "install", "-q", _tmp],
-                check=True, capture_output=True,
-            )
-            return True
+            _fd, _tmp = _tempfile.mkstemp(suffix=".whl", prefix="intellect-rust-")
+            try:
+                with os.fdopen(_fd, "wb") as _out:
+                    with _ur.urlopen(_wheel_url, timeout=60) as _wheel_resp:
+                        while True:
+                            _chunk = _wheel_resp.read(1024 * 1024)
+                            if not _chunk:
+                                break
+                            _out.write(_chunk)
+                _sp.run(
+                    [_sys.executable, "-m", "pip", "install", "-q", _tmp],
+                    check=True, capture_output=True,
+                )
+                return True
+            finally:
+                try:
+                    os.unlink(_tmp)
+                except OSError:
+                    pass
         except Exception:
             continue
 

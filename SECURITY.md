@@ -6,7 +6,7 @@ scope for vulnerability reports.
 
 ## 1. Reporting a Vulnerability
 
-Report privately via [GitHub Security Advisories](https://gitee.com/ontoweb/intellect-agent/security/advisories/new)
+Report privately via [GitHub Security Advisories](https://github.com/ontoweb-cn/intellect-agent/security/advisories/new)
 or **security@ontoweb.cn**. Do not open public issues for
 security vulnerabilities. **Intellect Agent does not operate a bug
 bounty program.**

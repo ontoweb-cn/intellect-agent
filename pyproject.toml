@@ -195,11 +195,11 @@ webui = [
   # WebUI — browser-based dashboard for agent sessions and settings.
   # cryptography is required for optional WebAuthn/passkey authentication
   # support. PyYAML is already a core dependency.
-  # NOTE: cryptography 48.0.1+ fixes GHSA-537c-gmf6-5ccf (vulnerable OpenSSL
-  # in wheels). Lower bound bumped to pick up the fix.  alibabacloud-tea-openapi
-  # requires cryptography<47 and may downgrade at lock time — that downgrade is
-  # tracked as an accepted risk until alibabacloud updates.
-  "cryptography>=48.0.1,<51",
+  # NOTE: cryptography 50.0.0+ fixes GHSA-g6cj-pr64-35w5 (PKCS#7
+  # Bleichenbacher oracle). Floor is 50 so a later lock cannot resolve
+  # back to 49.x. Ceiling stays <51. alibabacloud-tea-openapi still
+  # declares cryptography<47; that extra is not allowed to win resolution.
+  "cryptography>=50.0.0,<51",
 ]
 all = [
   # Policy (2026-05-12): `[all]` includes only extras that genuinely
