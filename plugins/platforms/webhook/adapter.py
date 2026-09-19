@@ -64,7 +64,7 @@ _BUILTIN_DELIVER_PLATFORMS = {
     "qqbot", "yuanbao",
 }
 
-DEFAULT_HOST = "0.0.0.0"
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8644
 _INSECURE_NO_AUTH = "INSECURE_NO_AUTH"
 _DYNAMIC_ROUTES_FILENAME = "webhook_subscriptions.json"
@@ -94,12 +94,10 @@ def _is_loopback_host(host: str) -> bool:
 
 
 def check_webhook_requirements() -> bool:
-    """Check if Webhook dependencies are available. Delegates to shared helper."""
-    global WEBHOOK_AVAILABLE
-    if WEBHOOK_AVAILABLE:
-        return True
-    from gateway.platforms.helpers import check_platform_requirements
-    return check_platform_requirements("platform.webhook")
+    """Check if webhook adapter dependencies are available."""
+    return AIOHTTP_AVAILABLE
+
+
 class WebhookAdapter(BasePlatformAdapter):
     """Generic webhook receiver that triggers agent runs from HTTP POSTs."""
 

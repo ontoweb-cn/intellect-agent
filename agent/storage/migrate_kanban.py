@@ -15,9 +15,12 @@ from agent.storage.kanban_schema import (
     discover_legacy_kanban_sources,
     ensure_kanban_schema,
 )
+from intellect_cli.kanban_db import _sql_ident
 from intellect_constants import get_intellect_home
 
 logger = logging.getLogger(__name__)
+
+_KANBAN_TABLE_SET = frozenset(KANBAN_TABLES)
 
 
 @dataclass
@@ -52,7 +55,8 @@ def _resolve_sqlite_state_path(config: dict, home: Path) -> Path:
 
 def _table_count(conn: Any, table: str) -> int:
     try:
-        row = conn.execute(f'SELECT COUNT(*) AS n FROM "{table}"').fetchone()
+        safe = _sql_ident(table, allowed=_KANBAN_TABLE_SET)
+        row = conn.execute('SELECT COUNT(*) AS n FROM "' + safe + '"').fetchone()
         if row is None:
             return 0
         return int(row[0] if not hasattr(row, "keys") else row["n"])
@@ -81,7 +85,8 @@ def _copy_kanban_table(
     replace: bool,
 ) -> KanbanTableReport:
     report = KanbanTableReport(name=table, board=board)
-    report.source_rows = _table_count(src, table)
+    safe_table = _sql_ident(table, allowed=_KANBAN_TABLE_SET)
+    report.source_rows = _table_count(src, safe_table)
     if report.source_rows == 0:
         report.skipped = True
         return report
@@ -90,26 +95,36 @@ def _copy_kanban_table(
         report.copied_rows = report.source_rows
         return report
 
-    cols_info = src.execute(f'PRAGMA table_info("{table}")').fetchall()
-    columns = [row[1] for row in cols_info]
+    cols_info = src.execute('PRAGMA table_info("' + safe_table + '")').fetchall()
+    columns = [_sql_ident(row[1]) for row in cols_info]
     if not columns:
         report.skipped = True
         return report
 
     if replace:
-        if table == "tasks":
-            dest.execute('DELETE FROM tasks WHERE board_id = ?', (board,))
+        if safe_table == "tasks":
+            dest.execute("DELETE FROM tasks WHERE board_id = ?", (board,))
         else:
-            dest.execute(f'DELETE FROM "{table}"')
+            dest.execute('DELETE FROM "' + safe_table + '"')
 
     placeholders = ", ".join("?" for _ in columns)
-    col_list = ", ".join(f'"{c}"' for c in columns)
-    rows = src.execute(f'SELECT {col_list} FROM "{table}"').fetchall()
-    if table == "tasks":
+    col_list = ", ".join('"' + c + '"' for c in columns)
+    rows = src.execute(
+        "SELECT " + col_list + ' FROM "' + safe_table + '"'
+    ).fetchall()
+    if safe_table == "tasks":
         columns, rows = _inject_board_id(columns, rows, board)
         placeholders = ", ".join("?" for _ in columns)
-        col_list = ", ".join(f'"{c}"' for c in columns)
-    insert_sql = f'INSERT OR IGNORE INTO "{table}" ({col_list}) VALUES ({placeholders})'
+        col_list = ", ".join('"' + _sql_ident(c) + '"' for c in columns)
+    insert_sql = (
+        'INSERT OR IGNORE INTO "'
+        + safe_table
+        + '" ('
+        + col_list
+        + ") VALUES ("
+        + placeholders
+        + ")"
+    )
     for row in rows:
         dest.execute(insert_sql, tuple(row))
     report.copied_rows = len(rows)

@@ -467,7 +467,7 @@ def test_plan_sites_uses_default_profile_binding(tmp_path):
     # Default profile pins api_server:9001; webhook only wanted by a
     # secondary → contractual default host/port.
     assert sites["api"] == ("127.0.0.1", 9001)
-    assert sites["webhook"] == ("0.0.0.0", 8644)
+    assert sites["webhook"] == ("127.0.0.1", 8644)
 
 
 def test_plan_sites_empty_when_no_listener_platforms(tmp_path):

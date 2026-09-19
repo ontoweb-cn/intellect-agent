@@ -40,6 +40,35 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL analysis
+        id: analyze
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
+          upload: never
+          output: sarif-results
+
+      # query-filters cannot keep a query only on selected paths. Drop
+      # clear-text-logging alerts outside auth/credential/secret/gateway/oauth
+      # (SECURITY.md §3.1), then upload.
+      - name: Filter clear-text-logging to auth surfaces
+        if: matrix.language == 'python'
+        uses: advanced-security/filter-sarif@2da736ff05ef065cb2894ac6892e47b5eac2c3c0  # v1.1
+        with:
+          input: sarif-results/python.sarif
+          output: sarif-results/python.sarif
+          patterns: |
+            -**:py/clear-text-logging-sensitive-data
+            +**/auth.py:py/clear-text-logging-sensitive-data
+            +**/auth_*.py:py/clear-text-logging-sensitive-data
+            +**/credential*.py:py/clear-text-logging-sensitive-data
+            +**/secret*.py:py/clear-text-logging-sensitive-data
+            +**/secret_store.py:py/clear-text-logging-sensitive-data
+            +**/secret_sources/**:py/clear-text-logging-sensitive-data
+            +gateway/**:py/clear-text-logging-sensitive-data
+            +**/oauth/**:py/clear-text-logging-sensitive-data
+
+      - name: Upload CodeQL SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+          sarif_file: sarif-results

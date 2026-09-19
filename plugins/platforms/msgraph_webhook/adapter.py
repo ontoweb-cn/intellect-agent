@@ -30,7 +30,7 @@ from gateway.platforms.base import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_HOST = "0.0.0.0"
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8646
 DEFAULT_WEBHOOK_PATH = "/msgraph/webhook"
 DEFAULT_MAX_SEEN_RECEIPTS = 5000
@@ -38,12 +38,10 @@ NotificationScheduler = Callable[[Dict[str, Any], MessageEvent], Awaitable[None]
 
 
 def check_msgraph_webhook_requirements() -> bool:
-    """Check if Msgraph_webhook dependencies are available. Delegates to shared helper."""
-    global MSGRAPH_WEBHOOK_AVAILABLE
-    if MSGRAPH_WEBHOOK_AVAILABLE:
-        return True
-    from gateway.platforms.helpers import check_platform_requirements
-    return check_platform_requirements("platform.msgraph_webhook")
+    """Return whether required webhook dependencies are available."""
+    return AIOHTTP_AVAILABLE
+
+
 class MSGraphWebhookAdapter(BasePlatformAdapter):
     """Receive Microsoft Graph change notifications and surface them internally."""
 

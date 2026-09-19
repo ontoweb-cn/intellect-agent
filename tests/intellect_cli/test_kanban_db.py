@@ -16,6 +16,17 @@ import pytest
 from intellect_cli import kanban_db as kb
 
 
+def test_sql_ident_allowlist_and_rejects_injection():
+    assert kb._sql_ident("tasks", allowed=kb._KANBAN_TABLES) == "tasks"
+    assert kb._sql_placeholders(3) == "?,?,?"
+    with pytest.raises(ValueError):
+        kb._sql_ident("tasks; DROP TABLE tasks")
+    with pytest.raises(ValueError):
+        kb._sql_ident("nope", allowed=kb._KANBAN_TABLES)
+    with pytest.raises(ValueError):
+        kb._sql_placeholders(0)
+
+
 @pytest.fixture
 def kanban_home(tmp_path, monkeypatch):
     """Isolated INTELLECT_HOME with an empty kanban DB."""

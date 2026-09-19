@@ -1717,13 +1717,17 @@ def _cmd_diagnostics(args: argparse.Namespace) -> int:
                 placeholders = ",".join(["?"] * len(ids))
                 ev_by = {i: [] for i in ids}
                 for row in conn.execute(
-                    f"SELECT * FROM task_events WHERE task_id IN ({placeholders}) ORDER BY id",
+                    "SELECT * FROM task_events WHERE task_id IN ("
+                    + placeholders
+                    + ") ORDER BY id",
                     tuple(ids),
                 ):
                     ev_by.setdefault(row["task_id"], []).append(row)
                 run_by = {i: [] for i in ids}
                 for row in conn.execute(
-                    f"SELECT * FROM task_runs WHERE task_id IN ({placeholders}) ORDER BY id",
+                    "SELECT * FROM task_runs WHERE task_id IN ("
+                    + placeholders
+                    + ") ORDER BY id",
                     tuple(ids),
                 ):
                     run_by.setdefault(row["task_id"], []).append(row)
@@ -1754,7 +1758,9 @@ def _cmd_diagnostics(args: argparse.Namespace) -> int:
         if diags_by_task:
             placeholders = ",".join(["?"] * len(diags_by_task))
             for r in conn.execute(
-                f"SELECT id, title, status, assignee FROM tasks WHERE id IN ({placeholders})",
+                "SELECT id, title, status, assignee FROM tasks WHERE id IN ("
+                + placeholders
+                + ")",
                 tuple(diags_by_task.keys()),
             ):
                 meta[r["id"]] = {

@@ -643,7 +643,7 @@ class LineAdapter(BasePlatformAdapter):
         )
 
         # Webhook server
-        self.webhook_host = os.getenv("LINE_HOST") or extra.get("host", "0.0.0.0")
+        self.webhook_host = os.getenv("LINE_HOST") or extra.get("host", "127.0.0.1")
         try:
             self.webhook_port = int(
                 os.getenv("LINE_PORT") or extra.get("port", DEFAULT_WEBHOOK_PORT)

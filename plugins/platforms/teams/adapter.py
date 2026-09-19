@@ -633,6 +633,9 @@ class TeamsAdapter(BasePlatformAdapter):
         self._port = _coerce_port(
             extra.get("port") or os.getenv("TEAMS_PORT", str(_DEFAULT_PORT))
         )
+        self._host = str(
+            extra.get("host") or os.getenv("TEAMS_HOST", "127.0.0.1")
+        ).strip() or "127.0.0.1"
         self._app: Optional["App"] = None
         self._runner: Optional["web.AppRunner"] = None
         self._dedup = MessageDeduplicator(max_size=1000)
@@ -696,13 +699,16 @@ class TeamsAdapter(BasePlatformAdapter):
 
             self._runner = web.AppRunner(aiohttp_app)
             await self._runner.setup()
-            site = web.TCPSite(self._runner, "0.0.0.0", self._port)
+            # Default loopback per SECURITY.md §2.6; set host: "0.0.0.0"
+            # (or TEAMS_HOST) explicitly for internet-facing Bot Framework.
+            site = web.TCPSite(self._runner, self._host, self._port)
             await site.start()
 
             self._running = True
             self._mark_connected()
             logger.info(
-                "[teams] Webhook server listening on 0.0.0.0:%d%s",
+                "[teams] Webhook server listening on %s:%d%s",
+                self._host,
                 self._port,
                 _WEBHOOK_PATH,
             )

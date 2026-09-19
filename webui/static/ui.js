@@ -8614,7 +8614,7 @@ function loadHtmlInline(container){
 function sanitizeMermaidSvg(svg){
   // mermaid.render returns an SVG string that may contain script or
   // foreignObject when the diagram source is model-controlled. Parse it
-  // and drop active content before inserting into the live DOM.
+  // and drop active content before inserting into a sandboxed iframe.
   const doc=new DOMParser().parseFromString(String(svg||''),'image/svg+xml');
   const root=doc.documentElement;
   if(!root || root.localName!=='svg' || doc.querySelector('parsererror')) return null;
@@ -8635,6 +8635,37 @@ function sanitizeMermaidSvg(svg){
     });
   });
   return root;
+}
+
+function mermaidFrameHeightPx(svgRoot){
+  // Empty sandbox makes contentDocument opaque — size from the sanitized
+  // SVG attributes before mount instead of probing the iframe.
+  const vb=svgRoot.getAttribute('viewBox');
+  if(vb){
+    const parts=vb.trim().split(/[\s,]+/).map(Number);
+    if(parts.length===4 && parts[3]>0) return Math.ceil(parts[3]);
+  }
+  const h=parseFloat(svgRoot.getAttribute('height')||'');
+  return h>0 ? Math.ceil(h) : 0;
+}
+
+function mountMermaidSvg(block, svgRoot){
+  // Fully sandboxed iframe (no allow-scripts / allow-same-origin): SVG is
+  // inert display markup, matching the HTML preview isolation model.
+  const markup=new XMLSerializer().serializeToString(svgRoot);
+  const frame=document.createElement('iframe');
+  frame.className='mermaid-frame';
+  frame.setAttribute('sandbox','');
+  frame.setAttribute('loading','lazy');
+  frame.setAttribute('referrerpolicy','no-referrer');
+  frame.title='mermaid diagram';
+  const heightPx=mermaidFrameHeightPx(svgRoot);
+  if(heightPx>0) frame.style.height=heightPx+'px';
+  frame.srcdoc='<!DOCTYPE html><html><head><meta charset="utf-8">'
+    +'<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden;}'
+    +'svg{max-width:100%;height:auto;display:block;}</style></head><body>'
+    +markup+'</body></html>';
+  block.replaceChildren(frame);
 }
 
 function renderMermaidBlocks(container){
@@ -8676,8 +8707,7 @@ function renderMermaidBlocks(container){
       if(tmp) tmp.remove();
       const safeRoot=sanitizeMermaidSvg(svg);
       if(!safeRoot) throw new Error('mermaid svg rejected');
-      // importNode avoids a second HTML parse of the SVG markup.
-      block.replaceChildren(document.importNode(safeRoot, true));
+      mountMermaidSvg(block, safeRoot);
       block.classList.add('mermaid-rendered');
     }catch(e){
       const tmp=document.getElementById('d'+id);

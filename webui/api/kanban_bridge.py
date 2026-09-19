@@ -317,8 +317,16 @@ def _patch_task(conn, task_id: str, body: dict, repo=None):
             except Exception:
                 pass
     if updates:
-        assignments = ", ".join(f"{field} = ?" for field in updates)
-        conn.execute(f"UPDATE tasks SET {assignments} WHERE id = ?", [*updates.values(), task_id])
+        from intellect_cli.kanban_db import _TASK_PATCH_COLUMNS, _sql_ident
+
+        assignments = ", ".join(
+            _sql_ident(field, allowed=_TASK_PATCH_COLUMNS) + " = ?"
+            for field in updates
+        )
+        conn.execute(
+            "UPDATE tasks SET " + assignments + " WHERE id = ?",
+            [*updates.values(), task_id],
+        )
         if hasattr(_kb(), "_append_event"):
             _kb()._append_event(conn, task_id, "updated", {"fields": list(updates), "source": "webui"})
 

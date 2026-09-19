@@ -51,7 +51,7 @@ from gateway.platforms.wecom_crypto import WXBizMsgCrypt, WeComCryptoError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_HOST = "0.0.0.0"
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8645
 DEFAULT_PATH = "/wecom/callback"
 ACCESS_TOKEN_TTL_SECONDS = 7200

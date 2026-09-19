@@ -426,7 +426,7 @@ class TestBlueBubblesWebhookUrl:
 
     def test_default_host(self, monkeypatch):
         adapter = _make_adapter(monkeypatch)
-        # Default webhook_host is 0.0.0.0 → normalized to localhost
+        # Default webhook_host is 127.0.0.1 → normalized to localhost
         assert "localhost" in adapter._webhook_url
         assert str(adapter.webhook_port) in adapter._webhook_url
         assert adapter.webhook_path in adapter._webhook_url

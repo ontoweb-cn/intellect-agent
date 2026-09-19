@@ -1821,7 +1821,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
             "agent_id": os.getenv("WECOM_CALLBACK_AGENT_ID", ""),
             "token": os.getenv("WECOM_CALLBACK_TOKEN", ""),
             "encoding_aes_key": os.getenv("WECOM_CALLBACK_ENCODING_AES_KEY", ""),
-            "host": os.getenv("WECOM_CALLBACK_HOST", "0.0.0.0"),
+            "host": os.getenv("WECOM_CALLBACK_HOST", "127.0.0.1"),
             "port": int(os.getenv("WECOM_CALLBACK_PORT", "8645")),
         })
 

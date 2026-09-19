@@ -109,6 +109,42 @@ VALID_WORKSPACE_KINDS = {"scratch", "worktree", "dir"}
 KNOWN_TOOLSET_NAMES = frozenset(name.casefold() for name in get_toolset_names())
 _IS_WINDOWS = sys.platform == "win32"
 
+# SQL identifier allowlists — Bandit B608 flags f-string SQL even when only
+# ``?`` placeholders or hardcoded names are interpolated. Validate identifiers
+# before concatenation so dynamic table/column fragments cannot inject SQL.
+_SQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_KANBAN_TABLES = frozenset(
+    {
+        "tasks",
+        "task_links",
+        "task_comments",
+        "task_events",
+        "task_runs",
+        "task_attachments",
+        "kanban_notify_subs",
+    }
+)
+_TASK_PATCH_COLUMNS = frozenset(
+    {"title", "body", "tenant", "priority", "assignee", "status"}
+)
+
+
+def _sql_ident(name: str, *, allowed: frozenset[str] | None = None) -> str:
+    """Return *name* if it is a safe SQL identifier (optionally allowlisted)."""
+    if not isinstance(name, str) or not _SQL_IDENT_RE.fullmatch(name):
+        raise ValueError(f"invalid SQL identifier: {name!r}")
+    if allowed is not None and name not in allowed:
+        raise ValueError(f"SQL identifier {name!r} not in allowlist")
+    return name
+
+
+def _sql_placeholders(n: int) -> str:
+    """Build a ``?,?,?`` fragment for a parameterized ``IN (...)`` clause."""
+    if n < 1:
+        raise ValueError("IN clause requires at least one placeholder")
+    return ",".join("?" * n)
+
+
 # A running task's claim is valid for 15 minutes by default; after that the
 # next dispatcher tick reclaims it. Workers that outlive this window should
 # call ``heartbeat_claim(task_id)`` periodically. In practice most kanban
@@ -1153,7 +1189,10 @@ def _sqlite_connect(path: Path) -> sqlite3.Connection:
     # ``sqlite3.connect(timeout=...)`` normally maps to busy_timeout, but set
     # the PRAGMA explicitly so it is observable and survives future wrapper
     # changes. Parameter binding is not supported for PRAGMA assignments.
-    conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
+    timeout_ms = int(busy_timeout_ms)
+    if timeout_ms < 0:
+        raise ValueError(f"busy_timeout must be >= 0, got {timeout_ms}")
+    conn.execute("PRAGMA busy_timeout=" + str(timeout_ms))
     return conn
 
 
@@ -1618,8 +1657,12 @@ def _add_column_if_missing(
     that ran the same migration first does not crash the dispatcher tick
     (issue #21708).
     """
+    safe_table = _sql_ident(table, allowed=_KANBAN_TABLES)
+    # *ddl* is always a compile-time constant from callers (e.g. ``tenant TEXT``).
+    if not isinstance(ddl, str) or not ddl.strip() or ";" in ddl:
+        raise ValueError(f"invalid ADD COLUMN DDL: {ddl!r}")
     try:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+        conn.execute("ALTER TABLE " + safe_table + " ADD COLUMN " + ddl)
         return True
     except sqlite3.OperationalError as exc:
         if "duplicate column name" in str(exc).lower():
@@ -1974,10 +2017,11 @@ _REBUILD_SPECS = {
 
 def _table_has_drifted(conn: sqlite3.Connection, table: str) -> bool:
     """True when ``table`` still carries the legacy (pre-AUTOINCREMENT) shape."""
-    info = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    safe_table = _sql_ident(table, allowed=_KANBAN_TABLES)
+    info = conn.execute("PRAGMA table_info(" + safe_table + ")").fetchall()
     if not info:
         return False  # table absent — nothing to rebuild
-    if table == "kanban_notify_subs":
+    if safe_table == "kanban_notify_subs":
         lei = next((c for c in info if c["name"] == "last_event_id"), None)
         return lei is not None and (lei["type"] or "").upper() != "INTEGER"
     # task_events / task_comments / task_runs: id must be INTEGER and a PK.
@@ -2012,30 +2056,55 @@ def _rebuild_drifted_tables(conn: sqlite3.Connection) -> None:
     conn.execute("BEGIN IMMEDIATE")
     try:
         for table in drifted:
+            safe_table = _sql_ident(table, allowed=_KANBAN_TABLES)
             create_sql, index_sqls = _REBUILD_SPECS[table]
-            old_cols = [c["name"] for c in conn.execute(f"PRAGMA table_info({table})")]
+            old_cols = [
+                _sql_ident(c["name"])
+                for c in conn.execute("PRAGMA table_info(" + safe_table + ")")
+            ]
             _log.info("kanban migration: rebuilding %s to match current schema", table)
-            conn.execute(f"ALTER TABLE {table} RENAME TO {table}_legacy")
+            conn.execute(
+                "ALTER TABLE " + safe_table + " RENAME TO " + safe_table + "_legacy"
+            )
             conn.execute(create_sql)
-            new_cols = {c["name"] for c in conn.execute(f"PRAGMA table_info({table})")}
-            if table == "kanban_notify_subs":
+            new_cols = {
+                _sql_ident(c["name"])
+                for c in conn.execute("PRAGMA table_info(" + safe_table + ")")
+            }
+            if safe_table == "kanban_notify_subs":
                 # Cast the legacy TEXT cursor to INTEGER; NULL / non-numeric → 0.
                 shared = [c for c in old_cols if c in new_cols and c != "last_event_id"]
                 cols_csv = ", ".join(shared)
                 conn.execute(
-                    f"INSERT INTO {table} ({cols_csv}, last_event_id) "
-                    f"SELECT {cols_csv}, COALESCE(CAST(last_event_id AS INTEGER), 0) "
-                    f"FROM {table}_legacy"
+                    "INSERT INTO "
+                    + safe_table
+                    + " ("
+                    + cols_csv
+                    + ", last_event_id) "
+                    "SELECT "
+                    + cols_csv
+                    + ", COALESCE(CAST(last_event_id AS INTEGER), 0) "
+                    "FROM "
+                    + safe_table
+                    + "_legacy"
                 )
             else:
                 # Drop the legacy TEXT id; AUTOINCREMENT reassigns it.
                 shared = [c for c in old_cols if c in new_cols and c != "id"]
                 cols_csv = ", ".join(shared)
                 conn.execute(
-                    f"INSERT INTO {table} ({cols_csv}) "
-                    f"SELECT {cols_csv} FROM {table}_legacy"
+                    "INSERT INTO "
+                    + safe_table
+                    + " ("
+                    + cols_csv
+                    + ") "
+                    "SELECT "
+                    + cols_csv
+                    + " FROM "
+                    + safe_table
+                    + "_legacy"
                 )
-            conn.execute(f"DROP TABLE {table}_legacy")
+            conn.execute("DROP TABLE " + safe_table + "_legacy")
             for index_sql in index_sqls:
                 conn.execute(index_sql)
         conn.execute("COMMIT")
@@ -2430,9 +2499,9 @@ def _find_missing_parents(conn: sqlite3.Connection, parents: Iterable[str]) -> l
     parents = list(parents)
     if not parents:
         return []
-    placeholders = ",".join("?" * len(parents))
+    placeholders = _sql_placeholders(len(parents))
     rows = conn.execute(
-        f"SELECT id FROM tasks WHERE id IN ({placeholders})",
+        "SELECT id FROM tasks WHERE id IN (" + placeholders + ")",
         parents,
     ).fetchall()
     present = {r["id"] for r in rows}
@@ -3613,9 +3682,9 @@ def _verify_created_cards(
     completing_assignee = row["assignee"]
 
     # Batch-fetch existence + created_by in one query.
-    placeholders = ",".join(["?"] * len(ordered))
+    placeholders = _sql_placeholders(len(ordered))
     rows = conn.execute(
-        f"SELECT id, created_by FROM tasks WHERE id IN ({placeholders})",
+        "SELECT id, created_by FROM tasks WHERE id IN (" + placeholders + ")",
         tuple(ordered),
     ).fetchall()
     found = {r["id"]: r["created_by"] for r in rows}
@@ -3673,9 +3742,9 @@ def _scan_prose_for_phantom_ids(
         if m not in seen:
             seen.add(m)
             unique.append(m)
-    placeholders = ",".join(["?"] * len(unique))
+    placeholders = _sql_placeholders(len(unique))
     rows = conn.execute(
-        f"SELECT id FROM tasks WHERE id IN ({placeholders})",
+        "SELECT id FROM tasks WHERE id IN (" + placeholders + ")",
         tuple(unique),
     ).fetchall()
     existing = {r["id"] for r in rows}
@@ -4420,8 +4489,9 @@ def specify_triage_task(
             changed_fields.append("assignee")
         params.append(task_id)
         cur = conn.execute(
-            f"UPDATE tasks SET {', '.join(sets)} "
-            f"WHERE id = ? AND status = 'triage'",
+            "UPDATE tasks SET "
+            + ", ".join(sets)
+            + " WHERE id = ? AND status = 'triage'",
             tuple(params),
         )
         if cur.rowcount != 1:
@@ -4624,7 +4694,7 @@ def decompose_triage_task(
             params.append(root_assignee)
         params.append(task_id)
         conn.execute(
-            f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",
+            "UPDATE tasks SET " + ", ".join(sets) + " WHERE id = ?",
             tuple(params),
         )
 
@@ -7244,7 +7314,11 @@ def unseen_events_for_sub(
     kind_list = list(kinds) if kinds else None
     q = (
         "SELECT * FROM task_events WHERE task_id = ? AND id > ? "
-        + ("AND kind IN (" + ",".join("?" * len(kind_list)) + ") " if kind_list else "")
+        + (
+            "AND kind IN (" + _sql_placeholders(len(kind_list)) + ") "
+            if kind_list
+            else ""
+        )
         + "ORDER BY id ASC"
     )
     params: list[Any] = [task_id, cursor]
@@ -7615,9 +7689,9 @@ def latest_summaries(
     ids = list(task_ids)
     if not ids:
         return {}
-    placeholders = ",".join("?" for _ in ids)
+    placeholders = _sql_placeholders(len(ids))
     rows = conn.execute(
-        f"""
+        """
         SELECT task_id, summary FROM (
             SELECT task_id, summary,
                    ROW_NUMBER() OVER (
@@ -7625,7 +7699,9 @@ def latest_summaries(
                        ORDER BY COALESCE(ended_at, started_at) DESC, id DESC
                    ) AS rn
               FROM task_runs
-             WHERE task_id IN ({placeholders})
+             WHERE task_id IN ("""
+        + placeholders
+        + """)
                AND summary IS NOT NULL AND summary != ''
         ) WHERE rn = 1
         """,

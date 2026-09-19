@@ -44,12 +44,13 @@ from gateway.supervisor import (
 logger = logging.getLogger("gateway.multiplex_front")
 
 # Mirror the platform adapters' contractual defaults (plugins/platforms/
-# api_server: 127.0.0.1:8642, plugins/platforms/webhook: 0.0.0.0:8644).
+# api_server: 127.0.0.1:8642, plugins/platforms/webhook: 127.0.0.1:8644).
 # Used only when the default profile enables a platform without pinning a
-# binding of its own.
+# binding of its own. Non-loopback binds require an explicit host per
+# SECURITY.md §2.6.
 _SITE_DEFAULTS: Dict[str, Tuple[str, int]] = {
     "api": ("127.0.0.1", 8642),
-    "webhook": ("0.0.0.0", 8644),
+    "webhook": ("127.0.0.1", 8644),
 }
 _PLATFORM_KINDS: Dict[str, str] = {
     "api_server": "api",
