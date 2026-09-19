@@ -318,6 +318,21 @@ that:
   launches and for dependency / bundled-package changes in CI; see
   `CONTRIBUTING.md` for specifics.
 
+### 4.1 Accepted supply-chain risks
+
+These are tracked intentionally; they are not forgotten scanner noise.
+
+- **PyNaCl pinned below 1.6** — `discord.py[voice]==2.7.1` requires
+  `pynacl>=1.5.0,<1.6`. The GHSA fix lands in 1.6.2. Do not override
+  past the discord.py cap; revisit when discord.py raises the ceiling.
+- **image-size ≤ 2.0.2** — GHSA-5p2g-fcmc-qvqq / GHSA-w3rx-r6r6-pgpr
+  (DoS in JXL/HEIF parsers) still have no patched release. Affects the
+  docs site (`website/`) only. Revisit when a patch is published.
+- **Secret scanning validity checks** — push protection and secret
+  scanning are on; GitHub validity-checks remain off for this org
+  plan/API surface. Rely on gitleaks in CI until the repo setting
+  accepts enablement.
+
 ---
 
 ## 5. Disclosure
