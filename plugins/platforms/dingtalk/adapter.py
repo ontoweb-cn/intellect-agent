@@ -110,6 +110,21 @@ DINGTALK_TYPE_MAPPING = {
 }
 
 
+def _credential(name: str) -> str:
+    """Resolve a DingTalk credential through the profile-scoped resolver.
+
+    ``agent.secret_scope.get_secret`` reads the active profile's secret scope
+    when one is installed and falls back to ``os.environ`` otherwise, so this
+    behaves exactly like ``os.getenv`` for the single-profile gateway while
+    failing closed instead of leaking another profile's credentials when
+    multiplexing.  Direct ``os.getenv`` on these names is blocked by the
+    credential raw-read gate (scripts/audit_credential_reads.py).
+    """
+    from agent.secret_scope import get_secret
+
+    return get_secret(name) or ""
+
+
 def check_dingtalk_requirements() -> bool:
     """Check if DingTalk dependencies are available and configured.
 
@@ -138,7 +153,7 @@ def check_dingtalk_requirements() -> bool:
         httpx = _httpx
         DINGTALK_STREAM_AVAILABLE = True
         HTTPX_AVAILABLE = True
-    if not os.getenv("DINGTALK_CLIENT_ID") or not os.getenv("DINGTALK_CLIENT_SECRET"):
+    if not _credential("DINGTALK_CLIENT_ID") or not _credential("DINGTALK_CLIENT_SECRET"):
         return False
     return True
 
