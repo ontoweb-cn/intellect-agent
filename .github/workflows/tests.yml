@@ -260,48 +260,22 @@ jobs:
           OPENAI_API_KEY: ""
           ONTOWEB_API_KEY: ""
 
-  storage-postgresql:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: intellect
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: intellect_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U intellect -d intellect_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
-
-      - name: Set up Python 3.12
-        run: uv python install 3.12
-
-      - name: Install dependencies (db-postgresql)
-        run: |
-          uv venv .venv --python 3.12
-          source .venv/bin/activate
-          uv pip install -e ".[all,dev,db-postgresql]"
-
-      - name: Run PostgreSQL storage smoke tests (W2)
-        run: |
-          source .venv/bin/activate
-          python -m pytest tests/integration/test_storage_postgresql_smoke.py -v --tb=short
-        env:
-          INTELLECT_PG_DSN: postgresql://intellect:testpass@localhost:5432/intellect_test
-          OPENROUTER_API_KEY: ""
-          OPENAI_API_KEY: ""
-          ONTOWEB_API_KEY: ""
+  # NOTE: a ``storage-postgresql`` job used to live here.  It was removed
+  # because it could never pass, for two independent reasons — and neither is
+  # a missing file that someone forgot to commit:
+  #
+  #   1. ``uv pip install -e ".[all,dev,db-postgresql]"`` named a
+  #      ``db-postgresql`` extra that has never existed in pyproject.toml
+  #      (``git log -S db-postgresql -- pyproject.toml`` is empty).
+  #   2. ``tests/integration/test_storage_postgresql_smoke.py`` has never
+  #      existed either (``git log --diff-filter=A`` is empty for that path).
+  #
+  # The feature it was meant to cover is gone by policy, not by accident:
+  # PostgreSQL storage is gated on ``members.enabled``, and multi-user
+  # (members/teams/projects) is permanent WONTFIX — ``validate_config_structure``
+  # actively *rejects* ``storage.backend: postgresql`` in single-user mode
+  # (see tests/intellect_cli/test_config_validation.py::TestStorageBackendValidation).
+  # Re-introduce this job only alongside an actual PostgreSQL storage backend.
 
   coverage:
     runs-on: ubuntu-latest
