@@ -259,6 +259,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from intellect_constants import get_intellect_home
 
+# Handler mixins are split across gateway/*_handlers.py and resolved their
+# helper names from this module's namespace before the A1 split.  The mixins
+# still expect them here (``_bootstrap_gateway_mixins()`` below copies this
+# module's globals into each mixin), so this import must stay.
+from utils import (  # noqa: F401
+    atomic_json_write,
+    atomic_yaml_write,
+    base_url_host_matches,
+    is_truthy_value,
+)
+
 
 _intellect_home = get_intellect_home()
 
@@ -1017,6 +1028,10 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
     _control_socket: Optional["ControlSocketServer"] = None
 
     _session_model_overrides: Dict[str, Dict[str, str]] = {}
+    # Serializes transcript turns per session_id.  Replaced per-instance in
+    # __init__; this default exists so partially-constructed runners (the
+    # ``object.__new__(GatewayRunner)`` pattern tests use) still have one.
+    _turn_leases: "SessionTurnLeaseRegistry" = SessionTurnLeaseRegistry()
 
     _session_reasoning_overrides: Dict[str, Dict[str, Any]] = {}
 

@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 import pytest
+from tests._auth_store_helpers import read_auth_json
 
 
 @pytest.fixture(autouse=True)
@@ -461,11 +462,11 @@ def test_write_credential_pool_targets_profile_not_global(profile_env):
     }])
 
     # Global auth.json unchanged.
-    global_data = json.loads((profile_env["global"] / "auth.json").read_text())
+    global_data = read_auth_json(profile_env["global"] / "auth.json")
     assert global_data["credential_pool"]["openrouter"][0]["id"] == "glob-1"
 
     # Profile auth.json holds the new entry.
-    profile_data = json.loads((profile_env["profile"] / "auth.json").read_text())
+    profile_data = read_auth_json(profile_env["profile"] / "auth.json")
     assert profile_data["credential_pool"]["openrouter"][0]["id"] == "prof-new"
 
     # Subsequent read returns profile (shadows global).

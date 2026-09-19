@@ -12,9 +12,11 @@ import json
 import logging
 import os
 import re
+import shlex
 import sqlite3
 import time
 from collections import OrderedDict
+from contextvars import copy_context
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -187,6 +189,7 @@ class GatewayInfrastructureHandlers:
             depth += 1
         return depth
 
+    @staticmethod
     def _is_goal_continuation_event(event_or_text: Any) -> bool:
         """Return True for synthetic /goal continuation turns.
 
@@ -318,8 +321,6 @@ class GatewayInfrastructureHandlers:
         `/reasoning <level>` is session-scoped by default. `--global` may be
         supplied in any position to persist the change to config.yaml.
         """
-        import shlex
-
         text = str(raw_args or "").strip().replace("—", "--")
         if not text:
             return "", False
@@ -3367,6 +3368,7 @@ class GatewayInfrastructureHandlers:
             session_key=session_key,
         )
 
+    @staticmethod
     def _member_has_active_team(member_id: str, team_slug: str, config: dict) -> bool:
         from agent.membership import MembershipStore
 
@@ -3381,6 +3383,7 @@ class GatewayInfrastructureHandlers:
         finally:
             store.close()
 
+    @staticmethod
     def _member_has_active_project(member_id: str, project_slug: str, config: dict) -> bool:
         from agent.projects import ProjectDB
 
@@ -3423,6 +3426,7 @@ class GatewayInfrastructureHandlers:
         except Exception:
             return None
 
+    @staticmethod
     def _get_guild_id(event: MessageEvent) -> Optional[int]:
         """Extract Discord guild_id from the raw message object."""
         raw = getattr(event, "raw_message", None)

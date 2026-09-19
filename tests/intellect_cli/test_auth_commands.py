@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+from tests._auth_store_helpers import read_auth_json
 
 
 def _write_auth_store(tmp_path, payload: dict) -> None:
@@ -53,7 +54,7 @@ def test_auth_add_api_key_persists_manual_entry(tmp_path, monkeypatch):
 
     auth_add_command(_Args())
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     entries = payload["credential_pool"]["openrouter"]
     entry = next(item for item in entries if item["source"] == "manual")
     assert entry["label"] == "personal"
@@ -88,7 +89,7 @@ def test_auth_add_anthropic_oauth_persists_pool_entry(tmp_path, monkeypatch):
 
     auth_add_command(_Args())
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     entries = payload["credential_pool"]["anthropic"]
     entry = next(item for item in entries if item["source"] == "manual:intellect_pkce")
     assert entry["label"] == "claude@example.com"
@@ -142,7 +143,7 @@ def test_auth_add_nous_oauth_persists_pool_entry(tmp_path, monkeypatch):
 
     auth_add_command(_Args())
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
 
     # Pool has exactly one canonical `device_code` entry — not a duplicate
     # pair of `manual:device_code` + `device_code` (the latter would be
@@ -205,7 +206,7 @@ def test_auth_add_minimax_oauth_starts_login_and_persists_pool_entry(tmp_path, m
 
     auth_add_command(_Args())
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     entries = payload["credential_pool"]["minimax-oauth"]
     entry = next(item for item in entries if item["source"] == "manual:minimax_oauth")
     assert entry["label"] == "minimax@example.com"
@@ -263,7 +264,7 @@ def test_auth_add_nous_oauth_honors_custom_label(tmp_path, monkeypatch):
 
     auth_add_command(_Args())
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
 
     # Custom label reaches the pool entry …
     pool_entry = payload["credential_pool"]["ontoweb"][0]
@@ -301,7 +302,7 @@ def test_auth_add_codex_oauth_persists_pool_entry(tmp_path, monkeypatch):
 
     auth_add_command(_Args())
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     entries = payload["credential_pool"]["openai-codex"]
     entry = next(item for item in entries if item["source"] == "manual:device_code")
     assert entry["label"] == "codex@example.com"
@@ -355,7 +356,7 @@ def test_auth_remove_reindexes_priorities(tmp_path, monkeypatch):
 
     auth_remove_command(_Args())
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     entries = payload["credential_pool"]["anthropic"]
     assert len(entries) == 1
     assert entries[0]["label"] == "secondary"
@@ -403,7 +404,7 @@ def test_auth_remove_accepts_label_target(tmp_path, monkeypatch):
 
     auth_remove_command(_Args())
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     entries = payload["credential_pool"]["openai-codex"]
     assert len(entries) == 1
     assert entries[0]["label"] == "work-account"
@@ -458,7 +459,7 @@ def test_auth_remove_prefers_exact_numeric_label_over_index(tmp_path, monkeypatc
 
     auth_remove_command(_Args())
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     labels = [entry["label"] for entry in payload["credential_pool"]["openai-codex"]]
     assert labels == ["first", "third"]
 
@@ -497,7 +498,7 @@ def test_auth_reset_clears_provider_statuses(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Reset status" in out
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     entry = payload["credential_pool"]["anthropic"][0]
     assert entry["last_status"] is None
     assert entry["last_status_at"] is None
@@ -543,7 +544,7 @@ def test_clear_provider_auth_removes_provider_pool_entries(tmp_path, monkeypatch
 
     assert clear_provider_auth("anthropic") is True
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     assert payload["active_provider"] is None
     assert "anthropic" not in payload.get("providers", {})
     assert "anthropic" not in payload.get("credential_pool", {})
@@ -629,7 +630,7 @@ def test_logout_clears_stale_active_codex_without_provider_credentials(tmp_path,
 
     out = capsys.readouterr().out
     assert "Logged out of OpenAI Codex." in out
-    auth_payload = json.loads((intellect_home / "auth.json").read_text())
+    auth_payload = read_auth_json(intellect_home / "auth.json")
     assert auth_payload.get("active_provider") is None
     config_text = (intellect_home / "config.yaml").read_text()
     assert "provider: auto" in config_text
@@ -978,7 +979,7 @@ def test_auth_remove_claude_code_suppresses_reseed(tmp_path, monkeypatch):
     from intellect_cli.auth_commands import auth_remove_command
     auth_remove_command(SimpleNamespace(provider="anthropic", target="1"))
 
-    updated = json.loads((intellect_home / "auth.json").read_text())
+    updated = read_auth_json(intellect_home / "auth.json")
     suppressed = updated.get("suppressed_sources", {})
     assert "anthropic" in suppressed
     assert "claude_code" in suppressed["anthropic"]
@@ -998,7 +999,7 @@ def test_unsuppress_credential_source_clears_marker(tmp_path, monkeypatch):
     assert cleared is True
     assert is_source_suppressed("openai-codex", "device_code") is False
 
-    payload = json.loads((tmp_path / "intellect" / "auth.json").read_text())
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
     # Empty suppressed_sources dict should be cleaned up entirely
     assert "suppressed_sources" not in payload
 
@@ -1071,7 +1072,7 @@ def test_auth_remove_codex_device_code_suppresses_reseed(tmp_path, monkeypatch):
 
     auth_remove_command(SimpleNamespace(provider="openai-codex", target="1"))
 
-    updated = json.loads((intellect_home / "auth.json").read_text())
+    updated = read_auth_json(intellect_home / "auth.json")
     suppressed = updated.get("suppressed_sources", {})
     assert "openai-codex" in suppressed
     assert "device_code" in suppressed["openai-codex"]
@@ -1118,7 +1119,7 @@ def test_auth_remove_codex_manual_source_suppresses_reseed(tmp_path, monkeypatch
 
     auth_remove_command(SimpleNamespace(provider="openai-codex", target="1"))
 
-    updated = json.loads((intellect_home / "auth.json").read_text())
+    updated = read_auth_json(intellect_home / "auth.json")
     suppressed = updated.get("suppressed_sources", {})
     # Critical: manual:device_code source must also trigger the suppression path
     assert "openai-codex" in suppressed
@@ -1166,7 +1167,7 @@ def test_auth_add_codex_clears_suppression_marker(tmp_path, monkeypatch):
 
     auth_add_command(_Args())
 
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     # Suppression marker must be cleared
     assert "openai-codex" not in payload.get("suppressed_sources", {})
     # New pool entry must be present
@@ -1208,7 +1209,7 @@ def test_seed_from_singletons_respects_codex_suppression(tmp_path, monkeypatch):
     assert active_sources == set()
 
     # Verify the auth store was NOT modified (no auto-import happened)
-    after = json.loads((intellect_home / "auth.json").read_text())
+    after = read_auth_json(intellect_home / "auth.json")
     assert "openai-codex" not in after.get("providers", {})
 
 
@@ -1249,7 +1250,7 @@ def test_auth_remove_env_seeded_suppresses_shell_exported_var(tmp_path, monkeypa
     auth_remove_command(SimpleNamespace(provider="xai", target="1"))
 
     # Suppression marker written
-    after = json.loads((intellect_home / "auth.json").read_text())
+    after = read_auth_json(intellect_home / "auth.json")
     assert "env:XAI_API_KEY" in after.get("suppressed_sources", {}).get("xai", [])
 
     # Diagnostic printed pointing at the shell

@@ -65,6 +65,7 @@ MAX_MESSAGE_LENGTH = 50_000
 # Supported image extensions for inline detection
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
+
 def _send_imap_id(imap: "imaplib.IMAP4") -> None:
     """Send RFC 2971 IMAP ID command identifying this client.
 
@@ -98,14 +99,23 @@ def _is_automated_sender(address: str, headers: dict) -> bool:
         if value and check(value):
             return True
     return False
+
     
 def check_email_requirements() -> bool:
-    """Check if Email dependencies are available. Delegates to shared helper."""
-    global EMAIL_AVAILABLE
-    if EMAIL_AVAILABLE:
-        return True
-    from gateway.platforms.helpers import check_platform_requirements
-    return check_platform_requirements("platform.email")
+    """Check if email platform dependencies are available and configured.
+
+    The IMAP/SMTP stack is stdlib, so this probe is purely a config check —
+    there is no ``platform.email`` entry in LAZY_DEPS to delegate to.
+    """
+    addr = os.getenv("EMAIL_ADDRESS")
+    pwd = os.getenv("EMAIL_PASSWORD")
+    imap = os.getenv("EMAIL_IMAP_HOST")
+    smtp = os.getenv("EMAIL_SMTP_HOST")
+    if not all([addr, pwd, imap, smtp]):
+        return False
+    return True
+
+
 def _decode_header_value(raw: str) -> str:
     """Decode an RFC 2047 encoded email header into a plain string."""
     parts = decode_header(raw)

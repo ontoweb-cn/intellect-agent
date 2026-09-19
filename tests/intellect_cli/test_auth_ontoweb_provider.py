@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from intellect_cli.auth import AuthError, get_provider_auth_state, resolve_ontoweb_runtime_credentials
+from tests._auth_store_helpers import read_auth_json
 
 
 # =============================================================================
@@ -206,7 +207,7 @@ def test_resolve_nous_runtime_credentials_prefers_invoke_jwt_and_mirrors(
     assert creds["source"] == auth_mod.ONTOWEB_AUTH_PATH_INVOKE_JWT
     assert creds["auth_path"] == auth_mod.ONTOWEB_AUTH_PATH_INVOKE_JWT
 
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     singleton = payload["providers"]["ontoweb"]
     assert singleton["agent_key"] == token
     assert datetime.fromisoformat(singleton["agent_key_expires_at"]).timestamp() > time.time() + 300
@@ -318,7 +319,7 @@ def test_resolve_nous_runtime_credentials_trusts_invoke_jwt_exp_over_stale_metad
 
     assert creds["api_key"] == token
     assert creds["source"] == auth_mod.ONTOWEB_AUTH_PATH_INVOKE_JWT
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     singleton = payload["providers"]["ontoweb"]
     assert singleton["agent_key"] == token
     assert datetime.fromisoformat(singleton["expires_at"]).timestamp() > time.time() + 300
@@ -346,7 +347,7 @@ def test_resolve_nous_runtime_credentials_does_not_apply_agent_key_ttl_to_invoke
 
     assert creds["api_key"] == token
     assert creds["source"] == auth_mod.ONTOWEB_AUTH_PATH_INVOKE_JWT
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     assert payload["providers"]["ontoweb"]["agent_key"] == token
     assert payload["credential_pool"]["ontoweb"][0]["agent_key"] == token
 
@@ -391,7 +392,7 @@ def test_resolve_nous_runtime_credentials_refreshes_legacy_agent_key_to_invoke_j
     assert refresh_calls == ["refresh-old"]
     assert creds["api_key"] == refreshed_token
     assert creds["source"] == auth_mod.ONTOWEB_AUTH_PATH_INVOKE_JWT
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     singleton = payload["providers"]["ontoweb"]
     assert singleton["access_token"] == refreshed_token
     assert singleton["refresh_token"] == "refresh-new"
@@ -427,7 +428,7 @@ def test_resolve_nous_runtime_credentials_reauths_when_invoke_scope_missing(
 
     assert exc.value.code == "missing_inference_invoke_scope"
     assert exc.value.relogin_required is True
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     assert payload["providers"]["ontoweb"]["agent_key"] is None
     assert "credential_pool" not in payload or not payload["credential_pool"].get("ontoweb")
 
@@ -482,7 +483,7 @@ def test_removed_legacy_session_env_var_does_not_change_jwt_auth(tmp_path, monke
     creds = auth_mod.resolve_ontoweb_runtime_credentials()
 
     assert creds["api_key"] == token
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     assert payload["providers"]["ontoweb"]["agent_key"] == token
 
     requested_scopes = []
@@ -869,7 +870,7 @@ def test_terminal_refresh_failure_quarantines_tokens(
     assert not state_after_failure.get("agent_key")
     assert state_after_failure["last_auth_error"]["code"] == "invalid_grant"
     assert auth_mod._read_shared_ontoweb_state() is None
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     assert payload.get("credential_pool", {}).get("ontoweb") == []
 
     with pytest.raises(AuthError, match="No access token found"):
@@ -911,7 +912,7 @@ def test_managed_access_token_refresh_failure_quarantines_tokens(
     assert not state_after_failure.get("refresh_token")
     assert not state_after_failure.get("access_token")
     assert state_after_failure["last_auth_error"]["message"] == "Invalid refresh token"
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     assert payload.get("credential_pool", {}).get("ontoweb") == []
 
     with pytest.raises(AuthError, match="No access token found"):
@@ -1173,7 +1174,7 @@ def test_persist_ontoweb_credentials_writes_both_pool_and_providers(tmp_path, mo
     assert entry.provider == "ontoweb"
     assert entry.source == ONTOWEB_DEVICE_CODE_SOURCE
 
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
 
     # providers.ontoweb populated with the full state (new behaviour)
     singleton = payload["providers"]["ontoweb"]
@@ -1263,7 +1264,7 @@ def test_persist_ontoweb_credentials_idempotent_no_duplicate_pool_entries(tmp_pa
     second["agent_key_expires_at"] = _future_iso(7200)
     persist_ontoweb_credentials(second)
 
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
 
     # providers.ontoweb reflects the latest write (singleton semantics)
     assert payload["providers"]["ontoweb"]["access_token"] == second_token
@@ -1328,7 +1329,7 @@ def test_persist_ontoweb_credentials_embeds_custom_label(tmp_path, monkeypatch):
 
     # providers.ontoweb carries the label so re-seeding on the next load_pool
     # doesn't overwrite it with the auto-derived fingerprint.
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     assert payload["providers"]["ontoweb"]["label"] == "my-personal"
 
 
@@ -1378,7 +1379,7 @@ def test_persist_ontoweb_credentials_no_label_uses_auto_derived(tmp_path, monkey
     assert entry.label != "my-personal"
 
     # No "label" key embedded in providers.ontoweb when the caller didn't supply one.
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     assert "label" not in payload["providers"]["ontoweb"]
 
 
@@ -1671,7 +1672,7 @@ def test_persist_ontoweb_credentials_mirrors_to_shared_store(
     persist_ontoweb_credentials(_full_state_fixture())
 
     # Per-profile auth.json populated
-    payload = json.loads((intellect_home / "auth.json").read_text())
+    payload = read_auth_json(intellect_home / "auth.json")
     assert "ontoweb" in payload.get("providers", {})
 
     # Shared store populated with the same refresh_token
@@ -1805,7 +1806,7 @@ def test_shared_store_survives_across_profile_switch(
     auth_mod.persist_ontoweb_credentials(_full_state_fixture())
 
     # Profile A's auth.json has ontoweb
-    a_payload = json.loads((profile_a / "auth.json").read_text())
+    a_payload = read_auth_json(profile_a / "auth.json")
     assert "ontoweb" in a_payload.get("providers", {})
 
     # Profile B: fresh INTELLECT_HOME, no auth yet, but the shared store
@@ -1818,7 +1819,7 @@ def test_shared_store_survives_across_profile_switch(
     monkeypatch.setenv("INTELLECT_HOME", str(profile_b))
 
     # B's own auth.json has no ontoweb
-    b_payload = json.loads((profile_b / "auth.json").read_text())
+    b_payload = read_auth_json(profile_b / "auth.json")
     assert "ontoweb" not in b_payload.get("providers", {})
 
     # But the shared store is visible
@@ -1844,7 +1845,7 @@ def test_shared_store_survives_across_profile_switch(
 
     auth_mod.persist_ontoweb_credentials(result)
 
-    b_payload = json.loads((profile_b / "auth.json").read_text())
+    b_payload = read_auth_json(profile_b / "auth.json")
     assert "ontoweb" in b_payload.get("providers", {})
     assert b_payload["providers"]["ontoweb"]["refresh_token"] == "b-refresh-tok"
 

@@ -79,12 +79,18 @@ def _redact(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def check_bluebubbles_requirements() -> bool:
-    """Check if Bluebubbles dependencies are available. Delegates to shared helper."""
-    global BLUEBUBBLES_AVAILABLE
-    if BLUEBUBBLES_AVAILABLE:
-        return True
-    from gateway.platforms.helpers import check_platform_requirements
-    return check_platform_requirements("platform.bluebubbles")
+    """Check if BlueBubbles dependencies are available.
+
+    aiohttp/httpx are core (non-lazy) dependencies, so this is a plain probe —
+    there is no ``platform.bluebubbles`` entry in LAZY_DEPS to delegate to.
+    """
+    try:
+        import aiohttp  # noqa: F401
+        import httpx  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
 
 
 def _normalize_server_url(raw: str) -> str:

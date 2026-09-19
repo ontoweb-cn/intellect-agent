@@ -1376,6 +1376,7 @@ class GatewayPlatformHandlers:
             response += f"\n\nLast Intellect message:\n{last_assistant}"
         return response
 
+    @staticmethod
     def _is_telegram_dm_topic_target(
         platform: Optional[Platform],
         chat_id: Optional[str],

@@ -106,12 +106,14 @@ VOICE_SUPPORTED_MIMES = {"audio/amr"}
 
 
 def check_wecom_requirements() -> bool:
-    """Check if Wecom dependencies are available. Delegates to shared helper."""
-    global WECOM_AVAILABLE
-    if WECOM_AVAILABLE:
-        return True
-    from gateway.platforms.helpers import check_platform_requirements
-    return check_platform_requirements("platform.wecom", _reimport_wecom)
+    """Check if WeCom runtime dependencies are available.
+
+    aiohttp/httpx are core (non-lazy) dependencies, so this is a plain probe —
+    there is no ``platform.wecom`` entry in LAZY_DEPS to delegate to.
+    """
+    return AIOHTTP_AVAILABLE and HTTPX_AVAILABLE
+
+
 def _coerce_list(value: Any) -> List[str]:
     """Coerce config values into a trimmed string list."""
     if value is None:

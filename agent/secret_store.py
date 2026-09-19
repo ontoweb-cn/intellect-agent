@@ -337,9 +337,18 @@ def _generate_key() -> bytes:
 
 
 def _encrypt_bytes(plaintext: bytes, key: bytes) -> bytes:
-    """Encrypt *plaintext* with the given Fernet *key*."""
+    """Encrypt *plaintext* with the given Fernet *key*.
+
+    ``rust_fernet_encrypt`` returns unpadded base64url (the Rust side encodes
+    with ``URL_SAFE_NO_PAD``), so the padding is re-added here from the token's
+    actual length.  A fixed ``"="`` is **not** correct: base64 needs 0, 1 or 2
+    pad characters depending on ``len % 4``, and appending one unconditionally
+    yields a token that is 1 mod 4 long — which the decoder rejects — for every
+    token whose length is already a multiple of 4.  That silently corrupted
+    roughly a quarter of all writes, size-dependently.
+    """
     token = rust_fernet_encrypt(key.decode(), plaintext.decode())
-    return (token + "=").encode()  # Fernet tokens may need padding
+    return (token + "=" * (-len(token) % 4)).encode()
 
 
 def _decrypt_bytes(raw: bytes, key: bytes | None = None) -> str:
@@ -356,7 +365,16 @@ def _decrypt_bytes(raw: bytes, key: bytes | None = None) -> str:
         from intellect_constants import get_intellect_home
         key = _get_or_create_key(get_intellect_home())
     token_str = payload.decode()
-    return rust_fernet_decrypt(key.decode(), token_str)
+    try:
+        return rust_fernet_decrypt(key.decode(), token_str)
+    except ValueError:
+        # Files written by the pre-fix ``_encrypt_bytes`` carry a spurious
+        # trailing "=" whenever the token length was already a multiple of 4.
+        # The decoder re-pads from ``len % 4``, so the stray character makes
+        # such files unreadable; dropping it recovers them.
+        if token_str.endswith("="):
+            return rust_fernet_decrypt(key.decode(), token_str.rstrip("="))
+        raise
 
 
 def _atomic_write(path: Path, data: bytes) -> None:

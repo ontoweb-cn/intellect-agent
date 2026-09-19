@@ -20,6 +20,7 @@ from intellect_cli.auth import (
     resolve_codex_runtime_credentials,
     resolve_provider,
 )
+from tests._auth_store_helpers import read_auth_json
 
 
 @pytest.fixture(autouse=True)
@@ -291,7 +292,7 @@ def test_save_codex_tokens_syncs_credential_pool(tmp_path, monkeypatch):
     _save_codex_tokens({"access_token": "new-at", "refresh_token": "new-rt"},
                        last_refresh="2026-05-27T00:00:00Z")
 
-    auth = json.loads((intellect_home / "auth.json").read_text())
+    auth = read_auth_json(intellect_home / "auth.json")
     pool = auth["credential_pool"]["openai-codex"]
     seeded = next(e for e in pool if e["source"] == "device_code")
     assert seeded["access_token"] == "new-at"
@@ -370,7 +371,7 @@ def test_save_codex_tokens_syncs_manual_device_code_entries(tmp_path, monkeypatc
     _save_codex_tokens({"access_token": "fresh-at", "refresh_token": "fresh-rt"},
                        last_refresh="2026-05-28T00:00:00Z")
 
-    auth = json.loads((intellect_home / "auth.json").read_text())
+    auth = read_auth_json(intellect_home / "auth.json")
     pool = auth["credential_pool"]["openai-codex"]
 
     # Singleton-seeded device_code entry: refreshed and error markers cleared.

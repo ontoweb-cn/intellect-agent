@@ -154,12 +154,14 @@ _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
 def check_weixin_requirements() -> bool:
-    """Check if Weixin dependencies are available. Delegates to shared helper."""
-    global WEIXIN_AVAILABLE
-    if WEIXIN_AVAILABLE:
-        return True
-    from gateway.platforms.helpers import check_platform_requirements
-    return check_platform_requirements("platform.weixin", _reimport_weixin)
+    """Return True when runtime dependencies for Weixin are available.
+
+    aiohttp/cryptography are core (non-lazy) dependencies, so this is a plain
+    probe — there is no ``platform.weixin`` entry in LAZY_DEPS.
+    """
+    return AIOHTTP_AVAILABLE and CRYPTO_AVAILABLE
+
+
 def _safe_id(value: Optional[str], keep: int = 8) -> str:
     raw = str(value or "").strip()
     if not raw:

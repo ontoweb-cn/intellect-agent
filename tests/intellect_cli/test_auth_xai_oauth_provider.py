@@ -31,6 +31,7 @@ from intellect_cli.auth import (
     resolve_provider,
     resolve_xai_oauth_runtime_credentials,
 )
+from tests._auth_store_helpers import read_auth_json
 
 
 @pytest.fixture(autouse=True)
@@ -763,7 +764,7 @@ def test_resolve_credentials_quarantines_dead_tokens_on_terminal_refresh_failure
     assert exc_info.value.code == "xai_refresh_failed"
     assert exc_info.value.relogin_required is True
 
-    raw = json.loads((intellect_home / "auth.json").read_text())
+    raw = read_auth_json(intellect_home / "auth.json")
     tokens = raw["providers"]["xai-oauth"]["tokens"]
 
     # Dead OAuth fields must be cleared.
@@ -813,7 +814,7 @@ def test_resolve_credentials_does_not_quarantine_on_transient_refresh_failure(
     assert exc_info.value.relogin_required is False
 
     # Tokens must be untouched — no quarantine on transient errors.
-    raw = json.loads((intellect_home / "auth.json").read_text())
+    raw = read_auth_json(intellect_home / "auth.json")
     tokens = raw["providers"]["xai-oauth"]["tokens"]
     assert tokens["refresh_token"] == "dead-refresh-token"
     assert tokens["access_token"] == "dead-access-token"
@@ -1273,7 +1274,7 @@ def test_auth_remove_xai_oauth_clears_singleton_and_sticks(tmp_path, monkeypatch
     # Confirm pre-state: pool sees the seeded entry, auth.json has the singleton.
     pool = load_pool("xai-oauth")
     assert pool.has_credentials()
-    raw = json.loads((intellect_home / "auth.json").read_text())
+    raw = read_auth_json(intellect_home / "auth.json")
     assert "xai-oauth" in raw.get("providers", {})
 
     # Act: the user runs `intellect auth remove xai-oauth 1`.
@@ -1281,7 +1282,7 @@ def test_auth_remove_xai_oauth_clears_singleton_and_sticks(tmp_path, monkeypatch
 
     # Post-state: auth.json singleton must be cleared so a re-seed has
     # nothing to import.
-    raw_after = json.loads((intellect_home / "auth.json").read_text())
+    raw_after = read_auth_json(intellect_home / "auth.json")
     assert "xai-oauth" not in raw_after.get("providers", {}), (
         "auth.json providers.xai-oauth must be cleared — otherwise the "
         "next load_pool() reseeds the removed entry from the surviving "
@@ -1649,7 +1650,7 @@ def test_pool_seeded_entry_sync_back_after_refresh(tmp_path, monkeypatch):
     assert selected is not None
     assert selected.access_token == new_access
 
-    raw = json.loads((intellect_home / "auth.json").read_text())
+    raw = read_auth_json(intellect_home / "auth.json")
     tokens = raw["providers"]["xai-oauth"]["tokens"]
     assert tokens["access_token"] == new_access
     assert tokens["refresh_token"] == "rt-rotated"
@@ -1679,7 +1680,7 @@ def test_pool_refresh_adopts_singleton_tokens_when_consumed_elsewhere(tmp_path, 
     # Now simulate "another process refreshed the tokens" by overwriting
     # the singleton on disk WITHOUT touching this process's pool object.
     other_process_at = _jwt_with_exp(int(time.time()) + 3600)
-    raw = json.loads((intellect_home / "auth.json").read_text())
+    raw = read_auth_json(intellect_home / "auth.json")
     raw["providers"]["xai-oauth"]["tokens"] = {
         "access_token": other_process_at,
         "refresh_token": "rt-rotated-by-other-process",
@@ -1734,7 +1735,7 @@ def test_pool_refresh_recovers_when_other_process_already_refreshed(tmp_path, mo
         # Simulate the racing process winning at the auth server right
         # before our POST: by the time we reach this call, auth.json
         # already holds the fresher pair, but we POSTed with rt-shared.
-        raw = json.loads((intellect_home / "auth.json").read_text())
+        raw = read_auth_json(intellect_home / "auth.json")
         raw["providers"]["xai-oauth"]["tokens"] = {
             "access_token": other_process_at,
             "refresh_token": "rt-rotated",
@@ -1795,7 +1796,7 @@ def test_pool_exhausted_xai_entry_recovers_after_singleton_refresh(tmp_path, mon
     # Simulate the user re-running `intellect model` -> xAI Grok OAuth: the
     # singleton now has fresh tokens.
     fresh_at = _jwt_with_exp(int(time.time()) + 7200)
-    raw = json.loads((intellect_home / "auth.json").read_text())
+    raw = read_auth_json(intellect_home / "auth.json")
     raw["providers"]["xai-oauth"]["tokens"] = {
         "access_token": fresh_at,
         "refresh_token": "rt-fresh",
@@ -1901,7 +1902,7 @@ def test_pool_manual_entry_does_not_sync_back_to_singleton(tmp_path, monkeypatch
     assert len(manual_entries) == 1
     pool._refresh_entry(manual_entries[0], force=True)
 
-    raw = json.loads((intellect_home / "auth.json").read_text())
+    raw = read_auth_json(intellect_home / "auth.json")
     tokens = raw["providers"]["xai-oauth"]["tokens"]
     # Singleton must be untouched — manual refresh shouldn't leak across.
     assert tokens["access_token"] == singleton_at
@@ -2007,7 +2008,7 @@ def test_pool_sync_back_preserves_active_provider(tmp_path, monkeypatch):
     # Simulate a multi-provider user whose actual chosen provider is
     # OpenRouter — xai-oauth tokens exist in the singleton but are NOT
     # the active provider.
-    raw = json.loads((intellect_home / "auth.json").read_text())
+    raw = read_auth_json(intellect_home / "auth.json")
     raw["active_provider"] = "openrouter"
     (intellect_home / "auth.json").write_text(json.dumps(raw))
 
@@ -2032,7 +2033,7 @@ def test_pool_sync_back_preserves_active_provider(tmp_path, monkeypatch):
 
     # The refresh wrote new tokens back into the singleton — the user's
     # prior ``active_provider`` choice (openrouter) MUST survive.
-    raw_after = json.loads((intellect_home / "auth.json").read_text())
+    raw_after = read_auth_json(intellect_home / "auth.json")
     assert raw_after["active_provider"] == "openrouter", (
         "pool sync-back must not flip active_provider; otherwise xAI/Codex/"
         "OntoWeb token rotations silently take over multi-provider users' "

@@ -250,7 +250,7 @@ def test_nous_adapter_quarantines_terminal_refresh_failure(tmp_path, monkeypatch
         with pytest.raises(RuntimeError, match="Refresh session has been revoked"):
             adapter.get_credential()
 
-    stored = json.loads((tmp_path / "auth.json").read_text())
+    stored = read_auth_json(tmp_path / "auth.json")
     nous_state = stored["providers"]["ontoweb"]
     assert not nous_state.get("refresh_token")
     assert not nous_state.get("access_token")
@@ -575,6 +575,7 @@ aiohttp = pytest.importorskip("aiohttp")
 from aiohttp import web  # noqa: E402
 
 from intellect_cli.proxy.server import create_app  # noqa: E402
+from tests._auth_store_helpers import read_auth_json
 
 
 class FakeAdapter(UpstreamAdapter):

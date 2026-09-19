@@ -107,14 +107,37 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           echo "ok" > $out/result
         '';
 
-        # Verify CLI subcommands are accessible
+        # Verify CLI subcommands are accessible.
+        #
+        # Probe each subcommand's own ``--help`` rather than grepping the
+        # top-level ``intellect --help``.  That top-level invocation is
+        # answered by the startup fast path in ``intellect_cli/main.py``
+        # (``_is_fast_argv``), which prints a three-line banner and never
+        # imports argparse — so it can never list subcommand names, and a
+        # grep against it fails no matter how the CLI is defined.
+        # ``intellect <subcommand> --help`` leaves the fast path (argv[0] is
+        # not a help flag) and exercises the real parser.
+        #
+        # The grep below asserts on the argparse *subcommand list*, not on a
+        # bare token like "run" — "run" also appears in ordinary prose, so a
+        # token match would pass even if the subparser were never registered.
+        # ``{run,...}`` is emitted only by argparse's ``add_subparsers``
+        # usage/positional rendering.
         cli-commands = pkgs.runCommand "intellect-cli-commands" { } ''
           set -e
           export HOME=$(mktemp -d)
 
-          echo "=== Checking intellect --help ==="
-          ${intellect-agent}/bin/intellect --help 2>&1 | grep -q "gateway" || (echo "FAIL: gateway subcommand missing"; exit 1)
-          ${intellect-agent}/bin/intellect --help 2>&1 | grep -q "config" || (echo "FAIL: config subcommand missing"; exit 1)
+          echo "=== Checking subcommand help ==="
+          for sub in gateway config; do
+            ${intellect-agent}/bin/intellect "$sub" --help > /dev/null 2>&1 \
+              || (echo "FAIL: intellect $sub --help exited non-zero"; exit 1)
+          done
+          ${intellect-agent}/bin/intellect gateway --help 2>&1 \
+            | grep -q "{run," \
+            || (echo "FAIL: gateway run subcommand missing"; exit 1)
+          ${intellect-agent}/bin/intellect config --help 2>&1 \
+            | grep -qE "usage: intellect config" \
+            || (echo "FAIL: config subparser not reachable"; exit 1)
           echo "PASS: All subcommands accessible"
 
           echo "=== All CLI checks passed ==="

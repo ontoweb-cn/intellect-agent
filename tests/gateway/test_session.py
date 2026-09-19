@@ -1241,9 +1241,23 @@ class TestRewriteTranscriptPreservesReasoning:
 
 
 class TestSessionStoreMemberStamp:
-    """P0: new gateway sessions stamp member_id when members are enabled."""
+    """Multi-user member stamping is permanently absent (members are WONTFIX).
 
-    def test_new_session_resolves_member_id(self, tmp_path, monkeypatch):
+    SessionStore never resolved or stamped ``member_id`` — multi-user
+    (members/teams/projects) was removed from the product surface in v0.5.0
+    and ``agent.membership.is_members_enabled()`` now always returns False.
+    The previous version of this test patched that gate to True and asserted a
+    stamped ``member_id``, which no code path ever produced, so it asserted a
+    removed feature instead of a live contract.
+
+    The invariant worth pinning is the isolation one: gateway sessions are
+    single-user, so they carry no member scoping even when the config asks for
+    it.  ``SessionDB.get_session`` does expose a real ``member_id`` column, so
+    the assertion is not vacuous — see the companion test below, which proves
+    the column is readable when a value *is* set.
+    """
+
+    def test_new_session_does_not_stamp_member_id(self, tmp_path, monkeypatch):
         import intellect_state
 
         monkeypatch.setattr(intellect_state, "DEFAULT_DB_PATH", tmp_path / "state.db")
@@ -1254,14 +1268,76 @@ class TestSessionStoreMemberStamp:
             chat_id="chat-1",
             user_id="user-1",
         )
+        # Even with the yaml asking for members, the gate stays off and no
+        # member scope is attached to the session.
         members_cfg = {"members": {"enabled": True}}
         with patch("intellect_cli.config.load_config", return_value=members_cfg):
-            with patch("agent.membership.is_members_enabled", return_value=True):
-                with patch(
-                    "agent.runtime_context.resolve_member_id",
-                    return_value=("mem-abc", "member"),
-                ):
-                    entry = store.get_or_create_session(source)
+            entry = store.get_or_create_session(source)
+
         row = store._db.get_session(entry.session_id)
         assert row is not None
-        assert row.get("member_id") == "mem-abc"
+        assert row.get("member_id") is None
+
+    def test_member_id_column_is_readable_when_set(self, tmp_path, monkeypatch):
+        """Negative control: the assertion above would be meaningless if
+        ``member_id`` were simply unreadable/absent from the row."""
+        import intellect_state
+
+        monkeypatch.setattr(intellect_state, "DEFAULT_DB_PATH", tmp_path / "state.db")
+        db = intellect_state.SessionDB()
+        db.create_session(
+            session_id="member-control", source="cli", model="m", member_id="mem-abc"
+        )
+        assert db.get_session("member-control").get("member_id") == "mem-abc"
+
+
+class TestSessionStoreSqlitePersistence:
+    """The session_index INSERT must be executable and lossless.
+
+    ``_save_impl`` used to bind 23 placeholders for 24 columns, so every write
+    raised ``sqlite3.OperationalError: 23 values for 24 columns``.  Because
+    ``_save_impl`` runs on the debounce timer's thread, the failure surfaced
+    only as a thread traceback — the gateway appeared to work while silently
+    persisting nothing, and every restart lost the session index.
+    """
+
+    def _store(self, tmp_path):
+        return SessionStore(sessions_dir=tmp_path, config=GatewayConfig())
+
+    def test_session_row_is_persisted(self, tmp_path):
+        store = self._store(tmp_path)
+        source = SessionSource(
+            platform=Platform.TELEGRAM, chat_id="persist-1", user_id="u1"
+        )
+        entry = store.get_or_create_session(source)
+
+        # Force the debounced write to happen now.
+        store._flush()
+
+        # _save_impl writes session_index (not the transcripts ``sessions``
+        # table), so query it directly.
+        row = store._db._conn.execute(
+            "SELECT session_key, session_id FROM session_index WHERE session_key = ?",
+            (entry.session_key,),
+        ).fetchone()
+        assert row is not None, "session row was never written to SQLite"
+        assert row["session_id"] == entry.session_id
+
+    def test_all_columns_round_trip(self, tmp_path):
+        """A written row must reload field-for-field (guards placeholder drift)."""
+        store = self._store(tmp_path)
+        source = SessionSource(
+            platform=Platform.TELEGRAM, chat_id="persist-2", user_id="u1"
+        )
+        entry = store.get_or_create_session(source)
+        store.suspend_session(entry.session_key)
+        store._flush()
+
+        reloaded = self._store(tmp_path)
+        reloaded._ensure_loaded_locked()
+        got = reloaded._entries.get(entry.session_key)
+        assert got is not None, "session did not reload from SQLite"
+        assert got.session_id == entry.session_id
+        assert got.chat_type == entry.chat_type
+        assert got.suspended is True
+        assert got.created_at.tzinfo is not None

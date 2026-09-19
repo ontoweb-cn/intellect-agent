@@ -15,7 +15,7 @@ import json
 import threading
 import uuid
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 
@@ -669,7 +669,7 @@ class SessionStore:
         self.config = config
         self._entries: Dict[str, SessionEntry] = {}
         self._loaded = False
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._has_active_processes_fn = has_active_processes_fn
         self._save_timer: threading.Timer | None = None
         self._save_delay: float = 0.5  # debounce window in seconds
@@ -776,13 +776,22 @@ class SessionStore:
         self._loaded = True
 
     def _save(self) -> None:
-        """Debounced save — coalesces rapid updates within *self._save_delay* seconds."""
+        """Debounced save — coalesces rapid updates within *self._save_delay* seconds.
+
+        Public entry point. Re-entrant: safe to call while already holding
+        *self._lock* (the lock is an ``RLock``), so callers that mutate an
+        entry under the lock can persist it without dropping the lock.
+        """
         with self._lock:
-            if self._save_timer is not None:
-                self._save_timer.cancel()
-            self._save_timer = threading.Timer(self._save_delay, self._save_now)
-            self._save_timer.daemon = True
-            self._save_timer.start()
+            self._save_locked()
+
+    def _save_locked(self) -> None:
+        """Arm the debounce timer. Caller must already hold *self._lock*."""
+        if self._save_timer is not None:
+            self._save_timer.cancel()
+        self._save_timer = threading.Timer(self._save_delay, self._save_now)
+        self._save_timer.daemon = True
+        self._save_timer.start()
 
     def _save_now(self) -> None:
         """Immediate save — called by debounce timer or :meth:`_flush`."""
@@ -828,7 +837,11 @@ class SessionStore:
                     "was_auto_reset, auto_reset_reason, reset_had_activity, "
                     "is_fresh_reset, expiry_finalized, suspended, "
                     "resume_pending, resume_reason, last_resume_marked_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    # One placeholder per column above (24).  This previously
+                    # had 23, so every INSERT raised
+                    # ``sqlite3.OperationalError: 23 values for 24 columns``
+                    # and no session was ever persisted.
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         entry.session_key, entry.session_id,
                         entry.created_at.timestamp(), entry.updated_at.timestamp(),
@@ -1041,13 +1054,13 @@ class SessionStore:
                     # means a re-interrupted retry keeps trying — the
                     # stuck-loop counter handles terminal escalation.
                     entry.updated_at = now
-                    self._save()
+                    self._save_locked()
                     return entry
                 else:
                     reset_reason = self._should_reset(entry, source)
                 if not reset_reason:
                     entry.updated_at = now
-                    self._save()
+                    self._save_locked()
                     return entry
                 else:
                     # Session is being auto-reset.
@@ -1079,7 +1092,7 @@ class SessionStore:
             )
 
             self._entries[session_key] = entry
-            self._save()
+            self._save_locked()
             db_create_kwargs: dict[str, Any] = {
                 "session_id": session_id,
                 "source": source.platform.value,
@@ -1115,7 +1128,7 @@ class SessionStore:
                 entry.updated_at = _now()
                 if last_prompt_tokens is not None:
                     entry.last_prompt_tokens = last_prompt_tokens
-                self._save()
+                self._save_locked()
 
     def suspend_session(self, session_key: str) -> bool:
         """Mark a session as suspended so it auto-resets on next access.
@@ -1128,7 +1141,7 @@ class SessionStore:
             self._ensure_loaded_locked()
             if session_key in self._entries:
                 self._entries[session_key].suspended = True
-                self._save()
+                self._save_locked()
                 return True
         return False
 
@@ -1157,7 +1170,7 @@ class SessionStore:
                 entry.resume_pending = True
                 entry.resume_reason = reason
                 entry.last_resume_marked_at = _now()
-                self._save()
+                self._save_locked()
                 return True
         return False
 
@@ -1178,7 +1191,7 @@ class SessionStore:
             entry.resume_pending = False
             entry.resume_reason = None
             entry.last_resume_marked_at = None
-            self._save()
+            self._save_locked()
             return True
 
     def prune_old_entries(self, max_age_days: int) -> int:
@@ -1229,7 +1242,7 @@ class SessionStore:
             for key in removed_keys:
                 self._entries.pop(key, None)
             if removed_keys:
-                self._save()
+                self._save_locked()
 
         if removed_keys:
             logger.info(
@@ -1271,7 +1284,7 @@ class SessionStore:
                     entry.last_resume_marked_at = _now()
                     count += 1
             if count:
-                self._save()
+                self._save_locked()
         return count
 
     def reset_session(self, session_key: str, display_name: Optional[str] = None) -> Optional[SessionEntry]:
@@ -1305,7 +1318,7 @@ class SessionStore:
             )
 
             self._entries[session_key] = new_entry
-            self._save()
+            self._save_locked()
             db_create_kwargs = {
                 "session_id": session_id,
                 "source": old_entry.platform.value if old_entry.platform else "unknown",
@@ -1365,7 +1378,7 @@ class SessionStore:
             )
 
             self._entries[session_key] = new_entry
-            self._save()
+            self._save_locked()
 
         if self._db and db_end_session_id:
             try:
