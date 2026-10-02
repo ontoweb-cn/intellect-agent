@@ -24,7 +24,11 @@ def main(output_dir: str) -> None:
             path = m.group(1)
             if '#' in path or '://' in path:
                 return m.group(0)
-            if ext_pattern.search(path.split('/')[-1]):
+            last_segment = path.split('/')[-1]
+            # Directory links (e.g. "../", "../concepts/") resolve to the
+            # folder's index.html server-side — appending ".html" would
+            # produce "../concepts/.html" (404). Leave them alone.
+            if not last_segment or ext_pattern.search(last_segment):
                 return m.group(0)
             counts['links'] += 1
             return 'href="' + path + '.html"'

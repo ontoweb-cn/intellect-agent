@@ -40,6 +40,15 @@ fi
 rm -rf "$QUARTZ_CONTENT"
 ln -sf "$WIKI_PATH" "$QUARTZ_CONTENT"
 
+# ── Apply the Intellect vault config template ────────────────────────────
+# quartz.config.ts is env-driven (QUARTZ_SITE_TITLE / QUARTZ_BASE_PATH /
+# QUARTZ_BASE_HOST), so it must be refreshed on EVERY build — a clone ships its
+# own stock quartz.config.ts (title "Quartz 4", no wiki ignorePatterns) that
+# would otherwise silently win.
+if [ -f "$QUARTZ_DIR/quartz.config.ts" ]; then
+    cp "$QUARTZ_DIR/quartz.config.ts" "$QUARTZ_CONFIG"
+fi
+
 # ── Generate quartz.config.ts if missing ─────────────────────────────────
 if [ ! -f "$QUARTZ_CONFIG" ]; then
     cat > "$QUARTZ_CONFIG" << CFGEOF

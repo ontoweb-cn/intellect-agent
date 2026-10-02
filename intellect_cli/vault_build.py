@@ -130,6 +130,10 @@ def find_build_script() -> Path | None:
     plugin_root = Path(__file__).resolve().parent.parent / "plugins" / "vault-builder"
     script_name = "build.ps1" if sys.platform == "win32" else "build.sh"
     candidates = [
+        # The WebUI's own builder wins: it applies the Quartz config template and
+        # runs postprocess (light theme + .html link rewriting), so auto builds and
+        # the panel's Build button produce identical output.
+        Path(__file__).resolve().parent.parent / "webui" / "quartz" / script_name,
         plugin_root.parent.parent.parent / "intellect-webui" / "quartz" / script_name,
         Path(__file__).resolve().parent.parent / "quartz" / script_name,
         Path.home() / "workspace" / "intellect-webui" / "quartz" / script_name,

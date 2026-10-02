@@ -60,6 +60,10 @@ def test_run_scheduled_vault_tick_not_due(tmp_path: Path) -> None:
 def test_run_scheduled_vault_tick_builds_changed_wiki(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     wiki = tmp_path / "projects" / "p1" / "wiki"
     _write_wiki(wiki)
+    # Keep discovery hermetic. Without this the developer's real
+    # ~/.intellect/config.yaml (skills.config.wiki.path) leaks in as a second,
+    # global target, so the expected built count becomes environment-dependent.
+    monkeypatch.setenv("WIKI_PATH", str(tmp_path / "no-such-wiki"))
     vcfg = {
         "build_trigger": "scheduled",
         "build_schedule": "0 * * * *",
