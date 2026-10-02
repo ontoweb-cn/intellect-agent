@@ -18,6 +18,7 @@ import os
 import queue
 import re
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -59,12 +60,26 @@ TLS_CERT = os.getenv("INTELLECT_WEBUI_TLS_CERT", "").strip() or None
 TLS_KEY = os.getenv("INTELLECT_WEBUI_TLS_KEY", "").strip() or None
 TLS_ENABLED = TLS_CERT is not None and TLS_KEY is not None
 
+
+def _default_webui_state_dir() -> Path:
+    """Return the WebUI state directory for this process.
+
+    ``INTELLECT_WEBUI_STATE_DIR`` wins. Otherwise follow ``INTELLECT_HOME`` so
+    test isolation and profile homes do not read or write the real
+    ``~/.intellect/webui`` tree. The platform default is only used when neither
+    env var is set.
+    """
+    explicit = os.getenv("INTELLECT_WEBUI_STATE_DIR", "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+    intellect_home = os.getenv("INTELLECT_HOME", "").strip()
+    if intellect_home:
+        return Path(intellect_home).expanduser() / "webui"
+    return _platform_default_intellect_home() / "webui"
+
+
 # ── State directory (env-overridable, never inside repo) ──────────────────────
-STATE_DIR = (
-    Path(os.getenv("INTELLECT_WEBUI_STATE_DIR", str(_platform_default_intellect_home() / "webui")))
-    .expanduser()
-    .resolve()
-)
+STATE_DIR = _default_webui_state_dir().resolve()
 
 SESSION_DIR = STATE_DIR / "sessions"
 WORKSPACES_FILE = STATE_DIR / "workspaces.json"
@@ -468,9 +483,60 @@ def _ensure_workspace_dir(path: Path) -> bool:
 
 
 
+def _is_ephemeral_temp_path(candidate: Path) -> bool:
+    """True when *candidate* lives in OS or pytest temp scratch space.
+
+    A saved workspace under these roots is valid only while the directory
+    still exists. Recreating it after pytest cleanup resurrects an empty temp
+    dir and points later sessions at it.
+    """
+    try:
+        resolved = candidate.expanduser().resolve()
+    except OSError:
+        resolved = candidate
+    roots = [
+        Path(tempfile.gettempdir()),
+        Path("/tmp"),
+        Path("/private/tmp"),
+        Path("/var/folders"),
+        Path("/private/var/folders"),
+        Path("/var/tmp"),
+        Path("/private/var/tmp"),
+    ]
+    for root in roots:
+        for probe in (resolved, candidate):
+            try:
+                probe.relative_to(root)
+                return True
+            except ValueError:
+                continue
+    return False
+
+
 def resolve_default_workspace(raw: str | Path | None = None) -> Path:
-    """Return the first usable workspace path, creating it when possible."""
+    """Return the first usable workspace path, creating it when possible.
+
+    A missing temp path passed in as *raw* is skipped instead of recreated.
+    Later fallbacks (``~/workspace``, the state dir) are still created.
+    """
+    raw_resolved = None
+    if raw not in (None, ""):
+        try:
+            raw_resolved = Path(raw).expanduser().resolve()
+        except OSError:
+            raw_resolved = None
     for candidate in _workspace_candidates(raw):
+        try:
+            candidate_resolved = candidate.expanduser().resolve()
+        except OSError:
+            candidate_resolved = candidate
+        if (
+            raw_resolved is not None
+            and candidate_resolved == raw_resolved
+            and _is_ephemeral_temp_path(candidate)
+            and not candidate.exists()
+        ):
+            continue
         if _ensure_workspace_dir(candidate):
             return candidate
     raise RuntimeError(
@@ -5072,13 +5138,19 @@ try:
     _settings_file_exists = SETTINGS_FILE.exists()
 except OSError:
     _settings_file_exists = False
+# An explicit env override is process-local. Persisting it would bake a
+# pytest tmp dir or a container mount into settings.json after the env is gone.
+_env_workspace_override = bool(os.getenv("INTELLECT_WEBUI_DEFAULT_WORKSPACE", "").strip())
 if _settings_file_exists:
-    if not os.getenv("INTELLECT_WEBUI_DEFAULT_WORKSPACE"):
+    if not _env_workspace_override:
         DEFAULT_WORKSPACE = resolve_default_workspace(
             _startup_settings.get("default_workspace")
         )
     _startup_settings.pop("default_model", None)  # always drop stale value; model comes from config.yaml
-    if _startup_settings.get("default_workspace") != str(DEFAULT_WORKSPACE):
+    if (
+        not _env_workspace_override
+        and _startup_settings.get("default_workspace") != str(DEFAULT_WORKSPACE)
+    ):
         _startup_settings["default_workspace"] = str(DEFAULT_WORKSPACE)
         try:
             SETTINGS_FILE.write_text(

@@ -2651,6 +2651,7 @@ from api.workspace import (
     read_file_content,
     safe_resolve_ws,
     resolve_trusted_workspace,
+    resolve_session_workspace,
     validate_workspace_to_add,
     _is_blocked_system_path,
     _strip_surrounding_quotes,
@@ -7069,7 +7070,11 @@ def handle_post(handler, parsed) -> bool:
         return True
     if parsed.path == "/api/session/new":
         try:
-            workspace = str(resolve_trusted_workspace(body.get("workspace"))) if body.get("workspace") else None
+            workspace = (
+                str(resolve_session_workspace(body.get("workspace")))
+                if body.get("workspace")
+                else None
+            )
         except (TypeError, ValueError) as e:
             return bad(handler, str(e))
         worktree_info = None
@@ -11977,7 +11982,9 @@ def _handle_goal_command(handler, body):
     previous_goal_state = None
     if will_kickoff:
         try:
-            workspace = str(resolve_trusted_workspace(body.get("workspace") or s.workspace))
+            workspace = _resolve_chat_workspace_with_recovery(
+                s, body.get("workspace") or s.workspace
+            )
         except ValueError as e:
             return bad(handler, str(e))
         requested_model = body.get("model") or s.model
@@ -12024,7 +12031,9 @@ def _handle_goal_command(handler, body):
     if kickoff_prompt:
         if workspace is None:
             try:
-                workspace = str(resolve_trusted_workspace(body.get("workspace") or s.workspace))
+                workspace = _resolve_chat_workspace_with_recovery(
+                    s, body.get("workspace") or s.workspace
+                )
             except ValueError as e:
                 return bad(handler, str(e))
         if model is None:
@@ -12201,21 +12210,27 @@ def _handle_chat_start(handler, body, diag=None):
 
 
 def _resolve_chat_workspace_with_recovery(s, requested_workspace) -> str:
-    """Recover stale implicit session workspaces without hiding explicit errors."""
+    """Use the requested workspace, or a live directory if that path is gone.
+
+    The browser always sends the session workspace, including after a pytest
+    temp dir has been deleted. A missing path is recovered. A path that exists
+    but is unusable (system dir, permission, untrusted) still raises.
+    """
     explicit = requested_workspace not in (None, "")
     candidate = requested_workspace if explicit else getattr(s, "workspace", None)
     try:
-        return str(resolve_trusted_workspace(candidate))
+        resolved = str(resolve_session_workspace(candidate))
     except ValueError:
         if explicit:
             raise
-    fallback = str(resolve_trusted_workspace(get_last_workspace()))
-    s.workspace = fallback
-    try:
-        s.save()
-    except Exception:
-        pass  # intentionally silent — cleanup/teardown path
-    return fallback
+        resolved = str(resolve_session_workspace(None))
+    if str(getattr(s, "workspace", "") or "") != resolved:
+        s.workspace = resolved
+        try:
+            s.save()
+        except Exception:
+            pass  # intentionally silent — cleanup/teardown path
+    return resolved
 
 
 def _normalize_chat_attachments(raw_attachments):
@@ -12255,7 +12270,9 @@ def _handle_chat_sync(handler, body):
     if not msg:
         return j(handler, {"error": "empty message"}, status=400)
     try:
-        workspace = str(resolve_trusted_workspace(body.get("workspace") or s.workspace))
+        workspace = _resolve_chat_workspace_with_recovery(
+            s, body.get("workspace") or s.workspace
+        )
     except ValueError as e:
         return bad(handler, str(e))
     with _get_session_agent_lock(s.session_id):

@@ -613,6 +613,84 @@ def resolve_trusted_workspace(path: str | Path | None = None) -> Path:
     )
 
 
+def _is_missing_workspace_error(exc: BaseException) -> bool:
+    return str(exc).startswith("Path does not exist:")
+
+
+def _existing_workspace_fallbacks() -> list[Path]:
+    """Directories that can replace a workspace whose path has disappeared."""
+    candidates: list[Path] = []
+
+    def add(raw) -> None:
+        if raw in (None, ""):
+            return
+        try:
+            path = Path(str(raw)).expanduser()
+        except (TypeError, ValueError):
+            return
+        if path not in candidates:
+            candidates.append(path)
+
+    try:
+        for entry in load_workspaces():
+            if isinstance(entry, dict):
+                add(entry.get("path"))
+    except Exception:
+        logger.debug("Failed to read saved workspaces for recovery", exc_info=True)
+    try:
+        lw_file = _last_workspace_file()
+        if lw_file.is_file():
+            add(lw_file.read_text(encoding="utf-8").strip())
+    except OSError:
+        logger.debug("Failed to read last workspace for recovery", exc_info=True)
+    try:
+        from api.config import HOME, STATE_DIR
+
+        add(HOME / "workspace")
+        add(HOME / "work")
+        add(STATE_DIR / "workspace")
+    except Exception:
+        add(Path.home() / "workspace")
+        add(Path.home() / "work")
+    try:
+        add(Path.cwd())
+    except OSError:
+        pass
+    return candidates
+
+
+def resolve_session_workspace(path: str | Path | None = None) -> Path:
+    """Resolve a session workspace, replacing a deleted path with a live one.
+
+    A path that fails for any reason other than "does not exist" (permission,
+    system directory, outside the trusted roots) is still rejected. The WebUI
+    echoes the stored workspace on every new chat and reply, so a pytest temp
+    dir that vanished after the test process exited must not 400 those calls.
+    """
+    requested: Path | None = None
+    if path not in (None, ""):
+        try:
+            return resolve_trusted_workspace(path)
+        except ValueError as exc:
+            if not _is_missing_workspace_error(exc):
+                raise
+        try:
+            requested = Path(path).expanduser().resolve()
+        except OSError:
+            requested = None
+    for candidate in _existing_workspace_fallbacks():
+        if not candidate.is_dir():
+            continue
+        try:
+            resolved = resolve_trusted_workspace(candidate)
+        except ValueError:
+            continue
+        if requested is not None and resolved == requested:
+            continue
+        return resolved
+    if path not in (None, ""):
+        raise ValueError(f"Path does not exist: {path}")
+    raise ValueError("No usable workspace")
 
 
 def _strip_surrounding_quotes(path: str) -> str:
