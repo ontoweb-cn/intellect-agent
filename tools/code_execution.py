@@ -156,7 +156,7 @@ class CodeCellExecutor:
 
         # Write code to a temp file and copy into the container (F2 fix)
         import tempfile
-        container_path = f"/tmp/code{lang_cfg['extension']}"
+        container_path = f"/tmp/code{lang_cfg['extension']}"  # nosec B108 — inside the code container
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=lang_cfg["extension"], delete=False,
         ) as tmp:

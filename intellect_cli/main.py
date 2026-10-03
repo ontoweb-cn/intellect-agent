@@ -230,6 +230,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 
 def _add_accept_hooks_flag(parser) -> None:
@@ -3775,7 +3776,7 @@ def _model_flow_custom(config):
     _url_lower = effective_url.rstrip("/").lower()
     _looks_local = any(
         h in _url_lower
-        for h in ("localhost", "127.0.0.1", "0.0.0.0", ":11434", ":8080", ":5000")
+        for h in ("localhost", "127.0.0.1", "0.0.0.0", ":11434", ":8080", ":5000")  # nosec B104 — local-URL heuristic
     )
     if _looks_local and not _url_lower.endswith("/v1"):
         print()
@@ -5319,7 +5320,8 @@ def _model_flow_kimi(config, current_model=""):
 def _infer_stepfun_region(base_url: str) -> str:
     """Infer the current StepFun region from the configured endpoint."""
     normalized = (base_url or "").strip().lower()
-    if "api.stepfun.com" in normalized:
+    parsed = urlparse(normalized if "://" in normalized else f"https://{normalized}")
+    if parsed.hostname == "api.stepfun.com":
         return "china"
     return "international"
 

@@ -399,8 +399,11 @@ def normalize_spotify_id(value: str, expected_type: Optional[str] = None) -> str
             if expected_type and item_type != expected_type:
                 raise SpotifyError(f"Expected a Spotify {expected_type}, got {item_type}.")
             return parts[2]
-    if "open.spotify.com" in cleaned:
-        parsed = urlparse(cleaned)
+    # Synthesize a scheme for bare "open.spotify.com/track/x" input so the
+    # hostname parses; urlparse without a scheme yields hostname=None and the
+    # id would silently pass through un-normalized.
+    parsed = urlparse(cleaned if "://" in cleaned else f"https://{cleaned}")
+    if (parsed.hostname or "") == "open.spotify.com":
         path_parts = [part for part in parsed.path.split("/") if part]
         if len(path_parts) >= 2:
             item_type, item_id = path_parts[0], path_parts[1]

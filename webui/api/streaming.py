@@ -18,6 +18,7 @@ import threading
 import time
 import traceback
 import copy
+from urllib.parse import urlparse
 from agent.safe_print import safe_print
 from pathlib import Path
 from typing import Optional
@@ -1574,12 +1575,17 @@ def _title_prompts(user_text: str, assistant_text: str) -> tuple[str, list[str]]
 
 
 def _is_minimax_route(provider: str = '', model: str = '', base_url: str = '') -> bool:
-    text = ' '.join([
-        str(provider or '').lower(),
-        str(model or '').lower(),
-        str(base_url or '').lower(),
-    ])
-    return 'minimax' in text or 'minimaxi.com' in text
+    # Provider/model are names — substring is right for them. The URL must be
+    # matched on its parsed components only: "https://evil.com/?u=minimaxi.com"
+    # is not MiniMax. Real MiniMax hosts (api.minimax.chat, api.minimaxi.com)
+    # all contain "minimax" in the hostname; path-routed gateway proxies
+    # (e.g. https://gw.example/minimax/v1) match via parsed.path.
+    if 'minimax' in str(provider or '').lower() or 'minimax' in str(model or '').lower():
+        return True
+    raw = str(base_url or '').lower().strip()
+    parsed = urlparse(raw if '://' in raw else f'//{raw}')
+    host = (parsed.hostname or '').lower()
+    return 'minimax' in host or 'minimax' in (parsed.path or '')
 
 
 def _get_aux_title_config() -> dict:

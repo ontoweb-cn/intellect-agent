@@ -41,7 +41,7 @@ def _normalize_custom_provider_name(value: str) -> str:
 
 def _loopback_hostname(host: str) -> bool:
     h = (host or "").lower().rstrip(".")
-    return h in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+    return h in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # nosec B104 — loopback detection
 
 
 def _config_base_url_trustworthy_for_bare_custom(cfg_base_url: str, cfg_provider: str) -> bool:
@@ -1229,7 +1229,7 @@ def resolve_runtime_provider(
     # return provider="custom" with chat_completions api_mode and no valid key).
     # Instead, use the Azure key directly with anthropic_messages api_mode.
     _eff_base = (explicit_base_url or "").strip()
-    if requested_provider == "anthropic" and "azure.com" in _eff_base:
+    if requested_provider == "anthropic" and base_url_host_matches(_eff_base, "azure.com"):
         _azure_key = (
             (explicit_api_key or "").strip()
             or os.getenv("AZURE_ANTHROPIC_KEY", "").strip()

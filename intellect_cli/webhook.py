@@ -99,7 +99,7 @@ def _get_webhook_base_url() -> str:
     wh = _get_webhook_config().get("extra", {})
     host = wh.get("host", "127.0.0.1")
     port = wh.get("port", 8644)
-    display_host = "localhost" if host in ("0.0.0.0", "127.0.0.1", "::", "::1") else host
+    display_host = "localhost" if host in ("0.0.0.0", "127.0.0.1", "::", "::1") else host  # nosec B104 — display mapping
     return f"http://{display_host}:{port}"
 
 

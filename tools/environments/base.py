@@ -306,7 +306,7 @@ class BaseEnvironment(ABC):
         LocalEnvironment overrides this on platforms like Termux where ``/tmp``
         may be missing and ``TMPDIR`` is the portable writable location.
         """
-        return "/tmp"
+        return "/tmp"  # nosec B108 — path inside the target sandbox, not the host
 
     def __init__(self, cwd: str, timeout: int, env: dict = None):
         self.cwd = cwd

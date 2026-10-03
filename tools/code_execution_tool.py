@@ -721,7 +721,7 @@ def _env_temp_dir(env: Any) -> str:
     candidate = tempfile.gettempdir()
     if isinstance(candidate, str) and candidate.startswith("/"):
         return candidate.rstrip("/") or "/"
-    return "/tmp"
+    return "/tmp"  # nosec B108 — final fallback after gettempdir() proves unusable
 
 
 def _rpc_poll_loop(
@@ -1144,7 +1144,7 @@ def execute_code(
     # same ephemeral port, same 1-connection listen queue, same serialized
     # request/response framing.  The generated client reads the transport
     # selector from intellect_RPC_SOCKET (path vs. ``tcp://host:port``).
-    _sock_tmpdir = "/tmp" if sys.platform == "darwin" else tempfile.gettempdir()
+    _sock_tmpdir = "/tmp" if sys.platform == "darwin" else tempfile.gettempdir()  # nosec B108 — AF_UNIX 104-byte path limit; see comment above
     _use_tcp_rpc = _IS_WINDOWS
     if _use_tcp_rpc:
         sock_path = None  # not used on Windows; TCP endpoint stored below

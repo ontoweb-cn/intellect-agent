@@ -697,16 +697,8 @@ def write_sidebar(entries):
     sidebar_path = REPO / "website" / "sidebars.ts"
     text = sidebar_path.read_text(encoding="utf-8")
     # Replace the existing Skills block.
-    # codeql[py/redos]: build-time script, input is local config files
-    pattern = re.compile(
-        r"        \{\n"
-        r"          type: 'category',\n"
-        r"          label: 'Skills',\n"
-        r"(?:.*?\n)*?"
-        r"        \},\n",
-        re.DOTALL,
-    )
-    # Safer: match the exact current block shape.
+    # Match the exact current block shape via string find + brace-depth walk.
+    # (An earlier regex approach here was dead code and a ReDoS shape.)
     old_block_start = "        {\n          type: 'category',\n          label: 'Skills',\n"
     i = text.find(old_block_start)
     if i == -1:

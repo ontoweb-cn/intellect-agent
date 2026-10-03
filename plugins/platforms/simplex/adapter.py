@@ -451,7 +451,7 @@ class SimplexAdapter(BasePlatformAdapter):
         for search_dir in (
             os.path.expanduser("~/Downloads"),
             os.path.expanduser("~/.simplex/files"),
-            "/tmp/simplex_files",
+            "/tmp/simplex_files",  # nosec B108 — probe of simplex-chat's own drop dir
         ):
             candidate = os.path.join(search_dir, file_name)
             if os.path.exists(candidate):

@@ -1673,7 +1673,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 webhook_path = urlparse(webhook_url).path or "/telegram"
 
                 await self._app.updater.start_webhook(
-                    listen="0.0.0.0",
+                    listen="0.0.0.0",  # nosec B104 — webhook must accept Telegram's callback servers
                     port=webhook_port,
                     url_path=webhook_path,
                     webhook_url=webhook_url,

@@ -152,6 +152,12 @@ function _setCompressionSessionLock(sid){
   window._compressionLockSid=sid||null;
 }
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Escape a value embedded in a JS string literal inside a double-quoted HTML
+// attribute (onclick="fn('${...}')"). Order matters: JS-escape backslash,
+// newlines, then quote FIRST, and HTML-escape LAST. Doing it the other way
+// round (esc() first) leaves &#39; entities that the attribute parser decodes
+// back to a raw quote before the JS engine runs — a string-breakout XSS.
+const _jsAttr=s=>esc(String(s??'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/\r/g,'\\r').replace(/'/g,"\\'"));
 function _matchBacktickFenceLine(line){
   const m=String(line||'').match(/^[ ]{0,3}(`{3,})([^`]*)$/);
   if(!m) return null;

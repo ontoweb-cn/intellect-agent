@@ -62,7 +62,7 @@ def default_output_path() -> Tuple[Path, str]:
 
 def _loopback_host(host: str) -> bool:
     h = (host or "").lower().rstrip(".")
-    return h in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+    return h in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # nosec B104 — loopback detection
 
 
 def _rewrite_host_for_docker(url: str) -> str:

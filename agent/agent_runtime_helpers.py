@@ -2174,7 +2174,7 @@ def _iter_pool_sockets(client: Any):
                 if callable(extra):
                     try:
                         from anyio.abc import SocketAttribute
-                        sock = extra(SocketAttribute.raw_socket)
+                        sock = extra(SocketAttribute.raw_socket)  # nosec B610 — anyio stream accessor, not Django ORM .extra()
                     except Exception:
                         sock = None
             if sock is None:

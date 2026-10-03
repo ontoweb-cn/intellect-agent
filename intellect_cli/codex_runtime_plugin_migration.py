@@ -547,7 +547,7 @@ def _looks_like_test_tempdir(path: str) -> bool:
     needles = (
         "pytest-of-",
         "/pytest-",
-        "/tmp/pytest",
+        "/tmp/pytest",  # nosec B108 — detection needle, never written to
         "/private/var/folders/",  # macOS tempdir root
     )
     normalized = path.lower()

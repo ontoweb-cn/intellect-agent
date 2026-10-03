@@ -486,14 +486,14 @@ class LocalEnvironment(BaseEnvironment):
             if candidate and candidate.startswith("/"):
                 return candidate.rstrip("/") or "/"
 
-        if os.path.isdir("/tmp") and os.access("/tmp", os.W_OK | os.X_OK):
-            return "/tmp"
+        if os.path.isdir("/tmp") and os.access("/tmp", os.W_OK | os.X_OK):  # nosec B108 — writability-checked probe
+            return "/tmp"  # nosec B108
 
         candidate = tempfile.gettempdir()
         if candidate.startswith("/"):
             return candidate.rstrip("/") or "/"
 
-        return "/tmp"
+        return "/tmp"  # nosec B108 — Termux last resort; see get_temp_dir docs
 
     def _run_bash(self, cmd_string: str, *, login: bool = False,
                   timeout: int = 120,

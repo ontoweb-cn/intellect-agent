@@ -368,7 +368,7 @@ THREAT_PATTERNS = [
     (r'/proc/self|/proc/\d+/',
      "proc_access", "high", "traversal",
      "references /proc filesystem (process introspection)"),
-    (r'/dev/shm/',
+    (r'/dev/shm/',  # nosec B108 — regex pattern in the command scanner, not a path use
      "dev_shm", "medium", "traversal",
      "references shared memory (common staging area)"),
 

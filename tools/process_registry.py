@@ -510,7 +510,7 @@ class ProcessRegistry:
                     return temp_dir.rstrip("/") or "/"
             except Exception as exc:
                 logger.debug("Could not resolve environment temp dir: %s", exc)
-        return "/tmp"
+        return "/tmp"  # nosec B108 — final fallback after env.get_temp_dir()
 
     def spawn_local(
         self,

@@ -100,7 +100,7 @@ def _resolve_home_dir() -> str:
     # Last resort: /tmp (writable on any POSIX system). Avoids crashing the
     # subprocess with no HOME; callers can set INTELLECT_HOME explicitly if they
     # need a different writable dir.
-    return "/tmp"
+    return "/tmp"  # nosec B108 — documented last-resort; see comment above
 
 
 # Env vars forwarded to the ACP subprocess.  The third-party CLI only needs the

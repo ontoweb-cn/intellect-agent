@@ -16,6 +16,7 @@ import time
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
+from urllib.parse import urlparse
 
 from intellect_cli import __version__ as _INTELLECT_VERSION
 
@@ -2632,10 +2633,11 @@ def get_copilot_model_context(model_id: str, api_key: Optional[str] = None) -> O
 
 def _is_github_models_base_url(base_url: Optional[str]) -> bool:
     normalized = (base_url or "").strip().rstrip("/").lower()
+    host = urlparse(normalized).hostname or ""
     return (
         normalized.startswith(COPILOT_BASE_URL)
         or normalized.startswith("https://models.github.ai/inference")
-        or normalized.startswith("https://models.inference.ai.azure.com")
+        or host == "models.inference.ai.azure.com"
     )
 
 

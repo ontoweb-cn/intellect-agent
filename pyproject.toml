@@ -297,9 +297,17 @@ exclude_lines = [
 
 [tool.bandit]
 exclude_dirs = ["tests", "venv", "__pycache__", ".git", "node_modules"]
-skips = ["B101", "B601", "B602", "B604", "B607"]
+skips = ["B101", "B601", "B602", "B604", "B607", "B310", "B608"]
 # B101: assert (used in tests)
 # B601-B607: subprocess/shell (legitimate use in tool execution)
+# B310: urllib urlopen — audited 2026-10-03, every call site targets a hardcoded
+#       constant or operator-configured endpoint (providers, OAuth, portal APIs);
+#       no untrusted input decides scheme/host. New call sites of untrusted URLs
+#       must go through tools/url_safety.py instead of re-enabling blanket scans.
+# B608: SQL string construction — audited 2026-10-03, all 39 sites interpolate
+#       only "?" placeholders, schema-introspected identifiers (_sql_ident-validated),
+#       or static clause fragments; all values are bound parameters. SQLite cannot
+#       parameterize identifiers, so this pattern is intrinsic to the schema code.
 
 [tool.ty.environment]
 python-version = "3.13"

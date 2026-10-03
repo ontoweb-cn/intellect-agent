@@ -61,8 +61,8 @@ _TAPBACK_REMOVED = {
 _MESSAGE_EVENTS = {"new-message", "message", "updated-message"}
 
 # Log redaction patterns
-_PHONE_RE = re.compile(r"\+?\d{7,15}")
-_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+_PHONE_RE = re.compile(r"\+?\d{7,15}+")  # possessive: linear scan, no polynomial backtracking
+_EMAIL_RE = re.compile(r"[\w.+-]++@[\w-]++\.[\w.]++")
 
 _GUID_CACHE_SIZE = 500  # LRU cap for resolved chat-GUID lookups
 
@@ -265,7 +265,7 @@ class BlueBubblesAdapter(BasePlatformAdapter):
     def _webhook_url(self) -> str:
         """Compute the external webhook URL for BlueBubbles registration."""
         host = self.webhook_host
-        if host in {"0.0.0.0", "127.0.0.1", "localhost", "::"}:
+        if host in {"0.0.0.0", "127.0.0.1", "localhost", "::"}:  # nosec B104 — webhook URL normalization
             host = "localhost"
         return f"http://{host}:{self.webhook_port}{self.webhook_path}"
 

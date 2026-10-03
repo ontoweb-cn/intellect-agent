@@ -1288,7 +1288,7 @@ class LineAdapter(BasePlatformAdapter):
 
         allowed_roots = {
             Path(tempfile.gettempdir()).resolve(),
-            Path("/tmp").resolve(),  # → /private/tmp on macOS
+            Path("/tmp").resolve(),  # nosec B108 — allowlist entry, not a write target
             intellect_home,
         }
         resolved = path.resolve()
@@ -1316,7 +1316,7 @@ class LineAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="image exceeds 10 MB LINE limit")
         if not self._client:
             return SendResult(success=False, error="LINE adapter not connected")
-        if not self.public_base_url and self.webhook_host == "0.0.0.0":
+        if not self.public_base_url and self.webhook_host == "0.0.0.0":  # nosec B104 — config check, not a bind
             return SendResult(
                 success=False,
                 error="LINE_PUBLIC_URL must be set to send images "
@@ -1346,7 +1346,7 @@ class LineAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="audio exceeds 200 MB LINE limit")
         if not self._client:
             return SendResult(success=False, error="LINE adapter not connected")
-        if not self.public_base_url and self.webhook_host == "0.0.0.0":
+        if not self.public_base_url and self.webhook_host == "0.0.0.0":  # nosec B104 — config check, not a bind
             return SendResult(
                 success=False,
                 error="LINE_PUBLIC_URL must be set to send audio",
@@ -1370,7 +1370,7 @@ class LineAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="video exceeds 200 MB LINE limit")
         if not self._client:
             return SendResult(success=False, error="LINE adapter not connected")
-        if not self.public_base_url and self.webhook_host == "0.0.0.0":
+        if not self.public_base_url and self.webhook_host == "0.0.0.0":  # nosec B104 — config check, not a bind
             return SendResult(
                 success=False,
                 error="LINE_PUBLIC_URL must be set to send video",

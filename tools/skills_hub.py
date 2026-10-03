@@ -2784,8 +2784,12 @@ class BrowseShSource(SkillSource):
             pass
 
         source_url = item.get("sourceUrl", "") if isinstance(item, dict) else ""
-        if source_url and "raw.githubusercontent.com" in source_url:
-            return source_url
+        if source_url:
+            # Hostname equality, not substring: "https://evil.com/?u=raw.githubusercontent.com"
+            # must not pass, the resolved URL is fetched and consumed as skill content.
+            source_host = (urlparse(source_url).hostname or "").lower()
+            if source_host == "raw.githubusercontent.com":
+                return source_url
         return None
 
     def _slug_from_identifier(self, identifier: str) -> str:

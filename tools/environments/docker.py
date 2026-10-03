@@ -327,8 +327,8 @@ _BASE_SECURITY_ARGS = [
     "--cap-add", "FOWNER",
     "--security-opt", "no-new-privileges",
     "--pids-limit", "256",
-    "--tmpfs", "/tmp:rw,nosuid,size=512m",
-    "--tmpfs", "/var/tmp:rw,noexec,nosuid,size=256m",
+    "--tmpfs", "/tmp:rw,nosuid,size=512m",  # nosec B108 — container mount spec, not a host path
+    "--tmpfs", "/var/tmp:rw,noexec,nosuid,size=256m",  # nosec B108 — container mount spec, not a host path
     "--tmpfs", "/run:rw,noexec,nosuid,size=64m",
 ]
 

@@ -495,7 +495,7 @@ def _requires_bearer_auth(base_url: str | None) -> bool:
     return (
         (host == "api.minimax.io" and path == "/anthropic")
         or (host == "api.minimaxi.com" and path.startswith("/anthropic"))
-        or ".azure.com" in f".{host}."
+        or base_url_host_matches(host, "azure.com")
     )
 
 

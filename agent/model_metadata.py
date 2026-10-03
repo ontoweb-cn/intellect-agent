@@ -274,7 +274,7 @@ _MAX_COMPLETION_KEYS = (
 )
 
 # Local server hostnames / address patterns
-_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1", "0.0.0.0")  # nosec B104 — detection constant, never bound
 # Docker / Podman / Lima DNS names that resolve to the host machine
 _CONTAINER_LOCAL_SUFFIXES = (
     ".docker.internal",
@@ -370,8 +370,9 @@ def _infer_provider_from_url(base_url: str) -> Optional[str]:
     parsed = urlparse(normalized if "://" in normalized else f"https://{normalized}")
     host = parsed.netloc.lower() or parsed.path.lower()
     path = (parsed.path or "").lower()
-    # codeql[py/incomplete-url-substring-sanitization]: provider name heuristic, not security check
-    if "ark.cn-beijing.volces.com" in host or "open.volcengineapi.com" in host:
+    if base_url_host_matches(host, "ark.cn-beijing.volces.com") or base_url_host_matches(
+        host, "open.volcengineapi.com"
+    ):
         if "/api/coding" in path:
             return "volcengine-coding-plan"
         if "/api/plan" in path:
