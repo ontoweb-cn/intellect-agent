@@ -31,6 +31,9 @@ ignored:
   - DL3002
 
 # Require explicit base-image pins (SHA256) — we already do this.
+# DaoCloud is the intentional China mirror prefix on the Node and Debian
+# FROM lines. hadolint 2.15 (action v3.5.0) enforces DL3026 against this list.
 trustedRegistries:
   - docker.io
   - ghcr.io
+  - m.daocloud.io
