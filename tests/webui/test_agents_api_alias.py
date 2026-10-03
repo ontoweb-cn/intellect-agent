@@ -174,6 +174,69 @@ def test_agent_post_aliases_are_mounted(routes_mod):
         assert call.kwargs.get("status") == 403
 
 
+def test_non_loopback_bind_without_auth_blocks_agent_switch(routes_mod):
+    """Auth-off CSRF is a no-op. A 0.0.0.0 listener must not switch agents."""
+    handler = MagicMock()
+    handler.client_address = ("10.1.2.3", 40000)
+
+    with (
+        patch("api.profiles.is_profile_management_enabled", return_value=True),
+        patch("api.auth.is_auth_enabled", return_value=False),
+        patch("api.config.HOST", "0.0.0.0"),
+        patch("api.profiles.switch_profile") as switch_profile,
+        patch.object(routes_mod, "read_body", return_value={"name": "coder"}),
+        patch.object(routes_mod, "_check_csrf", return_value=True),
+        patch.object(routes_mod, "bad", side_effect=lambda *a, **k: True) as bad,
+    ):
+        assert routes_mod.handle_post(handler, _parsed("/api/agent/switch")) is True
+
+    switch_profile.assert_not_called()
+    assert bad.call_args.kwargs.get("status") == 403
+    assert "authentication" in str(bad.call_args.args[1]).lower()
+
+
+def test_authenticated_non_loopback_bind_still_switches_agent(routes_mod):
+    handler = MagicMock()
+    handler.client_address = ("10.1.2.3", 40000)
+
+    with (
+        patch("api.profiles.is_profile_management_enabled", return_value=True),
+        patch("api.auth.is_auth_enabled", return_value=True),
+        patch("api.config.HOST", "0.0.0.0"),
+        patch("api.profiles.switch_profile", return_value={"active": "default"}) as switch_profile,
+        patch("api.config.invalidate_models_cache"),
+        patch("api.helpers.build_profile_cookie", return_value="intellect_profile=default"),
+        patch.object(routes_mod, "read_body", return_value={"name": "default"}),
+        patch.object(routes_mod, "_check_csrf", return_value=True),
+        patch.object(routes_mod, "j", return_value=True),
+    ):
+        assert routes_mod.handle_post(handler, _parsed("/api/agent/switch")) is True
+
+    switch_profile.assert_called_once()
+
+
+def test_loopback_bind_without_auth_still_switches_agent(routes_mod):
+    handler = MagicMock()
+    handler.client_address = ("127.0.0.1", 40000)
+
+    with (
+        patch("api.profiles.is_profile_management_enabled", return_value=True),
+        patch("api.auth.is_auth_enabled", return_value=False),
+        patch("api.config.HOST", "127.0.0.1"),
+        patch("api.profiles.switch_profile", return_value={"active": "default"}) as switch_profile,
+        patch("api.profiles._validate_profile_name"),
+        patch("api.config.invalidate_models_cache"),
+        patch("api.helpers.build_profile_cookie", return_value="intellect_profile=default"),
+        patch.object(routes_mod, "read_body", return_value={"name": "default"}),
+        patch.object(routes_mod, "_check_csrf", return_value=True),
+        patch.object(routes_mod, "j", return_value=True) as respond,
+    ):
+        assert routes_mod.handle_post(handler, _parsed("/api/agent/switch")) is True
+
+    switch_profile.assert_called_once()
+    respond.assert_called_once()
+
+
 def test_switch_response_carries_canonical_agents_key(tmp_path):
     """``POST /api/agent/switch`` must return the same dual-key shape as the
     other agent endpoints.

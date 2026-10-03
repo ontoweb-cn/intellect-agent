@@ -448,7 +448,11 @@
       <div id="liveCompressionCards" class="live-compression-cards"></div>
       <div id="liveToolCards" style="display:none;max-width:800px;margin:0 auto;width:100%;padding:0 24px;"></div>
     </div>
-    </div>
+    <nav id="turnNavigator" class="turn-nav" hidden role="navigation" aria-label="Questions in this chat" data-i18n-aria-label="turn_nav_label">
+      <div class="turn-nav-track" id="turnNavTrack"></div>
+      <div class="turn-nav-card" id="turnNavCard" hidden></div>
+    </nav>
+    </div><!-- /.messages-shell -->
     <div class="update-banner" id="updateBanner">
       <div style="display:flex;flex-direction:column;flex:1;min-width:0">
         <span id="updateMsg"></span>
@@ -1544,6 +1548,7 @@
 <script src="static/i18n.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/icons.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/virtual_window.js?v=__WEBUI_VERSION__" defer></script>
+<script src="static/turn-outline.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/ui.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/workspace.js?v=__WEBUI_VERSION__" defer></script>
 <script src="static/terminal.js?v=__WEBUI_VERSION__" defer></script>

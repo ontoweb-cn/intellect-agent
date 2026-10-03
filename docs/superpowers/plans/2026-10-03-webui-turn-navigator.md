@@ -10,7 +10,20 @@
 
 **Branch:** `feat/webui-turn-navigator`
 
-**Status:** 方案已评审，未开工。
+**Status:** 已实现，未提交。下面「实施修订」覆盖正文里与之冲突的句子。
+
+## 实施修订
+
+二次评审之后写进代码的决定，以这里为准：
+
+- 跳转是瞬时的 `scrollTop` 写入。不使用 `scroll-behavior`、`scrollend` 或 400ms。`_programmaticScroll` 只盖住这一次写入，清法与 `_setMessageScrollToBottom` 相同（rAF + `setTimeout(0)`；目标要等一帧才在 DOM 里时再多等一帧）。目标根本不存在时恢复原来的钉。
+- 轨上的滚轮不调用 `stopPropagation`。`_recordNonMessageScrollIntent` 在捕获阶段看见 `#turnNavigator` 就返回。
+- 按钮重建只看用户下标和标题，外加是否截断。回复摘要在 `S.activeStreamId` 存在时不写；流式结束的下一次 `renderMessages` 再写入，不重建按钮。
+- 合成当前项（`relTop = -1`）同时覆盖虚拟窗口和默认尾窗：取 `#msgInner` 里第一条已渲染消息之前的那条提问。
+- 跳过 `_isPreservedCompressionTaskListMessage` 和 context compaction。只有附件的用户消息用文件名当标题。
+- 文案在 `LOCALES.en` 和 `LOCALES.zh`。
+- 可点区域是整行。窄于 600px，或 `#msgInner` 相对 `.messages-shell` 的左 gutter 小于 52px（侧栏 300px、`--msg-max` 780px 时，窗口大约要到 1184px 轨才出现）时藏轨，快捷键保留。
+- 刻度轨自己的滚动用 `scrollTop`，不用 `scrollIntoView`，避免把 `#messages` 一起滚走。
 
 **参照:** DeepMentor `web/lib/chat-outline.ts` + `web/components/chat/home/TurnNavigator.tsx`。只借行为，不搬组件。
 

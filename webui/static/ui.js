@@ -577,55 +577,303 @@ function _highlightQuestionRow(row){
 async function jumpToTurnQuestion(questionRawIdx){
   const container=$('messages');
   if(!container||typeof questionRawIdx!=='number'||questionRawIdx<0) return;
-  const scrollToTarget=()=>{
+  const wasPinned=_scrollPinned;
+  _scrollPinned=false;
+  _messageUserUnpinned=true;
+  _cancelBottomSettle();
+  let moved=false;
+  const applyScroll=()=>{
     const row=document.getElementById(_userMessageDomId(questionRawIdx));
     if(!row) return false;
-    row.scrollIntoView({block:'center',behavior:'smooth'});
+    const rowTop=row.getBoundingClientRect().top-container.getBoundingClientRect().top;
+    _programmaticScroll=true;
+    container.scrollTop=scrollTopForTurn(container.scrollTop, rowTop, 56);
+    _lastScrollTop=container.scrollTop;
     _highlightQuestionRow(row);
+    _setTurnNavigatorActive(questionRawIdx);
+    moved=true;
     return true;
   };
-  if(scrollToTarget()) return;
-  const visCount=(_visWithIdxCache&&_visWithIdxCache.length)||_messageRenderableMessageCount();
-  if(_isTranscriptVirtualWindowActive(visCount)){
-    // C4: pin vis index containing rawIdx — no full expand.
-    let pinVis=-1;
-    const cache=_visWithIdxCache;
-    if(cache&&cache.length){
-      for(let i=0;i<cache.length;i++){
-        if(cache[i]&&cache[i].idx===questionRawIdx){ pinVis=i; break; }
-        if(cache[i]&&cache[i].rawIdx===questionRawIdx){ pinVis=i; break; }
-      }
-    }
-    if(pinVis<0){
-      // Rebuild vis map once for pin lookup.
-      let ri=0, vi=0;
-      for(const m of (S.messages||[])){
-        if(!m||!m.role||m.role==='tool'){ri++;continue;}
-        if(typeof _isPreservedCompressionTaskListMessage==='function'&&_isPreservedCompressionTaskListMessage(m)){ri++;continue;}
-        const hasTc=Array.isArray(m.tool_calls)&&m.tool_calls.length>0;
-        const hasTu=Array.isArray(m.content)&&m.content.some(p=>p&&p.type==='tool_use');
-        const keep=m.role==='assistant'
-          ?(hasTc||hasTu||(typeof _messageHasReasoningPayload==='function'&&_messageHasReasoningPayload(m))||!!(typeof msgContent==='function'&&msgContent(m))||!!(m.attachments&&m.attachments.length)||!!m._statusCard)
-          :!!(typeof msgContent==='function'&&msgContent(m)||(m.attachments&&m.attachments.length)||m._statusCard);
-        if(keep){
-          if(ri===questionRawIdx){ pinVis=vi; break; }
-          vi++;
+  _programmaticScroll=true;
+  let deferred=false;
+  try{
+    if(!applyScroll()){
+      const visCount=(_visWithIdxCache&&_visWithIdxCache.length)||_messageRenderableMessageCount();
+      if(_isTranscriptVirtualWindowActive(visCount)){
+        // C4: pin vis index containing rawIdx — no full expand.
+        let pinVis=-1;
+        const cache=_visWithIdxCache;
+        if(cache&&cache.length){
+          for(let i=0;i<cache.length;i++){
+            if(cache[i]&&cache[i].idx===questionRawIdx){ pinVis=i; break; }
+            if(cache[i]&&cache[i].rawIdx===questionRawIdx){ pinVis=i; break; }
+          }
         }
-        ri++;
+        if(pinVis<0){
+          // Rebuild vis map once for pin lookup.
+          let ri=0, vi=0;
+          for(const m of (S.messages||[])){
+            if(!m||!m.role||m.role==='tool'){ri++;continue;}
+            if(typeof _isPreservedCompressionTaskListMessage==='function'&&_isPreservedCompressionTaskListMessage(m)){ri++;continue;}
+            const hasTc=Array.isArray(m.tool_calls)&&m.tool_calls.length>0;
+            const hasTu=Array.isArray(m.content)&&m.content.some(p=>p&&p.type==='tool_use');
+            const keep=m.role==='assistant'
+              ?(hasTc||hasTu||(typeof _messageHasReasoningPayload==='function'&&_messageHasReasoningPayload(m))||!!(typeof msgContent==='function'&&msgContent(m))||!!(m.attachments&&m.attachments.length)||!!m._statusCard)
+              :!!(typeof msgContent==='function'&&msgContent(m)||(m.attachments&&m.attachments.length)||m._statusCard);
+            if(keep){
+              if(ri===questionRawIdx){ pinVis=vi; break; }
+              vi++;
+            }
+            ri++;
+          }
+        }
+        if(pinVis>=0){
+          _messageVirtPinIndex=pinVis;
+          renderMessages({ preserveScroll:true });
+          deferred=true;
+          requestAnimationFrame(applyScroll);
+        }
+      }else if(_messageHiddenBeforeCount()>0){
+        _messageRenderWindowSize=Math.max(_currentMessageRenderWindowSize(),_messageRenderableMessageCount());
+        renderMessages({ preserveScroll:true });
+        deferred=true;
+        requestAnimationFrame(applyScroll);
       }
     }
-    if(pinVis>=0){
-      _messageVirtPinIndex=pinVis;
-      renderMessages({ preserveScroll:true });
-      requestAnimationFrame(scrollToTarget);
-    }
+  }finally{
+    const clear=()=>{ _programmaticScroll=false; _lastScrollTop=container.scrollTop; };
+    if(!moved && !deferred){
+      _scrollPinned=wasPinned;
+      if(wasPinned) _messageUserUnpinned=false;
+      clear();
+    }else if(deferred) requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ setTimeout(clear,0); }); });
+    else requestAnimationFrame(()=>{ setTimeout(clear,0); });
+  }
+}
+
+let _turnNavEntries=[];
+let _turnNavSig='';
+let _turnNavActiveRaw=null;
+let _turnNavActiveRaf=0;
+
+function _turnNavStructureSig(entries){
+  let sig=(typeof _messagesTruncated!=='undefined'&&_messagesTruncated)?'1':'0';
+  for(const entry of entries) sig+='\n'+entry.rawIdx+'\t'+entry.title;
+  return sig;
+}
+
+function _isChatViewVisible(){
+  const main=document.querySelector('main.main');
+  if(main&&/\bshowing-/.test(main.className||'')) return false;
+  const chat=$('mainChat');
+  return !!chat;
+}
+
+function _turnNavigatorGutterHidden(){
+  // --msg-max is 780px, so a 52px left gutter needs a chat pane wider than
+  // about 884px. With the 300px sidebar open, that is a window around 1184px.
+  // Narrower panes keep the shortcuts and hide the rail.
+  if(window.innerWidth<600) return true;
+  const shell=document.querySelector('.messages-shell');
+  const inner=$('msgInner');
+  if(!shell||!inner) return true;
+  return inner.getBoundingClientRect().left-shell.getBoundingClientRect().left<52;
+}
+
+function _applyTurnNavigatorChrome(){
+  const nav=$('turnNavigator');
+  if(!nav) return;
+  if(!_turnNavEntries||_turnNavEntries.length<3){
+    nav.hidden=true;
+    nav.classList.remove('turn-nav--gutter-hidden');
     return;
   }
-  if(_messageHiddenBeforeCount()>0){
-    _messageRenderWindowSize=Math.max(_currentMessageRenderWindowSize(),_messageRenderableMessageCount());
-    renderMessages({ preserveScroll:true });
-    requestAnimationFrame(scrollToTarget);
+  nav.hidden=false;
+  nav.classList.toggle('turn-nav--gutter-hidden',_turnNavigatorGutterHidden());
+}
+
+function _hideTurnNavCard(e){
+  const next=e&&e.relatedTarget;
+  if(next&&next.closest&&next.closest('.turn-nav-tick')) return;
+  const card=$('turnNavCard');
+  if(card) card.hidden=true;
+}
+
+function _showTurnNavCard(btn){
+  const card=$('turnNavCard');
+  const nav=$('turnNavigator');
+  if(!card||!nav||!btn) return;
+  const title=btn.getAttribute('data-title')||'';
+  const reply=btn.getAttribute('data-reply')||'';
+  card.replaceChildren();
+  const titleEl=document.createElement('div');
+  titleEl.className='turn-nav-card-title';
+  titleEl.textContent=title;
+  const replyEl=document.createElement('div');
+  replyEl.className='turn-nav-card-reply';
+  replyEl.textContent=reply||((typeof t==='function'&&t('turn_nav_reply_empty'))||'');
+  card.append(titleEl,replyEl);
+  card.dataset.forIdx=btn.dataset.rawIdx||'';
+  card.hidden=false;
+  const top=btn.getBoundingClientRect().top-nav.getBoundingClientRect().top;
+  const maxTop=Math.max(0,nav.clientHeight-card.offsetHeight);
+  card.style.top=Math.max(0,Math.min(top,maxTop))+'px';
+}
+
+function _setTurnNavigatorActive(rawIdx){
+  _turnNavActiveRaw=rawIdx;
+  const track=$('turnNavTrack');
+  if(!track) return;
+  track.querySelectorAll('.turn-nav-tick').forEach(btn=>{
+    if(Number(btn.dataset.rawIdx)===rawIdx) btn.setAttribute('aria-current','true');
+    else btn.removeAttribute('aria-current');
+  });
+  const active=track.querySelector('.turn-nav-tick[aria-current="true"]');
+  if(active&&track.scrollHeight>track.clientHeight+1){
+    const top=active.offsetTop;
+    const bottom=top+active.offsetHeight;
+    if(top<track.scrollTop) track.scrollTop=top;
+    else if(bottom>track.scrollTop+track.clientHeight) track.scrollTop=bottom-track.clientHeight;
   }
+}
+
+function _renderTurnNavigator(entries){
+  const nav=$('turnNavigator');
+  const track=$('turnNavTrack');
+  if(!nav||!track) return;
+  _hideTurnNavCard();
+  _turnNavEntries=entries||[];
+  track.replaceChildren();
+  if(typeof _messagesTruncated!=='undefined'&&_messagesTruncated&&_turnNavEntries.length>=3){
+    const earlier=document.createElement('button');
+    earlier.type='button';
+    earlier.className='turn-nav-earlier';
+    earlier.id='turnNavEarlier';
+    earlier.setAttribute('data-i18n','turn_nav_earlier');
+    earlier.textContent=(typeof t==='function'&&t('turn_nav_earlier'))||'Earlier';
+    earlier.addEventListener('click',()=>{
+      if(typeof _loadOlderMessages==='function') _loadOlderMessages();
+    });
+    track.appendChild(earlier);
+  }
+  const frag=document.createDocumentFragment();
+  for(const entry of _turnNavEntries){
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='turn-nav-tick';
+    btn.dataset.rawIdx=String(entry.rawIdx);
+    btn.setAttribute('data-title',entry.title||'');
+    btn.setAttribute('data-reply',entry.reply||'');
+    btn.setAttribute('aria-label',entry.title||'');
+    const mark=document.createElement('span');
+    mark.className='turn-nav-mark';
+    mark.setAttribute('aria-hidden','true');
+    btn.appendChild(mark);
+    btn.addEventListener('click',()=>jumpToTurnQuestion(entry.rawIdx));
+    btn.addEventListener('mouseenter',()=>_showTurnNavCard(btn));
+    btn.addEventListener('focus',()=>_showTurnNavCard(btn));
+    btn.addEventListener('mouseleave',_hideTurnNavCard);
+    btn.addEventListener('blur',_hideTurnNavCard);
+    frag.appendChild(btn);
+  }
+  track.appendChild(frag);
+  nav.classList.toggle('turn-nav--dense',_turnNavEntries.length>24&&_turnNavEntries.length<=40);
+  nav.classList.toggle('turn-nav--denser',_turnNavEntries.length>40);
+  _applyTurnNavigatorChrome();
+}
+
+function _updateTurnNavigatorReplies(entries){
+  if(S&&S.activeStreamId) return;
+  const track=$('turnNavTrack');
+  if(!track) return;
+  for(const entry of entries){
+    const btn=track.querySelector('.turn-nav-tick[data-raw-idx="'+entry.rawIdx+'"]');
+    if(!btn) continue;
+    const next=entry.reply||'';
+    if((btn.getAttribute('data-reply')||'')===next) continue;
+    btn.setAttribute('data-reply',next);
+    const card=$('turnNavCard');
+    if(card&&!card.hidden&&card.dataset.forIdx===String(entry.rawIdx)){
+      const replyEl=card.querySelector('.turn-nav-card-reply');
+      if(replyEl) replyEl.textContent=next||((typeof t==='function'&&t('turn_nav_reply_empty'))||'');
+    }
+  }
+}
+
+function _syncTurnNavigator(){
+  if(typeof buildTurnOutline!=='function') return;
+  const entries=buildTurnOutline(S.messages||[]);
+  const sid=S.session&&S.session.session_id?S.session.session_id:'';
+  const sig=sid+'\n'+_turnNavStructureSig(entries);
+  if(sig!==_turnNavSig){
+    _turnNavSig=sig;
+    _renderTurnNavigator(entries);
+    if(_scrollPinned&&entries.length) _setTurnNavigatorActive(entries[entries.length-1].rawIdx);
+    else _updateTurnNavigatorActiveFromScroll();
+  }
+  _updateTurnNavigatorReplies(entries);
+}
+
+function _updateTurnNavigatorActiveFromScroll(){
+  if(!_turnNavEntries||_turnNavEntries.length<3) return;
+  const container=$('messages');
+  const inner=$('msgInner');
+  if(!container||!inner||typeof pickActiveTurn!=='function') return;
+  const candidates=[];
+  const seen=new Set();
+  inner.querySelectorAll('[id^="msg-user-"]').forEach(row=>{
+    const rawIdx=Number(row.dataset.msgIdx);
+    if(!Number.isFinite(rawIdx)) return;
+    candidates.push({rawIdx,relTop:row.getBoundingClientRect().top-container.getBoundingClientRect().top});
+    seen.add(rawIdx);
+  });
+  let firstRaw=Infinity;
+  inner.querySelectorAll('[data-msg-idx]').forEach(el=>{
+    const n=Number(el.dataset.msgIdx);
+    if(Number.isFinite(n)&&n<firstRaw) firstRaw=n;
+  });
+  if(firstRaw!==Infinity){
+    let prev=null;
+    for(const entry of _turnNavEntries){
+      if(entry.rawIdx<firstRaw) prev=entry;
+      else break;
+    }
+    if(prev&&!seen.has(prev.rawIdx)) candidates.unshift({rawIdx:prev.rawIdx,relTop:-1});
+  }
+  const active=pickActiveTurn(candidates,140);
+  if(active==null) return;
+  _setTurnNavigatorActive(active);
+}
+
+function _scheduleTurnNavigatorActive(){
+  if(_turnNavActiveRaf) return;
+  _turnNavActiveRaf=requestAnimationFrame(()=>{
+    _turnNavActiveRaf=0;
+    _updateTurnNavigatorActiveFromScroll();
+  });
+}
+
+function _onTurnNavigatorKeydown(e){
+  if(!e.altKey||e.metaKey||e.ctrlKey||e.shiftKey) return;
+  if(e.key!=='ArrowUp'&&e.key!=='ArrowDown') return;
+  const tag=(e.target&&e.target.tagName)||'';
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
+  if(e.target&&e.target.isContentEditable) return;
+  const dropdown=$('cmdDropdown');
+  if(dropdown&&dropdown.classList.contains('open')) return;
+  if(!_turnNavEntries||_turnNavEntries.length<3) return;
+  if(!_isChatViewVisible()) return;
+  e.preventDefault();
+  let pos=_turnNavEntries.findIndex(entry=>entry.rawIdx===_turnNavActiveRaw);
+  if(pos<0) pos=e.key==='ArrowUp'?_turnNavEntries.length:-1;
+  const next=e.key==='ArrowUp'?pos-1:pos+1;
+  if(next<0||next>=_turnNavEntries.length) return;
+  jumpToTurnQuestion(_turnNavEntries[next].rawIdx);
+}
+
+if(typeof document!=='undefined'){
+  document.addEventListener('keydown',_onTurnNavigatorKeydown);
+  window.addEventListener('resize',()=>{ _applyTurnNavigatorChrome(); });
 }
 
 /* ── Image lightbox — click any .msg-media-img to enlarge ─────────────────── */
@@ -2262,6 +2510,7 @@ function _recordNonMessageScrollIntent(e){
   const el=document.getElementById('messages');
   const target=e&&e.target;
   if(!el||!target) return;
+  if(target.closest&&target.closest('#turnNavigator')) return;
   // Streaming token renders should keep pinning the chat only while the user is
   // actually interacting with the chat pane. A wheel/touch gesture over the
   // session sidebar (or another independent pane) must not be immediately fought
@@ -2371,6 +2620,7 @@ if(typeof window!=='undefined') window._resetScrollDirectionTracker=_resetScroll
   if(!el) return;
   let _scrollRaf=0;
   el.addEventListener('scroll',()=>{
+    if(typeof _scheduleTurnNavigatorActive==='function') _scheduleTurnNavigatorActive();
     if(_programmaticScroll) return; // ignore scrolls we triggered ourselves
     cancelAnimationFrame(_scrollRaf);
     _scrollRaf=requestAnimationFrame(()=>{
@@ -6960,6 +7210,9 @@ function renderMessages(options){
       requestAnimationFrame(()=>postProcessRenderedMessages(inner));
       if(typeof _initMediaPlaybackObserver==='function') _initMediaPlaybackObserver();
       if(typeof loadTodos==='function'&&document.getElementById('panelTodos')&&document.getElementById('panelTodos').classList.contains('active')){loadTodos();}
+      // The cached transcript is this session's DOM, but the rail was built
+      // for whoever was on screen last. Rebuild it before returning.
+      if(typeof _syncTurnNavigator==='function') _syncTurnNavigator();
       return;
     }
   }
@@ -7730,6 +7983,7 @@ function renderMessages(options){
   }
   // Apply persisted playback speed after media nodes are rendered.
   if(typeof _applyMediaPlaybackPreferences==='function') _applyMediaPlaybackPreferences(inner);
+  if(typeof _syncTurnNavigator==='function') _syncTurnNavigator();
   // Populate session cache so switching back here skips a full rebuild.
   _sessionHtmlCacheSid=sid;
   if(sid&&!INFLIGHT[sid]&&!hasTransientTranscriptUi){

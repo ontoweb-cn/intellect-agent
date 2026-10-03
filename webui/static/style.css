@@ -1272,6 +1272,23 @@
   .messages.session-nav-enabled .scroll-to-bottom-btn{width:auto;min-width:32px;border-radius:999px;font-size:12px;font-weight:600;gap:5px;padding:0 11px;}
   .messages.session-nav-enabled .scroll-to-bottom-btn:hover{transform:translateY(-1px);}
   .messages.session-nav-enabled .session-jump-btn__text{display:inline;}
+  .turn-nav{position:absolute;left:8px;top:16px;bottom:16px;width:36px;z-index:8;display:flex;flex-direction:column;pointer-events:none;}
+  .turn-nav[hidden]{display:none!important;}
+  .turn-nav--gutter-hidden,.turn-nav--gutter-hidden .turn-nav-track{visibility:hidden;pointer-events:none;}
+  .turn-nav-track{position:relative;pointer-events:auto;display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;width:100%;max-height:62vh;margin:auto 0;overflow-y:auto;overscroll-behavior:contain;}
+  .turn-nav-tick{display:flex;align-items:center;justify-content:flex-end;width:100%;height:22px;flex:0 0 22px;padding:0;border:0;background:transparent;cursor:pointer;}
+  .turn-nav--dense .turn-nav-tick{height:16px;flex-basis:16px;}
+  .turn-nav--denser .turn-nav-tick{height:12px;flex-basis:12px;}
+  .turn-nav-mark{display:block;width:14px;height:2px;border-radius:1px;background:var(--border2);}
+  .turn-nav-tick[aria-current="true"] .turn-nav-mark{width:22px;background:var(--text);}
+  .turn-nav-tick:hover .turn-nav-mark,.turn-nav-tick:focus-visible .turn-nav-mark{background:var(--text);}
+  .turn-nav-tick:focus-visible{outline:none;}
+  .turn-nav-earlier{flex:0 0 auto;height:22px;margin-bottom:4px;padding:0;border:0;background:transparent;color:var(--muted);font-size:10px;font-weight:600;cursor:pointer;text-align:right;}
+  .turn-nav-earlier:hover,.turn-nav-earlier:focus-visible{color:var(--text);}
+  .turn-nav-card{position:absolute;left:40px;width:220px;padding:8px 10px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);box-shadow:0 8px 24px rgba(0,0,0,.18);pointer-events:none;z-index:1;}
+  .turn-nav-card[hidden]{display:none!important;}
+  .turn-nav-card-title{font-size:12px;font-weight:600;color:var(--text);line-height:1.35;}
+  .turn-nav-card-reply{margin-top:4px;font-size:11px;color:var(--muted);line-height:1.4;}
   .messages-inner{margin:0 auto;width:100%;padding:20px 24px 32px;display:flex;flex-direction:column;}
   @media(min-width:1400px){.messages-inner{max-width:1100px;}}
   @media(min-width:1800px){.messages-inner{max-width:1200px;}}

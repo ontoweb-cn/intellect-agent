@@ -29,4 +29,6 @@ webui/quartz/_quartz/
 
 # 离线镜像属于独立交付物，不能随源码一起加入 Git。
 /intellect-agent-*.tar
+# PR 比对用的临时解包目录，不是源码。
+.tmp-pr147/
 .zcode/

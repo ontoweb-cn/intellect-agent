@@ -6973,6 +6973,29 @@ def handle_get(handler, parsed) -> bool:
 # ── GET route helpers
 
 
+def _reject_agent_management_mutation(handler):
+    """Block agent switch/create/delete, or return None to continue.
+
+    ``management_enabled`` stays on by default so the Agents menu shows.
+    A listener that is not loopback-only (Docker binds ``0.0.0.0``) must
+    not accept those mutations while WebUI auth is off: auth-disabled
+    requests skip CSRF, so a network client could switch agent homes.
+    """
+    from api.auth import is_auth_enabled, is_loopback_host
+    from api.config import HOST
+    from api.profiles import is_profile_management_enabled
+
+    if not is_profile_management_enabled():
+        return bad(handler, "Agent management is temporarily disabled", status=403)
+    if not is_auth_enabled() and not is_loopback_host(HOST):
+        return bad(
+            handler,
+            "Agent management on a non-local WebUI requires authentication",
+            status=403,
+        )
+    return None
+
+
 def handle_post(handler, parsed) -> bool:
     """Handle all POST routes. Returns True if handled, False for 404."""
     diag = RequestDiagnostics.maybe_start("POST", parsed.path, logger=logger)
@@ -8066,15 +8089,9 @@ def handle_post(handler, parsed) -> bool:
 
     # ── Agent API (POST) ──
     if parsed.path in ("/api/agent/switch", "/api/profile/switch"):
-        # TEMPORARY: agent switching disabled (agents.management_enabled).
-        from api.profiles import is_profile_management_enabled
-
-        if not is_profile_management_enabled():
-            return bad(
-                handler,
-                "Agent management is temporarily disabled",
-                status=403,
-            )
+        denied = _reject_agent_management_mutation(handler)
+        if denied is not None:
+            return denied
         name = body.get("name", "").strip()
         if not name:
             return bad(handler, "name is required")
@@ -8100,15 +8117,9 @@ def handle_post(handler, parsed) -> bool:
             return bad(handler, str(e), 409)
 
     if parsed.path in ("/api/agent/create", "/api/profile/create"):
-        # TEMPORARY: agent creation disabled (agents.management_enabled).
-        from api.profiles import is_profile_management_enabled
-
-        if not is_profile_management_enabled():
-            return bad(
-                handler,
-                "Agent management is temporarily disabled",
-                status=403,
-            )
+        denied = _reject_agent_management_mutation(handler)
+        if denied is not None:
+            return denied
         name = body.get("name", "").strip()
         if not name:
             return bad(handler, "name is required")
@@ -8148,15 +8159,9 @@ def handle_post(handler, parsed) -> bool:
             return bad(handler, str(e))
 
     if parsed.path in ("/api/agent/delete", "/api/profile/delete"):
-        # TEMPORARY: agent deletion disabled (agents.management_enabled).
-        from api.profiles import is_profile_management_enabled
-
-        if not is_profile_management_enabled():
-            return bad(
-                handler,
-                "Agent management is temporarily disabled",
-                status=403,
-            )
+        denied = _reject_agent_management_mutation(handler)
+        if denied is not None:
+            return denied
         name = body.get("name", "").strip()
         if not name:
             return bad(handler, "name is required")
