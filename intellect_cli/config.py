@@ -1236,14 +1236,15 @@ DEFAULT_CONFIG = {
 
     # Agent homes (isolation units). Canonical key: agents.*
     # Legacy profiles.* is still read by agent_gate / migrate for compat.
-    # When management_enabled is false, mutating agent commands and WebUI
-    # Agents UI are blocked; ``intellect -a <existing>`` still works.
+    # When management_enabled is false, mutating agent commands and the WebUI
+    # Agents nav are blocked; ``intellect -a <existing>`` still works.
+    # Default true so a fresh install shows the Agents menu.
     "agents": {
-        "management_enabled": False,
+        "management_enabled": True,
     },
     # DEPRECATED: use agents.* — kept so older configs keep working until migrate.
     "profiles": {
-        "management_enabled": False,
+        "management_enabled": True,
     },
 
     # Feature flags (P4-6) — centralized on/off toggles for new capabilities.
@@ -4534,8 +4535,8 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
 
     # ── Version 25 → 26: promote profiles.* → agents.* ──
     # Canonical isolation-unit config is agents.management_enabled.
-    # Older configs may only set profiles.management_enabled=true; deep-merge
-    # would otherwise leave agents.management_enabled=false from DEFAULT_CONFIG.
+    # Older configs may only set profiles.management_enabled=true while an
+    # already-written agents.management_enabled stays false.
     # Gate code ORs both keys, but we still promote so subsequent saves /
     # docs / tooling see the canonical section.
     if current_ver < 26:

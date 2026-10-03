@@ -4481,8 +4481,9 @@ function _positionComposerWsDropdown(){
   dd.style.left=`${left}px`;
 }
 
-// TEMPORARY: agents.management_enabled gate (config.yaml + api/agent/active).
-// Hides Profiles nav/panel and composer chip; blocks client-side switch/create/delete.
+// agents.management_enabled gate (config.yaml + api/agent/active).
+// When false: hide the Agents nav/panel and composer chip, and block
+// client-side switch/create/delete. The shipped default is true.
 let _profileManagementEnabled = true;
 
 function isProfileManagementEnabled() {
@@ -4503,7 +4504,7 @@ function _applyProfileManagementUiGate(enabled) {
   const dd = $('profileDropdown');
   if (dd) dd.style.display = 'none';
   if (typeof S !== 'undefined') S.activeProfile = 'default';
-  // TEMPORARY: do not aggregate sessions across profiles in the sidebar.
+  // Do not aggregate sessions across agents in the sidebar.
   if (typeof _showAllProfiles !== 'undefined') _showAllProfiles = false;
   if (_currentPanel === 'profiles' && typeof switchPanel === 'function') {
     switchPanel('chat');

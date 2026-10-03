@@ -142,10 +142,10 @@ def docker_exec_sh(
 def enable_agent_management(container: str, *, timeout: int = 30) -> None:
     """Enable agent create/switch/delete inside the container.
 
-    The shipped default is ``agents.management_enabled: false``, so
-    ``intellect agent create`` (and the ``intellect profile create`` alias)
-    refuses. Tests that exercise the agent/profile lifecycle must turn the gate
-    on: they cover the feature, while the gate itself is covered by
+    The code default is now ``agents.management_enabled: true``. A container
+    image may still ship an explicit ``false`` from an older config.yaml, in
+    which case ``intellect agent create`` refuses. Tests that exercise the
+    agent lifecycle force the gate on; the gate itself is covered by
     tests/intellect_cli/test_profile_gate.py.
 
     Writes INTELLECT_HOME/config.yaml (/opt/data in the image), flipping an

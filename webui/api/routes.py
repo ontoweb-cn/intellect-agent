@@ -6790,7 +6790,8 @@ def handle_get(handler, parsed) -> bool:
             list_profiles_api,
         )
 
-        # TEMPORARY: hide agent list from UI while management is disabled.
+        # Hide the agent list while management is off. The sidebar hides the
+        # Agents entry from the same flag.
         agents_payload = (
             list_profiles_api()
             if is_profile_management_enabled()
