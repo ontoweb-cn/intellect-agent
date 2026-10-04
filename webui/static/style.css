@@ -3739,6 +3739,7 @@ main.main.showing-todos > #mainTodos{display:flex;}
   background: var(--hover-bg);
   outline: none;
 }
+.messages:not(.session-nav-enabled) .msg-question-jump-btn { display: none; }
 .msg-question-highlight .msg-body {
   animation: question-highlight-pulse 1.6s ease-out;
 }

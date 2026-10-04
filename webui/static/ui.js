@@ -513,6 +513,7 @@ function _applySessionNavigationPrefs(){
   const container=$('messages');
   if(container) container.classList.toggle('session-nav-enabled',_isSessionJumpButtonsEnabled());
   _updateSessionStartJumpButton();
+  _applyTurnNavigatorChrome();
 }
 function _updateSessionStartJumpButton(){
   const btn=$('jumpToSessionStartBtn');
@@ -689,7 +690,7 @@ function _turnNavigatorGutterHidden(){
 function _applyTurnNavigatorChrome(){
   const nav=$('turnNavigator');
   if(!nav) return;
-  if(!_turnNavEntries||_turnNavEntries.length<3){
+  if(!_isSessionJumpButtonsEnabled()||!_turnNavEntries||_turnNavEntries.length<3){
     nav.hidden=true;
     nav.classList.remove('turn-nav--gutter-hidden');
     return;

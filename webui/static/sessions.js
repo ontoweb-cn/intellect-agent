@@ -940,7 +940,7 @@ async function loadSession(sid, options={}){
   // against stale writes from slow responses racing to restore the previous draft).
   const _draft = S.session && S.session.composer_draft;
   if (_draft && (typeof _restoreComposerDraft === 'function')) {
-    _restoreComposerDraft(_draft, sid, {preserveActiveInput:currentSid===sid&&forceReload});
+    _restoreComposerDraft(_draft, sid, {preserveActiveInput:currentSid===sid&&force});
   }
 
   // Clear the in-flight session marker now that this load has completed (#1060).
