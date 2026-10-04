@@ -49,6 +49,9 @@ def stream_diag_init() -> Dict[str, Any]:
         "started_at": time.time(),
         "first_chunk_at": None,
         "chunks": 0,
+        # Approximate content size streamed (chars of content/reasoning/
+        # tool-arg deltas, accumulated at extraction time). Previously a
+        # len(repr(chunk)) proxy — too costly per SSE frame.
         "bytes": 0,
         "headers": {},
         "http_status": None,

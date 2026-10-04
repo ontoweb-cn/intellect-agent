@@ -306,11 +306,26 @@ class TestRustAvailability:
         from intellect_rust import (
             rust_build_session_key,
             rust_check_expiry_batch,
-            rust_evaluate_reset_policy,
         )
         assert rust_build_session_key is not None
         assert rust_check_expiry_batch is not None
-        assert rust_evaluate_reset_policy is not None
+
+    def test_cjk_helpers_parity(self):
+        """E3: rust contains_cjk/count_cjk are the canonical CJK table."""
+        from intellect_rust import rust_contains_cjk, rust_count_cjk
+        assert rust_contains_cjk is not None
+        assert rust_count_cjk is not None
+        # CJK samples: Han, Hiragana, Katakana, Hangul, CJK punctuation
+        for text in ("中文", "ひらがな", "カタカナ", "한국어", "「」"):
+            assert rust_contains_cjk(text) is True
+            assert rust_count_cjk(text) == len(text)
+        # Non-CJK samples (incl. full-width latin, which is NOT in the table)
+        for text in ("hello world", "12345", "ｆｕｌｌｗｉｄｔｈ", "café"):
+            assert rust_contains_cjk(text) is False
+            assert rust_count_cjk(text) == 0
+        # Mixed
+        assert rust_contains_cjk("some 漢字 text") is True
+        assert rust_count_cjk("abc漢字def") == 2
 
 
 # ── Crypto (PKCE + Fernet) ──────────────────────────────────────────────────

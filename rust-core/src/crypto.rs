@@ -10,23 +10,6 @@ use base64::Engine;
 
 // ── Secure random (Stage 5e) ────────────────────────────────────────────────
 
-/// Generate `nbytes` of cryptographically secure random bytes.
-/// Uses the OS CSPRNG (getrandom → /dev/urandom or equivalent).
-#[pyfunction]
-pub fn secure_random_bytes(nbytes: usize) -> Vec<u8> {
-    let mut buf = vec![0u8; nbytes];
-    rand::rngs::OsRng.fill_bytes(&mut buf);
-    buf
-}
-
-/// Generate a URL-safe base64 random token with `nbytes` of entropy.
-#[pyfunction]
-pub fn secure_token_urlsafe(nbytes: usize) -> String {
-    let mut buf = vec![0u8; nbytes];
-    rand::rngs::OsRng.fill_bytes(&mut buf);
-    base64_url(&buf)
-}
-
 /// Generate a hex-encoded random token with `nbytes` of entropy.
 #[pyfunction]
 pub fn secure_token_hex(nbytes: usize) -> String {
@@ -200,104 +183,11 @@ fn base64_url_decode(s: &str) -> Result<Vec<u8>, base64::DecodeError> {
     base64::engine::general_purpose::URL_SAFE.decode(&padded)
 }
 
-// ── JWT claims decode (Stage 5c) ────────────────────────────────────────────
-
-/// Decode JWT payload claims without signature verification.
-/// Optionally validate `exp` (expiration) against `now_seconds`.
-/// Returns (claims_json, error_string).  error_string is None on success.
-#[pyfunction]
-pub fn decode_jwt_claims_rs(
-    token: &str,
-    validate_exp: bool,
-    now_seconds: f64,
-) -> (Option<String>, Option<String>) {
-    let parts: Vec<&str> = token.split('.').collect();
-    if parts.len() != 3 {
-        return (None, Some("invalid JWT: expected 3 segments".to_string()));
-    }
-
-    let payload = parts[1];
-    // Add padding
-    let padded = match payload.len() % 4 {
-        2 => format!("{}==", payload),
-        3 => format!("{}=", payload),
-        _ => payload.to_string(),
-    };
-
-    let decoded = match base64_url_decode(&padded) {
-        Ok(d) => d,
-        Err(e) => return (None, Some(format!("base64 decode failed: {}", e))),
-    };
-
-    let claims: serde_json::Value = match serde_json::from_slice(&decoded) {
-        Ok(v) => v,
-        Err(e) => return (None, Some(format!("JSON parse failed: {}", e))),
-    };
-
-    // Optional exp validation
-    if validate_exp {
-        if let Some(exp) = claims.get("exp").and_then(|v| v.as_f64()) {
-            if now_seconds > exp {
-                return (
-                    None,
-                    Some(format!(
-                        "JWT expired: exp={} ({}) now={:.0}",
-                        exp as u64,
-                        chrono_human(exp, now_seconds),
-                        now_seconds,
-                    )),
-                );
-            }
-        }
-    }
-
-    let json_str = serde_json::to_string(&claims).unwrap_or_default();
-    (Some(json_str), None)
-}
-
-fn chrono_human(exp: f64, now: f64) -> String {
-    let diff = exp - now;
-    if diff < -3600.0 {
-        format!("{:.1}h ago", -diff / 3600.0)
-    } else if diff < -60.0 {
-        format!("{:.0}m ago", -diff / 60.0)
-    } else if diff < 0.0 {
-        format!("{:.0}s ago", -diff)
-    } else if diff < 3600.0 {
-        format!("in {:.0}m", diff / 60.0)
-    } else {
-        format!("in {:.1}h", diff / 3600.0)
-    }
-}
-
 // ── Rust unit tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_secure_random_bytes_length() {
-        let b = secure_random_bytes(32);
-        assert_eq!(b.len(), 32);
-    }
-
-    #[test]
-    fn test_secure_random_bytes_unique() {
-        let a = secure_random_bytes(16);
-        let b = secure_random_bytes(16);
-        assert_ne!(a, b); // astronomically unlikely to collide
-    }
-
-    #[test]
-    fn test_token_urlsafe_length() {
-        // 32 bytes → 43 base64url chars (no padding)
-        let t = secure_token_urlsafe(32);
-        assert_eq!(t.len(), 43);
-        assert!(!t.contains('='));
-        assert!(!t.contains('+'));
-        assert!(!t.contains('/'));
-    }
 
     #[test]
     fn test_pkce_challenge_format() {

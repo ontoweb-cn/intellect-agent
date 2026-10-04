@@ -30,3 +30,13 @@ fi
 mkdir -p "$ROOT/intellect_community_core"
 cp -f "$VENV_SO" "$ROOT/intellect_community_core/"
 echo "Synced $(basename "$VENV_SO") -> intellect_community_core/ (from $VENV_SO)"
+
+# macOS/arm64: the linker's ad-hoc signature can be page-level invalid after
+# maturin's wheel round-trip (kernel kills the process with "Code Signature
+# Invalid" on first import). Re-sign both copies defensively — no-op intent,
+# fixes the load. See docs/plans/2026-10-05-rust-migration-next-steps-plan.md.
+if [[ "$(uname)" == "Darwin" ]] && command -v codesign >/dev/null 2>&1; then
+  for so in "$ROOT/intellect_community_core/"*.so "$VENV_SO"; do
+    codesign -f -s - "$so" >/dev/null 2>&1 || true
+  done
+fi

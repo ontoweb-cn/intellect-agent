@@ -140,6 +140,9 @@ impl ClassifiedError {
 
     #[getter]
     fn is_auth(&self) -> bool {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
         Python::attach(|py| {
             let reason = self.reason.bind(py);
             let val: String = reason.getattr("value").ok().and_then(|v| v.extract().ok()).unwrap_or_default();
@@ -148,6 +151,9 @@ impl ClassifiedError {
     }
 
     fn __repr__(&self) -> String {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
         Python::attach(|py| {
             let r = self.reason.bind(py).repr().ok().map(|v| v.to_string()).unwrap_or_default();
             format!("ClassifiedError(reason={r}, status={:?})", self.status_code)
@@ -872,5 +878,141 @@ mod tests {
     #[test]
     fn test_g10_relay_429_pattern() {
         assert!(any_match("upstream error code: 429", RATE_LIMIT));
+    }
+
+    // ── classify_api_error_rs behavior tests (E4 backfill) ────────────────
+    //
+    // These build real Python exception objects (status_code attribute +
+    // message) and assert the classification the Python wrapper relies on.
+    // They need an initialized interpreter — same reason rust-ci runs
+    // `--test-threads=1`.
+
+    fn make_error<'py>(py: Python<'py>, status_code: i32, message: &str) -> Bound<'py, PyAny> {
+        let src = format!(
+            "type('E{}', (Exception,), {{'status_code': {}}})({:?})",
+            status_code, status_code, message
+        );
+        let csrc = std::ffi::CString::new(src).expect("nul-free test source");
+        py.eval(&csrc, None, None).expect("build test error object")
+    }
+
+    fn reason_of(py: Python<'_>, c: &ClassifiedError) -> String {
+        c.reason.bind(py).borrow().value.clone()
+    }
+
+    #[test]
+    fn test_classify_401_auth_not_retryable() {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
+        Python::attach(|py| {
+            let err = make_error(py, 401, "Incorrect API key provided");
+            let c = classify_api_error_rs(&err, "openai", "gpt-4o", 1000, 128000, 10).unwrap();
+            assert_eq!(reason_of(py, &c), "auth");
+            assert!(!c.retryable);
+            assert!(c.should_fallback);
+            assert_eq!(c.status_code, Some(401));
+            assert_eq!(c.provider.as_deref(), Some("openai"));
+        });
+    }
+
+    #[test]
+    fn test_classify_ratelimiterror_type_forces_429() {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
+        Python::attach(|py| {
+            let err = py
+                .eval(
+                    c"type('RateLimitError', (Exception,), {})('Too many requests')",
+                    None,
+                    None,
+                )
+                .unwrap();
+            let c = classify_api_error_rs(&err, "openai", "gpt-4o", 1000, 128000, 10).unwrap();
+            assert_eq!(reason_of(py, &c), "rate_limit");
+            assert!(c.retryable);
+            assert_eq!(c.status_code, Some(429));
+        });
+    }
+
+    #[test]
+    fn test_classify_413_payload_too_large_compresses() {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
+        Python::attach(|py| {
+            let err = make_error(py, 413, "request entity too large");
+            let c = classify_api_error_rs(&err, "openai", "gpt-4o", 1000, 128000, 10).unwrap();
+            assert_eq!(reason_of(py, &c), "payload_too_large");
+            assert!(c.retryable);
+            assert!(c.should_compress);
+        });
+    }
+
+    #[test]
+    fn test_classify_503_overloaded() {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
+        Python::attach(|py| {
+            let err = make_error(py, 503, "service unavailable");
+            let c = classify_api_error_rs(&err, "openai", "gpt-4o", 1000, 128000, 10).unwrap();
+            assert_eq!(reason_of(py, &c), "overloaded");
+            assert!(c.retryable);
+            assert!(!c.should_fallback);
+        });
+    }
+
+    #[test]
+    fn test_classify_500_server_error_retryable() {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
+        Python::attach(|py| {
+            let err = make_error(py, 500, "internal server error");
+            let c = classify_api_error_rs(&err, "openai", "gpt-4o", 1000, 128000, 10).unwrap();
+            assert_eq!(reason_of(py, &c), "server_error");
+            assert!(c.retryable);
+        });
+    }
+
+    #[test]
+    fn test_classify_thinking_signature_400() {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
+        Python::attach(|py| {
+            let err = make_error(py, 400, "thinking signature verification failed");
+            let c = classify_api_error_rs(&err, "anthropic", "claude-x", 1000, 200000, 10).unwrap();
+            assert_eq!(reason_of(py, &c), "thinking_signature");
+        });
+    }
+
+    #[test]
+    fn test_classify_grok_no_subscription_auth() {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
+        Python::attach(|py| {
+            let err = make_error(py, 403, "you do not have an active grok subscription");
+            let c = classify_api_error_rs(&err, "xai", "grok-4", 1000, 131072, 10).unwrap();
+            assert_eq!(reason_of(py, &c), "auth");
+            assert!(!c.retryable);
+            assert!(c.should_fallback);
+        });
+    }
+
+    #[test]
+    fn test_classify_429_extra_usage_long_context_tier() {
+        // See prompt_caching tests: explicit interpreter init (no
+        // auto-initialize feature; suite runs --test-threads=1).
+        Python::initialize();
+        Python::attach(|py| {
+            let err = make_error(py, 429, "extra usage required for long context input");
+            let c = classify_api_error_rs(&err, "anthropic", "claude-x", 1000, 200000, 10).unwrap();
+            assert_eq!(reason_of(py, &c), "long_context_tier");
+            assert!(c.should_compress);
+        });
     }
 }

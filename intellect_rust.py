@@ -168,17 +168,10 @@ HAS_GATEWAY: bool = _has()
 rust_build_session_key: Callable = (
     _CORE.build_session_key_rs if _has() else None
 )
-rust_evaluate_reset_policy: Callable = (
-    _CORE.evaluate_reset_policy_rs if _has() else None
-)
 rust_check_expiry_batch: Callable = (
     _CORE.check_session_expiry_batch_rs if _has() else None
 )
 HAS_BATCH_EXPIRY: bool = _has()
-PlatformRetryScheduler: Any = (
-    _CORE.PlatformRetryScheduler if _has() else None
-)
-HAS_RETRY_SCHEDULER: bool = _has()
 DelegationRegistry: Any = (
     getattr(_CORE, "DelegationRegistry", None) if _has() else None
 )
@@ -239,6 +232,8 @@ rust_model_name_suggests_kimi: Callable = _CORE.model_name_suggests_kimi_rs if _
 rust_model_id_matches: Callable = _CORE.model_id_matches_rs if _has() else None
 rust_normalize_model_version: Callable = _CORE.normalize_model_version_rs if _has() else None
 rust_get_next_probe_tier: Callable = _CORE.get_next_probe_tier_rs if _has() else None
+rust_contains_cjk: Callable = _CORE.contains_cjk_rs if _has() else None
+rust_count_cjk: Callable = _CORE.count_cjk_rs if _has() else None
 
 # ── Sanitization (Phase 4) ──────────────────────────────────────────────────
 
@@ -276,20 +271,8 @@ rust_apply_cache_control: Callable = (
 rust_file_mutation_landed: Callable = (
     _CORE.file_mutation_result_landed_rs if _has() else None
 )
-rust_strip_yaml_frontmatter: Callable = (
-    _CORE.strip_yaml_frontmatter_rs if _has() else None
-)
 rust_validate_skill_frontmatter: Callable = (
     _CORE.validate_skill_frontmatter_rs if _has() else None
-)
-rust_truncate_content: Callable = (
-    _CORE.truncate_content_rs if _has() else None
-)
-rust_paths_overlap: Callable = (
-    _CORE.paths_overlap_rs if _has() else None
-)
-rust_canonical_tool_args: Callable = (
-    _CORE.canonical_tool_args_rs if _has() else None
 )
 
 # ── HP-304: Automation blueprints ──────────────────────────────────────────

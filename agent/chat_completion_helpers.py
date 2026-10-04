@@ -1966,18 +1966,15 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             # Update per-attempt diagnostic counters.  Best-effort —
             # failures are swallowed so the streaming hot path is never
             # interrupted by diagnostic accounting.
+            #
+            # "bytes" is accumulated at the delta-extraction points below
+            # (content / reasoning / tool-arg lengths) — building
+            # len(repr(chunk)) per SSE frame cost more than the payload
+            # itself.
             try:
                 _diag["chunks"] = int(_diag.get("chunks", 0)) + 1
                 if _diag.get("first_chunk_at") is None:
                     _diag["first_chunk_at"] = last_chunk_time["t"]
-                # Approximate byte size from the chunk's repr — exact wire
-                # bytes aren't exposed by the SDK, but len(repr(chunk)) is
-                # a stable proxy for "how much content arrived" that
-                # survives stub provider differences.
-                try:
-                    _diag["bytes"] = int(_diag.get("bytes", 0)) + len(repr(chunk))
-                except Exception:
-                    logger.debug('non-critical operation failed', exc_info=True)
             except Exception:
                 logger.debug('non-critical operation failed', exc_info=True)
 
@@ -2001,6 +1998,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             # Accumulate reasoning content
             reasoning_text = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
             if reasoning_text:
+                _diag["bytes"] = int(_diag.get("bytes", 0)) + len(reasoning_text)
                 reasoning_parts.append(reasoning_text)
                 if _rust_acc is not None:
                     _rust_acc.add_reasoning(reasoning_text)
@@ -2009,6 +2007,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
 
             # Accumulate text content — fire callback only when no tool calls
             if delta and delta.content:
+                _diag["bytes"] = int(_diag.get("bytes", 0)) + len(delta.content)
                 content_parts.append(delta.content)
                 if _rust_acc is not None:
                     _rust_acc.add_content(delta.content)
@@ -2077,6 +2076,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                             # Vercel AI patterns) is immune to this.
                             entry["function"]["name"] = tc_delta.function.name
                         if tc_delta.function.arguments:
+                            _diag["bytes"] = int(_diag.get("bytes", 0)) + len(tc_delta.function.arguments)
                             entry["function"]["arguments"] += tc_delta.function.arguments
                         # ── Stage 3d: Rust parallel accumulation ────────
                         if _rust_acc is not None:
@@ -2215,14 +2215,13 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 agent._touch_activity("receiving stream response")
 
                 # Update per-attempt diagnostic counters (best-effort).
+                # "bytes" is accumulated at the delta-extraction points
+                # below — len(repr(event)) per frame cost more than the
+                # payload itself.
                 try:
                     _diag["chunks"] = int(_diag.get("chunks", 0)) + 1
                     if _diag.get("first_chunk_at") is None:
                         _diag["first_chunk_at"] = last_chunk_time["t"]
-                    try:
-                        _diag["bytes"] = int(_diag.get("bytes", 0)) + len(repr(event))
-                    except Exception:
-                        logger.debug('non-critical operation failed', exc_info=True)
                 except Exception:
                     logger.debug('non-critical operation failed', exc_info=True)
 
@@ -2246,13 +2245,16 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                         delta_type = getattr(delta, "type", None)
                         if delta_type == "text_delta":
                             text = getattr(delta, "text", "")
-                            if text and not has_tool_use:
-                                _fire_first_delta()
-                                agent._fire_stream_delta(text)
-                                deltas_were_sent["yes"] = True
+                            if text:
+                                _diag["bytes"] = int(_diag.get("bytes", 0)) + len(text)
+                                if not has_tool_use:
+                                    _fire_first_delta()
+                                    agent._fire_stream_delta(text)
+                                    deltas_were_sent["yes"] = True
                         elif delta_type == "thinking_delta":
                             thinking_text = getattr(delta, "thinking", "")
                             if thinking_text:
+                                _diag["bytes"] = int(_diag.get("bytes", 0)) + len(thinking_text)
                                 _fire_first_delta()
                                 agent._fire_reasoning_delta(thinking_text)
 

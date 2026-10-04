@@ -38,7 +38,7 @@ install.
   also runs `cargo deny check` against `deny.toml` and asserts a minimum Rust
   test count.
 
-## Architecture (21 files, 8,141 lines)
+## Architecture (21 files, 8,262 lines)
 
 ```
 src/
@@ -82,19 +82,22 @@ Since v0.6.4, all imports are centralized in `intellect_rust.py`. The Rust exten
 | Stream | `StreamAccumulator` |
 | Usage | `TokenAccumulator`, `rust_normalize_usage`, `rust_normalize_model_name`, `rust_format_duration_compact`, `rust_format_token_count_compact` |
 | Crypto | `rust_pkce_challenge`, `rust_pkce_from_verifier`, `rust_secure_hex`, `rust_fernet_encrypt`, `rust_fernet_decrypt`, `rust_generate_fernet_key` |
-| Gateway | `rust_build_session_key`, `rust_evaluate_reset_policy`, `rust_check_expiry_batch`, `PlatformRetryScheduler` |
+| Gateway | `rust_build_session_key`, `rust_check_expiry_batch` |
 | Delegation | `DelegationRegistry` |
 | Model | `rust_estimate_tokens_rough`, `rust_grok_supports_re`, `rust_strip_provider_prefix`, `rust_parse_context_limit`, `rust_parse_output_limit`, `rust_model_id_matches`, `rust_get_next_probe_tier`, etc. |
 | Counters | `IterationBudget`, `rust_jittered_backoff` |
 | Prompt caching | `rust_apply_cache_control` |
 | Sanitize | `rust_sanitize_surrogates`, `rust_strip_non_ascii`, `rust_repair_tool_args`, `rust_escape_json_chars` |
-| Tool utils | `rust_file_mutation_landed`, `rust_strip_yaml_frontmatter`, `rust_validate_skill_frontmatter`, `rust_truncate_content`, `rust_paths_overlap`, `rust_canonical_tool_args` |
+| Tool utils | `rust_file_mutation_landed`, `rust_validate_skill_frontmatter` |
 | Blueprints | `rust_validate_blueprint_yaml`, `rust_validate_blueprint_params` |
 | Verification | `rust_insert_verification_evidence`, `rust_query_verification_evidence`, `rust_classify_verification_command` |
 | Error | `rust_classify_api_error`, `RustFailoverReason`, `RustClassifiedError` |
 
 Wrappers are named `rust_*`; the extension-side symbols they bind to keep the
-`*_rs` suffix (e.g. `rust_paths_overlap` → `paths_overlap_rs`).
+`*_rs` suffix (e.g. `rust_build_session_key` → `build_session_key_rs`).
+(2026-10-05: 10 never-wired functions and 2 classes — TokenBucket,
+PlatformRetryScheduler, backoff/reset-policy/tool-string helpers — were
+removed as dead exports; see docs/plans/2026-10-05-rust-migration-next-steps-plan.md §9.)
 
 ## Benchmark
 

@@ -75,8 +75,6 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<stream::StreamAccumulator>()?;
 
     // ── Stage 5a/5e: Crypto — PKCE + secure random ──────────────────────
-    m.add_function(wrap_pyfunction!(crypto::secure_random_bytes, m)?)?;
-    m.add_function(wrap_pyfunction!(crypto::secure_token_urlsafe, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::secure_token_hex, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::pkce_challenge, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::pkce_challenge_from_verifier, m)?)?;
@@ -85,9 +83,6 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crypto::fernet_encrypt, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::fernet_decrypt, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::generate_fernet_key, m)?)?;
-
-    // ── Stage 5c: JWT claims decode ────────────────────────────────────
-    m.add_function(wrap_pyfunction!(crypto::decode_jwt_claims_rs, m)?)?;
 
     // ── Phase 1: Counters — iteration budget + jittered backoff ────────
     m.add_class::<counters::IterationBudget>()?;
@@ -98,11 +93,7 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // ── Tool utilities ────────────────────────────────────────────────
     m.add_function(wrap_pyfunction!(tool_utils::file_mutation_result_landed_rs, m)?)?;
-    m.add_function(wrap_pyfunction!(tool_utils::strip_yaml_frontmatter_rs, m)?)?;
     m.add_function(wrap_pyfunction!(tool_utils::validate_skill_frontmatter_rs, m)?)?;
-    m.add_function(wrap_pyfunction!(tool_utils::truncate_content_rs, m)?)?;
-    m.add_function(wrap_pyfunction!(tool_utils::paths_overlap_rs, m)?)?;
-    m.add_function(wrap_pyfunction!(tool_utils::canonical_tool_args_rs, m)?)?;
 
     // ── Phase 3: Error classifier — API error taxonomy ─────────────────
     m.add_class::<error_classifier::FailoverReason>()?;
@@ -132,12 +123,7 @@ fn intellect_community_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // ── Stage 4a-4e: Gateway utilities ─────────────────────────────────
     m.add_function(wrap_pyfunction!(gateway::build_session_key_rs, m)?)?;
-    m.add_function(wrap_pyfunction!(gateway::evaluate_reset_policy_rs, m)?)?;
-    m.add_function(wrap_pyfunction!(gateway::backoff_delay_rs, m)?)?;
     m.add_function(wrap_pyfunction!(gateway::check_session_expiry_batch_rs, m)?)?;
-    m.add_function(wrap_pyfunction!(gateway::backoff_delay_batch_rs, m)?)?;
-    m.add_class::<gateway::TokenBucket>()?;
-    m.add_class::<gateway::PlatformRetryScheduler>()?;
     m.add_class::<delegation::DelegationRegistry>()?;
 
     // ── HP-303: Verification evidence storage ──────────────────────────

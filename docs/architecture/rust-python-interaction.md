@@ -113,7 +113,7 @@ def ensure_rust_available() -> None:
         )
 ```
 
-约定：导出的 Python 名统一加 `rust_` 前缀，绑定的扩展符号保留 `*_rs` 后缀（`rust_paths_overlap` ← `paths_overlap_rs`）；类名直接沿用（`SQLiteBackend`、`StreamAccumulator`、`IterationBudget`、`DelegationRegistry` 等），`FailoverReason`/`ClassifiedError` 以 `RustFailoverReason`/`RustClassifiedError` 别名导出避免与 Python 同名类冲突。完整名单见 `rust-core/README.md` 的 Runtime Integration 表。
+约定：导出的 Python 名统一加 `rust_` 前缀，绑定的扩展符号保留 `*_rs` 后缀（`rust_build_session_key` ← `build_session_key_rs`）；类名直接沿用（`SQLiteBackend`、`StreamAccumulator`、`IterationBudget`、`DelegationRegistry` 等），`FailoverReason`/`ClassifiedError` 以 `RustFailoverReason`/`RustClassifiedError` 别名导出避免与 Python 同名类冲突。完整名单见 `rust-core/README.md` 的 Runtime Integration 表。
 
 ### 3.3 Rust 模块导出（`rust-core/src/lib.rs`）
 
@@ -125,8 +125,8 @@ Python 模块名：`import intellect_community_core`
 | Stage 1c | `backend.rs`, `connection.rs` | `SQLiteBackend`、`RustConnection` / `RustCursor` / `RustRow` |
 | Stage 2 | `sandbox.rs` | 命令检测（hardline / dangerous）、sudo stdin 守卫、路径与 IP 检查 |
 | Stage 3 | `usage.rs`, `stream.rs` | `TokenAccumulator`、`StreamAccumulator`、`normalize_usage_rs`、用量/时长格式化 |
-| Stage 4 | `gateway.rs`, `delegation.rs` | Session key、重置策略、批量过期与退避、`TokenBucket`、`PlatformRetryScheduler`、`DelegationRegistry` |
-| Stage 5 | `crypto.rs` | PKCE、Fernet、安全随机、JWT claims |
+| Stage 4 | `gateway.rs`, `delegation.rs` | Session key、批量过期检查、`DelegationRegistry`（TokenBucket/PlatformRetryScheduler/backoff 曾加入、2026-10-05 作为死导出移除） |
+| Stage 5 | `crypto.rs` | PKCE、Fernet、安全随机 hex（JWT claims 解码曾加入、2026-10-05 作为死导出移除） |
 | Phase 1 | `counters.rs` | `IterationBudget`、`jittered_backoff_rs` |
 | Phase 3 | `error_classifier.rs` | `FailoverReason`、`ClassifiedError`、`classify_api_error_rs` |
 | Phase 4 | `sanitize.rs` | surrogate / 非 ASCII 剥离、JSON 控制字符转义、tool 参数修复 |
@@ -137,7 +137,8 @@ Python 模块名：`import intellect_community_core`
 | HP-402 | `merge_queue.rs` | `append_message_batch_rs` 批量写合并 |
 | — | `schema.rs` | FTS 标识符白名单；**仅 Rust 内部使用，未注册到 Python** |
 
-当前向 Python 注册 **59 个函数 + 12 个类**（以 `rust-core/src/lib.rs` 为准）；
+当前向 Python 注册 **49 个函数 + 10 个类**（以 `rust-core/src/lib.rs` 为准；
+2026-10-05 E2 清理移除 10 个从未接线的函数与 2 个类）；
 `schema.rs` 是唯一编译进来但不暴露给 Python 的模块。
 
 ---
@@ -314,7 +315,7 @@ run_agent.py → chat_completion_helpers.py
 
 ## 6. 仍在 Python 的部分（Rust 未迁移）
 
-截至 2026-09-14，Rust crate 共 **8,141 行**（21 个源文件，20 个模块注册到 Python）。下表的行数按当前
+截至 2026-10-05，Rust crate 共 **8,262 行**（21 个源文件，20 个模块注册到 Python）。下表的行数按当前
 `agent/*.py` 实测（上一版数据取自 2026-06-20，已大幅漂移）。
 
 M16（SessionDB 读写统一）已完成：`SESSIONDB_USE_RUST_RW = 1` 默认启用，全部读写经 Rust rusqlite。
@@ -463,7 +464,7 @@ timeline
 
 | 分类 | 文件数 | 总行数 | 迁移率 |
 |------|--------|--------|--------|
-| Rust (已迁移) | 21 | 8,141 | — |
+| Rust (已迁移) | 21 | 8,262 | — |
 | SessionDB 读写 | — | — | **100%**（`SESSIONDB_USE_RUST_RW = 1`） |
 | SessionDB 搜索 | — | — | **非 CJK 100%**（Rust FTS5 fast-path） |
 | Agent Loop 核心 | 1 | 4,740 | 0% |
@@ -471,7 +472,7 @@ timeline
 | 中型辅助 (400-999 行) | 7 | 4,281 | 部分（`usage_pricing` 归一化、`model_metadata`、`tool_guardrails` 纯函数、`tool_dispatch_helpers`） |
 | 小型辅助 (<400 行) | 9 | 1,068 | 部分（`iteration_budget`、`retry_utils`、`error_classifier`、`message_sanitization`、`prompt_caching`） |
 | **Python 小计（§6 列出的全部文件）** | **25** | **29,286** | — |
-| Rust ÷ (Rust + 本表 Python) | — | — | **≈21.8%**（粗糙口径，仅供趋势参考） |
+| Rust ÷ (Rust + 本表 Python) | — | — | **≈22.0%**（粗糙口径，仅供趋势参考） |
 
 行数为 2026-09-14 用 `wc -l` 实测；`迁移率` 一列只统计上表列出的 agent 侧文件，
 不含 `tools/`、`gateway/`、`webui/` 等仍整体留在 Python 的部分。
@@ -518,7 +519,7 @@ Intellect Agent 采用 **「Python 编排 + Rust 热路径加速」** 的 PyO3 �
 | **版本** | Python 与 Rust crate **同步编号**（当前 `0.7.2`），通过 API 契约耦合 |
 | **构建** | maturin 单独编译，不随 `pip install` 自动完成 |
 | **运行** | v0.6.2 起 Rust 为 **硬性依赖**，经 `intellect_rust.py` 统一接入 |
-| **已迁移** | 存储读写与批写、沙箱安全检测、流解析、Token 累计、加密、Gateway 调度、错误分类、消息净化、模型元数据、迭代预算、验证证据、Blueprint、委派注册表 — 共 8,141 行 / 21 个源文件 |
+| **已迁移** | 存储读写与批写、沙箱安全检测、流解析、Token 累计、加密、Gateway 调度、错误分类、消息净化、模型元数据、迭代预算、验证证据、Blueprint、委派注册表 — 共 8,262 行 / 21 个源文件 |
 | **未迁移** | Agent Loop 核心（4,740 行）、Auxiliary Client（5,720）、Context Compressor（2,815）、Chat Completion Helpers（2,691）、Agent Runtime Helpers（2,462）、Tool Executor（1,200）、Display（1,033）等 — §6 所列共 25 个文件 / 29,286 行 Python |
-| **迁移率** | 约 **21.8%**（8,141 ÷ (8,141 + 29,286)，仅计 §6 列出的 agent 侧文件） |
+| **迁移率** | 约 **22.0%**（8,262 ÷ (8,262 + 29,286)，仅计 §6 列出的 agent 侧文件） |
 | **边界** | 工具执行、Gateway 平台 I/O、插件、Memory 仍在 Python；存储、安全检测、加密、流解析、Gateway 调度、错误分类与各类纯计算逻辑在 Rust |

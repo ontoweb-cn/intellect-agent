@@ -141,6 +141,12 @@ env 仅保留总开关。接线点：`gateway/run.py::start_gateway` 构造 `Gat
 | `usage.rs` | Usage 标准化 + TokenAccumulator | 6 |
 | 其他 7 模块 | FTS/压缩/counters/prompt_cache/tool_utils/sanitize/schema | ~20 |
 
+> 注（2026-10-05）：上表为 TODO-010 关账时快照。其后 E2 死导出清理移除了
+> `TokenBucket`/`PlatformRetryScheduler`/backoff/JWT/tool 字符串助手等 12 个
+> 从未接线的导出，gateway 现存 `rust_build_session_key` + `rust_check_expiry_batch`
+> 两个导出；当前注册面 49 函数 + 10 类，详见
+> `docs/plans/2026-10-05-rust-migration-next-steps-plan.md` §9。
+
 **待迁 (⬜)**:
 
 | 优先级 | 模块 | 行数 | 可迁内容 | 理由 |

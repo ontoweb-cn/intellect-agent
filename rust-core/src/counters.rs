@@ -106,10 +106,11 @@ static JITTER_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// The jitter decorrelates concurrent retries so multiple sessions
 /// hitting the same provider don't all retry at the same instant.
 ///
-/// Note: This differs from ``gateway::backoff_delay_rs`` which uses a
-/// hardcoded ±25% jitter factor and a deterministic sin-based spread.
-/// This function uses a configurable jitter_ratio and a decoupled seed
-/// (time_ns XOR golden-ratio-hashed counter), matching the Python version.
+/// Note: This differs from the (removed) simple ``gateway::backoff_delay_rs``
+/// helper, which used a hardcoded ±25% jitter factor and a deterministic
+/// sin-based spread. This function uses a configurable jitter_ratio and a
+/// decoupled seed (time_ns XOR golden-ratio-hashed counter), matching the
+/// Python version.
 #[pyfunction]
 pub fn jittered_backoff_rs(
     attempt: u32,

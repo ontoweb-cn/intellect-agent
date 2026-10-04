@@ -993,8 +993,10 @@ impl SQLiteBackend {
     /// Execute FTS5 search with session JOIN and return structured results.
     /// Replaces the Python search_messages SQL construction + execution.
     ///
-    /// This handles the core FTS5 MATCH path. CJK detection and LIKE
-    /// fallback remain in Python.
+    /// This handles the core FTS5 MATCH path (non-CJK queries; Python gates
+    /// the call via tokens.rs contains_cjk). The CJK trigram/LIKE slow path
+    /// stays in Python by design — porting it is tracked as future work in
+    /// docs/plans/2026-10-05-rust-migration-next-steps-plan.md (E3).
     #[pyo3(signature = (query, source_filter=None, exclude_sources=None, role_filter=None, limit=20, offset=0, sort=None))]
     fn search_messages(
         &self,

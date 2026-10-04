@@ -25,6 +25,8 @@ from pathlib import Path
 
 from agent.memory_manager import sanitize_context
 from intellect_constants import get_intellect_home
+from intellect_rust import rust_contains_cjk as _rust_contains_cjk
+from intellect_rust import rust_count_cjk as _rust_count_cjk
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 logger = logging.getLogger(__name__)
@@ -277,6 +279,14 @@ def _seed_oauth_providers(cursor) -> None:
 #     (2026-06-20), flipped once Rust 156/156, SessionDB 31/31 and CRUD
 #     12/12 passed.
 # 0 = Python sqlite3 for both reads and writes — still supported.
+#
+# STATUS (E6 verdict, 2026-10-05): documented-keep as a debug/emergency
+# lever. Removal is NOT trivial: the Python connections remain load-bearing
+# even at 1 — the G-14 per-thread read pool (_get_read_conn) and the
+# backward-compat execute() run on Python sqlite3, and WAL read-consistency
+# coupling is documented in docs/plans/2026-08-30-agent-core-hermes-gap-analysis.md
+# (§"非低改动"). Unifying them onto Rust connections is future work, not a
+# flag flip.
 SESSIONDB_USE_RUST_RW = 1
 
 
@@ -2706,6 +2716,11 @@ class SessionDB:
     @staticmethod
     def _contains_cjk(text: str) -> bool:
         """Check if text contains CJK (Chinese, Japanese, Korean) characters."""
+        # rust-core tokens.rs holds the canonical CJK range table (parity-
+        # tested in tests/intellect_state/test_rust_parity.py); the loop
+        # below is the no-extension fallback only.
+        if _rust_contains_cjk is not None:
+            return _rust_contains_cjk(text)
         for ch in text:
             cp = ord(ch)
             if (0x4E00 <= cp <= 0x9FFF or    # CJK Unified Ideographs
@@ -2721,6 +2736,9 @@ class SessionDB:
     @classmethod
     def _count_cjk(cls, text: str) -> int:
         """Count CJK characters in text."""
+        # Same division of labour as _contains_cjk: Rust table is canonical.
+        if _rust_count_cjk is not None:
+            return _rust_count_cjk(text)
         return sum(1 for ch in text if cls._is_cjk_codepoint(ord(ch)))
 
     def _postprocess_context_entries(self, entries: Any) -> List[Dict[str, Any]]:

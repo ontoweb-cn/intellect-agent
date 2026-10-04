@@ -1,6 +1,11 @@
-//! Gateway utilities — session keys, rate limiting, retry backoff.
+//! Gateway utilities — session keys, batch session expiry.
 //!
 //! Stage 4a: build_session_key — deterministic session key from source fields.
+//!
+//! (TokenBucket, PlatformRetryScheduler, backoff_delay(_batch) and the
+//! evaluate_reset_policy export were never consumed from Python and were
+//! removed as dead exports; evaluate_reset_policy remains an internal
+//! helper behind check_session_expiry_batch_rs.)
 
 use pyo3::prelude::*;
 
@@ -94,7 +99,7 @@ pub fn build_session_key_rs(
 /// Evaluate whether a session should be reset based on policy.
 /// Returns the reason string ("idle" or "daily") or None.
 /// All timestamps are Unix seconds (f64, as used by Python's time.time()).
-#[pyfunction]
+/// Internal helper — not exported; Python consumes the batch variant.
 pub fn evaluate_reset_policy_rs(
     mode: &str,
     idle_minutes: f64,
@@ -150,86 +155,6 @@ fn is_daily_reset(updated_at: f64, now: f64, at_hour: u32) -> bool {
     updated_at < reset_deadline
 }
 
-// ── Exponential backoff (Stage 4c) ──────────────────────────────────────────
-
-/// Compute the next retry delay using exponential backoff with jitter.
-/// Returns seconds as f64.
-/// `attempt`: zero-based attempt number
-/// `base_seconds`: initial delay
-/// `max_seconds`: cap
-#[pyfunction]
-pub fn backoff_delay_rs(attempt: u32, base_seconds: f64, max_seconds: f64) -> f64 {
-    let raw = base_seconds * (2u64.pow(attempt) as f64);
-    let capped = raw.min(max_seconds);
-    // Add ±25% jitter
-    let jitter = capped * 0.25;
-    let lo = capped - jitter;
-    let hi = capped + jitter;
-    // Use a simple deterministic jitter based on attempt for reproducibility
-    let frac = (attempt as f64).sin().abs();
-    lo + (hi - lo) * frac
-}
-
-// ── Rate limiter: token bucket (Stage 4d) ───────────────────────────────────
-
-use std::sync::Mutex;
-use std::time::Instant;
-
-/// Simple token bucket rate limiter for gateway message throttling.
-#[pyclass]
-pub struct TokenBucket {
-    rate: f64,          // tokens per second
-    capacity: f64,      // max burst
-    tokens: Mutex<f64>,
-    last_refill: Mutex<Instant>,
-}
-
-#[pymethods]
-impl TokenBucket {
-    /// Create a new token bucket.
-    /// `rate`: tokens per second (sustained rate)
-    /// `capacity`: max burst size
-    #[new]
-    fn new(rate: f64, capacity: f64) -> Self {
-        TokenBucket {
-            rate,
-            capacity,
-            tokens: Mutex::new(capacity),
-            last_refill: Mutex::new(Instant::now()),
-        }
-    }
-
-    /// Try to consume `n` tokens. Returns true if allowed, false if rate-limited.
-    fn consume(&self, n: f64) -> bool {
-        let now = Instant::now();
-        let mut tokens = self.tokens.lock().unwrap();
-        let mut last = self.last_refill.lock().unwrap();
-        let elapsed = now.duration_since(*last).as_secs_f64();
-        *last = now;
-
-        // Refill
-        *tokens = (*tokens + elapsed * self.rate).min(self.capacity);
-
-        if *tokens >= n {
-            *tokens -= n;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Current token count (for diagnostics).
-    fn available(&self) -> f64 {
-        let mut tokens = self.tokens.lock().unwrap();
-        let mut last = self.last_refill.lock().unwrap();
-        let now = Instant::now();
-        let elapsed = now.duration_since(*last).as_secs_f64();
-        *last = now;
-        *tokens = (*tokens + elapsed * self.rate).min(self.capacity);
-        *tokens
-    }
-}
-
 // ── Batch session expiry check (Stage 4e) ───────────────────────────────────
 
 /// Check multiple sessions for expiry in a single call.
@@ -271,120 +196,6 @@ pub fn check_session_expiry_batch_rs(
     }
 
     expired
-}
-
-/// Compute next retry delays for multiple sessions in batch.
-///
-/// Takes parallel arrays and returns the delay for each.
-/// More efficient than calling backoff_delay_rs in a Python loop.
-#[pyfunction]
-pub fn backoff_delay_batch_rs(
-    attempts: Vec<u32>,
-    base_seconds: Vec<f64>,
-    max_seconds: Vec<f64>,
-) -> Vec<f64> {
-    let len = attempts.len().min(base_seconds.len()).min(max_seconds.len());
-    let mut delays = Vec::with_capacity(len);
-
-    for i in 0..len {
-        delays.push(backoff_delay_rs(attempts[i], base_seconds[i], max_seconds[i]));
-    }
-
-    delays
-}
-
-// ── Platform retry scheduler (Stage 4f) ─────────────────────────────────────
-
-use std::collections::HashMap;
-
-/// Manages retry timing for multiple platforms.
-///
-/// Tracks connection state and computes next retry times using exponential
-/// backoff. More efficient than Python dict + monotonic() comparisons in
-/// a loop.
-#[pyclass]
-pub struct PlatformRetryScheduler {
-    /// platform_name -> (attempts, next_retry_ts, paused)
-    platforms: HashMap<String, (u32, f64, bool)>,
-    base_delay: f64,
-    max_delay: f64,
-}
-
-#[pymethods]
-impl PlatformRetryScheduler {
-    #[new]
-    fn new(base_delay: f64, max_delay: f64) -> Self {
-        PlatformRetryScheduler {
-            platforms: HashMap::new(),
-            base_delay,
-            max_delay,
-        }
-    }
-
-    /// Register a platform failure. Returns the computed next retry timestamp.
-    fn record_failure(&mut self, platform: &str, now: f64) -> f64 {
-        let entry = self.platforms.entry(platform.to_string()).or_insert((0, 0.0, false));
-        entry.0 += 1;  // attempts
-        let delay = backoff_delay_rs(entry.0 - 1, self.base_delay, self.max_delay);
-        entry.1 = now + delay;  // next_retry
-        entry.1
-    }
-
-    /// Mark a platform as paused (requires explicit resume).
-    fn pause(&mut self, platform: &str) {
-        if let Some(entry) = self.platforms.get_mut(platform) {
-            entry.2 = true;
-        }
-    }
-
-    /// Resume a paused platform and reset its retry state.
-    fn resume(&mut self, platform: &str) {
-        self.platforms.remove(platform);
-    }
-
-    /// Check if a platform is paused.
-    fn is_paused(&self, platform: &str) -> bool {
-        self.platforms.get(platform).map_or(false, |e| e.2)
-    }
-
-    /// Get platforms ready to retry (not paused, next_retry <= now).
-    /// Returns list of platform names.
-    fn ready_to_retry(&self, now: f64) -> Vec<String> {
-        self.platforms.iter()
-            .filter(|(_, (_, next_retry, paused))| !paused && *next_retry <= now)
-            .map(|(name, _)| name.clone())
-            .collect()
-    }
-
-    /// Get all tracked platforms with their state.
-    /// Returns list of (platform, attempts, next_retry, paused).
-    fn get_all_states(&self) -> Vec<(String, u32, f64, bool)> {
-        self.platforms.iter()
-            .map(|(name, (attempts, next_retry, paused))| {
-                (name.clone(), *attempts, *next_retry, *paused)
-            })
-            .collect()
-    }
-
-    /// Remove a platform from tracking.
-    fn remove(&mut self, platform: &str) {
-        self.platforms.remove(platform);
-    }
-
-    /// Clear all tracked platforms.
-    fn clear(&mut self) {
-        self.platforms.clear();
-    }
-
-    /// Number of tracked platforms.
-    fn len(&self) -> usize {
-        self.platforms.len()
-    }
-
-    /// Check if no platforms are tracked.
-    fn is_empty(&self) -> bool {
-        self.platforms.is_empty()
-    }
 }
 
 // ── Rust unit tests ─────────────────────────────────────────────────────────
@@ -468,73 +279,5 @@ mod tests {
 
         let expired = check_session_expiry_batch_rs(modes, idle_minutes, at_hours, updated_ats, now);
         assert_eq!(expired, vec![0, 2]);
-    }
-
-    #[test]
-    fn test_batch_backoff() {
-        let attempts = vec![0, 1, 2];
-        let base = vec![1.0, 1.0, 1.0];
-        let max = vec![60.0, 60.0, 60.0];
-
-        let delays = backoff_delay_batch_rs(attempts, base, max);
-        assert_eq!(delays.len(), 3);
-        // First delay should be ~1s (base * 2^0 = 1, with jitter)
-        assert!(delays[0] > 0.5 && delays[0] < 1.5);
-        // Second delay should be ~2s
-        assert!(delays[1] > 1.0 && delays[1] < 3.0);
-    }
-
-    #[test]
-    fn test_retry_scheduler_basic() {
-        let mut sched = PlatformRetryScheduler::new(30.0, 300.0);
-
-        // Record a failure
-        let next = sched.record_failure("telegram", 100.0);
-        assert!(next > 100.0);  // should be in the future
-        assert_eq!(sched.len(), 1);
-
-        // Record another failure — should increase delay
-        let next2 = sched.record_failure("telegram", next + 1.0);
-        assert!(next2 > next);
-
-        // Ready to retry after the retry time
-        let ready = sched.ready_to_retry(next2 + 1.0);
-        assert_eq!(ready.len(), 1);
-        assert_eq!(ready[0], "telegram");
-    }
-
-    #[test]
-    fn test_retry_scheduler_pause_resume() {
-        let mut sched = PlatformRetryScheduler::new(30.0, 300.0);
-        sched.record_failure("discord", 100.0);
-
-        // Pause
-        sched.pause("discord");
-        assert!(sched.is_paused("discord"));
-        assert!(sched.ready_to_retry(9999.0).is_empty());
-
-        // Resume
-        sched.resume("discord");
-        assert!(!sched.is_paused("discord"));
-        assert!(sched.is_empty());
-    }
-
-    #[test]
-    fn test_retry_scheduler_multiple_platforms() {
-        let mut sched = PlatformRetryScheduler::new(30.0, 300.0);
-        sched.record_failure("telegram", 100.0);
-        sched.record_failure("discord", 100.0);
-        sched.record_failure("slack", 100.0);
-
-        assert_eq!(sched.len(), 3);
-
-        // Only telegram and slack are ready
-        let ready = sched.ready_to_retry(200.0);
-        assert_eq!(ready.len(), 3);  // all ready since delay is ~30s
-
-        // Pause telegram
-        sched.pause("telegram");
-        let ready = sched.ready_to_retry(200.0);
-        assert_eq!(ready.len(), 2);
     }
 }
