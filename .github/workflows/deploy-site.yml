@@ -109,4 +109,9 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deploy
+        # GitHub Pages was never enabled on this repo (the site is Vercel-hosted
+        # at intellect.ontoweb.cn), so this step 404s every run and painted the
+        # whole workflow red. Keep the attempt — it starts working on its own if
+        # Pages is ever enabled — but don't fail the job over it (#6 triage).
+        continue-on-error: true
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4
