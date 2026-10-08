@@ -1,0 +1,183 @@
+# Intellect Agent 单容器（Agent + Gateway + API Server + WebUI）K8s 部署清单
+# 目标集群：ai.wust.edu.cn（10.99.24.15 prod master，全 aarch64 节点，K8s v1.28）
+# 镜像：hub.wust.edu.cn/intellect/intellect-agent:0.7.2（linux/arm64）
+#
+# 应用方式：
+#   1. 先创建 Secret（见下方 intellect-agent-auth，替换为真实密钥后 kubectl apply）
+#   2. kubectl -n intellect apply -f intellect-agent-allinone.yaml
+#
+# 说明：
+#   - 命名空间沿用集群上已有的 intellect（内含 harbor-regcred 拉取 Secret，
+#     可直接从 hub.wust.edu.cn 拉取，无需新建 imagePullSecrets）。
+#   - NodePort 沿用现有服务端口惯例：API 8642 / WebUI 9119。
+#     集群已占用 32642（旧 gateway-py）/ 31139（旧 webui），这里选用
+#     31864 / 31911，可按需调整（范围 30000-32767）。
+#   - /opt/data 是 INTELLECT_HOME（配置、凭据、会话、技能），/workspace 是
+#     Agent 工作区。两者都必须持久化，否则重建 Pod 即丢失。
+#   - 容器启动命令为仓库内单容器启动器 all-in-one.sh：任一核心进程退出
+#     则整个容器退出，交给 K8s 重启，避免“看似健康只剩半套服务”。
+
+---
+# 部署密钥。务必先替换两个占位值再 apply：
+#   API_SERVER_KEY:        openssl rand -hex 32
+#   INTELLECT_WEBUI_PASSWORD: openssl rand -base64 24
+apiVersion: v1
+kind: Secret
+metadata:
+  name: intellect-agent-auth
+  namespace: intellect
+type: Opaque
+stringData:
+  API_SERVER_KEY: "replace-with-random-64-hex"
+  INTELLECT_WEBUI_PASSWORD: "replace-with-strong-password"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intellect-agent
+  namespace: intellect
+  labels:
+    app.kubernetes.io/name: intellect-agent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 单实例 + 本地卷，避免滚动更新期间双写
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: intellect-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: intellect-agent
+    spec:
+      # 集群 intellect 命名空间已配置 hub.wust.edu.cn 拉取凭据
+      imagePullSecrets:
+        - name: harbor-regcred
+      containers:
+        - name: intellect-agent
+          image: hub.wust.edu.cn/intellect/intellect-agent:0.7.2
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/intellect/docker/all-in-one.sh"]
+          ports:
+            - name: api
+              containerPort: 8642
+            - name: webui
+              containerPort: 9119
+          envFrom:
+            - secretRef:
+                name: intellect-agent-auth
+          env:
+            - name: API_SERVER_ENABLED
+              value: "true"
+            - name: API_SERVER_HOST
+              value: "0.0.0.0"
+            - name: API_SERVER_PORT
+              value: "8642"
+            - name: API_SERVER_MODEL_NAME
+              value: "intellect-agent"
+            - name: INTELLECT_WEBUI_HOST
+              value: "0.0.0.0"
+            - name: INTELLECT_WEBUI_PORT
+              value: "9119"
+            # API 与 WebUI 同源部署时的浏览器跨域放行（按实际访问域名调整）
+            - name: API_SERVER_CORS_ORIGINS
+              value: "http://10.99.24.15:31911,http://ai.wust.edu.cn"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              memory: 8Gi
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: workspace
+              mountPath: /workspace
+          # 与 Compose 健康检查同语义：API Server 与 WebUI 双端健康才判定 ready
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - >-
+                  import urllib.request;
+                  urllib.request.urlopen('http://127.0.0.1:8642/health', timeout=3);
+                  urllib.request.urlopen('http://127.0.0.1:9119/health', timeout=3)
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 8
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - >-
+                  import urllib.request;
+                  urllib.request.urlopen('http://127.0.0.1:8642/health', timeout=3);
+                  urllib.request.urlopen('http://127.0.0.1:9119/health', timeout=3)
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 8
+            failureThreshold: 10
+          # 首次启动 stage2-hook 需要初始化数据目录；停机时 Gateway 需保存会话
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "10"]
+      terminationGracePeriodSeconds: 60
+      volumes:
+        # 按集群实际存储类替换（kubectl get sc 查看）。临时可用 emptyDir，
+        # 但 Pod 重建后 /opt/data（模型配置、会话）会丢失。
+        - name: data
+          persistentVolumeClaim:
+            claimName: intellect-agent-data
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: intellect-agent-workspace
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellect-agent
+  namespace: intellect
+  labels:
+    app.kubernetes.io/name: intellect-agent
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: intellect-agent
+  ports:
+    - name: api
+      port: 8642
+      targetPort: 8642
+      nodePort: 31864
+    - name: webui
+      port: 9119
+      targetPort: 9119
+      nodePort: 31911
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: intellect-agent-data
+  namespace: intellect
+spec:
+  # 集群无默认 StorageClass，必须显式指定（csi-local / csi-local-topology / nfs-csi）
+  storageClassName: csi-local
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: intellect-agent-workspace
+  namespace: intellect
+spec:
+  storageClassName: csi-local
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
