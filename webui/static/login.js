@@ -39,8 +39,12 @@ document.addEventListener('DOMContentLoaded', function () {
   function _loginApi(path) {
     var p = String(path || '');
     if (/^https?:\/\//i.test(p)) return p;
-    if (p.charAt(0) !== '/') p = '/' + p;
-    return new URL(p, window.location.origin).href;
+    // Strip leading slash so the URL resolves against the document base URI,
+    // which may include a subpath mount like /lyf/. Using window.location.origin
+    // would escape the subpath and cause 404s on path-preserving reverse
+    // proxies (INTELLECT_WEBUI_BASE_PATH deployments).
+    if (p.charAt(0) === '/') p = p.slice(1);
+    return new URL(p, document.baseURI || window.location.href).href;
   }
 
   function showErr(msg) {
@@ -95,12 +99,15 @@ document.addEventListener('DOMContentLoaded', function () {
     try {
       var raw = new URL(window.location.href).searchParams.get('next');
       if (!raw) return _homePath();
+      if (raw === '/') return _homePath();
       if (raw.charAt(0) !== '/') return _homePath();
       if (raw.charAt(1) === '/' || raw.charAt(1) === '\\') return _homePath();
       if (/[\x00-\x1f\x7f\s]/.test(raw)) return _homePath();
       // After sign-out, never resume another member's /session/<id> deeplink.
       if (loginSignedOut && _isSessionDeeplinkPath(raw)) return _homePath();
-      return raw;
+      // The server routes on prefix-stripped paths, so `next` never carries the
+      // subpath mount; re-attach it so the post-login redirect stays on the mount.
+      return _homePath().replace(/\/+$/, '') + raw;
     } catch (_) {
       return '/';
     }

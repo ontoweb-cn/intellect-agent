@@ -694,11 +694,16 @@ def set_auth_cookie(handler, cookie_value) -> None:
 
 def webui_auth_cookie_line(handler, cookie_value: str) -> str:
     """Set-Cookie line for the WebUI session cookie."""
+    # Scope the cookie to the mount prefix (subpath deployments) so sibling
+    # instances on the same domain (each with its own session store) don't
+    # fight over the identically-named cookie.
+    from api.helpers import webui_base_path
+
     cookie = http.cookies.SimpleCookie()
     cookie[COOKIE_NAME] = cookie_value
     cookie[COOKIE_NAME]['httponly'] = True
     cookie[COOKIE_NAME]['samesite'] = 'Lax'
-    cookie[COOKIE_NAME]['path'] = '/'
+    cookie[COOKIE_NAME]['path'] = webui_base_path() or '/'
     cookie[COOKIE_NAME]['max-age'] = str(_resolve_session_ttl())
     if _is_secure_context(handler):
         cookie[COOKIE_NAME]['secure'] = True
@@ -707,9 +712,11 @@ def webui_auth_cookie_line(handler, cookie_value: str) -> str:
 
 def clear_auth_cookie(handler) -> None:
     """Clear the auth cookie on the response."""
+    from api.helpers import webui_base_path
+
     cookie = http.cookies.SimpleCookie()
     cookie[COOKIE_NAME] = ''
     cookie[COOKIE_NAME]['httponly'] = True
-    cookie[COOKIE_NAME]['path'] = '/'
+    cookie[COOKIE_NAME]['path'] = webui_base_path() or '/'
     cookie[COOKIE_NAME]['max-age'] = '0'
     handler.send_header('Set-Cookie', cookie[COOKIE_NAME].OutputString())

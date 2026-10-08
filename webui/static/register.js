@@ -34,8 +34,10 @@ document.addEventListener('DOMContentLoaded', function () {
   function _api(path) {
     var p = String(path || '');
     if (/^https?:\/\//i.test(p)) return p;
-    if (p.charAt(0) !== '/') p = '/' + p;
-    return new URL(p, window.location.origin).href;
+    // Strip leading slash so the URL resolves against the document base URI,
+    // which may include a subpath mount (see login.js _loginApi).
+    if (p.charAt(0) === '/') p = p.slice(1);
+    return new URL(p, document.baseURI || window.location.href).href;
   }
 
   function showErr(msg) {
@@ -49,14 +51,20 @@ document.addEventListener('DOMContentLoaded', function () {
     if (errEl) errEl.style.display = 'none';
   }
 
+  function _homePath() {
+    return document.baseURI ? new URL('.', document.baseURI).pathname : '/';
+  }
+
   function _safeNextPath() {
     try {
       var raw = new URL(window.location.href).searchParams.get('next');
       if (!raw) return './';
+      if (raw === '/') return _homePath();
       if (raw.charAt(0) !== '/') return './';
       if (raw.charAt(1) === '/' || raw.charAt(1) === '\\') return './';
       if (/[\x00-\x1f\x7f\s]/.test(raw)) return './';
-      return raw;
+      // Re-attach the subpath mount (server-side next values are prefix-stripped).
+      return _homePath().replace(/\/+$/, '') + raw;
     } catch (_) {
       return './';
     }

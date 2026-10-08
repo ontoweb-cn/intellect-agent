@@ -20,6 +20,28 @@ _CLIENT_DISCONNECT_ERRORS = (
     ssl.SSLError,
 )
 
+# Mount prefix for reverse-proxy subpath deployments (e.g. '/intellect', '/lyf').
+# Read once at first use; the env var is not expected to change at runtime.
+_BASE_PATH_CACHE: str | None = None
+
+
+def webui_base_path() -> str:
+    """Return the configured URL mount prefix, normalized without trailing slash.
+
+    Set ``INTELLECT_WEBUI_BASE_PATH=/lyf`` when the WebUI is served behind a
+    path-preserving reverse proxy (``proxy_pass http://backend;`` with no URI
+    suffix). The server strips this prefix before routing and cookies scope
+    their Path to it. Empty string means root-mounted (the default and
+    historical behaviour — every consumer treats '' as '/').
+    """
+    global _BASE_PATH_CACHE
+    if _BASE_PATH_CACHE is None:
+        raw = (os.environ.get("INTELLECT_WEBUI_BASE_PATH") or "").strip()
+        if raw and not raw.startswith("/"):
+            raw = "/" + raw
+        _BASE_PATH_CACHE = raw.rstrip("/")
+    return _BASE_PATH_CACHE
+
 
 def require(body: dict, *fields) -> None:
     """Phase D: Validate required fields. Raises ValueError with clean message."""
@@ -525,7 +547,8 @@ def build_profile_cookie(name: str) -> str:
     cookie = _hc.SimpleCookie()
     cookie_name = get_profile_cookie_name()
     cookie[cookie_name] = name
-    cookie[cookie_name]['path'] = '/'
+    # Scope to the mount prefix so sibling subpath instances don't clash.
+    cookie[cookie_name]['path'] = webui_base_path() or '/'
     cookie[cookie_name]['httponly'] = True
     cookie[cookie_name]['samesite'] = 'Lax'
     return cookie[cookie_name].OutputString()

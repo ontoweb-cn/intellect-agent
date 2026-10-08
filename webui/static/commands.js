@@ -330,7 +330,8 @@ async function cmdModel(args){
   // Resolve alias before fuzzy matching the dropdown.
   // Fetch /api/models which now includes an "aliases" key.
   try {
-    const resp=await fetch('/api/models');
+    // baseURI-relative so the call stays under a subpath mount (see login.js).
+    const resp=await fetch(new URL('api/models', document.baseURI || window.location.href).href);
     if(resp.ok){
       const data=await resp.json();
       const aliases=data.aliases||{};
@@ -368,7 +369,8 @@ async function cmdModel(args){
     if(!match && S&&S.session&&S.session.session_id){
       const provider=q.slice(0,q.indexOf('/'));
       try{
-        const resp=await fetch('/api/session/update',{
+        // baseURI-relative so the call stays under a subpath mount (see login.js).
+        const resp=await fetch(new URL('api/session/update', document.baseURI || window.location.href).href,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify({

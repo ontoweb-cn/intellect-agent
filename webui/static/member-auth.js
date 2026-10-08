@@ -203,9 +203,11 @@ async function memberSignOut() {
     hideMemberPasswordOverlay();
     // Use raw fetch() to avoid api()'s built-in 401 → redirectToMemberLogin()
     // which would race with the explicit redirect below.
+    // document.baseURI so the paths stay correct under subpath mounts.
+    var _baseUri = document.baseURI || window.location.href;
     await Promise.allSettled([
-        fetch('/api/members/session', { method: 'DELETE', credentials: 'include' }),
-        fetch('/api/auth/logout', { method: 'POST', credentials: 'include',
+        fetch(new URL('api/members/session', _baseUri).href, { method: 'DELETE', credentials: 'include' }),
+        fetch(new URL('api/auth/logout', _baseUri).href, { method: 'POST', credentials: 'include',
             headers: { 'Content-Type': 'application/json' }, body: '{}' }),
     ]);
     redirectToMemberLogin();

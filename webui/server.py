@@ -178,7 +178,7 @@ def _build_csp_report_only_policy() -> str:
 
 from api.auth import check_auth
 from api.config import HOST, PORT, STATE_DIR, SESSION_DIR, DEFAULT_WORKSPACE
-from api.helpers import j, get_profile_cookie, _CLIENT_DISCONNECT_ERRORS
+from api.helpers import j, get_profile_cookie, _CLIENT_DISCONNECT_ERRORS, webui_base_path
 from api.profiles import set_request_profile, clear_request_profile
 from api.routes import handle_delete, handle_get, handle_patch, handle_post, handle_put
 from api.session_visibility import SessionAccessDenied
@@ -314,8 +314,40 @@ class Handler(BaseHTTPRequestHandler):
         record = _json.dumps(record_data)
         print(f'[webui] {record}', flush=True)
 
+    def _strip_base_path_prefix(self) -> bool:
+        """Strip the configured mount prefix from self.path before routing.
+
+        For subpath deployments (INTELLECT_WEBUI_BASE_PATH=/lyf) behind a
+        path-preserving reverse proxy, incoming paths look like /lyf/api/x.
+        The router below matches root-mounted paths, so strip the prefix once
+        at every request entry point. Redirects emitted by the app are
+        relative ("login?next=…"), which the browser re-resolves against the
+        original prefixed URL — no re-prefixing is needed on the way out.
+
+        Returns True when the request was fully answered here (exact mount
+        hit → 301 to "<base>/"), in which case the caller must return
+        immediately instead of routing.
+        """
+        base = webui_base_path()
+        if not base:
+            return False
+        if self.path == base:
+            # Exact mount hit ("/lyf"): redirect to "/lyf/" so that the app's
+            # relative redirects resolve against the mount directory instead
+            # of the parent (which would escape the subpath).
+            self.send_response(301)
+            self.send_header('Location', base + '/')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            return True
+        if self.path.startswith(base + "/") or self.path.startswith(base + "?"):
+            self.path = self.path[len(base):]
+        return False
+
     def do_GET(self) -> None:
         self._req_t0 = time.time()
+        if self._strip_base_path_prefix():
+            return
         # Per-request profile context from cookie (issue #798)
         cookie_profile = get_profile_cookie(self)
         if cookie_profile:
@@ -361,6 +393,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_write(self, route_func) -> None:
         self._req_t0 = time.time()
+        if self._strip_base_path_prefix():
+            return
         # Reset per-request body-drain flag. On keep-alive connections the handler
         # object is reused across requests; without this reset, a prior request's
         # _body_drained=True causes drain_body() to no-op and leak POST bodies

@@ -366,7 +366,8 @@ async function uploadUserProfileAvatar(file) {
     const form = new FormData();
     form.append('file', file, file.name);
     try {
-        const res = await fetch('/api/user/profile/avatar', { method: 'POST', body: form, credentials: 'same-origin' });
+        // baseURI-relative so the upload stays under a subpath mount (see login.js).
+        const res = await fetch(new URL('api/user/profile/avatar', document.baseURI || window.location.href).href, { method: 'POST', body: form, credentials: 'same-origin' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
         _userProfileCache = data;
