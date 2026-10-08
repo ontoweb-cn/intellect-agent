@@ -3585,12 +3585,15 @@ def get_available_models() -> dict:
         # A user may configure a provider key via config.yaml providers.<name>.api_key
         # without setting the corresponding env var. (#604)
         #
-        # Gating: only seed picker groups for keys whose canonical id is known
-        # to ``_PROVIDER_MODELS`` / ``_PROVIDER_DISPLAY``, or whose value is a
-        # dict-shaped provider config (custom/local). Scalar siblings under
-        # ``providers:`` (e.g. ``providers.only_configured: true``) are config
-        # flags, not providers, and must not render as phantom picker groups
-        # like ``Only-Configured`` (#2399).
+        # Gating: only seed picker groups for entries that actually configure
+        # something — a credential (api_key/key_env), an endpoint
+        # (base_url/api/url), or a model surface (models/default_model/model).
+        # Membership in ``_PROVIDER_MODELS`` / ``_PROVIDER_DISPLAY`` alone is
+        # NOT enough: a bare ``providers.deepseek: {}`` (the shape copied-example
+        # configs ship) must not render a full static model catalog for a
+        # provider the user has no credentials for — the picker would list a
+        # wall of unselectable models. Scalar siblings (e.g.
+        # ``providers.only_configured: true``) stay excluded too (#2399).
         #
         # Canonicalise the id slug here so a user with ``providers.opencode_go``
         # (underscore variant) doesn't see TWO provider groups in the picker —
@@ -3603,21 +3606,35 @@ def get_available_models() -> dict:
         # generic-provider branch can preserve mixed-case/underscore
         # provider_cfg values (#2245).
         _canonical_to_raw_provider_key: dict[str, str] = {}
+
+        def _provider_cfg_is_actionable(_provider_cfg: object) -> bool:
+            """True when a ``providers.<name>`` entry configures something usable.
+
+            An empty dict (or one carrying only display/behavior flags) means
+            the user listed the provider without configuring it — seeding a
+            picker group for it would backfill the static catalog and present
+            unselectable models.
+            """
+            if not isinstance(_provider_cfg, dict):
+                return False
+            for _field in (
+                "api_key", "key_env", "base_url", "api", "url",
+                "default_model", "model",
+            ):
+                if str(_provider_cfg.get(_field) or "").strip():
+                    return True
+            _models_field = _provider_cfg.get("models")
+            if isinstance(_models_field, (dict, list)) and _models_field:
+                return True
+            return False
+
         if isinstance(_cfg_providers, dict):
             for _pid_key, _provider_cfg in _cfg_providers.items():
                 _canonical = _canonicalise_provider_id(_pid_key)
                 if not _canonical:
                     continue
 
-                # See the gating comment on the block above. ``_PROVIDER_MODELS``
-                # / ``_PROVIDER_DISPLAY`` membership accepts known providers and
-                # aliases; ``isinstance(_provider_cfg, dict)`` accepts custom
-                # entries that supply their own models/api_key/base_url. (#2399)
-                _is_known_provider = (
-                    _canonical in _PROVIDER_MODELS or _canonical in _PROVIDER_DISPLAY
-                )
-                _is_provider_config = isinstance(_provider_cfg, dict)
-                if not (_is_known_provider or _is_provider_config):
+                if not _provider_cfg_is_actionable(_provider_cfg):
                     continue
 
                 _canonical_to_raw_provider_key.setdefault(_canonical, _pid_key)
