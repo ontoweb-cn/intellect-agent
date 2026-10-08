@@ -3306,7 +3306,7 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "API_SERVER_PORT": {
-        "description": "Port for the API server (default: 8642).",
+        "description": "Port for the API server (default: 9091).",
         "prompt": "API server port",
         "url": None,
         "password": False,
@@ -3331,7 +3331,7 @@ OPTIONAL_ENV_VARS = {
     },
     "GATEWAY_PROXY_URL": {
         "description": "URL of a remote Intellect API server to forward messages to (proxy mode). When set, the gateway handles platform I/O only — all agent work is delegated to the remote server. Use for Docker E2EE containers that relay to a host agent. Also configurable via gateway.proxy_url in config.yaml.",
-        "prompt": "Remote Intellect API server URL (e.g. http://192.168.1.100:8642)",
+        "prompt": "Remote Intellect API server URL (e.g. http://192.168.1.100:9091)",
         "url": None,
         "password": False,
         "category": "messaging",

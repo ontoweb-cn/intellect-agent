@@ -57,7 +57,7 @@ intellect-agent:0.6.7 镜像
    ▼
 intellect-agent-0.6.7 单容器
    ├── Gateway / Agent
-   ├── API Server :8642
+   ├── API Server :9091
    └── WebUI      :9119
         │
         ├── ./intellect-config  <->  /opt/data
@@ -307,7 +307,7 @@ chmod 600 .env
 | `API_SERVER_BIND_HOST` | `0.0.0.0` | API Server 对外监听地址；仅本机访问时改为 `127.0.0.1` |
 | `API_SERVER_ENABLED` | `true` | 启用 OpenAI 兼容 API Server |
 | `API_SERVER_HOST` | `0.0.0.0` | API Server 容器内监听地址，不要改成 `127.0.0.1` |
-| `API_SERVER_PORT` | `8642` | API Server 宿主机和容器端口 |
+| `API_SERVER_PORT` | `9091` | API Server 宿主机和容器端口 |
 | `API_SERVER_MODEL_NAME` | `intellect-agent` | `/v1/models` 返回的模型名称 |
 | `API_SERVER_KEY` | 随机强密钥 | API Bearer Token，必须填写 |
 | `API_SERVER_CORS_ORIGINS` | 可信前端地址 | 允许浏览器跨域调用 API 的来源列表 |
@@ -452,7 +452,7 @@ ssh -L 9119:127.0.0.1:9119 <用户>@<服务器IP>
 ### 9.3 验证 API Server 健康检查
 
 ```bash
-curl -fsS http://127.0.0.1:8642/health
+curl -fsS http://127.0.0.1:9091/health
 ```
 
 预期返回：
@@ -464,14 +464,14 @@ curl -fsS http://127.0.0.1:8642/health
 详细健康信息：
 
 ```bash
-curl -fsS http://127.0.0.1:8642/health/detailed \
+curl -fsS http://127.0.0.1:9091/health/detailed \
   -H "Authorization: Bearer <API_SERVER_KEY>"
 ```
 
 ### 9.4 验证模型列表
 
 ```bash
-curl -fsS http://127.0.0.1:8642/v1/models \
+curl -fsS http://127.0.0.1:9091/v1/models \
   -H "Authorization: Bearer <API_SERVER_KEY>"
 ```
 
@@ -480,7 +480,7 @@ curl -fsS http://127.0.0.1:8642/v1/models \
 每次请求不提供 `session_id`、`previous_response_id` 或历史消息，即可作为独立、无上下文请求：
 
 ```bash
-curl -X POST http://127.0.0.1:8642/v1/chat/completions \
+curl -X POST http://127.0.0.1:9091/v1/chat/completions \
   -H "Authorization: Bearer <API_SERVER_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -497,14 +497,14 @@ curl -X POST http://127.0.0.1:8642/v1/chat/completions \
 查询当前 API Server 可用的 Skill：
 
 ```bash
-curl -fsS http://127.0.0.1:8642/v1/skills \
+curl -fsS http://127.0.0.1:9091/v1/skills \
   -H "Authorization: Bearer <API_SERVER_KEY>"
 ```
 
 指定一个已安装 Skill 创建 run：
 
 ```bash
-curl -X POST http://127.0.0.1:8642/v1/runs \
+curl -X POST http://127.0.0.1:9091/v1/runs \
   -H "Authorization: Bearer <API_SERVER_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -516,7 +516,7 @@ curl -X POST http://127.0.0.1:8642/v1/runs \
 将返回结果中的 `run_id` 用于查询执行状态：
 
 ```bash
-curl -fsS http://127.0.0.1:8642/v1/runs/<run_id> \
+curl -fsS http://127.0.0.1:9091/v1/runs/<run_id> \
   -H "Authorization: Bearer <API_SERVER_KEY>"
 ```
 
@@ -679,13 +679,13 @@ docker compose up -d --force-recreate
 | 端口 | 服务 |
 |---|---|
 | `9119/tcp` | WebUI |
-| `8642/tcp` | OpenAI 兼容 API Server |
+| `9091/tcp` | OpenAI 兼容 API Server |
 
 如果服务器使用 UFW，并且确实需要局域网或公网直接访问，可以按实际来源网段放行。以下示例仅供参考，应优先限制来源地址：
 
 ```bash
 sudo ufw allow from 192.168.50.0/24 to any port 9119 proto tcp
-sudo ufw allow from 192.168.50.0/24 to any port 8642 proto tcp
+sudo ufw allow from 192.168.50.0/24 to any port 9091 proto tcp
 ```
 
 生产环境更推荐只让服务监听 `127.0.0.1`，再通过 HTTPS 反向代理对外提供服务。
@@ -770,7 +770,7 @@ docker compose up -d
 检查端口：
 
 ```bash
-sudo ss -lntp | grep -E ':8642|:9119'
+sudo ss -lntp | grep -E ':9091|:9119'
 ```
 
 修改 `.env` 中的 `WEBUI_PORT` 或 `API_SERVER_PORT` 后重新创建容器：
@@ -841,8 +841,8 @@ docker compose restart
 验证服务：
 
 ```bash
-curl -fsS http://127.0.0.1:8642/health
-curl -fsS http://127.0.0.1:8642/v1/models \
+curl -fsS http://127.0.0.1:9091/health
+curl -fsS http://127.0.0.1:9091/v1/models \
   -H "Authorization: Bearer <API_SERVER_KEY>"
 ```
 

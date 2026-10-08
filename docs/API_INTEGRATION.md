@@ -4,7 +4,7 @@
 
 1. 获取用户自定义 Skill：`GET /v1/skills/custom`
 2. 使用标准 OpenAI Chat Completions 接口调用 Skill：`POST /v1/chat/completions`
-3. API Server 心跳检测：`GET /health`（8642端口）
+3. API Server 心跳检测：`GET /health`（9091端口）
 4. WebUI 心跳检测：`GET /health`（9119端口）
 
 本文档对应当前 Docker 单容器部署，镜像版本为 `intellect-agent:0.6.7`。
@@ -15,7 +15,7 @@
 |---|---|---|---|
 | `/v1/skills/custom` | GET | 是 | 获取用户自定义且当前可调用的Skill |
 | `/v1/chat/completions` | POST | 是 | 通过 `/<skill-name>` 调用Skill |
-| `:8642/health` | GET | 否 | 检测API Server是否存活 |
+| `:9091/health` | GET | 否 | 检测API Server是否存活 |
 | `:9119/health` | GET | 否 | 检测WebUI是否存活 |
 
 ## 1. 接口地址
@@ -24,7 +24,7 @@
 
 | 服务 | 基础地址 | 说明 |
 |---|---|---|
-| API Server | `http://192.168.50.129:8642` | Skill 查询、Chat Completions 和 API 心跳 |
+| API Server | `http://192.168.50.129:9091` | Skill 查询、Chat Completions 和 API 心跳 |
 | WebUI | `http://192.168.50.129:9119` | WebUI 页面和 WebUI 心跳 |
 
 生产环境中应将示例地址替换为实际域名或主机地址，例如：
@@ -37,7 +37,7 @@ https://intellect-web.example.com
 如果外部平台无法访问以上端口，请检查：
 
 - 仓库根目录 `.env` 中 `API_SERVER_BIND_HOST` 和 `WEBUI_BIND_HOST` 是否为 `0.0.0.0`。
-- Linux 防火墙是否允许访问8642和9119端口。
+- Linux 防火墙是否允许访问9091和9119端口。
 - 云主机安全组是否开放对应端口。
 - 反向代理是否正确转发请求和流式响应。
 
@@ -95,7 +95,7 @@ GET /v1/skills/custom
 完整地址：
 
 ```text
-http://192.168.50.129:8642/v1/skills/custom
+http://192.168.50.129:9091/v1/skills/custom
 ```
 
 用途：列出当前 Profile 中已启用、兼容 `api_server` 平台、且来源属于本地自定义的 Skill。
@@ -126,7 +126,7 @@ http://192.168.50.129:8642/v1/skills/custom
 Linux curl：
 
 ```bash
-curl -fsS "http://192.168.50.129:8642/v1/skills/custom" \
+curl -fsS "http://192.168.50.129:9091/v1/skills/custom" \
   -H "Authorization: Bearer ${API_SERVER_KEY}"
 ```
 
@@ -139,7 +139,7 @@ $headers = @{
 
 Invoke-RestMethod `
     -Method Get `
-    -Uri "http://192.168.50.129:8642/v1/skills/custom" `
+    -Uri "http://192.168.50.129:9091/v1/skills/custom" `
     -Headers $headers
 ```
 
@@ -289,7 +289,7 @@ POST /v1/chat/completions
 完整地址：
 
 ```text
-http://192.168.50.129:8642/v1/chat/completions
+http://192.168.50.129:9091/v1/chat/completions
 ```
 
 该接口兼容 OpenAI Chat Completions 请求和响应格式。
@@ -367,7 +367,7 @@ http://192.168.50.129:8642/v1/chat/completions
 Linux curl：
 
 ```bash
-curl -fsS "http://192.168.50.129:8642/v1/chat/completions" \
+curl -fsS "http://192.168.50.129:9091/v1/chat/completions" \
   -H "Authorization: Bearer ${API_SERVER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -403,7 +403,7 @@ $body = @{
 
 Invoke-RestMethod `
     -Method Post `
-    -Uri "http://192.168.50.129:8642/v1/chat/completions" `
+    -Uri "http://192.168.50.129:9091/v1/chat/completions" `
     -Headers $headers `
     -Body $body
 ```
@@ -486,7 +486,7 @@ X-Intellect-Session-Id: api-chat-xxxxxxxx
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://192.168.50.129:8642/v1",
+    base_url="http://192.168.50.129:9091/v1",
     api_key="替换为API_SERVER_KEY",
 )
 
@@ -509,7 +509,7 @@ print(response.choices[0].message.content)
 将 `stream` 设置为 `true`：
 
 ```bash
-curl -N "http://192.168.50.129:8642/v1/chat/completions" \
+curl -N "http://192.168.50.129:9091/v1/chat/completions" \
   -H "Authorization: Bearer ${API_SERVER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -641,7 +641,7 @@ HTTP/1.1 502 Bad Gateway
 ### 5.1 接口定义
 
 ```http
-GET http://192.168.50.129:8642/health
+GET http://192.168.50.129:9091/health
 ```
 
 认证：不需要。
@@ -651,7 +651,7 @@ GET http://192.168.50.129:8642/health
 请求：
 
 ```bash
-curl -i "http://192.168.50.129:8642/health"
+curl -i "http://192.168.50.129:9091/health"
 ```
 
 正常响应：
@@ -845,7 +845,7 @@ GET http://192.168.50.129:9119/health?deep=1
 
 ```text
 名称：Intellect API Server
-URL：http://192.168.50.129:8642/health
+URL：http://192.168.50.129:9091/health
 方法：GET
 期望HTTP状态：200
 期望JSON字段：status == "ok"
@@ -887,7 +887,7 @@ service_ok = api_ok and webui_ok
 ```python
 import requests
 
-API_BASE_URL = "http://192.168.50.129:8642"
+API_BASE_URL = "http://192.168.50.129:9091"
 API_SERVER_KEY = "替换为API_SERVER_KEY"
 
 headers = {
@@ -951,7 +951,7 @@ print(result["choices"][0]["message"]["content"])
 
 - 生产环境优先使用HTTPS，避免API Key和业务内容以明文传输。
 - 不要把 `API_SERVER_KEY` 放入浏览器JavaScript、移动端安装包或公开仓库。
-- 将8642端口限制为业务平台后端或监控平台可访问。
+- 将9091端口限制为业务平台后端或监控平台可访问。
 - 如果必须从浏览器直接访问API，使用 `API_SERVER_CORS_ORIGINS` 明确列出允许来源，不要在生产环境长期配置为 `*`。
 - 日志中不得记录完整Authorization请求头。
 - 外部平台应对用户选择的Skill名称进行白名单校验。
@@ -969,7 +969,7 @@ export API_SERVER_KEY='替换为实际密钥'
 检查API Server：
 
 ```bash
-curl -fsS "http://192.168.50.129:8642/health"
+curl -fsS "http://192.168.50.129:9091/health"
 ```
 
 检查WebUI：
@@ -981,14 +981,14 @@ curl -fsS "http://192.168.50.129:9119/health"
 获取自定义Skill：
 
 ```bash
-curl -fsS "http://192.168.50.129:8642/v1/skills/custom" \
+curl -fsS "http://192.168.50.129:9091/v1/skills/custom" \
   -H "Authorization: Bearer ${API_SERVER_KEY}"
 ```
 
 调用自定义Skill：
 
 ```bash
-curl -fsS "http://192.168.50.129:8642/v1/chat/completions" \
+curl -fsS "http://192.168.50.129:9091/v1/chat/completions" \
   -H "Authorization: Bearer ${API_SERVER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{

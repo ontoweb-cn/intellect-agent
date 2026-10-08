@@ -377,7 +377,7 @@ VOLUME [ "/opt/data" ]
 # like `--version` would be intercepted by /init's POSIX shell.
 ENTRYPOINT [ "/init", "/opt/intellect/docker/main-wrapper.sh" ]
 # 单镜像、单容器同时提供 Agent/Gateway/API Server 与 WebUI 两个服务端口。
-EXPOSE 8642 9119
+EXPOSE 9091 9119
 
 # 保持镜像为通用 Intellect 镜像；根目录 Compose 会传入单容器启动器作为前台命令。
 CMD [ ]

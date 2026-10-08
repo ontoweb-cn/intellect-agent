@@ -20,7 +20,7 @@ set -euo pipefail
 #   OPEN_WEBUI_ENABLE_SERVICE=auto   # auto|true|false
 #   OPEN_WEBUI_VENV=~/.local/open-webui-venv
 #   OPEN_WEBUI_DATA_DIR=~/.local/share/open-webui/data
-#   intellect_API_PORT=8642
+#   intellect_API_PORT=9091
 #   intellect_API_HOST=127.0.0.1
 #   intellect_API_MODEL_NAME='Intellect Agent'
 
@@ -32,7 +32,7 @@ OPEN_WEBUI_ENABLE_SERVICE="${OPEN_WEBUI_ENABLE_SERVICE:-auto}"
 OPEN_WEBUI_VENV="${OPEN_WEBUI_VENV:-$HOME/.local/open-webui-venv}"
 OPEN_WEBUI_DATA_DIR="${OPEN_WEBUI_DATA_DIR:-$HOME/.local/share/open-webui/data}"
 intellect_ENV_FILE="${intellect_ENV_FILE:-$HOME/.intellect/.env}"
-intellect_API_PORT="${intellect_API_PORT:-8642}"
+intellect_API_PORT="${intellect_API_PORT:-9091}"
 intellect_API_HOST="${intellect_API_HOST:-127.0.0.1}"
 intellect_API_CONNECT_HOST="${intellect_API_CONNECT_HOST:-127.0.0.1}"
 intellect_API_MODEL_NAME="${intellect_API_MODEL_NAME:-Intellect Agent}"

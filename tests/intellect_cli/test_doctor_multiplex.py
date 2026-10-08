@@ -33,7 +33,7 @@ def test_pinned_listener_secondary_flagged(profile_env):
     _profile(
         profile_env,
         "coder",
-        "platforms:\n  api_server:\n    enabled: true\n    port: 8642\n",
+        "platforms:\n  api_server:\n    enabled: true\n    port: 9091\n",
     )
     issues: list = []
     _check_gateway_multiplex(issues)
@@ -85,7 +85,7 @@ def test_allowlist_narrows_the_check(profile_env):
     _profile(
         profile_env,
         "coder",
-        "platforms:\n  api_server:\n    enabled: true\n    port: 8642\n",
+        "platforms:\n  api_server:\n    enabled: true\n    port: 9091\n",
     )
     _profile(profile_env, "quiet")
     cfg = profile_env / "config.yaml"

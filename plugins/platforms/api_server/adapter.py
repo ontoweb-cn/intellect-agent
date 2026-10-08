@@ -26,7 +26,7 @@ Exposes an HTTP server with endpoints:
 
 Any OpenAI-compatible frontend (Open WebUI, LobeChat, LibreChat,
 AnythingLLM, NextChat, ChatBox, etc.) can connect to intellect-agent
-through this adapter by pointing at http://localhost:8642/v1 and
+through this adapter by pointing at http://localhost:9091/v1 and
 authenticating with API_SERVER_KEY.
 
 Requires:
@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 
 # Default settings
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8642
+DEFAULT_PORT = 9091
 MAX_STORED_RESPONSES = 100
 MAX_REQUEST_BYTES = 10_000_000  # 10 MB — accommodates long agent conversations with tool calls
 CHAT_COMPLETIONS_SSE_KEEPALIVE_SECONDS = 30.0

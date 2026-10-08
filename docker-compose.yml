@@ -31,7 +31,7 @@ services:
 
     healthcheck:
       # 只有 API Server 和 WebUI 两个入口都能响应时，容器才会被标记为 healthy。
-      test: ["CMD", "python", "-c", "import os, urllib.request; api=os.getenv('API_SERVER_PORT', '8642'); web=os.getenv('INTELLECT_WEBUI_PORT', '9119'); urllib.request.urlopen(f'http://127.0.0.1:{api}/health', timeout=3); urllib.request.urlopen(f'http://127.0.0.1:{web}/health', timeout=3)"]
+      test: ["CMD", "python", "-c", "import os, urllib.request; api=os.getenv('API_SERVER_PORT', '9091'); web=os.getenv('INTELLECT_WEBUI_PORT', '9119'); urllib.request.urlopen(f'http://127.0.0.1:{api}/health', timeout=3); urllib.request.urlopen(f'http://127.0.0.1:{web}/health', timeout=3)"]
       interval: 10s
       timeout: 8s
       retries: 12

@@ -13,7 +13,7 @@ description: "通过 OpenAI 兼容 API 服务器将 Open WebUI 连接到 Intelle
 ```mermaid
 flowchart LR
     A["Open WebUI<br/>浏览器 UI<br/>端口 3000"]
-    B["intellect-agent<br/>gateway API 服务器<br/>端口 8642"]
+    B["intellect-agent<br/>gateway API 服务器<br/>端口 9091"]
     A -->|POST /v1/chat/completions| B
     B -->|SSE 流式响应| A
 ```
@@ -49,7 +49,7 @@ bash scripts/setup_open_webui.sh
 
 默认值：
 
-- Intellect API：`http://127.0.0.1:8642/v1`
+- Intellect API：`http://127.0.0.1:9091/v1`
 - Open WebUI：`http://127.0.0.1:8080`
 - 向 Open WebUI 公告的模型名称：`Intellect Agent`
 
@@ -90,16 +90,16 @@ intellect gateway
 你应该看到：
 
 ```
-[API Server] API server listening on http://127.0.0.1:8642
+[API Server] API server listening on http://127.0.0.1:9091
 ```
 
 ### 3. 验证 API 服务器可访问
 
 ```bash
-curl -s http://127.0.0.1:8642/health
+curl -s http://127.0.0.1:9091/health
 # {"status": "ok", ...}
 
-curl -s -H "Authorization: Bearer your-secret-key" http://127.0.0.1:8642/v1/models
+curl -s -H "Authorization: Bearer your-secret-key" http://127.0.0.1:9091/v1/models
 # {"object":"list","data":[{"id":"intellect-agent", ...}]}
 ```
 
@@ -109,7 +109,7 @@ curl -s -H "Authorization: Bearer your-secret-key" http://127.0.0.1:8642/v1/mode
 
 ```bash
 docker run -d -p 3000:8080 \
-  -e OPENAI_API_BASE_URL=http://host.docker.internal:8642/v1 \
+  -e OPENAI_API_BASE_URL=http://host.docker.internal:9091/v1 \
   -e OPENAI_API_KEY=your-secret-key \
   -e ENABLE_OLLAMA_API=false \
   --add-host=host.docker.internal:host-gateway \
@@ -140,7 +140,7 @@ services:
     volumes:
       - open-webui:/app/backend/data
     environment:
-      - OPENAI_API_BASE_URL=http://host.docker.internal:8642/v1
+      - OPENAI_API_BASE_URL=http://host.docker.internal:9091/v1
       - OPENAI_API_KEY=your-secret-key
       - ENABLE_OLLAMA_API=false
     extra_hosts:
@@ -167,7 +167,7 @@ docker compose up -d
 4. 在 **OpenAI API** 下，点击**扳手图标**（Manage）
 5. 点击 **+ Add New Connection**
 6. 填写：
-   - **URL**：`http://host.docker.internal:8642/v1`
+   - **URL**：`http://host.docker.internal:9091/v1`
    - **API Key**：与 Intellect 中 `API_SERVER_KEY` 完全相同的值
 7. 点击**对勾**验证连接
 8. **保存**
@@ -232,7 +232,7 @@ Open WebUI 目前即使在 Responses 模式下也在客户端管理对话历史�
 | 变量 | 默认值 | 描述 |
 |----------|---------|-------------|
 | `API_SERVER_ENABLED` | `false` | 启用 API 服务器 |
-| `API_SERVER_PORT` | `8642` | HTTP 服务器端口 |
+| `API_SERVER_PORT` | `9091` | HTTP 服务器端口 |
 | `API_SERVER_HOST` | `127.0.0.1` | 绑定地址 |
 | `API_SERVER_KEY` | _（必填）_ | 用于认证的 Bearer token（令牌）。需与 `OPENAI_API_KEY` 匹配。 |
 
@@ -247,9 +247,9 @@ Open WebUI 目前即使在 Responses 模式下也在客户端管理对话历史�
 
 ### 下拉列表中没有模型
 
-- **检查 URL 是否有 `/v1` 后缀**：`http://host.docker.internal:8642/v1`（不只是 `:8642`）
-- **验证 gateway 是否运行**：`curl http://localhost:8642/health` 应返回 `{"status": "ok"}`
-- **检查模型列表**：`curl -H "Authorization: Bearer your-secret-key" http://localhost:8642/v1/models` 应返回包含 `intellect-agent` 的列表
+- **检查 URL 是否有 `/v1` 后缀**：`http://host.docker.internal:9091/v1`（不只是 `:9091`）
+- **验证 gateway 是否运行**：`curl http://localhost:9091/health` 应返回 `{"status": "ok"}`
+- **检查模型列表**：`curl -H "Authorization: Bearer your-secret-key" http://localhost:9091/v1/models` 应返回包含 `intellect-agent` 的列表
 - **Docker 网络**：在 Docker 内部，`localhost` 指容器本身，而非你的主机。请使用 `host.docker.internal` 或 `--network=host`。
 - **空 Ollama 后端遮挡选择器**：如果你省略了 `ENABLE_OLLAMA_API=false`，Open WebUI 会在你的 Intellect 模型上方显示一个空的 Ollama 区域。请使用 `-e ENABLE_OLLAMA_API=false` 重启容器，或在 **Admin Settings → Connections** 中禁用 Ollama。
 
@@ -327,8 +327,8 @@ intellect -a alice config set API_SERVER_MODEL_NAME "Alice's Agent"
 docker run --add-host=host.docker.internal:host-gateway ...
 
 # 方案 2：使用主机网络
-docker run --network=host -e OPENAI_API_BASE_URL=http://localhost:8642/v1 ...
+docker run --network=host -e OPENAI_API_BASE_URL=http://localhost:9091/v1 ...
 
 # 方案 3：使用 Docker bridge IP
-docker run -e OPENAI_API_BASE_URL=http://172.17.0.1:8642/v1 ...
+docker run -e OPENAI_API_BASE_URL=http://172.17.0.1:9091/v1 ...
 ```

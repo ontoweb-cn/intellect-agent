@@ -164,7 +164,7 @@ def test_official_environment_template_covers_single_container_required_values()
     for key in (
         "API_SERVER_KEY=",
         "INTELLECT_WEBUI_PASSWORD=",
-        "API_SERVER_PORT=8642",
+        "API_SERVER_PORT=9091",
         "INTELLECT_WEBUI_PORT=9119",
         "INTELLECT_WEBUI_DEFAULT_WORKSPACE=/workspace",
     ):

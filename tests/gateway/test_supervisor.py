@@ -88,10 +88,10 @@ def test_precheck_rejects_pinned_port(tmp_path):
     home = tmp_path / "web"
     home.mkdir()
     (home / "config.yaml").write_text(
-        "platforms:\n  api_server:\n    enabled: true\n    port: 8642\n",
+        "platforms:\n  api_server:\n    enabled: true\n    port: 9091\n",
         encoding="utf-8",
     )
-    with pytest.raises(PortConflictError, match="port 8642"):
+    with pytest.raises(PortConflictError, match="port 9091"):
         precheck_port_conflicts(home, "web")
 
 

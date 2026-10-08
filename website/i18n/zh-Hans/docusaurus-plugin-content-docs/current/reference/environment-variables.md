@@ -407,7 +407,7 @@ description: "Intellect Agent 使用的所有环境变量完整参考"
 | `API_SERVER_ENABLED` | 启用 OpenAI 兼容 API 服务器（`true`/`false`）。与其他平台并行运行。 |
 | `API_SERVER_KEY` | API 服务器认证的 Bearer token。非回环绑定时强制执行。 |
 | `API_SERVER_CORS_ORIGINS` | 允许直接调用 API 服务器的逗号分隔浏览器来源（例如 `http://localhost:3000,http://127.0.0.1:3000`）。默认：禁用。 |
-| `API_SERVER_PORT` | API 服务器端口（默认：`8642`） |
+| `API_SERVER_PORT` | API 服务器端口（默认：`9091`） |
 | `API_SERVER_HOST` | API 服务器主机/绑定地址（默认：`127.0.0.1`）。使用 `0.0.0.0` 开放网络访问——需要 `API_SERVER_KEY` 和严格的 `API_SERVER_CORS_ORIGINS` 白名单。 |
 | `API_SERVER_MODEL_NAME` | `/v1/models` 上公告的模型名称。默认为 profile 名称（默认 profile 为 `intellect-agent`）。适用于 Open WebUI 等前端需要每个连接使用不同模型名称的多用户场景。 |
 | `GATEWAY_PROXY_URL` | 将消息转发到的远程 Intellect API 服务器 URL（[代理模式](/user-guide/messaging/matrix#proxy-mode-e2ee-on-macos)）。设置后，gateway 仅处理平台 I/O——所有 agent 工作委托给远程服务器。也可通过 `config.yaml` 中的 `gateway.proxy_url` 配置。 |

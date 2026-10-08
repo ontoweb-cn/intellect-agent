@@ -534,7 +534,7 @@ Matrix E2EE requires `libolm`, which doesn't compile on macOS ARM64 (Apple Silic
 ```
 macOS (Host):
   └─ intellect gateway
-       ├─ api_server adapter ← listens on 0.0.0.0:8642
+       ├─ api_server adapter ← listens on 0.0.0.0:9091
        ├─ AIAgent ← single source of truth
        ├─ Sessions, memory, skills
        └─ Local file access (Obsidian, projects, etc.)
@@ -542,7 +542,7 @@ macOS (Host):
 Linux VM (Docker):
   └─ intellect gateway (proxy mode)
        ├─ Matrix adapter ← E2EE decryption/encryption
-       └─ HTTP forward → macOS:8642/v1/chat/completions
+       └─ HTTP forward → macOS:9091/v1/chat/completions
            (no LLM API keys, no agent, no inference)
 ```
 
@@ -562,7 +562,7 @@ API_SERVER_HOST=0.0.0.0
 
 - `API_SERVER_HOST=0.0.0.0` binds to all interfaces so the Docker container can reach it.
 - `API_SERVER_KEY` is required for non-loopback binding. Pick a strong random string.
-- The API server runs on port 8642 by default (change with `API_SERVER_PORT` if needed).
+- The API server runs on port 9091 by default (change with `API_SERVER_PORT` if needed).
 
 Start the gateway:
 
@@ -574,7 +574,7 @@ You should see the API server start alongside any other platforms you have confi
 
 ```bash
 # From the Linux VM
-curl http://<mac-ip>:8642/health
+curl http://<mac-ip>:9091/health
 ```
 
 ### Step 2: Configure the Docker Container (Linux VM)
@@ -596,7 +596,7 @@ services:
       MATRIX_DEVICE_ID: "intellect_BOT"
 
       # Proxy mode — forward to host agent
-      GATEWAY_PROXY_URL: "http://192.168.1.100:8642"
+      GATEWAY_PROXY_URL: "http://192.168.1.100:9091"
       GATEWAY_PROXY_KEY: "your-secret-key-here"
     volumes:
       - ./matrix-store:/root/.intellect/platforms/matrix/store
@@ -635,7 +635,7 @@ Proxy mode is configured on the **container side** (the thin gateway):
 
 | Setting | Description |
 |---------|-------------|
-| `GATEWAY_PROXY_URL` | URL of the remote Intellect API server (e.g., `http://192.168.1.100:8642`) |
+| `GATEWAY_PROXY_URL` | URL of the remote Intellect API server (e.g., `http://192.168.1.100:9091`) |
 | `GATEWAY_PROXY_KEY` | Bearer token for authentication (must match `API_SERVER_KEY` on the host) |
 | `gateway.proxy_url` | Same as `GATEWAY_PROXY_URL` but in `config.yaml` |
 
@@ -646,7 +646,7 @@ The host side needs:
 | `API_SERVER_ENABLED` | Set to `true` |
 | `API_SERVER_KEY` | Bearer token (shared with the container) |
 | `API_SERVER_HOST` | Set to `0.0.0.0` for network access |
-| `API_SERVER_PORT` | Port number (default: `8642`) |
+| `API_SERVER_PORT` | Port number (default: `9091`) |
 
 ### Works for Any Platform
 

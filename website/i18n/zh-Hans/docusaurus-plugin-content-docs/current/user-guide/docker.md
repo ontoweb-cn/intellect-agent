@@ -35,11 +35,11 @@ docker run -d \
   --name intellect \
   --restart unless-stopped \
   -v ~/.intellect:/opt/data \
-  -p 8642:8642 \
+  -p 9091:9091 \
   ontoweb/intellect-agent gateway run
 ```
 
-端口 8642 暴露 gateway 的 [OpenAI 兼容 API 服务器](./features/api-server.md)和健康检查端点。如果你只使用聊天平台（Telegram、Discord 等），该端口是可选的；但如果你希望 dashboard 或外部工具访问 gateway，则必须开放。
+端口 9091 暴露 gateway 的 [OpenAI 兼容 API 服务器](./features/api-server.md)和健康检查端点。如果你只使用聊天平台（Telegram、Discord 等），该端口是可选的；但如果你希望 dashboard 或外部工具访问 gateway，则必须开放。
 
 注意：API 服务器需设置 `API_SERVER_ENABLED=true` 才会启用。若要在容器内将其暴露至 `127.0.0.1` 以外，还需设置 `API_SERVER_HOST=0.0.0.0` 和 `API_SERVER_KEY`（最少 8 个字符——可用 `openssl rand -hex 32` 生成）。示例：
 
@@ -48,7 +48,7 @@ docker run -d \
   --name intellect \
   --restart unless-stopped \
   -v ~/.intellect:/opt/data \
-  -p 8642:8642 \
+  -p 9091:9091 \
   -e API_SERVER_ENABLED=true \
   -e API_SERVER_HOST=0.0.0.0 \
   -e API_SERVER_KEY="$(openssl rand -hex 32)" \
@@ -107,7 +107,7 @@ docker run -d \
   --name intellect-work \
   --restart unless-stopped \
   -v ~/.intellect-work:/opt/data \
-  -p 8642:8642 \
+  -p 9091:9091 \
   ontoweb/intellect-agent gateway run
 
 # 个人 profile
@@ -115,7 +115,7 @@ docker run -d \
   --name intellect-personal \
   --restart unless-stopped \
   -v ~/.intellect-personal:/opt/data \
-  -p 8643:8642 \
+  -p 8643:9091 \
   ontoweb/intellect-agent gateway run
 ```
 
@@ -137,7 +137,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8642:8642"
+      - "9091:9091"
     volumes:
       - ~/.intellect-work:/opt/data
 
@@ -147,7 +147,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8643:8642"
+      - "8643:9091"
     volumes:
       - ~/.intellect-personal:/opt/data
 ```
@@ -182,7 +182,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8642:8642"   # gateway API
+      - "9091:9091"   # gateway API
       - "9119:9119"   # dashboard（仅在 intellect_DASHBOARD=1 时生效）
     volumes:
       - ~/.intellect:/opt/data
@@ -341,7 +341,7 @@ docker run -d \
   --name intellect \
   --restart unless-stopped \
   -v ~/.intellect:/opt/data \
-  -p 8642:8642 \
+  -p 9091:9091 \
   my-intellect:latest gateway run
 ```
 
@@ -359,7 +359,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8642:8642"
+      - "9091:9091"
     volumes:
       - ~/.intellect:/opt/data
     networks:
@@ -417,7 +417,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8642:8642"
+      - "9091:9091"
     volumes:
       - ~/.intellect:/opt/data
     networks:
@@ -455,7 +455,7 @@ model:
 docker run -d \
   --name intellect \
   -v ~/.intellect:/opt/data \
-  -p 8642:8642 \
+  -p 9091:9091 \
   ontoweb/intellect-agent gateway run
 ```
 

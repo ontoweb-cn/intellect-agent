@@ -44,7 +44,7 @@ with `--replace` and `--quiet`.
 
 Two sites are hosted when the corresponding platform is enabled anywhere in
 the serve set: the **api site** (the default profile's `platforms.api_server`
-host/port, default `127.0.0.1:8642`) and the **webhook site** (default port
+host/port, default `127.0.0.1:9091`) and the **webhook site** (default port
 `8644`). Webhook providers for different profiles point at the **same port**
 with different prefixes — `/p/alpha/webhooks/github` and
 `/p/beta/webhooks/github` fan out to the right profile.

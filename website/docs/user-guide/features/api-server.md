@@ -36,16 +36,16 @@ intellect gateway
 You'll see:
 
 ```
-[API Server] API server listening on http://127.0.0.1:8642
+[API Server] API server listening on http://127.0.0.1:9091
 ```
 
 ### 3. Connect a frontend
 
-Point any OpenAI-compatible client at `http://localhost:8642/v1`:
+Point any OpenAI-compatible client at `http://localhost:9091/v1`:
 
 ```bash
 # Test with curl
-curl http://localhost:8642/v1/chat/completions \
+curl http://localhost:9091/v1/chat/completions \
   -H "Authorization: Bearer change-me-local-dev" \
   -H "Content-Type: application/json" \
   -d '{"model": "intellect-agent", "messages": [{"role": "user", "content": "Hello!"}]}'
@@ -244,7 +244,7 @@ Both Skill discovery endpoints are read-only, require the same Bearer token as t
 Lists every Skill that is enabled and callable from the current profile's `api_server` platform. This existing endpoint includes bundled, Skills Hub, and local Skills.
 
 ```bash
-curl http://localhost:8642/v1/skills \
+curl http://localhost:9091/v1/skills \
   -H "Authorization: Bearer $API_SERVER_KEY"
 ```
 
@@ -253,7 +253,7 @@ curl http://localhost:8642/v1/skills \
 Lists only local custom Skills that are enabled and callable from the current profile's `api_server` platform. Use this endpoint when an external platform should expose user-authored Skills without mixing in Intellect's bundled catalog or Skills Hub installations.
 
 ```bash
-curl http://localhost:8642/v1/skills/custom \
+curl http://localhost:9091/v1/skills/custom \
   -H "Authorization: Bearer $API_SERVER_KEY"
 ```
 
@@ -294,7 +294,7 @@ Runs accept a simple `input` string and optional `session_id`, `instructions`, `
 To invoke one installed skill deterministically, pass its name in the optional `skill` field. Use `GET /v1/skills` to populate a picker in an external platform, then submit the selected `data[].name` value:
 
 ```bash
-curl -X POST http://localhost:8642/v1/runs \
+curl -X POST http://localhost:9091/v1/runs \
   -H "Authorization: Bearer $API_SERVER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -397,12 +397,12 @@ External UIs can manage Intellect sessions over REST. All endpoints are gated by
 
 ```bash
 # fork a session and run one turn
-curl -X POST http://localhost:8642/api/sessions/$ID/fork \
+curl -X POST http://localhost:9091/api/sessions/$ID/fork \
   -H "Authorization: Bearer $API_SERVER_KEY" \
   -d '{"title": "explore alt path"}'
 
 # stream a turn over SSE
-curl -N -X POST http://localhost:8642/api/sessions/$ID/chat/stream \
+curl -N -X POST http://localhost:9091/api/sessions/$ID/chat/stream \
   -H "Authorization: Bearer $API_SERVER_KEY" \
   -d '{"input": "what files changed in the last hour?"}'
 ```
@@ -412,11 +412,11 @@ curl -N -X POST http://localhost:8642/api/sessions/$ID/chat/stream \
 `GET /v1/skills` and `GET /v1/toolsets` let external clients enumerate the agent's capabilities deterministically over REST instead of asking the model. Both are read-only and gated by `API_SERVER_KEY`.
 
 ```bash
-curl http://localhost:8642/v1/skills \
+curl http://localhost:9091/v1/skills \
   -H "Authorization: Bearer $API_SERVER_KEY"
 # → [{"name": "github-pr-workflow", "description": "...", "category": "..."}, ...]
 
-curl http://localhost:8642/v1/toolsets \
+curl http://localhost:9091/v1/toolsets \
   -H "Authorization: Bearer $API_SERVER_KEY"
 # → [{"name": "core", "label": "...", "description": "...", "enabled": true,
 #     "configured": true, "tools": ["read_file", "write_file", ...]}, ...]
@@ -466,7 +466,7 @@ The API server gives full access to intellect-agent's toolset, **including termi
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `API_SERVER_ENABLED` | `false` | Enable the API server |
-| `API_SERVER_PORT` | `8642` | HTTP server port |
+| `API_SERVER_PORT` | `9091` | HTTP server port |
 | `API_SERVER_HOST` | `127.0.0.1` | Bind address (localhost only by default) |
 | `API_SERVER_KEY` | _(required)_ | Bearer token for auth |
 | `API_SERVER_CORS_ORIGINS` | _(none)_ | Comma-separated allowed browser origins |
@@ -517,7 +517,7 @@ Any frontend that supports the OpenAI API format works. Tested/documented integr
 | Jan | 26k | Remote model config |
 | HF Chat-UI | 8k | OPENAI_BASE_URL |
 | big-AGI | 7k | Custom endpoint |
-| OpenAI Python SDK | — | `OpenAI(base_url="http://localhost:8642/v1")` |
+| OpenAI Python SDK | — | `OpenAI(base_url="http://localhost:9091/v1")` |
 | curl | — | Direct HTTP requests |
 
 ## Multi-User Setup with Profiles

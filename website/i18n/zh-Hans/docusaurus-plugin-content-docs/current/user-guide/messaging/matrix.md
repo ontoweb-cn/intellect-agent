@@ -515,7 +515,7 @@ Matrix E2EE 需要 `libolm`，而该库无法在 macOS ARM64（Apple Silicon）�
 ```
 macOS（主机）：
   └─ intellect gateway
-       ├─ api_server 适配器 ← 监听 0.0.0.0:8642
+       ├─ api_server 适配器 ← 监听 0.0.0.0:9091
        ├─ AIAgent ← 单一数据源
        ├─ 会话、记忆、技能
        └─ 本地文件访问（Obsidian、项目等）
@@ -523,7 +523,7 @@ macOS（主机）：
 Linux 虚拟机（Docker）：
   └─ intellect gateway（代理模式）
        ├─ Matrix 适配器 ← E2EE 解密/加密
-       └─ HTTP 转发 → macOS:8642/v1/chat/completions
+       └─ HTTP 转发 → macOS:9091/v1/chat/completions
            （无 LLM API 密钥，无 agent，无推理）
 ```
 
@@ -543,7 +543,7 @@ API_SERVER_HOST=0.0.0.0
 
 - `API_SERVER_HOST=0.0.0.0` 绑定到所有接口，使 Docker 容器可以访问。
 - `API_SERVER_KEY` 是非回环绑定的必填项。请选择一个强随机字符串。
-- API 服务器默认运行在端口 8642（如需更改，使用 `API_SERVER_PORT`）。
+- API 服务器默认运行在端口 9091（如需更改，使用 `API_SERVER_PORT`）。
 
 启动 gateway：
 
@@ -555,7 +555,7 @@ intellect gateway
 
 ```bash
 # 从 Linux 虚拟机
-curl http://<mac-ip>:8642/health
+curl http://<mac-ip>:9091/health
 ```
 
 ### 第二步：配置 Docker 容器（Linux 虚拟机）
@@ -577,7 +577,7 @@ services:
       MATRIX_DEVICE_ID: "intellect_BOT"
 
       # 代理模式——转发到主机 agent
-      GATEWAY_PROXY_URL: "http://192.168.1.100:8642"
+      GATEWAY_PROXY_URL: "http://192.168.1.100:9091"
       GATEWAY_PROXY_KEY: "your-secret-key-here"
     volumes:
       - ./matrix-store:/root/.intellect/platforms/matrix/store
@@ -616,7 +616,7 @@ CMD ["intellect", "gateway"]
 
 | 设置 | 说明 |
 |---------|-------------|
-| `GATEWAY_PROXY_URL` | 远程 Intellect API 服务器的 URL（例如 `http://192.168.1.100:8642`） |
+| `GATEWAY_PROXY_URL` | 远程 Intellect API 服务器的 URL（例如 `http://192.168.1.100:9091`） |
 | `GATEWAY_PROXY_KEY` | 用于身份验证的 Bearer token（必须与主机上的 `API_SERVER_KEY` 匹配） |
 | `gateway.proxy_url` | 与 `GATEWAY_PROXY_URL` 相同，但在 `config.yaml` 中配置 |
 
@@ -627,7 +627,7 @@ CMD ["intellect", "gateway"]
 | `API_SERVER_ENABLED` | 设置为 `true` |
 | `API_SERVER_KEY` | Bearer token（与容器共享） |
 | `API_SERVER_HOST` | 设置为 `0.0.0.0` 以允许网络访问 |
-| `API_SERVER_PORT` | 端口号（默认：`8642`） |
+| `API_SERVER_PORT` | 端口号（默认：`9091`） |
 
 ### 适用于任何平台
 

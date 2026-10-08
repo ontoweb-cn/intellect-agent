@@ -101,28 +101,28 @@ class TestGetProxyUrl:
             assert runner._get_proxy_url() is None
 
     def test_reads_from_env_var(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://192.168.1.100:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://192.168.1.100:9091")
         runner = _make_runner()
-        assert runner._get_proxy_url() == "http://192.168.1.100:8642"
+        assert runner._get_proxy_url() == "http://192.168.1.100:9091"
 
     def test_strips_trailing_slash(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642/")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:9091/")
         runner = _make_runner()
-        assert runner._get_proxy_url() == "http://host:8642"
+        assert runner._get_proxy_url() == "http://host:9091"
 
     def test_reads_from_config_yaml(self, monkeypatch):
         monkeypatch.delenv("GATEWAY_PROXY_URL", raising=False)
         runner = _make_runner()
-        cfg = {"gateway": {"proxy_url": "http://10.0.0.1:8642"}}
+        cfg = {"gateway": {"proxy_url": "http://10.0.0.1:9091"}}
         with patch("gateway.run._load_gateway_config", return_value=cfg):
-            assert runner._get_proxy_url() == "http://10.0.0.1:8642"
+            assert runner._get_proxy_url() == "http://10.0.0.1:9091"
 
     def test_env_var_overrides_config(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://env-host:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://env-host:9091")
         runner = _make_runner()
-        cfg = {"gateway": {"proxy_url": "http://config-host:8642"}}
+        cfg = {"gateway": {"proxy_url": "http://config-host:9091"}}
         with patch("gateway.run._load_gateway_config", return_value=cfg):
-            assert runner._get_proxy_url() == "http://env-host:8642"
+            assert runner._get_proxy_url() == "http://env-host:9091"
 
     def test_empty_string_treated_as_unset(self, monkeypatch):
         monkeypatch.setenv("GATEWAY_PROXY_URL", "  ")
@@ -172,7 +172,7 @@ class TestRunAgentProxyDispatch:
 
     @pytest.mark.asyncio
     async def test_run_agent_delegates_to_proxy(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:9091")
         runner = _make_runner()
         source = _make_source()
 
@@ -229,7 +229,7 @@ class TestRunAgentViaProxy:
 
     @pytest.mark.asyncio
     async def test_builds_correct_request(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:9091")
         monkeypatch.setenv("GATEWAY_PROXY_KEY", "test-key-123")
         runner = _make_runner()
         source = _make_source()
@@ -259,7 +259,7 @@ class TestRunAgentViaProxy:
                     )
 
         # Verify request URL
-        assert session.captured_url == "http://host:8642/v1/chat/completions"
+        assert session.captured_url == "http://host:9091/v1/chat/completions"
 
         # Verify auth header
         assert session.captured_headers["Authorization"] == "Bearer test-key-123"
@@ -282,7 +282,7 @@ class TestRunAgentViaProxy:
 
     @pytest.mark.asyncio
     async def test_handles_http_error(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:9091")
         monkeypatch.delenv("GATEWAY_PROXY_KEY", raising=False)
         runner = _make_runner()
         source = _make_source()
@@ -306,7 +306,7 @@ class TestRunAgentViaProxy:
 
     @pytest.mark.asyncio
     async def test_handles_connection_error(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://unreachable:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://unreachable:9091")
         monkeypatch.delenv("GATEWAY_PROXY_KEY", raising=False)
         runner = _make_runner()
         source = _make_source()
@@ -336,7 +336,7 @@ class TestRunAgentViaProxy:
 
     @pytest.mark.asyncio
     async def test_skips_tool_messages_in_history(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:9091")
         monkeypatch.delenv("GATEWAY_PROXY_KEY", raising=False)
         runner = _make_runner()
         source = _make_source()
@@ -374,7 +374,7 @@ class TestRunAgentViaProxy:
 
     @pytest.mark.asyncio
     async def test_result_shape_matches_run_agent(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:9091")
         monkeypatch.delenv("GATEWAY_PROXY_KEY", raising=False)
         runner = _make_runner()
         source = _make_source()
@@ -409,7 +409,7 @@ class TestRunAgentViaProxy:
 
     @pytest.mark.asyncio
     async def test_proxy_stale_generation_returns_empty_result(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:9091")
         monkeypatch.delenv("GATEWAY_PROXY_KEY", raising=False)
         runner = _make_runner()
         source = _make_source()
@@ -443,7 +443,7 @@ class TestRunAgentViaProxy:
 
     @pytest.mark.asyncio
     async def test_no_auth_header_without_key(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:9091")
         monkeypatch.delenv("GATEWAY_PROXY_KEY", raising=False)
         runner = _make_runner()
         source = _make_source()
@@ -469,7 +469,7 @@ class TestRunAgentViaProxy:
 
     @pytest.mark.asyncio
     async def test_no_system_message_when_context_empty(self, monkeypatch):
-        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:9091")
         monkeypatch.delenv("GATEWAY_PROXY_KEY", raising=False)
         runner = _make_runner()
         source = _make_source()

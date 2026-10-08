@@ -44,7 +44,7 @@ OAuth 需要浏览器，但 loopback 回调运行在 Intellect 所在的机器�
 
 ```bash
 # 方案 A：SSH 端口转发（推荐）
-ssh -N -L 8642:127.0.0.1:8642 user@remote-host    # 在本地终端执行
+ssh -N -L 9091:127.0.0.1:9091 user@remote-host    # 在本地终端执行
 intellect setup --portal                              # 在远程机器上执行，在本地浏览器中打开打印出的 URL
 
 # 方案 B：手动粘贴（适用于 Cloud Shell、Codespaces、EC2 Instance Connect）

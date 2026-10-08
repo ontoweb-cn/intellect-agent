@@ -44,7 +44,7 @@ OAuth needs a browser, but the loopback callback runs on the machine where Intel
 
 ```bash
 # Option A: SSH port forwarding (preferred)
-ssh -N -L 8642:127.0.0.1:8642 user@remote-host    # in a local terminal
+ssh -N -L 9091:127.0.0.1:9091 user@remote-host    # in a local terminal
 intellect setup --portal                              # on the remote, open the printed URL in your local browser
 
 # Option B: manual paste (for Cloud Shell, Codespaces, EC2 Instance Connect)

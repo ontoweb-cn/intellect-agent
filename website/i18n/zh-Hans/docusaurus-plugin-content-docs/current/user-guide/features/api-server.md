@@ -36,16 +36,16 @@ intellect gateway
 你将看到：
 
 ```
-[API Server] API server listening on http://127.0.0.1:8642
+[API Server] API server listening on http://127.0.0.1:9091
 ```
 
 ### 3. 连接前端
 
-将任何 OpenAI 兼容客户端指向 `http://localhost:8642/v1`：
+将任何 OpenAI 兼容客户端指向 `http://localhost:9091/v1`：
 
 ```bash
 # 使用 curl 测试
-curl http://localhost:8642/v1/chat/completions \
+curl http://localhost:9091/v1/chat/completions \
   -H "Authorization: Bearer change-me-local-dev" \
   -H "Content-Type: application/json" \
   -d '{"model": "intellect-agent", "messages": [{"role": "user", "content": "Hello!"}]}'
@@ -244,7 +244,7 @@ OpenAI Responses API 格式。通过 `previous_response_id` 支持服务端对�
 列出当前 Profile 中已启用、且可从 `api_server` 平台调用的全部 Skill。这个原有接口同时包含系统内置、Skills Hub 安装和本地自定义 Skill。
 
 ```bash
-curl http://localhost:8642/v1/skills \
+curl http://localhost:9091/v1/skills \
   -H "Authorization: Bearer $API_SERVER_KEY"
 ```
 
@@ -253,7 +253,7 @@ curl http://localhost:8642/v1/skills \
 只列出当前 Profile 中已启用、且可从 `api_server` 平台调用的本地自定义 Skill。外部平台如果只想展示用户自己维护的 Skill，而不混入 Intellect 系统目录或 Skills Hub 安装项，应使用此接口。
 
 ```bash
-curl http://localhost:8642/v1/skills/custom \
+curl http://localhost:9091/v1/skills/custom \
   -H "Authorization: Bearer $API_SERVER_KEY"
 ```
 
@@ -294,7 +294,7 @@ Runs 接受简单的 `input` 字符串，以及可选的 `session_id`、`instruc
 如需确定性调用某个已安装 Skill，可在可选的 `skill` 字段中传入 Skill 名称。外部平台应先通过 `GET /v1/skills` 填充选择列表，再把用户选中的 `data[].name` 提交给 runs 接口：
 
 ```bash
-curl -X POST http://localhost:8642/v1/runs \
+curl -X POST http://localhost:9091/v1/runs \
   -H "Authorization: Bearer $API_SERVER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -408,7 +408,7 @@ API 服务器提供对 intellect-agent 工具集的完整访问权限，**包括
 | 变量 | 默认值 | 描述 |
 |----------|---------|-------------|
 | `API_SERVER_ENABLED` | `false` | 启用 API 服务器 |
-| `API_SERVER_PORT` | `8642` | HTTP 服务器端口 |
+| `API_SERVER_PORT` | `9091` | HTTP 服务器端口 |
 | `API_SERVER_HOST` | `127.0.0.1` | 绑定地址（默认仅限本地） |
 | `API_SERVER_KEY` | _（无）_ | 认证用 Bearer token |
 | `API_SERVER_CORS_ORIGINS` | _（无）_ | 逗号分隔的允许浏览器来源 |
@@ -459,7 +459,7 @@ API_SERVER_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 | Jan | 26k | 远程模型配置 |
 | HF Chat-UI | 8k | OPENAI_BASE_URL |
 | big-AGI | 7k | 自定义端点 |
-| OpenAI Python SDK | — | `OpenAI(base_url="http://localhost:8642/v1")` |
+| OpenAI Python SDK | — | `OpenAI(base_url="http://localhost:9091/v1")` |
 | curl | — | 直接 HTTP 请求 |
 
 ## 使用 Profiles 的多用户设置

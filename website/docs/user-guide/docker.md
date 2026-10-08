@@ -39,11 +39,11 @@ docker run -d \
   --name intellect \
   --restart unless-stopped \
   -v ~/.intellect:/opt/data \
-  -p 8642:8642 \
+  -p 9091:9091 \
   ontoweb/intellect-agent gateway run
 ```
 
-Port 8642 exposes the gateway's [OpenAI-compatible API server](./features/api-server.md) and health endpoint. It's optional if you only use chat platforms (Telegram, Discord, etc.), but required if you want external tools to reach the gateway.
+Port 9091 exposes the gateway's [OpenAI-compatible API server](./features/api-server.md) and health endpoint. It's optional if you only use chat platforms (Telegram, Discord, etc.), but required if you want external tools to reach the gateway.
 
 :::tip Gateway runs supervised
 Inside the official Docker image, `gateway run` is **automatically supervised by s6-overlay**: if the gateway process crashes it's restarted within a couple of seconds without losing the container. The `gateway run` CMD process itself is a `sleep infinity` heartbeat that keeps the container alive while s6 manages the actual gateway process — so `docker stop` still shuts everything down cleanly, but `docker logs` shows the supervised gateway's output.
@@ -64,7 +64,7 @@ docker run -d \
   --name intellect \
   --restart unless-stopped \
   -v ~/.intellect:/opt/data \
-  -p 8642:8642 \
+  -p 9091:9091 \
   -e API_SERVER_ENABLED=true \
   -e API_SERVER_HOST=0.0.0.0 \
   -e API_SERVER_KEY="$(openssl rand -hex 32)" \
@@ -179,7 +179,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8642:8642"
+      - "9091:9091"
     volumes:
       - ~/.intellect-work:/opt/data
 
@@ -189,7 +189,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8643:8642"
+      - "8643:9091"
     volumes:
       - ~/.intellect-personal:/opt/data
 ```
@@ -241,7 +241,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8642:8642"   # gateway API
+      - "9091:9091"   # gateway API
     volumes:
       - ~/.intellect:/opt/data
     # Uncomment to forward specific env vars instead of using .env file:
@@ -479,7 +479,7 @@ docker run -d \
   --name intellect \
   --restart unless-stopped \
   -v ~/.intellect:/opt/data \
-  -p 8642:8642 \
+  -p 9091:9091 \
   my-intellect:latest gateway run
 ```
 
@@ -497,7 +497,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8642:8642"
+      - "9091:9091"
     volumes:
       - ~/.intellect:/opt/data
     networks:
@@ -555,7 +555,7 @@ services:
     restart: unless-stopped
     command: gateway run
     ports:
-      - "8642:8642"
+      - "9091:9091"
     volumes:
       - ~/.intellect:/opt/data
     networks:
@@ -593,7 +593,7 @@ If your inference server runs directly on the host (not in Docker), use `host.do
 docker run -d \
   --name intellect \
   -v ~/.intellect:/opt/data \
-  -p 8642:8642 \
+  -p 9091:9091 \
   ontoweb/intellect-agent gateway run
 ```
 
