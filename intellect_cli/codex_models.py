@@ -12,9 +12,10 @@ import os
 logger = logging.getLogger(__name__)
 
 DEFAULT_CODEX_MODELS: List[str] = [
-    "gpt-5.5",
-    "gpt-5.4-mini",
-    "gpt-5.4",
+    # Codex-backend slugs (developers.openai.com/api/docs/models/gpt-5.3-codex,
+    # verified 2026-10): the -codex suffixes are the OAuth-backend lineup.
+    "gpt-5.5-codex",
+    "gpt-5.4-codex",
     "gpt-5.3-codex",
     # gpt-5.3-codex-spark is in research preview and is exposed *only* via
     # the Codex CLI / OAuth backend (chatgpt.com/backend-api/codex/models)
@@ -44,9 +45,8 @@ DEFAULT_CODEX_MODELS: List[str] = [
 ]
 
 _FORWARD_COMPAT_TEMPLATE_MODELS: List[tuple[str, tuple[str, ...]]] = [
-    ("gpt-5.5", ("gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex")),
-    ("gpt-5.4-mini", ("gpt-5.3-codex",)),
-    ("gpt-5.4", ("gpt-5.3-codex",)),
+    ("gpt-5.5-codex", ("gpt-5.4-codex", "gpt-5.3-codex")),
+    ("gpt-5.4-codex", ("gpt-5.3-codex",)),
     # Surface Spark whenever any compatible Codex template is present so
     # accounts hitting the live endpoint with an older lineup still see
     # Spark in the picker. Backend gates real availability by ChatGPT Pro

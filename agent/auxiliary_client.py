@@ -261,21 +261,24 @@ def _get_aux_model_for_provider(provider_id: str) -> str:
 # plus providers we intentionally keep pinned here (e.g. Anthropic predates
 # profiles). New providers should set default_aux_model on their profile instead.
 _API_KEY_PROVIDER_AUX_MODELS_FALLBACK: Dict[str, str] = {
-    "gemini": "gemini-3-flash-preview",
-    "zai": "glm-4.5-flash",
-    "kimi-coding": "kimi-k2-turbo-preview",
-    "stepfun": "step-3.5-flash",
-    "kimi-coding-cn": "kimi-k2-turbo-preview",
-    "gmi": "google/gemini-3.1-flash-lite-preview",
-    "minimax": "MiniMax-M2.7",
-    "minimax-oauth": "MiniMax-M2.7-highspeed",
-    "minimax-cn": "MiniMax-M2.7",
-    "anthropic": "claude-haiku-4-5-20251001",
-    "opencode-zen": "gemini-3-flash",
-    "opencode-go": "glm-5",
-    "kilocode": "google/gemini-3-flash-preview",
+    # Cheap/fast pick per provider for auxiliary tasks (title generation,
+    # compression triage, vision routing). Kept in sync with the curated
+    # catalogs in intellect_cli/models.py (2026-10 refresh).
+    "gemini": "gemini-3.5-flash",
+    "zai": "glm-4.7-flash",
+    "kimi-coding": "kimi-for-coding-highspeed",
+    "stepfun": "step-3.7-flash",
+    "kimi-coding-cn": "kimi-k2.7-code-highspeed",
+    "gmi": "deepseek-ai/DeepSeek-V4-Flash",
+    "minimax": "MiniMax-M3.1-Flash-Preview",
+    "minimax-oauth": "MiniMax-M3.1-Flash-Preview",
+    "minimax-cn": "MiniMax-M3.1-Flash-Preview",
+    "anthropic": "claude-haiku-5-5",
+    "opencode-zen": "gemini-3.8-flash",
+    "opencode-go": "glm-5.3-flash",
+    "kilocode": "google/gemini-3.8-flash",
     "ollama-cloud": "nemotron-3-nano:30b",
-    "tencent-tokenhub": "hy3-preview",
+    "tencent-tokenhub": "hy4-preview",
 }
 
 # Legacy alias — callers that haven't been updated to _get_aux_model_for_provider()
@@ -417,8 +420,8 @@ NOUS_EXTRA_BODY = ONTOWEB_EXTRA_BODY  # deprecated alias (pre-OntoWeb rename)
 auxiliary_is_ontoweb: bool = False
 
 # Default auxiliary models per provider
-_OPENROUTER_MODEL = "google/gemini-3-flash-preview"
-_ONTOWEB_MODEL = "google/gemini-3-flash-preview"
+_OPENROUTER_MODEL = "google/gemini-3.5-flash"
+_ONTOWEB_MODEL = "google/gemini-3.5-flash"
 _ONTOWEB_DEFAULT_BASE_URL = "https://inference-api.ontoweb.cn/v1"
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com"
 _AUTH_JSON_PATH = get_intellect_home() / "auth.json"
@@ -2091,7 +2094,7 @@ def _try_anthropic(explicit_api_key: str = None) -> Tuple[Optional[Any], Optiona
 
     from agent.anthropic_adapter import _is_oauth_token
     is_oauth = _is_oauth_token(token)
-    model = _get_aux_model_for_provider("anthropic") or "claude-haiku-4-5-20251001"
+    model = _get_aux_model_for_provider("anthropic") or "claude-haiku-5-5"
     logger.debug("Auxiliary client: Anthropic native (%s) at %s (oauth=%s)", model, base_url, is_oauth)
     try:
         real_client = build_anthropic_client(token, base_url)
@@ -3795,7 +3798,7 @@ def resolve_provider_client(
             return None, None
 
         region = resolve_bedrock_region()
-        default_model = "anthropic.claude-haiku-4-5-20251001-v1:0"
+        default_model = "global.anthropic.claude-haiku-5-5"
         final_model = _normalize_resolved_model(model or default_model, provider)
         try:
             real_client = build_anthropic_bedrock_client(region)

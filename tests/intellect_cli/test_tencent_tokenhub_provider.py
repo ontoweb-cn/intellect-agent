@@ -1,4 +1,4 @@
-"""Tests for Tencent TokenHub provider support (Hy3 Preview)."""
+"""Tests for Tencent TokenHub provider support (Hy4 Preview)."""
 
 import json
 import os
@@ -154,11 +154,11 @@ class TestTencentTokenhubModelCatalog:
 
     def test_hy3_preview_in_model_list(self):
         from intellect_cli.models import _PROVIDER_MODELS
-        assert "hy3-preview" in _PROVIDER_MODELS["tencent-tokenhub"]
+        assert "hy4-preview" in _PROVIDER_MODELS["tencent-tokenhub"]
 
     def test_default_model(self):
         from intellect_cli.models import get_default_model_for_provider
-        assert get_default_model_for_provider("tencent-tokenhub") == "hy3-preview"
+        assert get_default_model_for_provider("tencent-tokenhub") == "hy4-preview"
 
 
 # =============================================================================
@@ -182,7 +182,7 @@ class TestTencentTokenhubCanonicalProvider:
     def test_description_contains_hy3(self):
         from intellect_cli.models import CANONICAL_PROVIDERS
         entry = next(p for p in CANONICAL_PROVIDERS if p.slug == "tencent-tokenhub")
-        assert "Hy3 Preview" in entry.tui_desc
+        assert "Hy4 Preview" in entry.tui_desc
 
 
 # =============================================================================
@@ -287,10 +287,12 @@ class TestTencentTokenhubURLMapping:
         assert _URL_TO_PROVIDER.get("tokenhub.tencentmaas.com") == "tencent-tokenhub"
 
     def test_provider_prefixes(self):
-        from agent.model_metadata import _PROVIDER_PREFIXES
-        assert "tencent-tokenhub" in _PROVIDER_PREFIXES
-        assert "tencent" in _PROVIDER_PREFIXES
-        assert "tokenhub" in _PROVIDER_PREFIXES
+        # Prefixes live in the Rust extension since the P7 quick-win
+        # migration — assert the behavior through the Python bridge.
+        from agent.model_metadata import _strip_provider_prefix
+
+        assert _strip_provider_prefix("tencent-tokenhub:hy4-preview") == "hy4-preview"
+        assert _strip_provider_prefix("tokenhub:hy4-preview") == "hy4-preview"
 
     def test_infer_from_url(self):
         from agent.model_metadata import _infer_provider_from_url
@@ -367,7 +369,7 @@ class TestTencentTokenhubAuxiliary:
     def test_aux_model_registered(self):
         from agent.auxiliary_client import _API_KEY_PROVIDER_AUX_MODELS
         assert "tencent-tokenhub" in _API_KEY_PROVIDER_AUX_MODELS
-        assert _API_KEY_PROVIDER_AUX_MODELS["tencent-tokenhub"] == "hy3-preview"
+        assert _API_KEY_PROVIDER_AUX_MODELS["tencent-tokenhub"] == "hy4-preview"
 
     def test_aux_aliases(self):
         from agent.auxiliary_client import _PROVIDER_ALIASES

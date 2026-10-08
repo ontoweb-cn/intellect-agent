@@ -158,10 +158,13 @@ class TestArceeURLMapping:
         assert _URL_TO_PROVIDER.get("api.arcee.ai") == "arcee"
 
     def test_provider_prefixes(self):
-        from agent.model_metadata import _PROVIDER_PREFIXES
-        assert "arcee" in _PROVIDER_PREFIXES
-        assert "arcee-ai" in _PROVIDER_PREFIXES
-        assert "arceeai" in _PROVIDER_PREFIXES
+        # Prefixes live in the Rust extension since the P7 quick-win
+        # migration — assert the behavior through the Python bridge.
+        from agent.model_metadata import _strip_provider_prefix
+
+        assert _strip_provider_prefix("arcee:trinity-large") == "trinity-large"
+        assert _strip_provider_prefix("arcee-ai:trinity-large") == "trinity-large"
+        assert _strip_provider_prefix("arceeai:trinity-large") == "trinity-large"
 
     def test_trajectory_compressor_detects_arcee(self):
         import trajectory_compressor as tc
