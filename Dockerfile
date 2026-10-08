@@ -38,11 +38,13 @@ ENV UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
 # replaces tini with s6-overlay's /init (PID 1 = s6-svscan), which reaps
 # zombies non-blockingly on SIGCHLD and additionally supervises the main
 # intellect process and per-profile gateways.
-# Debian 13 默认使用 deb822 格式的 debian.sources；先替换为清华镜像，再执行更新和安装。
+# Debian 13 默认使用 deb822 格式的 debian.sources；先替换为阿里云镜像，再执行更新和安装。
+# 2026-10-08：tuna 对部分网络出口直接返回拒绝页（http/https 均被拦，"无法访问此页面"），
+# apt 报 "InRelease is not signed" 实为拦截页内容。与 PyPI 同步改用 aliyun（见上方 UV_DEFAULT_INDEX 注释）。
 # 基础层尚未包含 CA 根证书，因此 APT 引导阶段使用 HTTP；APT 仍会校验 Release 签名和软件包哈希。
 RUN sed -i \
-        -e 's|http://deb.debian.org/debian-security|http://mirrors.tuna.tsinghua.edu.cn/debian-security|g' \
-        -e 's|http://deb.debian.org/debian|http://mirrors.tuna.tsinghua.edu.cn/debian|g' \
+        -e 's|http://deb.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' \
+        -e 's|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g' \
         /etc/apt/sources.list.d/debian.sources && \
     printf 'Acquire::Retries "5";\nAcquire::http::Timeout "60";\nAcquire::https::Timeout "60";\n' \
         > /etc/apt/apt.conf.d/80-intellect-mirror-retries && \
@@ -51,7 +53,7 @@ RUN sed -i \
     ca-certificates curl iputils-ping python3 python3-pip python-is-python3 ripgrep ffmpeg \
     gcc python3-dev libffi-dev procps git openssh-client docker-cli xz-utils \
     cargo rustc pkg-config && \
-    sed -i 's|http://mirrors.tuna.tsinghua.edu.cn|https://mirrors.tuna.tsinghua.edu.cn|g' \
+    sed -i 's|http://mirrors.aliyun.com|https://mirrors.aliyun.com|g' \
         /etc/apt/sources.list.d/debian.sources && \
     rm -rf /var/lib/apt/lists/*
 
