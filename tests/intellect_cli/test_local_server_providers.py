@@ -332,12 +332,17 @@ class TestValidateRequestedModel:
 class TestPickerCuratedInjection:
     def _patch_picker_env(self, monkeypatch):
         """Common hermetic setup: the picker function unconditionally pulls
-        the remote OntoWeb model-catalog manifest and models.dev — cut both
-        so these tests stay fast under the 30s isolation timeout."""
+        the remote OntoWeb model-catalog manifest and models.dev, and a
+        Claude Code login on the dev box makes the anthropic row probe
+        api.anthropic.com live — cut all three so these tests stay fast
+        under the 30s isolation timeout."""
         monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
         monkeypatch.setattr(providers_mod, "intellect_OVERLAYS", {})
         monkeypatch.setattr(
             "intellect_cli.models.get_curated_ontoweb_model_ids", lambda: [],
+        )
+        monkeypatch.setattr(
+            "intellect_cli.models._fetch_anthropic_models", lambda *a, **k: [],
         )
         for var in LOCAL_ENV_VARS:
             monkeypatch.delenv(var, raising=False)

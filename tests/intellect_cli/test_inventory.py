@@ -344,15 +344,32 @@ def test_end_to_end_with_real_context_no_credentials_leak(monkeypatch):
     """Full pipeline: real load_picker_context + real
     list_authenticated_providers. Verify no credential string ever
     appears in the returned payload, even with picker_hints=True."""
+    import socket as _socket
+
+    def _no_network(*args, **kwargs):
+        raise OSError("network disabled in test")
+
+    # Hermetic, belt-and-braces: the targeted patches below cut the known
+    # remote pulls (OntoWeb manifest, models.dev, openrouter/anthropic
+    # catalogs), but the real pipeline has too many ambient probes to
+    # enumerate (boto3/IMDS via ~/.aws, Claude Code token discovery, ...).
+    # Blocking create_connection turns any missed one into an instant
+    # failure that every product code path already degrades on.
+    monkeypatch.setattr(_socket, "create_connection", _no_network)
+
     canary = "sk-canary-XYZ-must-not-appear"
     monkeypatch.setenv("OPENROUTER_API_KEY", canary)
     monkeypatch.setenv("ANTHROPIC_API_KEY", canary)
     cfg = _cfg(model={"provider": "openrouter"})
-    with patch("intellect_cli.config.load_config", return_value=cfg):
+    with patch("intellect_cli.config.load_config", return_value=cfg), \
+         patch("intellect_cli.models.get_curated_ontoweb_model_ids", return_value=[]), \
+         patch("agent.models_dev.fetch_models_dev", return_value={}), \
+         patch("intellect_cli.models.fetch_openrouter_models", return_value=[]), \
+         patch("intellect_cli.models._fetch_anthropic_models", return_value=[]):
         ctx = load_picker_context()
-    payload = build_models_payload(
-        ctx, include_unconfigured=True, picker_hints=True,
-    )
+        payload = build_models_payload(
+            ctx, include_unconfigured=True, picker_hints=True,
+        )
     import json as _json
 
     assert canary not in _json.dumps(payload)

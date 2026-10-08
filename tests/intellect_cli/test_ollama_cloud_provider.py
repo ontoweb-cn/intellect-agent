@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 from intellect_cli.auth import PROVIDER_REGISTRY, resolve_provider, resolve_api_key_provider_credentials
 from intellect_cli.models import _PROVIDER_MODELS, _PROVIDER_LABELS, _PROVIDER_ALIASES, normalize_provider
 from intellect_cli.model_normalize import normalize_model_for_provider
-from agent.model_metadata import _URL_TO_PROVIDER, _PROVIDER_PREFIXES
+from agent.model_metadata import _URL_TO_PROVIDER, _strip_provider_prefix
 from agent.models_dev import PROVIDER_TO_MODELS_DEV, list_agentic_models
 
 
@@ -155,7 +155,9 @@ class TestOllamaCloudModelPicker:
             }
         }
         with patch("intellect_cli.models.fetch_api_models", return_value=["qwen3.5:397b"]), \
-             patch("agent.models_dev.fetch_models_dev", return_value=mock_mdev):
+             patch("agent.models_dev.fetch_models_dev", return_value=mock_mdev), \
+             patch("intellect_cli.models.get_curated_ontoweb_model_ids", return_value=[]), \
+             patch("intellect_cli.models._fetch_anthropic_models", return_value=[]):
             providers = list_authenticated_providers(current_provider="ollama-cloud")
 
         ollama = next((p for p in providers if p["slug"] == "ollama-cloud"), None)
@@ -167,8 +169,13 @@ class TestOllamaCloudModelPicker:
         from intellect_cli.model_switch import list_authenticated_providers
 
         monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
-
-        providers = list_authenticated_providers(current_provider="openrouter")
+        # Hermetic: cut the remote OntoWeb manifest + models.dev pulls, and
+        # the anthropic /v1/models probe (a Claude Code login on the dev box
+        # makes resolve_anthropic_token() succeed without any env key).
+        with patch("intellect_cli.models.get_curated_ontoweb_model_ids", return_value=[]), \
+             patch("agent.models_dev.fetch_models_dev", return_value={}), \
+             patch("intellect_cli.models._fetch_anthropic_models", return_value=[]):
+            providers = list_authenticated_providers(current_provider="openrouter")
         ollama = next((p for p in providers if p["slug"] == "ollama-cloud"), None)
         assert ollama is None, "ollama-cloud should not appear without OLLAMA_API_KEY"
 
@@ -312,10 +319,15 @@ class TestOllamaCloudUrlMapping:
         assert _URL_TO_PROVIDER.get("ollama.com") == "ollama-cloud"
 
     def test_provider_prefix_canonical(self):
-        assert "ollama-cloud" in _PROVIDER_PREFIXES
+        # Provider prefixes moved to the Rust extension (P7 quick-win
+        # migration) — assert the behavior through the Python bridge.
+        # Stripping is colon-form only ("provider:model"); publisher/slug
+        # model IDs like "ollama-cloud/kimi-k2.6" must pass through.
+        assert _strip_provider_prefix("ollama-cloud:kimi-k2.6") == "kimi-k2.6"
+        assert _strip_provider_prefix("ollama-cloud/kimi-k2.6") == "ollama-cloud/kimi-k2.6"
 
     def test_provider_prefix_alias(self):
-        assert "ollama" in _PROVIDER_PREFIXES
+        assert _strip_provider_prefix("ollama:qwen3") == "qwen3"
 
 
 # ── models.dev Integration ──

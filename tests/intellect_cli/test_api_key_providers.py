@@ -1144,8 +1144,12 @@ class TestNovitaProvider:
         assert _PROVIDER_LABELS["novita"] == "NovitaAI"
 
     def test_novita_in_provider_prefixes(self):
-        from agent.model_metadata import _PROVIDER_PREFIXES
-        assert "novita" in _PROVIDER_PREFIXES
+        # Prefixes live in the Rust extension since the P7 quick-win
+        # migration — assert the behavior through the Python bridge.
+        from agent.model_metadata import _strip_provider_prefix
+
+        assert _strip_provider_prefix("novita:deepseek-v3") == "deepseek-v3"
+        assert _strip_provider_prefix("novita/deepseek-v3") == "novita/deepseek-v3"
 
     def test_novita_url_to_provider(self):
         from agent.model_metadata import _URL_TO_PROVIDER
