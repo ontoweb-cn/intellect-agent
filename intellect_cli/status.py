@@ -392,21 +392,24 @@ def show_status(args):
         safe_print(f"  {'LM Studio':<16} {check_mark(ok)} {msg}")
 
     # vLLM / local Ollama / GPUStack reachability — same active-provider-only
-    # gating so users with foreign configs don't see probe noise.
-    if _effective_provider_label() in {"vLLM", "Ollama (Local)", "GPUStack"}:
+    # gating so users with foreign configs don't see probe noise. Map the
+    # label back to the provider id once instead of re-resolving (the label
+    # already came from resolve_provider via _effective_provider_label).
+    _local_label_to_pid = {"vLLM": "vllm", "Ollama (Local)": "ollama", "GPUStack": "gpustack"}
+    _matched_pid = _local_label_to_pid.get(_effective_provider_label())
+    if _matched_pid:
         from intellect_cli.auth import resolve_api_key_provider_credentials
-        from intellect_cli.models import _LOCAL_SERVER_LABELS, fetch_local_server_models
-        effective = resolve_provider(resolve_requested_provider())
+        from intellect_cli.models import fetch_local_server_models
         model_cfg = config.get("model")
         base = (model_cfg.get("base_url") if isinstance(model_cfg, dict) else None) or ""
         if not base:
             try:
-                base = str(resolve_api_key_provider_credentials(effective).get("base_url") or "")
+                base = str(resolve_api_key_provider_credentials(_matched_pid).get("base_url") or "")
             except Exception:
                 base = ""
         try:
             models = fetch_local_server_models(
-                effective, api_key="", base_url=base, timeout=1.5,
+                _matched_pid, api_key="", base_url=base, timeout=1.5,
             )
             if models is None:
                 ok, msg = False, f"unreachable at {base or 'default URL'}"
@@ -414,7 +417,7 @@ def show_status(args):
                 ok, msg = True, f"reachable ({len(models)} model(s)) at {base or 'default URL'}"
         except Exception:
             ok, msg = False, "probe failed"
-        safe_print(f"  {_LOCAL_SERVER_LABELS.get(effective, effective):<16} {check_mark(ok)} {msg}")
+        safe_print(f"  {_effective_provider_label():<16} {check_mark(ok)} {msg}")
 
     # =========================================================================
     # Terminal Configuration

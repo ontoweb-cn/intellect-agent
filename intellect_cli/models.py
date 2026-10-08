@@ -2938,12 +2938,21 @@ def fetch_gpustack_models(
 ) -> Optional[list[str]]:
     """List model IDs from GPUStack's OpenAI-compatible ``/v1-openai/models``.
 
-    The base URL must include the ``/v1-openai`` suffix (probe_api_models'
-    fallback probe covers deployments that serve it at the root). Unlike
-    vLLM/Ollama, GPUStack deployments normally REQUIRE an API key — without
-    one the endpoint answers HTTP 401 and this returns ``None``.
+    ``base_url`` may be the server root (with or without a reverse-proxy
+    path prefix, e.g. ``https://host/gpustack``) — the ``/v1-openai``
+    suffix is appended automatically when missing. Unlike vLLM/Ollama,
+    GPUStack deployments normally REQUIRE an API key — without one the
+    endpoint answers HTTP 401 and this returns ``None``.
     """
-    return fetch_api_models(api_key, base_url, timeout=timeout)
+    result = fetch_api_models(api_key, base_url, timeout=timeout)
+    if result:
+        return result
+    normalized = (base_url or "").strip().rstrip("/")
+    if normalized and not normalized.endswith("/v1-openai"):
+        # GPUStack's OpenAI-compatible surface lives strictly under
+        # /v1-openai; probe_api_models' +/v1 fallback can't reach it.
+        return fetch_api_models(api_key, normalized + "/v1-openai", timeout=timeout)
+    return result
 
 
 _LOCAL_SERVER_FETCHERS = {

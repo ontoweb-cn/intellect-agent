@@ -135,6 +135,19 @@ class TestNoAuthPlaceholder:
         creds = resolve_api_key_provider_credentials("vllm")
         assert creds["base_url"] == "http://10.0.0.5:8000/v1"
 
+    def test_gpustack_base_url_gets_openai_suffix(self, clean_local_env, monkeypatch):
+        """Users enter the server root (with reverse-proxy prefix) — the
+        /v1-openai suffix must be appended, or every request 404s against
+        GPUStack's management API."""
+        monkeypatch.setenv("GPUSTACK_BASE_URL", "https://ai.wust.edu.cn/gpustack")
+        creds = resolve_api_key_provider_credentials("gpustack")
+        assert creds["base_url"] == "https://ai.wust.edu.cn/gpustack/v1-openai"
+
+    def test_gpustack_suffix_not_duplicated(self, clean_local_env, monkeypatch):
+        monkeypatch.setenv("GPUSTACK_BASE_URL", "https://host/gpustack/v1-openai/")
+        creds = resolve_api_key_provider_credentials("gpustack")
+        assert creds["base_url"] == "https://host/gpustack/v1-openai"
+
     def test_local_servers_excluded_from_auto_selection(self, clean_local_env, monkeypatch):
         """Env keys must not auto-select a local server (it may be offline)."""
         monkeypatch.setenv("VLLM_API_KEY", "some-key")
@@ -197,6 +210,30 @@ class TestFetchLocalServerModels:
     def test_unreachable_returns_none(self, clean_local_env):
         with patch("intellect_cli.models.fetch_api_models", return_value=None):
             assert fetch_local_server_models("ollama") is None
+
+    def test_gpustack_root_url_retry_with_openai_suffix(self):
+        """First probe at the server root fails; retry must target
+        <root>/v1-openai — probe_api_models' +/v1 fallback can't reach
+        GPUStack's OpenAI-compatible surface."""
+        with patch(
+            "intellect_cli.models.fetch_api_models", side_effect=[None, ["gs-model"]],
+        ) as f:
+            models = fetch_gpustack_models(api_key="k", base_url="https://host/gpustack")
+        assert models == ["gs-model"]
+        assert len(f.call_args_list) == 2
+        assert _call_arg(f.call_args_list[0], "base_url", 1) == "https://host/gpustack"
+        assert _call_arg(f.call_args_list[1], "base_url", 1) == "https://host/gpustack/v1-openai"
+
+    def test_gpustack_openai_suffix_not_retried(self):
+        """URL already ending in /v1-openai: single probe, no retry."""
+        with patch(
+            "intellect_cli.models.fetch_api_models", side_effect=[None],
+        ) as f:
+            models = fetch_gpustack_models(
+                api_key="k", base_url="https://host/gpustack/v1-openai",
+            )
+        assert models is None
+        assert len(f.call_args_list) == 1
 
 
 # -- provider_model_ids live branch -------------------------------------------

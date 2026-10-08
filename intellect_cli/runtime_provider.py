@@ -1167,6 +1167,11 @@ def _resolve_explicit_runtime(
             if provider in {"kimi-coding", "kimi-coding-cn"}:
                 creds = resolve_api_key_provider_credentials(provider)
                 base_url = creds.get("base_url", "").rstrip("/")
+            elif provider == "gpustack":
+                # Route through the resolver so the /v1-openai suffix is
+                # appended when the env/default URL omits it.
+                creds = resolve_api_key_provider_credentials(provider)
+                base_url = creds.get("base_url", "").rstrip("/")
             else:
                 base_url = env_url or pconfig.inference_base_url
 

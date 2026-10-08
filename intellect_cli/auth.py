@@ -6599,6 +6599,20 @@ def _get_azure_foundry_auth_status() -> Dict[str, Any]:
     return info
 
 
+def normalize_gpustack_base_url(base_url: str) -> str:
+    """GPUStack serves its OpenAI-compatible API strictly under ``/v1-openai``.
+
+    Users naturally enter the server root (optionally with a reverse-proxy
+    path prefix, e.g. ``https://host/gpustack``) — append the canonical
+    suffix when missing so requests don't 404 against the management API
+    that lives under ``/v1``.
+    """
+    normalized = (base_url or "").strip().rstrip("/")
+    if normalized and not normalized.endswith("/v1-openai"):
+        return normalized + "/v1-openai"
+    return normalized
+
+
 def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
     """Resolve API key and base URL for an API-key provider.
 
@@ -6632,6 +6646,8 @@ def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
         base_url = _resolve_kimi_base_url(api_key, pconfig.inference_base_url, env_url)
     elif provider_id == "zai":
         base_url = _resolve_zai_base_url(api_key, pconfig.inference_base_url, env_url)
+    elif provider_id == "gpustack":
+        base_url = normalize_gpustack_base_url(env_url or pconfig.inference_base_url)
     elif env_url:
         base_url = env_url.rstrip("/")
     else:
