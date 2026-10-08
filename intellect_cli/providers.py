@@ -104,7 +104,8 @@ intellect_OVERLAYS: Dict[str, intellectOverlay] = {
     "ollama": intellectOverlay(
         transport="openai_chat",
         auth_type="api_key",
-        extra_env_vars=("OLLAMA_API_KEY",),
+        # No extra_env_vars: OLLAMA_API_KEY belongs to ollama-cloud (see the
+        # matching comment on the "ollama" ProviderConfig in auth.py).
         base_url_override="http://127.0.0.1:11434/v1",
         base_url_env_var="OLLAMA_BASE_URL",
     ),

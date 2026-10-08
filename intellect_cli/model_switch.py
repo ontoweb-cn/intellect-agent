@@ -1197,20 +1197,26 @@ def list_authenticated_providers(
         curated["lmstudio"] = live
 
     # Other first-class local servers (vLLM, local Ollama, GPUStack) get the
-    # same live-probe treatment. Probe only when there's a signal (env var
-    # set or the provider is active) so users with no local server don't pay
-    # a network roundtrip per entry in the picker.
-    for _local_pid, _local_key_env, _local_url_env in (
-        ("vllm", "VLLM_API_KEY", "VLLM_BASE_URL"),
-        ("ollama", "OLLAMA_API_KEY", "OLLAMA_BASE_URL"),
-        ("gpustack", "GPUSTACK_API_KEY", "GPUSTACK_BASE_URL"),
+    # same live-probe treatment. Probe only when the endpoint identity needs
+    # our base_url precedence (URL env > active config) — key-only signals
+    # are covered by the canonical/overlay sections via
+    # cached_provider_model_ids → provider_model_ids, which probes through
+    # the same fetcher; duplicating it here would add a second network
+    # roundtrip per picker open.
+    from intellect_cli.models import (
+        _LOCAL_SERVER_PROVIDERS,
+        fetch_local_server_models,
+    )
+    for _local_pid, _local_url_env in (
+        ("vllm", "VLLM_BASE_URL"),
+        ("ollama", "OLLAMA_BASE_URL"),
+        ("gpustack", "GPUSTACK_BASE_URL"),
     ):
         if _local_pid in curated and curated[_local_pid]:
             continue
         is_current_local = current_provider.strip().lower() == _local_pid
-        if not (os.environ.get(_local_key_env) or os.environ.get(_local_url_env) or is_current_local):
+        if not (os.environ.get(_local_url_env) or is_current_local):
             continue
-        from intellect_cli.models import fetch_local_server_models
         local_base = (
             os.environ.get(_local_url_env)
             or (current_base_url if is_current_local and current_base_url else "")
@@ -1218,7 +1224,7 @@ def list_authenticated_providers(
         try:
             live = fetch_local_server_models(
                 _local_pid,
-                api_key=os.environ.get(_local_key_env, ""),
+                api_key="",
                 base_url=local_base,
                 timeout=1.5,  # Smaller timeout for picker
             )
@@ -1436,6 +1442,18 @@ def list_authenticated_providers(
         _cp_has_creds = False
         if _cp_config and _cp_config.api_key_env_vars:
             _cp_has_creds = any(os.environ.get(ev) for ev in _cp_config.api_key_env_vars)
+        # First-class local servers have no ambient credential: keyless
+        # setups have no key env at all, and local ollama deliberately
+        # doesn't claim OLLAMA_API_KEY (that belongs to ollama-cloud). Signal
+        # instead on the URL override or being the active provider — exactly
+        # the cases where the curated injection upstream already probed and
+        # cached the live model list.
+        if not _cp_has_creds and _cp.slug in _LOCAL_SERVER_PROVIDERS:
+            _cp_url_env = _cp_config.base_url_env_var if _cp_config else ""
+            _cp_has_creds = (
+                _cp.slug == current_provider.strip().lower()
+                or bool(_cp_url_env and os.environ.get(_cp_url_env))
+            )
         # Also check auth store and credential pool
         if not _cp_has_creds:
             try:

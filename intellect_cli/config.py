@@ -2683,8 +2683,8 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "OLLAMA_API_KEY": {
-        "description": "Ollama API key — required for Ollama Cloud (ollama.com), optional for local Ollama behind an auth-enforcing reverse proxy",
-        "prompt": "Ollama API key (leave empty for keyless local Ollama)",
+        "description": "Ollama Cloud API key (ollama.com). Local Ollama is keyless — for an auth-proxied local server use `intellect auth add ollama` or a custom provider",
+        "prompt": "Ollama Cloud API key",
         "url": "https://ollama.com/settings",
         "password": True,
         "category": "provider",

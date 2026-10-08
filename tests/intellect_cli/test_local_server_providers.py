@@ -2,8 +2,9 @@
 
 Covers alias normalization, PROVIDER_REGISTRY wiring, keyless placeholder
 credentials, model listing dispatch, provider_model_ids live probing,
-/model validation, and picker curated injection. All network access is
-mocked — these tests must never hit a real server.
+/model validation, picker curated injection, and the ollama-cloud /
+local-ollama env separation. All network access is mocked — these tests
+must never hit a real server.
 """
 
 from unittest.mock import patch
@@ -99,7 +100,9 @@ class TestProviderRegistry:
     def test_env_var_declarations(self):
         assert PROVIDER_REGISTRY["vllm"].api_key_env_vars == ("VLLM_API_KEY",)
         assert PROVIDER_REGISTRY["vllm"].base_url_env_var == "VLLM_BASE_URL"
-        assert PROVIDER_REGISTRY["ollama"].api_key_env_vars == ("OLLAMA_API_KEY",)
+        # Local ollama deliberately claims NO key env: OLLAMA_API_KEY belongs
+        # to ollama-cloud (see the ProviderConfig comment in auth.py).
+        assert PROVIDER_REGISTRY["ollama"].api_key_env_vars == ()
         assert PROVIDER_REGISTRY["ollama"].base_url_env_var == "OLLAMA_BASE_URL"
         assert PROVIDER_REGISTRY["gpustack"].api_key_env_vars == ("GPUSTACK_API_KEY",)
         assert PROVIDER_REGISTRY["gpustack"].base_url_env_var == "GPUSTACK_BASE_URL"
@@ -110,6 +113,11 @@ class TestProviderRegistry:
         assert providers_mod.intellect_OVERLAYS["vllm"].base_url_override == "http://127.0.0.1:8000/v1"
         assert providers_mod.intellect_OVERLAYS["ollama"].base_url_override == "http://127.0.0.1:11434/v1"
         assert providers_mod.intellect_OVERLAYS["gpustack"].base_url_override == "http://127.0.0.1/v1-openai"
+
+    def test_ollama_overlay_claims_no_key_env(self):
+        # The overlay drives picker credential discovery — it must not treat
+        # the shared OLLAMA_API_KEY (ollama-cloud) as a local-server signal.
+        assert providers_mod.intellect_OVERLAYS["ollama"].extra_env_vars == ()
 
 
 # -- keyless placeholder credentials -----------------------------------------
@@ -155,6 +163,37 @@ class TestNoAuthPlaceholder:
         monkeypatch.setenv("GPUSTACK_API_KEY", "some-key")
         monkeypatch.setenv("GLM_API_KEY", "real-glm-key")
         assert resolve_provider() == "zai"
+
+
+# -- ollama-cloud / local-ollama env separation -------------------------------
+
+class TestOllamaCloudEnvSeparation:
+    def test_cloud_resolver_ignores_loopback_override(self, clean_local_env, monkeypatch):
+        """OLLAMA_BASE_URL pointing at the local box must not redirect
+        ollama-cloud — the env var is shared with the local provider."""
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+        creds = resolve_api_key_provider_credentials("ollama-cloud")
+        assert creds["base_url"] == "https://ollama.com/v1"
+
+    def test_cloud_resolver_honors_remote_override(self, clean_local_env, monkeypatch):
+        monkeypatch.setenv("OLLAMA_BASE_URL", "https://ollama-proxy.example.com/v1")
+        creds = resolve_api_key_provider_credentials("ollama-cloud")
+        assert creds["base_url"] == "https://ollama-proxy.example.com/v1"
+
+    def test_cloud_default_without_override(self, clean_local_env):
+        creds = resolve_api_key_provider_credentials("ollama-cloud")
+        assert creds["base_url"] == "https://ollama.com/v1"
+
+    def test_local_ollama_store_key_still_used(self, clean_local_env, monkeypatch):
+        """Local ollama claims no key env, but a key stored via
+        `intellect auth add ollama` (secret store) must still resolve —
+        that's the auth-proxied-reverse-proxy escape hatch."""
+        monkeypatch.setattr(
+            "intellect_cli.api_key_secrets.resolve_secret_store_provider_key",
+            lambda pid: ("stored-ollama-key", "secret_store") if pid == "ollama" else ("", ""),
+        )
+        creds = resolve_api_key_provider_credentials("ollama")
+        assert creds["api_key"] == "stored-ollama-key"
 
 
 # -- model listing dispatch ----------------------------------------------------
@@ -291,11 +330,20 @@ class TestValidateRequestedModel:
 # -- picker curated injection ----------------------------------------------------
 
 class TestPickerCuratedInjection:
-    def _list_providers(self, monkeypatch, *, fetch_result, current_provider="", env=None):
+    def _patch_picker_env(self, monkeypatch):
+        """Common hermetic setup: the picker function unconditionally pulls
+        the remote OntoWeb model-catalog manifest and models.dev — cut both
+        so these tests stay fast under the 30s isolation timeout."""
         monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
         monkeypatch.setattr(providers_mod, "intellect_OVERLAYS", {})
+        monkeypatch.setattr(
+            "intellect_cli.models.get_curated_ontoweb_model_ids", lambda: [],
+        )
         for var in LOCAL_ENV_VARS:
             monkeypatch.delenv(var, raising=False)
+
+    def _list_providers(self, monkeypatch, *, fetch_result, current_provider="", env=None):
+        self._patch_picker_env(monkeypatch)
         for key, value in (env or {}).items():
             monkeypatch.setenv(key, value)
 
@@ -325,11 +373,7 @@ class TestPickerCuratedInjection:
         """Active local provider with no key: curated injection still probes
         (mirrors lmstudio), and the fetcher received the provider id."""
         seen_providers: list[str] = []
-
-        monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
-        monkeypatch.setattr(providers_mod, "intellect_OVERLAYS", {})
-        for var in LOCAL_ENV_VARS:
-            monkeypatch.delenv(var, raising=False)
+        self._patch_picker_env(monkeypatch)
 
         from intellect_cli.model_switch import list_authenticated_providers
 
@@ -348,11 +392,7 @@ class TestPickerCuratedInjection:
     def test_no_signal_no_probe(self, monkeypatch):
         """Without env vars and without being active, no probe runs."""
         seen_providers: list[str] = []
-
-        monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
-        monkeypatch.setattr(providers_mod, "intellect_OVERLAYS", {})
-        for var in LOCAL_ENV_VARS:
-            monkeypatch.delenv(var, raising=False)
+        self._patch_picker_env(monkeypatch)
 
         from intellect_cli.model_switch import list_authenticated_providers
 
@@ -367,3 +407,38 @@ class TestPickerCuratedInjection:
                 current_model="",
             )
         assert not seen_providers
+
+    def test_cloud_key_does_not_signal_local_ollama(self, monkeypatch):
+        """OLLAMA_API_KEY belongs to ollama-cloud. It must NOT produce an
+        "Ollama (Local)" picker row nor trigger a probe of the local box
+        (regression: cloud-key users saw an empty local row)."""
+        seen_providers: list[str] = []
+        self._patch_picker_env(monkeypatch)
+        monkeypatch.setenv("OLLAMA_API_KEY", "cloud-key")
+
+        from intellect_cli.model_switch import list_authenticated_providers
+
+        def _fake_fetch(provider, **kw):
+            seen_providers.append(provider)
+            return ["m"] if provider == "ollama" else None
+
+        with patch("intellect_cli.models.fetch_local_server_models", side_effect=_fake_fetch):
+            providers = list_authenticated_providers(
+                current_provider="openrouter",
+                current_base_url="",
+                current_model="",
+            )
+        assert "ollama" not in seen_providers
+        assert all(p["slug"] != "ollama" for p in providers)
+
+    def test_url_env_lists_local_ollama_without_key(self, monkeypatch):
+        """URL override alone is a sufficient discovery signal for a keyless
+        local server — row emitted, models from the live probe."""
+        providers = self._list_providers(
+            monkeypatch,
+            fetch_result={"ollama": ["qwen3:32b"]},
+            env={"OLLAMA_BASE_URL": "http://192.168.1.20:11434/v1"},
+        )
+        ollama = next((p for p in providers if p["slug"] == "ollama"), None)
+        assert ollama is not None
+        assert "qwen3:32b" in ollama["models"]

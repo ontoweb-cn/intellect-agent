@@ -3485,7 +3485,11 @@ def fetch_ollama_cloud_models(
     if not api_key:
         api_key = os.getenv("OLLAMA_API_KEY", "")
     if not base_url:
-        base_url = os.getenv("OLLAMA_BASE_URL", "") or "https://ollama.com/v1"
+        # resolve_ollama_cloud_base_url ignores loopback OLLAMA_BASE_URL
+        # values — those describe the LOCAL ollama server, which shares the
+        # env var with ollama-cloud.
+        from intellect_cli.auth import resolve_ollama_cloud_base_url
+        base_url = resolve_ollama_cloud_base_url(os.getenv("OLLAMA_BASE_URL", ""))
 
     live_models: list[str] = []
     if api_key:

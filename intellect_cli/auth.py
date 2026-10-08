@@ -247,7 +247,14 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         name="Ollama (Local)",
         auth_type="api_key",
         inference_base_url=DEFAULT_OLLAMA_LOCAL_BASE_URL,
-        api_key_env_vars=("OLLAMA_API_KEY",),
+        # Deliberately NO OLLAMA_API_KEY here — that env var belongs to
+        # ollama-cloud, and treating it as a local-server credential signal
+        # made every cloud-key user emit an empty "Ollama (Local)" picker row
+        # and sent their cloud key to localhost. Local Ollama is keyless;
+        # auth-proxied setups store a key via `intellect auth add ollama`
+        # (secret store is consulted before env vars) or use a custom
+        # provider.
+        api_key_env_vars=(),
         base_url_env_var="OLLAMA_BASE_URL",
     ),
     "gpustack": ProviderConfig(
@@ -6613,6 +6620,30 @@ def normalize_gpustack_base_url(base_url: str) -> str:
     return normalized
 
 
+def resolve_ollama_cloud_base_url(env_url: str) -> str:
+    """Resolve the ollama-cloud endpoint, ignoring loopback overrides.
+
+    Local Ollama and Ollama Cloud share ``OLLAMA_BASE_URL`` (local default
+    ``http://127.0.0.1:11434/v1``, cloud default ``https://ollama.com/v1``).
+    When the override points at a loopback host it is describing the LOCAL
+    server, so ollama-cloud must ignore it instead of sending cloud-model
+    requests at the local box. Non-loopback overrides (self-hosted ollama.com
+    proxies) are honored.
+    """
+    from utils import base_url_hostname
+
+    candidate = (env_url or "").strip().rstrip("/")
+    if candidate:
+        host = (base_url_hostname(candidate) or "").lower().rstrip(".")
+        if host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
+            logger.debug(
+                "Ignoring loopback OLLAMA_BASE_URL %s for ollama-cloud", candidate,
+            )
+            return DEFAULT_OLLAMA_CLOUD_BASE_URL
+        return candidate
+    return DEFAULT_OLLAMA_CLOUD_BASE_URL
+
+
 def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
     """Resolve API key and base URL for an API-key provider.
 
@@ -6648,6 +6679,8 @@ def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
         base_url = _resolve_zai_base_url(api_key, pconfig.inference_base_url, env_url)
     elif provider_id == "gpustack":
         base_url = normalize_gpustack_base_url(env_url or pconfig.inference_base_url)
+    elif provider_id == "ollama-cloud":
+        base_url = resolve_ollama_cloud_base_url(env_url)
     elif env_url:
         base_url = env_url.rstrip("/")
     else:

@@ -1167,9 +1167,10 @@ def _resolve_explicit_runtime(
             if provider in {"kimi-coding", "kimi-coding-cn"}:
                 creds = resolve_api_key_provider_credentials(provider)
                 base_url = creds.get("base_url", "").rstrip("/")
-            elif provider == "gpustack":
-                # Route through the resolver so the /v1-openai suffix is
-                # appended when the env/default URL omits it.
+            elif provider in {"gpustack", "ollama-cloud"}:
+                # Route through the resolver for provider-specific URL
+                # normalization (GPUStack /v1-openai suffix, ollama-cloud
+                # loopback guard on OLLAMA_BASE_URL).
                 creds = resolve_api_key_provider_credentials(provider)
                 base_url = creds.get("base_url", "").rstrip("/")
             else:
