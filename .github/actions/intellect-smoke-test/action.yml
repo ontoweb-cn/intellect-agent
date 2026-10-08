@@ -37,3 +37,20 @@ runs:
         docker run --rm \
           -v /tmp/intellect-test:/opt/data \
           "${{ inputs.image }}" --help
+
+    - name: "Probe: Rust extension imports in-image"
+      shell: bash
+      run: |
+        # `intellect --help` runs the CLI's fast path, which prints a stub and
+        # exits WITHOUT importing the agent stack — so a missing or
+        # wrong-arch intellect_community_core (mandatory since v0.6.2,
+        # ensure_rust_available() hard-fails at agent init) sails through
+        # --help on both runners. This probe imports the extension inside
+        # the container, catching: venv breakage, per-arch .so mismatch,
+        # and the placeholder-package shadowing the Dockerfile's rm/import
+        # check exists to prevent. Cheap (~seconds), runs on amd64 AND
+        # arm64 — the full docker-integration suite is amd64-only, so this
+        # is the only arch-sanity gate the arm64 image gets before push.
+        docker run --rm \
+          -v /tmp/intellect-test:/opt/data \
+          "${{ inputs.image }}" python -c "import intellect_community_core as c; print('rust ext OK', c.rust_core_version())"

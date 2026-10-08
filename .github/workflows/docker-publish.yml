@@ -6,6 +6,10 @@ on:
     # TODO-011: tag 联动 — v* tags also publish the Docker image.
     tags:
       - "v*"
+    # 镜像以 COPY . . 收录整个源码树，触发面必须覆盖所有影响镜像行为的载体；
+    # 负模式排除纯测试改动（镜像不运行 tests/），但 tests/docker 自身的集成
+    # 测试改动要触发。GitHub paths 规则：同一文件按"最后匹配的模式"生效，
+    # 故顺序固定为 广匹配 → !tests/** → tests/docker/**。
     paths:
       - '**/*.py'
       - 'pyproject.toml'
@@ -14,6 +18,18 @@ on:
       - 'docker/**'
       - '.github/workflows/docker-publish.yml'
       - '.github/actions/intellect-smoke-test/**'
+      # 非 .py 的镜像内容载体：Rust 扩展源码、WebUI 静态资源、TUI 源码、
+      # 技能库（stage2 首启 skills_sync 的来源）、.env 种子模板。
+      # 缺了它们，rust-only / 前端-only 的提交会让 :main/:latest 静默过期。
+      - 'rust-core/**'
+      - 'webui/**'
+      - 'ui-tui/**'
+      - 'skills/**'
+      - 'optional-skills/**'
+      - '.env.example'
+      # 测试目录不触发重建；集成测试目录重新纳入。
+      - '!tests/**'
+      - 'tests/docker/**'
   pull_request:
     branches: [main]
     paths:
@@ -24,6 +40,14 @@ on:
       - 'docker/**'
       - '.github/workflows/docker-publish.yml'
       - '.github/actions/intellect-smoke-test/**'
+      - 'rust-core/**'
+      - 'webui/**'
+      - 'ui-tui/**'
+      - 'skills/**'
+      - 'optional-skills/**'
+      - '.env.example'
+      - '!tests/**'
+      - 'tests/docker/**'
   release:
     types: [published]
 
@@ -65,7 +89,9 @@ jobs:
         id: meta
         run: |
           VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          RUST_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('rust-core/Cargo.toml','rb'))['package']['version'])")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "rust_version=${RUST_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
@@ -84,6 +110,7 @@ jobs:
           build-args: |
             INTELLECT_GIT_SHA=${{ github.sha }}
             INTELLECT_VERSION=${{ steps.meta.outputs.version }}
+            INTELLECT_RUST_VERSION=${{ steps.meta.outputs.rust_version }}
             INTELLECT_RELEASE_TAG=${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           cache-from: type=gha,scope=docker-amd64
           cache-to: type=gha,mode=max,scope=docker-amd64
@@ -167,6 +194,7 @@ jobs:
           build-args: |
             INTELLECT_GIT_SHA=${{ github.sha }}
             INTELLECT_VERSION=${{ steps.meta.outputs.version }}
+            INTELLECT_RUST_VERSION=${{ steps.meta.outputs.rust_version }}
             INTELLECT_RELEASE_TAG=${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=docker-amd64
@@ -213,7 +241,9 @@ jobs:
         id: meta
         run: |
           VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          RUST_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('rust-core/Cargo.toml','rb'))['package']['version'])")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "rust_version=${RUST_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
@@ -234,6 +264,7 @@ jobs:
           build-args: |
             INTELLECT_GIT_SHA=${{ github.sha }}
             INTELLECT_VERSION=${{ steps.meta.outputs.version }}
+            INTELLECT_RUST_VERSION=${{ steps.meta.outputs.rust_version }}
             INTELLECT_RELEASE_TAG=
 
       # Main/release builds still use the per-arch gha cache so the digest
@@ -250,6 +281,7 @@ jobs:
           build-args: |
             INTELLECT_GIT_SHA=${{ github.sha }}
             INTELLECT_VERSION=${{ steps.meta.outputs.version }}
+            INTELLECT_RUST_VERSION=${{ steps.meta.outputs.rust_version }}
             INTELLECT_RELEASE_TAG=${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           cache-from: type=gha,scope=docker-arm64
           cache-to: type=gha,mode=max,scope=docker-arm64
@@ -280,6 +312,7 @@ jobs:
           build-args: |
             INTELLECT_GIT_SHA=${{ github.sha }}
             INTELLECT_VERSION=${{ steps.meta.outputs.version }}
+            INTELLECT_RUST_VERSION=${{ steps.meta.outputs.rust_version }}
             INTELLECT_RELEASE_TAG=${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=docker-arm64

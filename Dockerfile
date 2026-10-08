@@ -18,13 +18,18 @@ ENV PYTHONUNBUFFERED=1
 # install survives the /opt/data volume overlay at runtime.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/intellect/.playwright
 
-# 构建期统一使用国内软件源：npm/Playwright 使用 npmmirror，Python 使用清华 PyPI，Rust 使用 RSProxy sparse 索引。
+# 构建期统一使用国内软件源：npm/Playwright 使用 npmmirror，Rust 使用 RSProxy sparse 索引。
 # 锁文件和固定版本仍决定最终依赖内容；这里只替换下载入口，不放宽版本约束，也不关闭完整性校验。
 ENV npm_config_registry=https://registry.npmmirror.com \
     npm_config_replace_registry_host=always \
     PLAYWRIGHT_DOWNLOAD_HOST=https://registry.npmmirror.com/-/binary/playwright \
-    UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
     CARGO_REGISTRIES_CRATES_IO_INDEX=sparse+https://rsproxy.cn/index/
+
+# PyPI 索引仅用于镜像内的 uv/pip 安装。ARG 化以便 --build-arg 覆盖；默认 aliyun
+# （AGENTS.md 记载的镜像，tuna 有间歇 403 会直接中断镜像构建——2026-10-04 事故）。
+# 只换下载入口：uv sync --frozen 仍按锁文件版本与哈希安装。
+ARG UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple/
+ENV UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
 
 # Install system dependencies in one layer, clear APT cache.
 # tini was previously PID 1 to reap orphaned zombie processes (MCP stdio
@@ -268,10 +273,17 @@ RUN if [ -n "${INTELLECT_GIT_SHA}" ]; then \
         printf '%s\n' "${INTELLECT_GIT_SHA}" > /opt/intellect/.intellect_build_sha && \
         chown intellect:intellect /opt/intellect/.intellect_build_sha; \
     fi
-# 本地部署要求镜像版本固定为 0.6.7，使手动构建结果与 Compose 引用保持一致。
-LABEL org.opencontainers.image.version="0.6.7"
-LABEL io.intellect.release.tag="intellect-agent-0.6.7"
-LABEL io.intellect.rust.version="0.1.0"
+# ---------- Version labels ----------
+# 版本由 CI 注入（docker-publish.yml 传入 INTELLECT_VERSION / INTELLECT_RUST_VERSION /
+# INTELLECT_RELEASE_TAG）。下方默认值仅兜底无参数的本地 docker build；
+# packaging/scripts/bump-version.sh 在每次发版时与 pyproject/rust-core 联动更新。
+# （此前硬编码在此处，曾与版本树漂移三个发布周期——0.6.7 标签配 0.7.2 源码树。）
+ARG INTELLECT_VERSION=0.7.2
+ARG INTELLECT_RELEASE_TAG=
+ARG INTELLECT_RUST_VERSION=0.7.2
+LABEL org.opencontainers.image.version="${INTELLECT_VERSION}"
+LABEL io.intellect.release.tag="${INTELLECT_RELEASE_TAG}"
+LABEL io.intellect.rust.version="${INTELLECT_RUST_VERSION}"
 
 # ---------- s6-overlay service wiring ----------
 # Static service declared at build time: main-intellect.

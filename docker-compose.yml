@@ -2,9 +2,11 @@ name: intellect-agent
 
 services:
   intellect-agent:
-    # Compose 只负责编排；镜像必须先在仓库根目录通过官方 Dockerfile 手动构建。
-    image: intellect-agent:0.6.7
-    container_name: intellect-agent-0.6.7
+    # 默认引用 CI 发布的多架构镜像（版本与 pyproject 一致，由 bump-version.sh 联动）。
+    # 本地手动构建场景：在 .env 中设 INTELLECT_IMAGE=intellect-agent:0.7.2，
+    # 并 docker build -t intellect-agent:0.7.2 --build-arg INTELLECT_VERSION=0.7.2 .
+    image: ${INTELLECT_IMAGE:-ontoweb/intellect-agent:0.7.2}
+    container_name: intellect-agent
     restart: unless-stopped
 
     # 所有运行参数统一从仓库根目录 .env 读取，不在编排文件中保存真实凭据。

@@ -1,27 +1,24 @@
 # Docker Compose example — pin image version to SemVer from Gitee Release.
 # Docs: docs/packaging/docker.md
+# (Version pin is bumped by packaging/scripts/bump-version.sh on every release.)
 
 services:
   intellect-gateway:
-    image: ontoweb/intellect-agent:0.6.3
+    image: ontoweb/intellect-agent:0.7.2
     volumes:
-      - intellect-data:/home/intellect/.intellect
-    environment:
-      INTELLECT_HOME: /home/intellect/.intellect
-    command: intellect gateway
+      - intellect-data:/opt/data
+    command: ["intellect", "gateway", "run"]
     restart: unless-stopped
 
   # Interactive CLI (one-shot)
   intellect-chat:
-    image: ontoweb/intellect-agent:0.6.3
+    image: ontoweb/intellect-agent:0.7.2
     profiles: ["cli"]
     stdin_open: true
     tty: true
     volumes:
-      - intellect-data:/home/intellect/.intellect
-    environment:
-      INTELLECT_HOME: /home/intellect/.intellect
-    command: intellect chat
+      - intellect-data:/opt/data
+    command: ["intellect", "chat"]
 
 volumes:
   intellect-data:

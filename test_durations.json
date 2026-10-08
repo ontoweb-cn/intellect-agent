@@ -302,6 +302,7 @@
   "tests/cron/test_rewrite_skill_refs.py": 1.775,
   "tests/cron/test_scheduler.py": 16.419,
   "tests/cron/test_scheduler_mcp_init.py": 2.085,
+  "tests/docker/test_dockerfile_context.py": 0.192,
   "tests/gateway/platforms/test_yuanbao_recall_db_only.py": 1.161,
   "tests/gateway/test_7100_transient_failure_transcript.py": 1.122,
   "tests/gateway/test_active_session_text_merge.py": 1.241,
