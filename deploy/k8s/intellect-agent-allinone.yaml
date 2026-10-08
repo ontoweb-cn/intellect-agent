@@ -57,7 +57,13 @@ spec:
         - name: intellect-agent
           image: hub.wust.edu.cn/intellect/intellect-agent:0.7.2
           imagePullPolicy: IfNotPresent
-          command: ["/opt/intellect/docker/all-in-one.sh"]
+          # K8s 的 command: 会整体替换镜像 ENTRYPOINT（与 Compose 的追加语义不同）。
+          # 必须保留 /init → main-wrapper.sh 完整链：s6 stage2 做 UID 重映射/卷 chown，
+          # main-wrapper 的 with-contenv shebang 负责把容器环境变量注入主程序。
+          # 直接 command: [all-in-one.sh] 会得到干净环境 —— INTELLECT_WEBUI_HOST
+          # 等变量丢失、WebUI 退回 127.0.0.1、NFS 卷以 root 访问被拒。
+          command: ["/init", "/opt/intellect/docker/main-wrapper.sh"]
+          args: ["/opt/intellect/docker/all-in-one.sh"]
           ports:
             - name: api
               containerPort: 8642

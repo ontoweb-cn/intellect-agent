@@ -1,0 +1,141 @@
+# Intellect Agent 单实例 —— ai.wust.edu.cn/lyf 子路径部署（生产集群 intellect 命名空间）
+#
+# 与 all-in-one 清单（intellect-agent-allinone.yaml）的差异：
+#   - INTELLECT_WEBUI_BASE_PATH=/lyf：WebUI 原生子路径支持（服务端剥前缀 + Cookie 限定 Path）
+#   - 仅暴露 WebUI（9119 → NodePort 31911）；API Server 8642 留在容器内
+#   - 单 PVC：/workspace 通过 INTELLECT_WEBUI_DEFAULT_WORKSPACE 指到 /opt/data/workspace
+#     （intellect 命名空间惯例是 nfs-csi；csi-local 的 everest 供给器未注册，PVC 会永久 Pending）
+#
+# 前置路由（管理集群 ai-devops/intellect-forward）：
+#   location = /lyf { return 301 /lyf/; }
+#   location ^~ /lyf/ { proxy_pass http://192.168.1.40:31911; }   # 路径原样透传
+#   并在 Ingress intellect-forward 增加 /lyf Prefix 路径后 rollout restart。
+#
+# Secret 中的两个值必须替换（openssl rand -hex 32 / openssl rand -base64 18）。
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: intellect-agent-lyf-auth
+  namespace: intellect
+type: Opaque
+stringData:
+  API_SERVER_KEY: "replace-with-random-64-hex"
+  INTELLECT_WEBUI_PASSWORD: "replace-with-strong-password"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: intellect-agent-lyf-data
+  namespace: intellect
+spec:
+  storageClassName: nfs-csi
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intellect-agent-lyf
+  namespace: intellect
+  labels:
+    app.kubernetes.io/name: intellect-agent-lyf
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: intellect-agent-lyf
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: intellect-agent-lyf
+    spec:
+      imagePullSecrets:
+        - name: harbor-regcred
+      containers:
+        - name: intellect-agent
+          image: hub.wust.edu.cn/intellect/intellect-agent:0.7.2-r1
+          imagePullPolicy: IfNotPresent
+          # K8s 的 command: 会整体替换镜像 ENTRYPOINT（与 Compose 的追加语义不同）。
+          # 必须保留 /init → main-wrapper.sh 完整链（stage2 初始化 + with-contenv 注入环境变量），
+          # all-in-one.sh 只能放在 args 里，否则 INTELLECT_* 环境变量全部丢失。
+          command: ["/init", "/opt/intellect/docker/main-wrapper.sh"]
+          args: ["/opt/intellect/docker/all-in-one.sh"]
+          ports:
+            - name: webui
+              containerPort: 9119
+          envFrom:
+            - secretRef:
+                name: intellect-agent-lyf-auth
+          env:
+            # NFS 卷（nfs-csi）按 UID 1000 授权；容器内默认 10000 会被拒绝。
+            # intellect 命名空间既有工作负载同样使用 1000。
+            - name: INTELLECT_UID
+              value: "1000"
+            - name: INTELLECT_GID
+              value: "1000"
+            - name: INTELLECT_WEBUI_BASE_PATH
+              value: /lyf
+            - name: INTELLECT_WEBUI_HOST
+              value: "0.0.0.0"
+            - name: INTELLECT_WEBUI_PORT
+              value: "9119"
+            - name: INTELLECT_WEBUI_DEFAULT_WORKSPACE
+              value: /opt/data/workspace
+            - name: API_SERVER_ENABLED
+              value: "true"
+            - name: API_SERVER_HOST
+              value: 127.0.0.1   # 仅容器内可达，不对外
+            - name: API_SERVER_PORT
+              value: "8642"
+            - name: API_SERVER_MODEL_NAME
+              value: intellect-agent-lyf
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              memory: 8Gi
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9119
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9119
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: intellect-agent-lyf-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intellect-agent-lyf
+  namespace: intellect
+  labels:
+    app.kubernetes.io/name: intellect-agent-lyf
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: intellect-agent-lyf
+  ports:
+    - name: webui
+      port: 9119
+      targetPort: 9119
+      nodePort: 31911
