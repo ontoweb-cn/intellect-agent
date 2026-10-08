@@ -90,6 +90,31 @@ intellect_OVERLAYS: Dict[str, intellectOverlay] = {
         base_url_override="http://127.0.0.1:1234/v1",
         base_url_env_var="LM_BASE_URL",
     ),
+    # Local self-hosted inference servers. base_url_override is deliberate
+    # even where models.dev has an entry (vllm/ollama): the override pins the
+    # canonical local default so models.dev catalog drift can't flip these to
+    # a hosted endpoint.
+    "vllm": intellectOverlay(
+        transport="openai_chat",
+        auth_type="api_key",
+        extra_env_vars=("VLLM_API_KEY",),
+        base_url_override="http://127.0.0.1:8000/v1",
+        base_url_env_var="VLLM_BASE_URL",
+    ),
+    "ollama": intellectOverlay(
+        transport="openai_chat",
+        auth_type="api_key",
+        extra_env_vars=("OLLAMA_API_KEY",),
+        base_url_override="http://127.0.0.1:11434/v1",
+        base_url_env_var="OLLAMA_BASE_URL",
+    ),
+    "gpustack": intellectOverlay(
+        transport="openai_chat",
+        auth_type="api_key",
+        extra_env_vars=("GPUSTACK_API_KEY",),
+        base_url_override="http://127.0.0.1/v1-openai",
+        base_url_env_var="GPUSTACK_BASE_URL",
+    ),
     "copilot-acp": intellectOverlay(
         transport="codex_responses",
         auth_type="external_process",
@@ -380,8 +405,14 @@ ALIASES: Dict[str, str] = {
     "lmstudio": "lmstudio",
     "lm-studio": "lmstudio",
     "lm_studio": "lmstudio",
-    "ollama": "custom",  # bare "ollama" = local; use "ollama-cloud" for cloud
-    "vllm": "local",
+    # First-class local servers (bare "ollama" = local; use "ollama-cloud"
+    # for ollama.com). Previously these resolved to "custom"/"local"; they
+    # are canonical ids now, with their own ProviderConfig + live probing.
+    "ollama": "ollama",
+    "vllm": "vllm",
+    "gpustack": "gpustack",
+    "gpu-stack": "gpustack",
+    "gpu_stack": "gpustack",
     "llamacpp": "local",
     "llama.cpp": "local",
     "llama-cpp": "local",
@@ -404,6 +435,9 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "gmi": "GMI Cloud",
     "tencent-tokenhub": "Tencent TokenHub",
     "lmstudio": "LM Studio",
+    "vllm": "vLLM",
+    "ollama": "Ollama (Local)",
+    "gpustack": "GPUStack",
     "local": "Local endpoint",
     "bedrock": "AWS Bedrock",
     "ollama-cloud": "Ollama Cloud",

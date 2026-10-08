@@ -391,6 +391,31 @@ def show_status(args):
             ok, msg = False, "auth rejected — set LM_API_KEY"
         safe_print(f"  {'LM Studio':<16} {check_mark(ok)} {msg}")
 
+    # vLLM / local Ollama / GPUStack reachability — same active-provider-only
+    # gating so users with foreign configs don't see probe noise.
+    if _effective_provider_label() in {"vLLM", "Ollama (Local)", "GPUStack"}:
+        from intellect_cli.auth import resolve_api_key_provider_credentials
+        from intellect_cli.models import _LOCAL_SERVER_LABELS, fetch_local_server_models
+        effective = resolve_provider(resolve_requested_provider())
+        model_cfg = config.get("model")
+        base = (model_cfg.get("base_url") if isinstance(model_cfg, dict) else None) or ""
+        if not base:
+            try:
+                base = str(resolve_api_key_provider_credentials(effective).get("base_url") or "")
+            except Exception:
+                base = ""
+        try:
+            models = fetch_local_server_models(
+                effective, api_key="", base_url=base, timeout=1.5,
+            )
+            if models is None:
+                ok, msg = False, f"unreachable at {base or 'default URL'}"
+            else:
+                ok, msg = True, f"reachable ({len(models)} model(s)) at {base or 'default URL'}"
+        except Exception:
+            ok, msg = False, "probe failed"
+        safe_print(f"  {_LOCAL_SERVER_LABELS.get(effective, effective):<16} {check_mark(ok)} {msg}")
+
     # =========================================================================
     # Terminal Configuration
     # =========================================================================

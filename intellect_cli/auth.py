@@ -92,6 +92,9 @@ DEFAULT_QWEN_BASE_URL = "https://portal.qwen.ai/v1"
 DEFAULT_GITHUB_MODELS_BASE_URL = "https://api.githubcopilot.com"
 DEFAULT_COPILOT_ACP_BASE_URL = "acp://copilot"
 DEFAULT_OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1"
+DEFAULT_VLLM_BASE_URL = "http://127.0.0.1:8000/v1"
+DEFAULT_OLLAMA_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1"
+DEFAULT_GPUSTACK_BASE_URL = "http://127.0.0.1/v1-openai"
 STEPFUN_STEP_PLAN_INTL_BASE_URL = "https://api.stepfun.ai/step_plan/v1"
 STEPFUN_STEP_PLAN_CN_BASE_URL = "https://api.stepfun.com/step_plan/v1"
 CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -142,6 +145,16 @@ GEMINI_OAUTH_ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 60  # refresh 60s before expiry
 # provider as configured. This sentinel is sent only to LM Studio, never to
 # any remote service.
 LMSTUDIO_NOAUTH_PLACEHOLDER = "dummy-lm-api-key"
+
+# Keyless-friendly local servers share the same placeholder treatment, keyed
+# per provider so logs can tell them apart. Each sentinel is only ever sent
+# to that provider's own endpoint, never to any remote service.
+LOCAL_SERVER_NOAUTH_PLACEHOLDERS = {
+    "lmstudio": LMSTUDIO_NOAUTH_PLACEHOLDER,
+    "vllm": "dummy-vllm-api-key",
+    "ollama": "dummy-ollama-api-key",
+    "gpustack": "dummy-gpustack-api-key",
+}
 
 
 # =============================================================================
@@ -214,6 +227,36 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         inference_base_url="http://127.0.0.1:1234/v1",
         api_key_env_vars=("LM_API_KEY",),
         base_url_env_var="LM_BASE_URL",
+    ),
+    # Self-hosted inference servers. All three are keyless-friendly: the
+    # runtime substitutes a placeholder key when none is configured (same
+    # deal as lmstudio) because the OpenAI SDK requires a non-empty string.
+    # GPUStack deployments normally DO require an API key — the placeholder
+    # only defers the failure to a clear HTTP 401 at call time; doctor still
+    # reports the provider unconfigured via the raw secret resolver.
+    "vllm": ProviderConfig(
+        id="vllm",
+        name="vLLM",
+        auth_type="api_key",
+        inference_base_url=DEFAULT_VLLM_BASE_URL,
+        api_key_env_vars=("VLLM_API_KEY",),
+        base_url_env_var="VLLM_BASE_URL",
+    ),
+    "ollama": ProviderConfig(
+        id="ollama",
+        name="Ollama (Local)",
+        auth_type="api_key",
+        inference_base_url=DEFAULT_OLLAMA_LOCAL_BASE_URL,
+        api_key_env_vars=("OLLAMA_API_KEY",),
+        base_url_env_var="OLLAMA_BASE_URL",
+    ),
+    "gpustack": ProviderConfig(
+        id="gpustack",
+        name="GPUStack",
+        auth_type="api_key",
+        inference_base_url=DEFAULT_GPUSTACK_BASE_URL,
+        api_key_env_vars=("GPUSTACK_API_KEY",),
+        base_url_env_var="GPUSTACK_BASE_URL",
     ),
     "copilot": ProviderConfig(
         id="copilot",
@@ -1749,9 +1792,14 @@ def resolve_provider(
         "go": "opencode-go", "opencode-go-sub": "opencode-go",
         "kilo": "kilocode", "kilo-code": "kilocode", "kilo-gateway": "kilocode",
         "lmstudio": "lmstudio", "lm-studio": "lmstudio", "lm_studio": "lmstudio",
-        # Local server aliases — route through the generic custom provider
-        "ollama": "custom", "ollama_cloud": "ollama-cloud",
-        "vllm": "custom", "llamacpp": "custom",
+        # First-class local servers (bare "ollama" = local; use
+        # "ollama-cloud" for ollama.com). These have their own
+        # PROVIDER_REGISTRY entries now; llamacpp still routes through
+        # the generic custom provider.
+        "ollama": "ollama", "ollama_cloud": "ollama-cloud",
+        "vllm": "vllm",
+        "gpustack": "gpustack", "gpu-stack": "gpustack", "gpu_stack": "gpustack",
+        "llamacpp": "custom",
         "llama.cpp": "custom", "llama-cpp": "custom",
     }
     # Extend with aliases declared in plugins/model-providers/<name>/ that aren't already mapped.
@@ -1806,11 +1854,11 @@ def resolve_provider(
             continue
         # GitHub tokens are commonly present for repo/tool access but should not
         # hijack inference auto-selection unless the user explicitly chooses
-        # Copilot/GitHub Models as the provider. LM Studio is a local server
-        # whose availability isn't implied by LM_API_KEY presence (it may be
-        # offline, and the no-auth setup uses a placeholder value), so it
-        # also requires explicit selection.
-        if pid in {"copilot", "lmstudio"}:
+        # Copilot/GitHub Models as the provider. Local servers (LM Studio,
+        # vLLM, Ollama, GPUStack) are the same: env-key presence doesn't imply
+        # the server is reachable, and the no-auth setups use placeholder
+        # values, so they all require explicit selection.
+        if pid in {"copilot", "lmstudio", "vllm", "ollama", "gpustack"}:
             continue
         for env_var in pconfig.api_key_env_vars:
             if has_usable_secret(os.getenv(env_var, "")):
@@ -6568,11 +6616,12 @@ def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
     key_source = ""
     api_key, key_source = _resolve_api_key_provider_secret(provider_id, pconfig)
 
-    # No-auth LM Studio: substitute a placeholder so runtime / auxiliary_client
-    # see the local server as configured. doctor still reports unconfigured
-    # because get_api_key_provider_status uses the raw secret resolver.
-    if not api_key and provider_id == "lmstudio":
-        api_key = LMSTUDIO_NOAUTH_PLACEHOLDER
+    # No-auth local servers (LM Studio, vLLM, Ollama, GPUStack): substitute a
+    # placeholder so runtime / auxiliary_client see the local server as
+    # configured. doctor still reports unconfigured because
+    # get_api_key_provider_status uses the raw secret resolver.
+    if not api_key and provider_id in LOCAL_SERVER_NOAUTH_PLACEHOLDERS:
+        api_key = LOCAL_SERVER_NOAUTH_PLACEHOLDERS[provider_id]
         key_source = key_source or "default"
 
     env_url = ""

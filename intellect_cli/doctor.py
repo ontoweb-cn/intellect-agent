@@ -1309,6 +1309,8 @@ def run_doctor(args):
                 "opencode-zen",
                 "huggingface",
                 "lmstudio",
+                "vllm",
+                "gpustack",
                 "ontoweb",
             }
             if (

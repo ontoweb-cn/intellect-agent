@@ -914,6 +914,9 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [
     ProviderEntry("openrouter",     "OpenRouter",               "OpenRouter (100+ models, pay-per-use)"),
     ProviderEntry("novita",         "NovitaAI",                 "NovitaAI (AI-native cloud: Model API, Agent Sandbox, GPU Cloud)"),
     ProviderEntry("lmstudio",       "LM Studio",                "LM Studio (local desktop app with built-in model server)"),
+    ProviderEntry("vllm",           "vLLM",                     "vLLM (self-hosted OpenAI-compatible inference server)"),
+    ProviderEntry("ollama",         "Ollama (Local)",           "Ollama (local model server, OpenAI-compatible endpoint)"),
+    ProviderEntry("gpustack",       "GPUStack",                 "GPUStack (self-hosted GPU cluster for LLMs — OpenAI-compatible API)"),
     ProviderEntry("anthropic",      "Anthropic",                "Anthropic (Claude models — API key or Claude Code)"),
     ProviderEntry("openai-codex",   "OpenAI Codex",             "OpenAI Codex"),
     ProviderEntry("openai-api",     "OpenAI API",               "OpenAI API (api.openai.com, API key)"),
@@ -1157,8 +1160,14 @@ _PROVIDER_ALIASES = {
     "lmstudio": "lmstudio",
     "lm-studio": "lmstudio",
     "lm_studio": "lmstudio",
-    "ollama": "custom",  # bare "ollama" = local; use "ollama-cloud" for cloud
+    # First-class local servers (bare "ollama" = local; use "ollama-cloud"
+    # for ollama.com). Previously "ollama" resolved to "custom".
+    "ollama": "ollama",
     "ollama_cloud": "ollama-cloud",
+    "vllm": "vllm",
+    "gpustack": "gpustack",
+    "gpu-stack": "gpustack",
+    "gpu_stack": "gpustack",
 }
 
 
@@ -2140,6 +2149,16 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
         live = fetch_ollama_cloud_models(force_refresh=force_refresh)
         if live:
             return live
+    if normalized in _LOCAL_SERVER_PROVIDERS:
+        # Live probe of the local server's /models endpoint. The no-auth
+        # placeholder key is harmless here: vLLM and Ollama ignore the
+        # Authorization header when launched without auth.
+        try:
+            live = fetch_local_server_models(normalized, timeout=2.0)
+            if live:
+                return live
+        except Exception:
+            pass
     if normalized in ("openai", "openai-api"):
         api_key = os.getenv("OPENAI_API_KEY", "").strip()
         if api_key:
@@ -2863,6 +2882,107 @@ def lmstudio_model_reasoning_options(
     return []
 
 
+# ---------------------------------------------------------------------------
+# Local self-hosted servers — vLLM / Ollama / GPUStack
+# ---------------------------------------------------------------------------
+#
+# All three expose OpenAI-compatible /models endpoints, so listing goes
+# through fetch_api_models(). They differ from LM Studio in that there is no
+# native capability metadata to consult (no reasoning allowed_options, no
+# runtime preload API) — the server owns model lifecycle.
+# Embedding models are NOT filtered: none of the three listings marks them
+# reliably (Ollama mixes them into the same list; GPUStack exposes the type
+# only on its admin API). A chat call against one fails with a clear
+# server-side error.
+
+_LOCAL_SERVER_PROVIDERS: tuple[str, ...] = ("vllm", "ollama", "gpustack")
+
+_LOCAL_SERVER_LABELS = {
+    "vllm": "vLLM",
+    "ollama": "Ollama",
+    "gpustack": "GPUStack",
+}
+
+
+def fetch_vllm_models(
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    timeout: float = 5.0,
+) -> Optional[list[str]]:
+    """List model IDs from a vLLM server's OpenAI-compatible ``/v1/models``.
+
+    Returns ``None`` when the server is unreachable; ``[]`` when it responds
+    with an empty catalog. ``api_key`` may be empty for servers launched
+    without ``--api-key``.
+    """
+    return fetch_api_models(api_key, base_url, timeout=timeout)
+
+
+def fetch_local_ollama_models(
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    timeout: float = 5.0,
+) -> Optional[list[str]]:
+    """List model IDs from a local Ollama server's OpenAI-compatible ``/v1/models``.
+
+    Returns ``None`` when the server is unreachable. ``api_key`` is only
+    needed when Ollama sits behind an auth-enforcing reverse proxy.
+    """
+    return fetch_api_models(api_key, base_url, timeout=timeout)
+
+
+def fetch_gpustack_models(
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    timeout: float = 5.0,
+) -> Optional[list[str]]:
+    """List model IDs from GPUStack's OpenAI-compatible ``/v1-openai/models``.
+
+    The base URL must include the ``/v1-openai`` suffix (probe_api_models'
+    fallback probe covers deployments that serve it at the root). Unlike
+    vLLM/Ollama, GPUStack deployments normally REQUIRE an API key — without
+    one the endpoint answers HTTP 401 and this returns ``None``.
+    """
+    return fetch_api_models(api_key, base_url, timeout=timeout)
+
+
+_LOCAL_SERVER_FETCHERS = {
+    "vllm": fetch_vllm_models,
+    "ollama": fetch_local_ollama_models,
+    "gpustack": fetch_gpustack_models,
+}
+
+
+def fetch_local_server_models(
+    provider: str,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    timeout: float = 5.0,
+) -> Optional[list[str]]:
+    """Dispatch model listing for a first-class local server provider.
+
+    Empty ``base_url`` falls back to the provider's default endpoint; empty
+    ``api_key`` falls back to the configured credential (env var / secret
+    store), which yields the no-auth placeholder for keyless setups.
+    Returns ``None`` when the server is unreachable.
+    """
+    normalized = (provider or "").strip().lower()
+    fetcher = _LOCAL_SERVER_FETCHERS.get(normalized)
+    if fetcher is None:
+        return None
+    if not (base_url or "").strip() or not (api_key or "").strip():
+        try:
+            from intellect_cli.auth import resolve_api_key_provider_credentials
+            creds = resolve_api_key_provider_credentials(normalized)
+        except Exception:
+            creds = {}
+        if not (base_url or "").strip():
+            base_url = str(creds.get("base_url") or "").strip()
+        if not (api_key or "").strip():
+            api_key = str(creds.get("api_key") or "").strip()
+    return fetcher(api_key=api_key, base_url=base_url, timeout=timeout)
+
+
 def _fetch_github_models(api_key: Optional[str] = None, timeout: float = 5.0) -> Optional[list[str]]:
     catalog = fetch_github_model_catalog(api_key=api_key, timeout=timeout)
     if not catalog:
@@ -3476,6 +3596,44 @@ def validate_requested_model(
         return {
             "accepted": False, "persist": False, "recognized": False,
             "message": f"Model `{requested}` was not found in LM Studio's model listing.",
+        }
+
+    if normalized in _LOCAL_SERVER_PROVIDERS:
+        # fetch_local_server_models distinguishes None (unreachable / auth
+        # rejected) from [] (reachable, empty catalog), mirroring the
+        # lmstudio branch above. Passed-in api_key/base_url win over the
+        # resolver defaults so an in-progress /model override is validated
+        # against the endpoint it will actually hit.
+        label = _LOCAL_SERVER_LABELS[normalized]
+        try:
+            models = fetch_local_server_models(
+                normalized, api_key=api_key, base_url=base_url,
+            )
+        except Exception:
+            models = None
+        if models is None:
+            hint = (
+                f"Set `GPUSTACK_API_KEY` (or update it) to match the server's bearer token."
+                if normalized == "gpustack"
+                else "Check that the server is running and the base URL is correct."
+            )
+            return {
+                "accepted": False, "persist": False, "recognized": False,
+                "message": f"Could not reach the {label} server to validate `{requested}`. {hint}",
+            }
+        if not models:
+            return {
+                "accepted": False, "persist": False, "recognized": False,
+                "message": (
+                    f"The {label} server is reachable but reports no models. "
+                    f"Deploy `{requested}` on the server and try again."
+                ),
+            }
+        if requested_for_lookup in set(models):
+            return {"accepted": True, "persist": True, "recognized": True, "message": None}
+        return {
+            "accepted": False, "persist": False, "recognized": False,
+            "message": f"Model `{requested}` was not found in the {label} server's model listing.",
         }
 
     if normalized == "custom" or normalized.startswith("custom:"):

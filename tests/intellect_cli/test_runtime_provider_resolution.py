@@ -2417,14 +2417,18 @@ def test_minimax_oauth_pool_forces_anthropic_messages_despite_stale_config(monke
 # follow the same base_url trust + routing rules as bare `provider: custom`.
 # Without this, a YAML `provider: ollama` with a LAN/WireGuard `base_url`
 # silently falls through to OpenRouter (HTTP 401).
+#
+# ollama/vllm are now FIRST-CLASS providers with their own
+# PROVIDER_REGISTRY entries — the LAN base_url must still win via the
+# cfg_provider==provider match in the generic api_key branch, and the
+# resolved provider is the canonical id (not "custom"). llamacpp variants
+# still route through the generic custom provider.
 # ----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     "alias,base_url",
     [
-        ("ollama", "http://192.168.0.103:11434/v1"),
-        ("vllm", "http://192.168.0.103:8000/v1"),
         ("llamacpp", "http://192.168.0.103:8080/v1"),
         ("llama-cpp", "http://192.168.0.103:8080/v1"),
     ],
@@ -2432,7 +2436,7 @@ def test_minimax_oauth_pool_forces_anthropic_messages_despite_stale_config(monke
 def test_custom_aliases_with_lan_base_url_route_to_custom_not_openrouter(
     monkeypatch, alias, base_url
 ):
-    """provider: ollama|vllm|llamacpp + LAN IP must NOT fall through to OpenRouter."""
+    """provider: llamacpp + LAN IP must NOT fall through to OpenRouter."""
     monkeypatch.setattr(
         rp,
         "_get_model_config",
@@ -2456,8 +2460,46 @@ def test_custom_aliases_with_lan_base_url_route_to_custom_not_openrouter(
     )
 
 
+@pytest.mark.parametrize(
+    "alias,base_url",
+    [
+        ("ollama", "http://192.168.0.103:11434/v1"),
+        ("vllm", "http://192.168.0.103:8000/v1"),
+    ],
+)
+def test_first_class_local_servers_keep_lan_base_url(monkeypatch, alias, base_url):
+    """provider: ollama|vllm + LAN base_url resolves to the first-class
+    provider itself with the configured endpoint — NOT OpenRouter.
+
+    Regression guard for the ollama/vllm first-class promotion (formerly
+    aliases of custom): the generic api_key branch must honor model.base_url
+    when cfg_provider matches, exactly like the old custom-alias path did.
+    """
+    monkeypatch.setattr(
+        rp,
+        "_get_model_config",
+        lambda: {"provider": alias, "base_url": base_url},
+    )
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake-test")
+    monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+    for var in ("OLLAMA_BASE_URL", "VLLM_BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
+
+    resolved = rp.resolve_runtime_provider()
+
+    assert resolved["provider"] == alias, (
+        f"provider: {alias} should resolve to the first-class provider, "
+        f"got {resolved['provider']!r}"
+    )
+    assert resolved["base_url"] == base_url.rstrip("/"), (
+        f"base_url should be the configured LAN endpoint, got {resolved['base_url']!r}"
+    )
+    # Keyless setups get the placeholder, never an OpenRouter key.
+    assert "sk-or" not in (resolved.get("api_key") or "")
+
+
 def test_custom_alias_with_loopback_base_url_routes_to_custom(monkeypatch):
-    """provider: ollama + loopback should also route to custom (regression guard)."""
+    """provider: ollama + loopback resolves to first-class ollama (regression guard)."""
     monkeypatch.setattr(
         rp,
         "_get_model_config",
@@ -2465,19 +2507,27 @@ def test_custom_alias_with_loopback_base_url_routes_to_custom(monkeypatch):
     )
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake-test")
     monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
 
     resolved = rp.resolve_runtime_provider()
 
-    assert resolved["provider"] == "custom"
+    assert resolved["provider"] == "ollama"
     assert resolved["base_url"] == "http://localhost:11434/v1"
 
 
 def test_trustworthy_check_accepts_custom_aliases():
     """_config_base_url_trustworthy_for_bare_custom() must accept aliases for custom."""
     fn = rp._config_base_url_trustworthy_for_bare_custom
-    for alias in ("ollama", "vllm", "llamacpp", "llama-cpp", "llama.cpp"):
+    for alias in ("llamacpp", "llama-cpp", "llama.cpp"):
         assert fn("http://192.168.0.103:11434/v1", alias) is True, (
             f"alias {alias!r} should be trusted with non-loopback base_url"
+        )
+    # ollama/vllm are first-class providers now — they no longer resolve to
+    # custom, so the bare-custom trust check declines non-loopback URLs for
+    # them (their own resolution path reads cfg base_url directly).
+    for pid in ("ollama", "vllm"):
+        assert fn("http://192.168.0.103:11434/v1", pid) is False, (
+            f"{pid!r} is first-class now; bare-custom trust should not apply"
         )
     # Unrelated provider name should still be rejected with non-loopback URL.
     assert fn("http://192.168.0.103:11434/v1", "openrouter") is False
