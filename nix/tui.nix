@@ -4,7 +4,7 @@ let
   src = ../ui-tui;
   npmDeps = pkgs.fetchNpmDeps {
     inherit src;
-    hash = "sha256-BIolsYNBpOII2hUDWWyc05X3CbiuRBFNKKKpNitNx20=";
+    hash = "sha256-nVZQrQD4h0rDnmHbcROYLJ/AwHC04CRaS4lgIvDYnlA=";
   };
 
   npm = intellectNpmLib.mkNpmPassthru { folder = "ui-tui"; attr = "tui"; pname = "intellect-tui"; };
