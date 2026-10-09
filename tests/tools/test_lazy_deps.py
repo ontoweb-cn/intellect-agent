@@ -456,36 +456,11 @@ def _extra_pins() -> dict[str, set[str]]:
     return out
 
 
-# Packages known to be drifted as of 2026-09-12 (pre-existing debt, found while
-# fixing the ACP case). These are reported but not enforced yet; the list should
-# only ever shrink. New conflicts NOT in this set fail the test below.
-_KNOWN_DRIFTED = {
-    "aiohttp",
-    "aiohttp-socks",
-    "alibabacloud-dingtalk",
-    "anthropic",
-    "boto3",
-    "brotlicffi",
-    "daytona",
-    "edge-tts",
-    "elevenlabs",
-    "exa-py",
-    "fal-client",
-    "firecrawl-py",
-    "google-api-python-client",
-    "google-auth-httplib2",
-    "google-auth-oauthlib",
-    "hindsight-client",
-    "honcho-ai",
-    "lark-oapi",
-    "markdown",
-    "mistralai",
-    "modal",
-    "numpy",
-    "slack-bolt",
-    "slack-sdk",
-    "sounddevice",
-}
+# Fully emptied 2026-10-09: all pre-existing drift was synced back to the
+# pyproject pins. With this set empty, the tests below enforce FULL pin
+# parity — any dependabot bump that touches pyproject.toml without the
+# matching tools/lazy_deps.py update fails CI (the ACP failure mode).
+_KNOWN_DRIFTED: set[str] = set()
 
 
 def _conflicting_packages() -> dict[str, tuple[set[str], set[str]]]:

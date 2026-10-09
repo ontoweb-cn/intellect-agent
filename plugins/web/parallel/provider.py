@@ -17,13 +17,14 @@ Config keys this provider responds to::
       search_backend: "parallel"      # explicit per-capability
       extract_backend: "parallel"     # explicit per-capability
       backend: "parallel"             # shared fallback
-      # Optional: search mode (default "agentic"; also "fast" or "one-shot")
+      # Optional: search mode (default "agentic", mapped to GA "advanced";
+      # legacy "one-shot" and GA "basic"/"fast"/"turbo" also accepted)
       # via the PARALLEL_SEARCH_MODE env var.
 
 Env vars::
 
     PARALLEL_API_KEY=...             # https://parallel.ai (required)
-    PARALLEL_SEARCH_MODE=agentic     # optional: agentic|fast|one-shot
+    PARALLEL_SEARCH_MODE=agentic     # optional: agentic|one-shot|advanced|basic|fast|turbo
 """
 
 from __future__ import annotations
@@ -133,10 +134,16 @@ _get_async_parallel_client = _get_async_client
 
 
 def _resolve_search_mode() -> str:
-    """Return the validated PARALLEL_SEARCH_MODE value (default "agentic")."""
+    """Return the GA search mode accepted by parallel-web>=1 (default "advanced").
+
+    ``PARALLEL_SEARCH_MODE`` values map to the GA ``mode`` names:
+    ``agentic``/``advanced`` → ``advanced``, ``one-shot``/``basic`` → ``basic``,
+    ``fast``/``turbo`` pass through. The legacy names were the only valid
+    ones before the 1.x SDK and are still honored here for config compat.
+    """
     mode = os.getenv("PARALLEL_SEARCH_MODE", "agentic").lower().strip()
-    if mode not in {"fast", "one-shot", "agentic"}:
-        mode = "agentic"
+    mode = {"agentic": "advanced", "advanced": "advanced", "one-shot": "basic",
+            "basic": "basic", "fast": "fast", "turbo": "turbo"}.get(mode, "advanced")
     return mode
 
 
@@ -209,9 +216,10 @@ class ParallelWebSearchProvider(WebSearchProvider):
     def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
         """Execute a Parallel search (sync).
 
-        Uses the ``beta.search`` endpoint with the configured mode
-        (``PARALLEL_SEARCH_MODE`` env var, default "agentic"). Limit is
-        capped at 20 server-side.
+        Uses the ``search`` endpoint (GA; was ``beta.search`` before SDK 1.x)
+        with the configured mode (``PARALLEL_SEARCH_MODE`` env var, default
+        "agentic", mapped to the GA "advanced"). Limit is capped at 20
+        server-side.
         """
         try:
             from tools.interrupt import is_interrupted
@@ -223,11 +231,11 @@ class ParallelWebSearchProvider(WebSearchProvider):
             logger.info(
                 "Parallel search: '%s' (mode=%s, limit=%d)", query, mode, limit
             )
-            response = _get_sync_client().beta.search(
+            response = _get_sync_client().search(
                 search_queries=[query],
                 objective=query,
                 mode=mode,
-                max_results=min(limit, 20),
+                advanced_settings={"max_results": min(limit, 20)},
             )
 
             web_results = []
@@ -273,9 +281,9 @@ class ParallelWebSearchProvider(WebSearchProvider):
                 ]
 
             logger.info("Parallel extract: %d URL(s)", len(urls))
-            response = await _get_async_client().beta.extract(
+            response = await _get_async_client().extract(
                 urls=urls,
-                full_content=True,
+                advanced_settings={"full_content": True},
             )
 
             results: List[Dict[str, Any]] = []
