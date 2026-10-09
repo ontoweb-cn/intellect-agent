@@ -170,6 +170,7 @@ export const draftModelNameFromArg = (value: string) => {
 
     if (part === '--provider') {
       i++
+
       continue
     }
 
@@ -265,6 +266,7 @@ export function ActiveSessionSwitcher({
         const raw = await gw.request<SessionActiveListResponse>('session.active_list', {
           current_session_id: currentSessionId
         })
+
         const r = asRpcResult<SessionActiveListResponse>(raw)
 
         if (!r) {
@@ -605,7 +607,7 @@ export function ActiveSessionSwitcher({
           </Text>
         </>
       ) : (
-        <Box marginTop={1} flexDirection="column">
+        <Box flexDirection="column" marginTop={1}>
           <OrchestratorHintText segments={orchestratorContextHintSegments(false)} t={t} />
           <Text color={t.color.muted} wrap="truncate-end">
             Select <Text color={newSessionMarkerColor(t, false)}>+new</Text> to type a prompt

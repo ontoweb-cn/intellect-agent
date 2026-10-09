@@ -2,7 +2,6 @@ import js from '@eslint/js'
 import typescriptEslint from '@typescript-eslint/eslint-plugin'
 import typescriptParser from '@typescript-eslint/parser'
 import perfectionist from 'eslint-plugin-perfectionist'
-import reactPlugin from 'eslint-plugin-react'
 import reactCompiler from 'eslint-plugin-react-compiler'
 import hooksPlugin from 'eslint-plugin-react-hooks'
 import unusedImports from 'eslint-plugin-unused-imports'
@@ -43,7 +42,6 @@ export default [
       '@typescript-eslint': typescriptEslint,
       'custom-rules': customRules,
       perfectionist,
-      react: reactPlugin,
       'react-compiler': reactCompiler,
       'react-hooks': hooksPlugin,
       'unused-imports': unusedImports
@@ -80,9 +78,6 @@ export default [
       'react-hooks/exhaustive-deps': 'warn',
       'react-hooks/rules-of-hooks': 'error',
       'unused-imports/no-unused-imports': 'error'
-    },
-    settings: {
-      react: { version: 'detect' }
     }
   },
   {
@@ -92,6 +87,7 @@ export default [
       'no-constant-condition': 'off',
       'no-empty': 'off',
       'no-redeclare': 'off',
+      'no-useless-assignment': 'off',
       'react-compiler/react-compiler': 'off',
       'react-hooks/exhaustive-deps': 'off'
     }

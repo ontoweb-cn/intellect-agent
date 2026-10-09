@@ -1,29 +1,29 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_THEME } from '../theme.js'
-import type { SessionActiveItem } from '../gatewayTypes.js'
 import {
   activeSessionCountLabel,
   canTypeOrchestratorPrompt,
+  clampOrchestratorSelection,
+  closeFallbackAfterClose,
   currentSessionSelectionIndex,
+  draftModelArgFromPickerValue,
+  draftModelDisplayLabel,
+  draftTitleFromPrompt,
+  fixedSessionColumnStyle,
+  isNewSessionRow,
+  newSessionMarkerColor,
+  newSessionRowIndex,
   orchestratorContextHint,
   orchestratorContextHintSegments,
   orchestratorGlobalHotkeyHint,
   orchestratorGlobalHotkeyHintSegments,
   orchestratorHintSegmentColor,
-  clampOrchestratorSelection,
-  closeFallbackAfterClose,
-  draftModelArgFromPickerValue,
-  draftModelDisplayLabel,
-  fixedSessionColumnStyle,
-  draftTitleFromPrompt,
-  isNewSessionRow,
-  newSessionMarkerColor,
-  newSessionRowIndex,
   orchestratorRowClickAction,
   orchestratorVisibleRowIndexes,
   selectedSessionRowStyle
 } from '../components/activeSessionSwitcher.js'
+import type { SessionActiveItem } from '../gatewayTypes.js'
+import { DEFAULT_THEME } from '../theme.js'
 
 describe('session orchestrator helpers', () => {
   it('labels live sessions compactly for tight overlays', () => {

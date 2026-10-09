@@ -57,6 +57,7 @@ const findClickableWithText = (node: ReactNodeLike, needle: string): React.React
 describe('StatusRule session count click target', () => {
   it('makes the live session count itself clickable', () => {
     const openSwitcher = vi.fn()
+
     const element = StatusRule({
       bgCount: 0,
       busy: false,

@@ -386,6 +386,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     const rows = providers.map((p, i) => {
       const authMark = p.authenticated === false ? '○' : p.is_current ? '*' : '●'
       const modelCount = p.total_models ?? p.models?.length ?? 0
+
       const suffix =
         p.authenticated === false ? (p.auth_type === 'api_key' ? '(no key)' : '(needs setup)') : `${modelCount} models`
 

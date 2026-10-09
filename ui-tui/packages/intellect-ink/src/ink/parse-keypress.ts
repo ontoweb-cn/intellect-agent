@@ -81,7 +81,7 @@ const SGR_MOUSE_FRAGMENT_RE = /(?<!\d)(?:\[<|<)?(?:[0-9]|[1-9][0-9]|1\d{2}|2[0-4
 // has no digit and no `;`, `see 1;2;3M for details` contains disqualifying
 // letters, and `1234;56;78M9;10;11M` has only two terminators.
 // eslint-disable-next-line no-control-regex
-const MOUSE_BURST_NOISE_RE = /^(?=[\s\S]*\d)(?=[\s\S]*;)(?=(?:[^Mm]*[Mm]){3})[\d;<\[\]IMm \x1b]+$/
+const MOUSE_BURST_NOISE_RE = /^(?=[\s\S]*\d)(?=[\s\S]*;)(?=(?:[^Mm]*[Mm]){3})[\d;<[\]IMm \x1b]+$/
 
 // Residual-shard variant for the gaps BETWEEN / AFTER recovered fragments
 // inside parseTextWithSgrMouseFragments. A real recovery run leaves degraded
@@ -91,7 +91,7 @@ const MOUSE_BURST_NOISE_RE = /^(?=[\s\S]*\d)(?=[\s\S]*;)(?=(?:[^Mm]*[Mm]){3})[\d
 // digit AND at least one `M`/`m` — a prose gap like ` for details ` contains
 // disqualifying letters and never matches.
 // eslint-disable-next-line no-control-regex
-const MOUSE_BURST_RESIDUE_RE = /^(?=[^\d]*\d)(?=[^Mm]*[Mm])[\d;<\[\]IMm \x1b]+$/
+const MOUSE_BURST_RESIDUE_RE = /^(?=[^\d]*\d)(?=[^Mm]*[Mm])[\d;<[\]IMm \x1b]+$/
 
 function createPasteKey(content: string): ParsedKey {
   return {
@@ -677,6 +677,7 @@ function normalizeSgrMouseFragment(fragment: string): string {
 
 function parseSgrMouseFragment(fragment: string): ParsedInput {
   const sequence = normalizeSgrMouseFragment(fragment)
+
   return parseMouseEvent(sequence) ?? parseKeypress(sequence)
 }
 
@@ -684,6 +685,7 @@ function parseTextWithSgrMouseFragments(text: string): ParsedInput[] | null {
   SGR_MOUSE_FRAGMENT_RE.lastIndex = 0
 
   const matches = [...text.matchAll(SGR_MOUSE_FRAGMENT_RE)]
+
   if (matches.length === 0) {
     return null
   }
@@ -713,6 +715,7 @@ function parseTextWithSgrMouseFragments(text: string): ParsedInput[] | null {
 
     if (first.index! > cursor) {
       const gap = text.slice(cursor, first.index!)
+
       // Skip pure mouse-leak residue between recovered fragments; only emit
       // real text gaps as keypresses.
       if (!MOUSE_BURST_RESIDUE_RE.test(gap)) {
@@ -734,6 +737,7 @@ function parseTextWithSgrMouseFragments(text: string): ParsedInput[] | null {
 
   if (cursor < text.length) {
     const tail = text.slice(cursor)
+
     // Swallow a pure mouse-leak residue tail (the head fragments recovered, but
     // the burst trailed off into chewed-up shards). Emit only real trailing text.
     if (!MOUSE_BURST_RESIDUE_RE.test(tail)) {
