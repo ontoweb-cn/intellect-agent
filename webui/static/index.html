@@ -414,6 +414,10 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
           <span data-i18n="providers_tab_title">基座模型</span>
         </button>
+        <button type="button" class="side-menu-item" data-settings-section="gateway" onclick="switchSettingsSection('gateway')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></svg>
+          <span data-i18n="settings_tab_gateway">Gateway</span>
+        </button>
         <button type="button" class="side-menu-item" data-settings-section="plugins" onclick="switchSettingsSection('plugins')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3 7h7l-5.5 4.3 2.1 7L12 16.2 5.4 20.3l2.1-7L2 9h7z"/></svg>
           <span data-i18n="settings_tab_plugins">Plugins</span>
@@ -1374,6 +1378,25 @@
             </div>
             <div id="pluginsEmpty" style="display:none;text-align:center;padding:32px 0;color:var(--muted);font-size:13px" data-i18n="settings_plugins_empty">
               No Intellect plugins are currently visible. Install or enable plugins from the Intellect CLI/config to see them here.
+            </div>
+          </div>
+          <div class="settings-pane" id="settingsPaneGateway">
+            <div class="settings-section-head">
+              <div>
+                <div class="settings-section-title" data-i18n="settings_section_gateway_title">Gateway</div>
+                <div class="settings-section-meta" data-i18n="settings_section_gateway_meta">Messaging platform credentials and status. Changes take effect after the gateway restarts.</div>
+              </div>
+            </div>
+            <div class="settings-field" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+              <label data-i18n="gateway_daemon_title">Gateway daemon</label>
+              <div id="gatewayPaneStatusCard" style="margin-top:6px"><span style="color:var(--muted);font-size:12px">Loading…</span></div>
+            </div>
+            <div class="settings-field" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+              <label data-i18n="gateway_platforms_title">Platforms</label>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px" data-i18n="gateway_platforms_desc">Click a platform to edit its credentials. Secrets are write-only — saved values are never shown.</div>
+              <div id="gatewayPlatformList" style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+                <!-- Populated dynamically by loadGatewayPane() -->
+              </div>
             </div>
           </div>
           <div class="settings-pane" id="settingsPaneSystem">

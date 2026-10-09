@@ -351,7 +351,9 @@ class PlatformConfig:
             home_channel=home_channel,
             reply_to_mode=data.get("reply_to_mode", "first"),
             gateway_restart_notification=_coerce_bool(_grn, True),
-            extra=data.get("extra", {}),
+            # ``or {}``: an explicit ``extra: null`` in yaml/gateway.json must
+            # not produce extra=None (every consumer does extra.get(...)).
+            extra=data.get("extra") or {},
         )
 
 
@@ -580,6 +582,48 @@ _PLATFORM_CONNECTED_CHECKERS: dict[Platform, Callable[[PlatformConfig], bool]] =
 }
 
 
+def platform_is_connected(platform: Platform, config: PlatformConfig) -> bool:
+    """Standalone "is this platform sufficiently configured" check.
+
+    Module-level twin of the per-platform logic so callers holding only a
+    ``PlatformConfig`` (WebUI config API, doctor, tests) don't need a full
+    ``GatewayConfig``. Kept in one place — ``GatewayConfig._is_platform_connected``
+    delegates here.
+    """
+    # Weixin requires both a token and an account_id (checked first so
+    # the generic token branch doesn't let it through without account_id).
+    if platform == Platform.WEIXIN:
+        return bool(
+            config.extra.get("account_id")
+            and (config.token or config.extra.get("token"))
+        )
+
+    # Generic token/api_key auth covers Telegram, Discord, Slack, etc.
+    if config.token or config.api_key:
+        return True
+
+    # Platform-specific check
+    checker = _PLATFORM_CONNECTED_CHECKERS.get(platform)
+    if checker is not None:
+        return checker(config)
+
+    # Plugin-registered platforms
+    try:
+        from gateway.platform_registry import platform_registry
+        entry = platform_registry.get(platform.value)
+        if entry:
+            if entry.is_connected is not None:
+                return entry.is_connected(config)
+            if entry.validate_config is not None:
+                return entry.validate_config(config)
+            return True
+    except Exception:
+        # Registry not yet initialised during early import
+        logger.debug('non-critical operation failed', exc_info=True)
+
+    return False
+
+
 @dataclass
 class GatewayConfig:
     """
@@ -650,38 +694,7 @@ class GatewayConfig:
 
     def _is_platform_connected(self, platform: Platform, config: PlatformConfig) -> bool:
         """Check whether a single platform is sufficiently configured."""
-        # Weixin requires both a token and an account_id (checked first so
-        # the generic token branch doesn't let it through without account_id).
-        if platform == Platform.WEIXIN:
-            return bool(
-                config.extra.get("account_id")
-                and (config.token or config.extra.get("token"))
-            )
-
-        # Generic token/api_key auth covers Telegram, Discord, Slack, etc.
-        if config.token or config.api_key:
-            return True
-
-        # Platform-specific check
-        checker = _PLATFORM_CONNECTED_CHECKERS.get(platform)
-        if checker is not None:
-            return checker(config)
-
-        # Plugin-registered platforms
-        try:
-            from gateway.platform_registry import platform_registry
-            entry = platform_registry.get(platform.value)
-            if entry:
-                if entry.is_connected is not None:
-                    return entry.is_connected(config)
-                if entry.validate_config is not None:
-                    return entry.validate_config(config)
-                return True
-        except Exception:
-            # Registry not yet initialised during early import
-            logger.debug('non-critical operation failed', exc_info=True)
-
-        return False
+        return platform_is_connected(platform, config)
     
     def get_home_channel(self, platform: Platform) -> Optional[HomeChannel]:
         """Get the home channel for a platform."""
@@ -962,7 +975,7 @@ def load_gateway_config() -> GatewayConfig:
                         existing = {}
                     # Deep-merge extra dicts so gateway.json defaults survive
                     merged_extra = {**existing.get("extra", {}), **plat_block.get("extra", {})}
-                    if plat_name == Platform.SLACK.value and "enabled" in plat_block:
+                    if "enabled" in plat_block:
                         merged_extra["_enabled_explicit"] = True
                     merged = {**existing, **plat_block}
                     if merged_extra:
@@ -1063,7 +1076,6 @@ def load_gateway_config() -> GatewayConfig:
                 plat_data, extra = _ensure_platform_extra_dict(platforms_data, plat.value)
                 if enabled_was_explicit:
                     plat_data["enabled"] = platform_cfg["enabled"]
-                if plat == Platform.SLACK and enabled_was_explicit:
                     extra["_enabled_explicit"] = True
                 extra.update(bridged)
 
@@ -1330,7 +1342,13 @@ def load_gateway_config() -> GatewayConfig:
 
     # Override with environment variables
     _apply_env_overrides(config)
-    
+
+    # Consume leftover loader-internal markers: platforms whose env block never
+    # ran (no credential env var) still carry _enabled_explicit, and adapters
+    # must never see loader-internal extra keys.
+    for _pc in config.platforms.values():
+        _pc.extra.pop("_enabled_explicit", None)
+
     # --- Validate loaded values ---
     _validate_gateway_config(config)
 
@@ -1406,15 +1424,32 @@ def _validate_gateway_config(config: "GatewayConfig") -> None:
                 pconfig.enabled = False
 
 
+def _env_auto_enable(config: GatewayConfig, platform: Platform) -> None:
+    """Enable ``platform`` for an env-credential setup, honoring explicit yaml disables.
+
+    An explicit ``enabled:`` key in the platform's config.yaml section (top-level
+    ``<name>:`` or ``platforms.<name>:``) always wins: ``enabled: false`` keeps the
+    platform off even though a credential env var is present (callers still store
+    the token so skills can use it without activating the gateway adapter).
+    Without an explicit key, a credential env var enables the platform. These are
+    the long-standing Slack/WhatsApp semantics, now uniform across platforms.
+    """
+    cfg = config.platforms.get(platform)
+    if cfg is None:
+        config.platforms[platform] = PlatformConfig(enabled=True)
+        return
+    enabled_was_explicit = bool(cfg.extra.pop("_enabled_explicit", False))
+    if not cfg.enabled and not enabled_was_explicit:
+        cfg.enabled = True
+
+
 def _apply_env_overrides(config: GatewayConfig) -> None:
     """Apply environment variable overrides to config."""
     
     # Telegram
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if telegram_token:
-        if Platform.TELEGRAM not in config.platforms:
-            config.platforms[Platform.TELEGRAM] = PlatformConfig()
-        config.platforms[Platform.TELEGRAM].enabled = True
+        _env_auto_enable(config, Platform.TELEGRAM)
         config.platforms[Platform.TELEGRAM].token = telegram_token
     
     # Reply threading mode for Telegram (off/first/all)
@@ -1444,9 +1479,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     # Discord
     discord_token = os.getenv("DISCORD_BOT_TOKEN")
     if discord_token:
-        if Platform.DISCORD not in config.platforms:
-            config.platforms[Platform.DISCORD] = PlatformConfig()
-        config.platforms[Platform.DISCORD].enabled = True
+        _env_auto_enable(config, Platform.DISCORD)
         config.platforms[Platform.DISCORD].token = discord_token
     
     discord_home = os.getenv("DISCORD_HOME_CHANNEL")
@@ -1490,18 +1523,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     # Slack
     slack_token = os.getenv("SLACK_BOT_TOKEN")
     if slack_token:
-        if Platform.SLACK not in config.platforms:
-            # No yaml config for Slack — env-only setup, enable it
-            config.platforms[Platform.SLACK] = PlatformConfig()
-            config.platforms[Platform.SLACK].enabled = True
-        else:
-            slack_config = config.platforms[Platform.SLACK]
-            enabled_was_explicit = bool(slack_config.extra.pop("_enabled_explicit", False))
-            if not slack_config.enabled and not enabled_was_explicit:
-                # Top-level Slack settings such as channel prompts should not
-                # turn an env-token setup into a disabled platform. Only an
-                # explicit slack.enabled/platforms.slack.enabled false should.
-                slack_config.enabled = True
+        _env_auto_enable(config, Platform.SLACK)
         # If yaml config exists, respect its enabled flag (don't override
         # explicit enabled: false). Token is still stored so skills that
         # send Slack messages can use it without activating the gateway adapter.
@@ -1519,9 +1541,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     signal_url = os.getenv("SIGNAL_HTTP_URL")
     signal_account = os.getenv("SIGNAL_ACCOUNT")
     if signal_url and signal_account:
-        if Platform.SIGNAL not in config.platforms:
-            config.platforms[Platform.SIGNAL] = PlatformConfig()
-        config.platforms[Platform.SIGNAL].enabled = True
+        _env_auto_enable(config, Platform.SIGNAL)
         config.platforms[Platform.SIGNAL].extra.update({
             "http_url": signal_url,
             "account": signal_account,
@@ -1542,9 +1562,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
         mattermost_url = os.getenv("MATTERMOST_URL", "")
         if not mattermost_url:
             logger.warning("MATTERMOST_TOKEN set but MATTERMOST_URL is missing")
-        if Platform.MATTERMOST not in config.platforms:
-            config.platforms[Platform.MATTERMOST] = PlatformConfig()
-        config.platforms[Platform.MATTERMOST].enabled = True
+        _env_auto_enable(config, Platform.MATTERMOST)
         config.platforms[Platform.MATTERMOST].token = mattermost_token
         config.platforms[Platform.MATTERMOST].extra["url"] = mattermost_url
     mattermost_home = os.getenv("MATTERMOST_HOME_CHANNEL")
@@ -1562,9 +1580,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     if matrix_token or os.getenv("MATRIX_PASSWORD"):
         if not matrix_homeserver:
             logger.warning("MATRIX_ACCESS_TOKEN/MATRIX_PASSWORD set but MATRIX_HOMESERVER is missing")
-        if Platform.MATRIX not in config.platforms:
-            config.platforms[Platform.MATRIX] = PlatformConfig()
-        config.platforms[Platform.MATRIX].enabled = True
+        _env_auto_enable(config, Platform.MATRIX)
         if matrix_token:
             config.platforms[Platform.MATRIX].token = matrix_token
         config.platforms[Platform.MATRIX].extra["homeserver"] = matrix_homeserver
@@ -1591,9 +1607,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     # Home Assistant
     hass_token = os.getenv("HASS_TOKEN")
     if hass_token:
-        if Platform.HOMEASSISTANT not in config.platforms:
-            config.platforms[Platform.HOMEASSISTANT] = PlatformConfig()
-        config.platforms[Platform.HOMEASSISTANT].enabled = True
+        _env_auto_enable(config, Platform.HOMEASSISTANT)
         config.platforms[Platform.HOMEASSISTANT].token = hass_token
         hass_url = os.getenv("HASS_URL")
         if hass_url:
@@ -1605,9 +1619,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     email_imap = os.getenv("EMAIL_IMAP_HOST")
     email_smtp = os.getenv("EMAIL_SMTP_HOST")
     if all([email_addr, email_pwd, email_imap, email_smtp]):
-        if Platform.EMAIL not in config.platforms:
-            config.platforms[Platform.EMAIL] = PlatformConfig()
-        config.platforms[Platform.EMAIL].enabled = True
+        _env_auto_enable(config, Platform.EMAIL)
         config.platforms[Platform.EMAIL].extra.update({
             "address": email_addr,
             "imap_host": email_imap,
@@ -1625,9 +1637,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     # SMS (Twilio)
     twilio_sid = os.getenv("TWILIO_ACCOUNT_SID")
     if twilio_sid:
-        if Platform.SMS not in config.platforms:
-            config.platforms[Platform.SMS] = PlatformConfig()
-        config.platforms[Platform.SMS].enabled = True
+        _env_auto_enable(config, Platform.SMS)
         config.platforms[Platform.SMS].api_key = os.getenv("TWILIO_AUTH_TOKEN", "")
     sms_home = os.getenv("SMS_HOME_CHANNEL")
     if sms_home and Platform.SMS in config.platforms:
@@ -1645,9 +1655,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     api_server_port = os.getenv("API_SERVER_PORT")
     api_server_host = os.getenv("API_SERVER_HOST")
     if api_server_enabled or api_server_key:
-        if Platform.API_SERVER not in config.platforms:
-            config.platforms[Platform.API_SERVER] = PlatformConfig()
-        config.platforms[Platform.API_SERVER].enabled = True
+        _env_auto_enable(config, Platform.API_SERVER)
         if api_server_key:
             config.platforms[Platform.API_SERVER].extra["key"] = api_server_key
         if api_server_cors_origins:
@@ -1670,9 +1678,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     webhook_port = os.getenv("WEBHOOK_PORT")
     webhook_secret = os.getenv("WEBHOOK_SECRET", "")
     if webhook_enabled:
-        if Platform.WEBHOOK not in config.platforms:
-            config.platforms[Platform.WEBHOOK] = PlatformConfig()
-        config.platforms[Platform.WEBHOOK].enabled = True
+        _env_auto_enable(config, Platform.WEBHOOK)
         if webhook_port:
             try:
                 config.platforms[Platform.WEBHOOK].extra["port"] = int(webhook_port)
@@ -1704,7 +1710,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
         if Platform.MSGRAPH_WEBHOOK not in config.platforms:
             config.platforms[Platform.MSGRAPH_WEBHOOK] = PlatformConfig()
         if msgraph_webhook_enabled:
-            config.platforms[Platform.MSGRAPH_WEBHOOK].enabled = True
+            _env_auto_enable(config, Platform.MSGRAPH_WEBHOOK)
         if msgraph_webhook_port:
             try:
                 config.platforms[Platform.MSGRAPH_WEBHOOK].extra["port"] = int(
@@ -1741,9 +1747,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     dingtalk_client_id = os.getenv("DINGTALK_CLIENT_ID")
     dingtalk_client_secret = os.getenv("DINGTALK_CLIENT_SECRET")
     if dingtalk_client_id and dingtalk_client_secret:
-        if Platform.DINGTALK not in config.platforms:
-            config.platforms[Platform.DINGTALK] = PlatformConfig()
-        config.platforms[Platform.DINGTALK].enabled = True
+        _env_auto_enable(config, Platform.DINGTALK)
         config.platforms[Platform.DINGTALK].extra.update({
             "client_id": dingtalk_client_id,
             "client_secret": dingtalk_client_secret,
@@ -1761,9 +1765,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     feishu_app_id = os.getenv("FEISHU_APP_ID")
     feishu_app_secret = os.getenv("FEISHU_APP_SECRET")
     if feishu_app_id and feishu_app_secret:
-        if Platform.FEISHU not in config.platforms:
-            config.platforms[Platform.FEISHU] = PlatformConfig()
-        config.platforms[Platform.FEISHU].enabled = True
+        _env_auto_enable(config, Platform.FEISHU)
         config.platforms[Platform.FEISHU].extra.update({
             "app_id": feishu_app_id,
             "app_secret": feishu_app_secret,
@@ -1789,9 +1791,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     wecom_bot_id = os.getenv("WECOM_BOT_ID")
     wecom_secret = os.getenv("WECOM_SECRET")
     if wecom_bot_id and wecom_secret:
-        if Platform.WECOM not in config.platforms:
-            config.platforms[Platform.WECOM] = PlatformConfig()
-        config.platforms[Platform.WECOM].enabled = True
+        _env_auto_enable(config, Platform.WECOM)
         config.platforms[Platform.WECOM].extra.update({
             "bot_id": wecom_bot_id,
             "secret": wecom_secret,
@@ -1812,9 +1812,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     wecom_callback_corp_id = os.getenv("WECOM_CALLBACK_CORP_ID")
     wecom_callback_corp_secret = os.getenv("WECOM_CALLBACK_CORP_SECRET")
     if wecom_callback_corp_id and wecom_callback_corp_secret:
-        if Platform.WECOM_CALLBACK not in config.platforms:
-            config.platforms[Platform.WECOM_CALLBACK] = PlatformConfig()
-        config.platforms[Platform.WECOM_CALLBACK].enabled = True
+        _env_auto_enable(config, Platform.WECOM_CALLBACK)
         config.platforms[Platform.WECOM_CALLBACK].extra.update({
             "corp_id": wecom_callback_corp_id,
             "corp_secret": wecom_callback_corp_secret,
@@ -1829,14 +1827,26 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     weixin_token = os.getenv("WEIXIN_TOKEN")
     weixin_account_id = os.getenv("WEIXIN_ACCOUNT_ID")
     if weixin_token or weixin_account_id:
+        # Only auto-enable when the credential PAIR is complete (token +
+        # account_id, the same contract as the connected checker) — counting
+        # either source (env or yaml-provided extra) toward the pair. A
+        # half-credentialed weixin adapter would just retry-fail noisily.
+        # Credentials are still stored below so skills can use them.
+        existing = config.platforms.get(Platform.WEIXIN)
+        has_token = bool(weixin_token or (existing and existing.token))
+        has_account = bool(
+            weixin_account_id
+            or (existing and (existing.extra or {}).get("account_id"))
+        )
+        if has_token and has_account:
+            _env_auto_enable(config, Platform.WEIXIN)
         if Platform.WEIXIN not in config.platforms:
             config.platforms[Platform.WEIXIN] = PlatformConfig()
-        config.platforms[Platform.WEIXIN].enabled = True
         if weixin_token:
             config.platforms[Platform.WEIXIN].token = weixin_token
-        extra = config.platforms[Platform.WEIXIN].extra
         if weixin_account_id:
-            extra["account_id"] = weixin_account_id
+            config.platforms[Platform.WEIXIN].extra["account_id"] = weixin_account_id
+        extra = config.platforms[Platform.WEIXIN].extra
         weixin_base_url = os.getenv("WEIXIN_BASE_URL", "").strip()
         if weixin_base_url:
             extra["base_url"] = weixin_base_url.rstrip("/")
@@ -1871,9 +1881,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     bluebubbles_server_url = os.getenv("BLUEBUBBLES_SERVER_URL")
     bluebubbles_password = os.getenv("BLUEBUBBLES_PASSWORD")
     if bluebubbles_server_url and bluebubbles_password:
-        if Platform.BLUEBUBBLES not in config.platforms:
-            config.platforms[Platform.BLUEBUBBLES] = PlatformConfig()
-        config.platforms[Platform.BLUEBUBBLES].enabled = True
+        _env_auto_enable(config, Platform.BLUEBUBBLES)
         config.platforms[Platform.BLUEBUBBLES].extra.update({
             "server_url": bluebubbles_server_url.rstrip("/"),
             "password": bluebubbles_password,
@@ -1895,9 +1903,22 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     qq_app_id = os.getenv("QQ_APP_ID")
     qq_client_secret = os.getenv("QQ_CLIENT_SECRET")
     if qq_app_id or qq_client_secret:
+        # Auto-enable only when the credential pair is complete (app_id +
+        # client_secret, matching the connected checker) from any source mix
+        # (env or yaml-provided extra) — a half-credentialed QQ adapter would
+        # just retry-fail noisily. Credentials are still stored below.
+        existing = config.platforms.get(Platform.QQBOT)
+        has_app_id = bool(
+            qq_app_id or (existing and (existing.extra or {}).get("app_id"))
+        )
+        has_secret = bool(
+            qq_client_secret
+            or (existing and (existing.extra or {}).get("client_secret"))
+        )
+        if has_app_id and has_secret:
+            _env_auto_enable(config, Platform.QQBOT)
         if Platform.QQBOT not in config.platforms:
             config.platforms[Platform.QQBOT] = PlatformConfig()
-        config.platforms[Platform.QQBOT].enabled = True
         extra = config.platforms[Platform.QQBOT].extra
         if qq_app_id:
             extra["app_id"] = qq_app_id
@@ -1937,9 +1958,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     yuanbao_app_id = os.getenv("YUANBAO_APP_ID") or os.getenv("YUANBAO_APP_KEY")
     yuanbao_app_secret = os.getenv("YUANBAO_APP_SECRET")
     if yuanbao_app_id and yuanbao_app_secret:
-        if Platform.YUANBAO not in config.platforms:
-            config.platforms[Platform.YUANBAO] = PlatformConfig()
-        config.platforms[Platform.YUANBAO].enabled = True
+        _env_auto_enable(config, Platform.YUANBAO)
         extra = config.platforms[Platform.YUANBAO].extra
         extra["app_id"] = yuanbao_app_id
         extra["app_secret"] = yuanbao_app_secret
@@ -2014,14 +2033,29 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
         discover_plugins()  # idempotent
         from gateway.platform_registry import platform_registry
         for entry in platform_registry.plugin_entries():
+            platform = Platform(entry.name)
+            existing_cfg = config.platforms.get(platform)
+            if (
+                existing_cfg is not None
+                and not existing_cfg.enabled
+                and bool((existing_cfg.extra or {}).get("_enabled_explicit"))
+            ):
+                # Explicit ``enabled: false`` in config.yaml wins over plugin
+                # env-var enablement — same rule as the built-in platforms
+                # above. Checked BEFORE check_fn so a disabled platform never
+                # triggers check_fn's SDK lazy-install side effect.
+                logger.debug(
+                    "Plugin platform '%s' explicitly disabled in config.yaml "
+                    "— skipping env enablement",
+                    entry.name,
+                )
+                continue
             try:
                 if not entry.check_fn():
                     continue
             except Exception as e:
                 logger.debug("check_fn for %s raised: %s", entry.name, e)
                 continue
-            platform = Platform(entry.name)
-            existing_cfg = config.platforms.get(platform)
             # Seed candidate extras from ``env_enablement_fn`` so plugins
             # whose ``is_connected`` reads ``config.extra`` (e.g. Google
             # Chat's ``_is_connected`` checks ``config.extra["project_id"]``)

@@ -6824,6 +6824,12 @@ def handle_get(handler, parsed) -> bool:
             },
         )
 
+    # ── Gateway platform config (GET — desensitized snapshot) ──
+    if parsed.path == "/api/gateway/platforms":
+        from api.gateway_platform_config import build_payload
+
+        return j(handler, build_payload())
+
     # ── Gateway Status (GET) ──
     if parsed.path == "/api/gateway/status":
         import datetime
@@ -8893,6 +8899,12 @@ def handle_put(handler, parsed) -> bool:
     if not _check_csrf(handler):
         return j(handler, {"error": _csrf_rejection_error(handler)}, status=403)
     body = read_body(handler)
+    if parsed.path.startswith("/api/gateway/platforms/"):
+        name = parsed.path[len("/api/gateway/platforms/"):]
+        if name and "/" not in name:
+            from api.gateway_platform_config import save_platform
+
+            return save_platform(handler, name, body)
     if parsed.path.startswith("/api/oauth/providers/"):
         from api import oauth_providers as oauth_p_api
         return oauth_p_api.handle_put(handler, parsed, body)

@@ -5865,16 +5865,16 @@ function _toggleTabVisibilityChip(panel){
 }
 
 function switchSettingsSection(name){
-  const section=(name==='appearance'||name==='preferences'||name==='providers'||name==='plugins'||name==='system')?name:'conversation';
+  const section=(name==='appearance'||name==='preferences'||name==='providers'||name==='gateway'||name==='plugins'||name==='system')?name:'conversation';
   _settingsSection=section;
   _currentSettingsSection=section;
-  const map={conversation:'Conversation',appearance:'Appearance',preferences:'Preferences',providers:'Providers',plugins:'Plugins',system:'System'};
+  const map={conversation:'Conversation',appearance:'Appearance',preferences:'Preferences',providers:'Providers',gateway:'Gateway',plugins:'Plugins',system:'System'};
   // Sidebar menu items
   document.querySelectorAll('#settingsMenu .side-menu-item').forEach(it=>{
     it.classList.toggle('active', it.dataset.settingsSection===section);
   });
   // Panes in main
-  ['conversation','appearance','preferences','providers','plugins','system'].forEach(key=>{
+  ['conversation','appearance','preferences','providers','gateway','plugins','system'].forEach(key=>{
     const pane=$('settingsPane'+map[key]);
     if(pane) pane.classList.toggle('active', key===section);
   });
@@ -5883,6 +5883,7 @@ function switchSettingsSection(name){
   if(dd && dd.value!==section) dd.value=section;
   // Lazy-load integration panels when their tabs are opened
   if(section==='providers') loadProvidersPanel();
+  if(section==='gateway') loadGatewayPane();
   if(section==='plugins') loadPluginsPanel();
 }
 
@@ -8392,8 +8393,8 @@ async function saveMemoryProviderConfig(providerName){
   }
 }
 
-function loadGatewayStatus(){
-  const card=$('gatewayStatusCard');
+function loadGatewayStatus(cardId){
+  const card=$(cardId||'gatewayStatusCard');
   if(!card) return;
   api('/api/gateway/status').then(r=>{
     if(!r) return;
@@ -8453,6 +8454,263 @@ function loadGatewayStatus(){
     bind();
   }).catch(()=>{card.innerHTML=`<div style="color:#ef4444;font-size:12px">Failed to load gateway status</div>`});
 }
+
+// ── Gateway platform config (Settings → Gateway) ────────────────────────────
+// Forms are generated from the GET /api/gateway/platforms schema payload.
+// Secrets are write-only: env-backed fields render empty password inputs
+// with a "configured" marker instead of the stored value.
+
+let _gatewayPlatformsData=null;
+
+async function loadGatewayPane(){
+  loadGatewayStatus('gatewayPaneStatusCard');
+  try{
+    _gatewayPlatformsData=await api('/api/gateway/platforms');
+  }catch(e){
+    _gatewayPlatformsData=null;
+  }
+  renderGatewayPlatforms();
+}
+
+function _gwRuntimeDot(p){
+  const st=p&&p.runtime&&p.runtime.state;
+  const base='width:8px;height:8px;border-radius:50%;display:inline-block;flex:none';
+  if(st==='connected') return `<span title="connected" style="${base};background:#22c55e"></span>`;
+  if(st==='fatal') return `<span title="${esc((p.runtime.error_message||'error').slice(0,200))}" style="${base};background:#ef4444"></span>`;
+  if(st==='disconnected'||st==='reconnecting') return `<span title="disconnected" style="${base};background:#f59e0b"></span>`;
+  return `<span title="not running" style="${base};background:var(--border2,#6b7280)"></span>`;
+}
+
+function renderGatewayPlatforms(){
+  const wrap=$('gatewayPlatformList');
+  if(!wrap) return;
+  const data=_gatewayPlatformsData;
+  if(!data||!Array.isArray(data.platforms)){
+    wrap.innerHTML='<span style="color:#ef4444;font-size:12px">Failed to load gateway platform configs.</span>';
+    return;
+  }
+  wrap.innerHTML=data.platforms.map(p=>{
+    const cfgBadge=p.configured
+      ?'<span style="font-size:11px;color:#22c55e;border:1px solid var(--border2);border-radius:10px;padding:1px 8px">✓ '+esc(t('gateway_cfg_ok')||'configured')+'</span>'
+      :'<span style="font-size:11px;color:var(--muted);border:1px solid var(--border2);border-radius:10px;padding:1px 8px">'+esc(t('gateway_cfg_missing')||'not configured')+'</span>';
+    return `<div class="gw-platform-card" data-gw-card="${esc(p.name)}" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--code-bg)">
+      <div style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-wrap:wrap" onclick="toggleGatewayPlatform('${_jsAttr(p.name)}')">
+        ${_gwRuntimeDot(p)}
+        <span style="font-weight:600;font-size:13px">${esc(p.label)}</span>
+        ${cfgBadge}
+        <label style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer" onclick="event.stopPropagation()">
+          <input type="checkbox" data-gw-enabled="${esc(p.name)}" ${p.enabled?'checked':''} onchange="this.dataset.gwTouched='1'">
+          <span data-i18n="gateway_enabled_label">enabled</span>
+        </label>
+        <span style="color:var(--muted);font-size:11px">▾</span>
+      </div>
+      <div id="gwForm-${esc(p.name)}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"></div>
+    </div>`;
+  }).join('');
+}
+
+function toggleGatewayPlatform(name){
+  const el=$('gwForm-'+name);
+  if(!el) return;
+  if(el.style.display!=='none'){el.style.display='none';return;}
+  renderGatewayPlatformForm(name);
+  el.style.display='block';
+}
+
+function _gwFieldLabel(name,f){
+  const key='gateway_field_'+name+'_'+f.key;
+  const localized=t(key);
+  const label=(localized&&localized!==key)?localized:(f.label||f.key);
+  return label;
+}
+
+// Mark a credential field for clearing on save (sends an empty value, which
+// the backend writes as KEY= → dotenv treats it as unset).
+function _gwToggleClearSecret(btn){
+  const form=btn.closest('[id^="gwForm-"]');
+  if(!form) return;
+  const key=btn.getAttribute('data-gw-clear');
+  const inp=form.querySelector('[data-gw-field="'+key.replace(/"/g,'\\"')+'"]');
+  if(!inp) return;
+  const clearing=inp.dataset.gwClear!=='1';
+  inp.dataset.gwClear=clearing?'1':'0';
+  if(clearing){inp.value='';inp.disabled=true;btn.style.color='#ef4444';}
+  else{inp.disabled=false;btn.style.color='';}
+}
+
+function renderGatewayPlatformForm(name){
+  const el=$('gwForm-'+name);
+  const data=_gatewayPlatformsData;
+  if(!el||!data) return;
+  const p=(data.platforms||[]).find(x=>x.name===name);
+  if(!p) return;
+  if(p.generic){el.innerHTML=_renderGatewayGenericForm(p);return;}
+  let html='';
+  for(const f of (p.fields||[])){
+    const label=_gwFieldLabel(name,f);
+    const req=f.required?' <span style="color:#ef4444">*</span>':'';
+    const help=f.help?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(f.help)}</div>`:'';
+    html+='<div style="margin:8px 0">';
+    if(f.target==='env'){
+      const setBadge=f.set
+        ?`<span style="font-size:11px;color:#22c55e;margin-left:6px">● ${esc(t('gateway_cred_set')||'configured')}</span>`
+        :'';
+      const clearBtn=(f.set)
+        ?`<button type="button" class="btn-tiny" data-gw-clear="${esc(f.key)}" onclick="_gwToggleClearSecret(this)" style="margin-left:6px" title="${esc(t('gateway_cred_clear')||'clear stored value')}">✕ ${esc(t('gateway_cred_clear')||'clear')}</button>`
+        :'';
+      html+=`<label style="display:block;font-size:12px;margin-bottom:4px">${esc(label)}${req}${setBadge}${clearBtn}</label>`;
+      const ph=f.set
+        ?('••••••••  ('+esc(t('gateway_cred_keep')||'leave blank to keep current')+') · '+esc(f.env))
+        :esc(f.placeholder||f.env||'');
+      html+=`<input type="${f.type==='secret'?'password':'text'}" autocomplete="off" spellcheck="false" data-gw-field="${esc(f.key)}" data-gw-secret="${f.type==='secret'?1:0}" placeholder="${ph}" style="width:100%;max-width:440px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--text)">`;
+    }else if(f.type==='bool'){
+      // Hand-written yaml often holds strings ("true"/"false") — only the
+      // truthy spellings render checked, so "false" doesn't show ticked.
+      const checked=(f.value===true||f.value==='true'||f.value===1||f.value==='1')?'checked':'';
+      html+=`<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" data-gw-field="${esc(f.key)}" data-gw-type="bool" ${checked}> ${esc(label)}${req}</label>`;
+    }else if(f.type==='select'){
+      const opts=(f.options||[]).map(o=>`<option value="${esc(o)}" ${f.value===o?'selected':''}>${esc(o)}</option>`).join('');
+      const empty=f.value==null||f.value===''?'<option value=""></option>':'';
+      html+=`<label style="display:block;font-size:12px;margin-bottom:4px">${esc(label)}${req}</label><select data-gw-field="${esc(f.key)}" data-gw-type="select" style="background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--text)">${empty}${opts}</select>`;
+    }else if(f.type==='list'){
+      const val=Array.isArray(f.value)?f.value.join(', '):((f.value==null)?'':String(f.value));
+      html+=`<label style="display:block;font-size:12px;margin-bottom:4px">${esc(label)}${req}</label><input type="text" spellcheck="false" data-gw-field="${esc(f.key)}" data-gw-type="list" value="${esc(val)}" placeholder="id1, id2" style="width:100%;max-width:440px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--text)">`;
+    }else{
+      const val=(f.value==null)?'':String(f.value);
+      html+=`<label style="display:block;font-size:12px;margin-bottom:4px">${esc(label)}${req}</label><input type="text" spellcheck="false" data-gw-field="${esc(f.key)}" data-gw-type="text" value="${esc(val)}" placeholder="${esc(f.placeholder||'')}" style="width:100%;max-width:440px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--text)">`;
+    }
+    html+=help+'</div>';
+  }
+  const docs=p.docs_url?`<a class="panel-head-btn" style="text-decoration:none;align-self:center" href="${esc(p.docs_url)}" target="_blank" rel="noopener noreferrer">${esc(t('gateway_docs')||'Docs ↗')}</a>`:'';
+  html+=`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+    <button type="button" class="btn-tiny" onclick="saveGatewayPlatform('${_jsAttr(name)}',false)">${esc(t('gateway_save')||'Save')}</button>
+    <button type="button" class="btn-tiny" onclick="saveGatewayPlatform('${_jsAttr(name)}',true)">${esc(t('gateway_save_restart')||'Save & restart gateway')}</button>
+    ${docs}
+  </div>
+  <div id="gwMsg-${esc(name)}" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>`;
+  el.innerHTML=html;
+}
+
+// Generic (schema-less) platform form: plain key-value editor over
+// ``platforms.<name>.extra``. Values parse as JSON when possible.
+function _gwScalarToText(v){
+  if(v===null||v===undefined) return '';
+  if(typeof v==='object'){try{return JSON.stringify(v);}catch(e){return String(v);}}
+  return String(v);
+}
+
+function _gwExtraRowHtml(key,val){
+  const inputStyle='background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--text)';
+  return `<div class="gw-extra-row" style="display:flex;gap:6px;margin:4px 0;align-items:center">
+    <input type="text" class="gw-extra-key" value="${esc(key)}" placeholder="key" spellcheck="false" autocomplete="off" style="${inputStyle};flex:0 0 180px">
+    <input type="text" class="gw-extra-val" value="${esc(val)}" placeholder="value (JSON or text)" spellcheck="false" autocomplete="off" style="${inputStyle};flex:1 1 auto">
+    <button type="button" class="btn-tiny" onclick="this.parentNode.remove()" title="remove" aria-label="remove">✕</button>
+  </div>`;
+}
+
+function _gwAddExtraRow(name){
+  const wrap=$('gwExtraRows-'+name);
+  if(!wrap) return;
+  const tpl=document.createElement('template');
+  tpl.innerHTML=_gwExtraRowHtml('','');
+  wrap.appendChild(tpl.content.firstElementChild);
+}
+
+function _renderGatewayGenericForm(p){
+  const rows=(p.extra&&typeof p.extra==='object'?Object.entries(p.extra):[])
+    .map(([k,v])=>_gwExtraRowHtml(k,_gwScalarToText(v))).join('');
+  return `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">${esc(t('gateway_generic_hint')||'Values are parsed as JSON when possible (numbers, true/false, lists); anything else is stored as a string. Saved to platforms.'+p.name+'.extra.')}</div>
+  <div id="gwExtraRows-${esc(p.name)}">${rows}</div>
+  <button type="button" class="btn-tiny" onclick="_gwAddExtraRow('${_jsAttr(p.name)}')">+ ${esc(t('gateway_add_row')||'Add key')}</button>
+  <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+    <button type="button" class="btn-tiny" onclick="saveGatewayPlatform('${_jsAttr(p.name)}',false)">${esc(t('gateway_save')||'Save')}</button>
+    <button type="button" class="btn-tiny" onclick="saveGatewayPlatform('${_jsAttr(p.name)}',true)">${esc(t('gateway_save_restart')||'Save & restart gateway')}</button>
+  </div>
+  <div id="gwMsg-${esc(p.name)}" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>`;
+}
+
+async function saveGatewayPlatform(name,alsoRestart){
+  const el=$('gwForm-'+name);
+  if(!el) return;
+  const data=_gatewayPlatformsData;
+  const p=(data&&Array.isArray(data.platforms))?data.platforms.find(x=>x.name===name):null;
+  const body={};
+  if(p&&p.generic){
+    const extra={};
+    el.querySelectorAll('.gw-extra-row').forEach(row=>{
+      const k=row.querySelector('.gw-extra-key');
+      const v=row.querySelector('.gw-extra-val');
+      if(!k||!v) return;
+      const key=(k.value||'').trim();
+      if(key) extra[key]=v.value;
+    });
+    body.extra=extra;
+  }else{
+    const fields={};
+    const secrets={};
+    el.querySelectorAll('[data-gw-field]').forEach(inp=>{
+      const key=inp.getAttribute('data-gw-field');
+      if(!key) return;
+      if(inp.getAttribute('data-gw-secret')==='1'){
+        if(inp.dataset.gwClear==='1') secrets[key]='';
+        else if(inp.value) secrets[key]=inp.value;
+        return;
+      }
+      if(inp.type==='checkbox'){fields[key]=inp.checked;return;}
+      if(inp.getAttribute('data-gw-type')==='list'){
+        fields[key]=inp.value.split(',').map(s=>s.trim()).filter(Boolean);
+        return;
+      }
+      if(inp.getAttribute('data-gw-type')==='select'){
+        if(inp.value!=='') fields[key]=inp.value;
+        return;
+      }
+      fields[key]=inp.value;
+    });
+    body.fields=fields;
+    body.secrets=secrets;
+  }
+  const toggle=el.closest('.gw-platform-card').querySelector('[data-gw-enabled]');
+  // Only send enabled when the user actually moved the toggle — sending it
+  // unconditionally would freeze the implicit state as explicit on every
+  // save (an implicit-on platform could never go back to env-auto semantics).
+  if(toggle && toggle.dataset.gwTouched==='1') body.enabled=toggle.checked;
+  const msg=$('gwMsg-'+name);
+  if(msg){msg.style.color='var(--muted)';msg.textContent=t('gateway_saving')||'Saving…';}
+  try{
+    const r=await api('/api/gateway/platforms/'+encodeURIComponent(name),{method:'PUT',body:JSON.stringify(body)});
+    if(r&&r.ok){
+      _gatewayPlatformsData=null;
+      if(alsoRestart){
+        if(msg) msg.textContent=(r.warnings&&r.warnings.length?r.warnings.join(' · ')+' — ':'')+(t('gateway_restarting')||'restarting gateway…');
+        try{
+          const res=await api('/api/gateway/restart',{method:'POST',body:JSON.stringify({wait:true})});
+          if(res&&res.ok===false){
+            showToast((res.message)||t('gateway_restart_failed')||'Gateway restart failed','error');
+          }else{
+            showToast(t('gateway_saved_restarted')||'Saved — gateway restarted');
+          }
+        }catch(e){
+          showToast((e&&e.payload&&e.payload.message)||(e&&e.message)||t('gateway_restart_failed')||'Gateway restart failed','error');
+        }
+      }else{
+        showToast(t('gateway_saved')||'Gateway platform config saved');
+      }
+      await loadGatewayPane();
+      const el2=$('gwForm-'+name);
+      if(el2){renderGatewayPlatformForm(name);el2.style.display='block';}
+    }else{
+      const err=(r&&r.error)||(t('gateway_save_failed')||'Save failed');
+      if(msg){msg.style.color='#ef4444';msg.textContent=err;}
+      showToast(err,'error');
+    }
+  }catch(e){
+    const err=(e&&e.payload&&e.payload.error)||(e&&e.message)||(t('gateway_save_failed')||'Save failed');
+    if(msg){msg.style.color='#ef4444';msg.textContent=err;}
+    showToast(err,'error');
+  }
+}
+
 // Load MCP servers when system settings tab opens
 const _origSwitchSettings=switchSettingsSection;
 switchSettingsSection=function(name){
