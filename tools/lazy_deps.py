@@ -85,11 +85,11 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # service principal, az login, VS Code, azd, PowerShell). Only loaded
     # when model.auth_mode=entra_id is selected; key-based azure-foundry
     # users never pay this import.
-    "provider.azure_identity": ("azure-identity==1.25.3",),
+    "provider.azure_identity": ("azure-identity==1.26.0",),
 
     # ─── Web search backends ───────────────────────────────────────────────
-    "search.exa": ("exa-py==2.22.2",),
-    "search.firecrawl": ("firecrawl-py==4.44.0",),
+    "search.exa": ("exa-py==2.25.0",),
+    "search.firecrawl": ("firecrawl-py==4.46.0",),
     "search.parallel": ("parallel-web==1.3.3",),
 
     # ─── TTS providers ─────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # STT + TTS share the same SDK.
     "tts.mistral": ("mistralai==2.10.1",),
     "tts.edge": ("edge-tts==7.2.8",),
-    "tts.elevenlabs": ("elevenlabs==2.69.0",),
+    "tts.elevenlabs": ("elevenlabs==2.70.0",),
 
     # ─── Speech-to-text providers ──────────────────────────────────────────
     "stt.mistral": ("mistralai==2.10.1",),
@@ -130,12 +130,12 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "platform.discord": ("discord.py[voice]==2.7.1", "brotlicffi==1.2.0.2"),
     "platform.slack": (
         "slack-bolt==1.30.0",
-        "slack-sdk==3.44.1",
+        "slack-sdk==3.45.0",
         "aiohttp==3.14.3",  # CVE-2026-34513/34518/34519/34520/34525
     ),
     "platform.matrix": (
         "mautrix[encryption]==0.21.1",
-        "Markdown==3.10.3",
+        "Markdown==3.11",
         "aiosqlite==0.22.1",
         "asyncpg==0.31.0",
         "aiohttp-socks==0.12.0",
@@ -155,13 +155,13 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "platform.wecom_callback": ("defusedxml==0.7.1",),
 
     # ─── Terminal backends ─────────────────────────────────────────────────
-    "terminal.modal": ("modal==1.5.5",),
-    "terminal.daytona": ("daytona==0.217.0",),
+    "terminal.modal": ("modal==1.6.0",),
+    "terminal.daytona": ("daytona==0.220.0",),
 
     # ─── Skills ────────────────────────────────────────────────────────────
     "skill.google_workspace": (
-        "google-api-python-client==2.200.0",
-        "google-auth-oauthlib==1.4.1",
+        "google-api-python-client==2.201.0",
+        "google-auth-oauthlib==1.5.0",
         "google-auth-httplib2==0.4.2",
     ),
     "skill.youtube": ("youtube-transcript-api==1.2.4",),
