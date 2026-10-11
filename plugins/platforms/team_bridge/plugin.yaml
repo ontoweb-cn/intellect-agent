@@ -1,0 +1,65 @@
+name: team-bridge-platform
+label: Intellect Team Bridge
+kind: platform
+version: 1.0.0
+description: >
+  Remote-worker bridge for an upstream Intellect Team deployment. Pulls
+  ready kanban tasks (assignee = this worker) from the upstream gateway's
+  kanban HTTP API over outbound HTTPS, runs each claimed task as a local
+  agent turn through the standard gateway pipeline, and reports the final
+  reply back via the task complete endpoint. Outbound-only (no inbound
+  ports); auth via an upstream member token (imt_...).
+
+  Task acceptance is guarded by an optional HMAC task signature shared
+  with the task producer (e.g. the upstream WebUI BFF), so only tasks
+  created by trusted producers are executed on this host.
+author: Simon (ONTOWEB)
+# ``requires_env`` and ``optional_env`` entries are surfaced in the
+# ``intellect config`` UI via the platform-plugin env var injector in
+# ``intellect_cli/config.py``.
+requires_env:
+  - name: TEAM_BRIDGE_API_TOKEN
+    description: "Upstream Intellect Team member token (imt_...) used as Bearer credential"
+    prompt: "Intellect Team member token (imt_...)"
+    password: true
+optional_env:
+  - name: TEAM_BRIDGE_SERVER_URL
+    description: "Base URL of the upstream gateway (e.g. https://ai.example.edu/intellect)"
+    prompt: "Upstream gateway base URL"
+    password: false
+  - name: TEAM_BRIDGE_BOARD
+    description: "Kanban board slug to pull tasks from (default: webui)"
+    prompt: "Board slug (or empty for 'webui')"
+    password: false
+  - name: TEAM_BRIDGE_WORKER_ID
+    description: "Worker identity; must match the task assignee on the upstream board (default: team-bridge)"
+    prompt: "Worker id / assignee name (or empty)"
+    password: false
+  - name: TEAM_BRIDGE_POLL_SECONDS
+    description: "Seconds between ready-queue polls (default: 5)"
+    prompt: "Poll interval seconds (or empty)"
+    password: false
+  - name: TEAM_BRIDGE_CLAIM_TTL_SECONDS
+    description: "Claim TTL; refreshed by heartbeat at ttl/3 (default: 300)"
+    prompt: "Claim TTL seconds (or empty)"
+    password: false
+  - name: TEAM_BRIDGE_MAX_CONCURRENT
+    description: "Max concurrently claimed tasks (default: 2)"
+    prompt: "Max concurrent tasks (or empty)"
+    password: false
+  - name: TEAM_BRIDGE_TASK_SIGNING_KEY
+    description: "HMAC-SHA256 key shared with the task producer; when set, only tasks carrying a valid 'sig:' line are claimed"
+    prompt: "Task signing key (or empty to accept unsigned tasks)"
+    password: true
+  - name: TEAM_BRIDGE_APPROVAL_MODE
+    description: "Dangerous-command handling for bridged turns: deny (default) rejects them; approve pre-approves everything in bridged sessions (trust the producer)"
+    prompt: "Approval mode: deny|approve (or empty for deny)"
+    password: false
+  - name: TEAM_BRIDGE_ALLOWED_USERS
+    description: "Comma-separated worker ids allowed to dispatch (gateway authorization allowlist)"
+    prompt: "Allowed worker ids (comma-separated)"
+    password: false
+  - name: TEAM_BRIDGE_ALLOW_ALL_USERS
+    description: "Allow any worker id (dev only — disables the allowlist)"
+    prompt: "Allow all workers? (true/false)"
+    password: false
