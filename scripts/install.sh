@@ -1141,6 +1141,19 @@ _rust_pip_python() {
     fi
 }
 
+# Install package(s) into the install venv / target python.
+# uv-created venvs ship WITHOUT pip (`python -m pip` → "No module named
+# pip"), so route through uv whenever it manages the venv; the Termux
+# stdlib venv and --no-venv installs have real pip.
+_venv_install() {
+    local pip_py="$1"; shift
+    if [ "$USE_VENV" = true ] && [ "$DISTRO" != "termux" ] && command -v "$UV_CMD" >/dev/null 2>&1; then
+        VIRTUAL_ENV="$INSTALL_DIR/venv" "$UV_CMD" pip install -q --python "$pip_py" "$@"
+    else
+        "$pip_py" -m pip install -q "$@"
+    fi
+}
+
 _rust_wheel_platform_hint() {
     case "$(uname -s)" in
         Linux)
@@ -1210,7 +1223,7 @@ PY
         rm -f "$tmp"
         return 1
     fi
-    if ! "$pip_py" -m pip install -q "$tmp"; then
+    if ! _venv_install "$pip_py" "$tmp"; then
         rm -f "$tmp"
         return 1
     fi
@@ -1270,7 +1283,7 @@ PY
         rm -f "$tmp"
         return 1
     fi
-    if ! "$pip_py" -m pip install -q "$tmp"; then
+    if ! _venv_install "$pip_py" "$tmp"; then
         rm -f "$tmp"
         return 1
     fi
@@ -1363,10 +1376,22 @@ try_build_rust_local() {
         fi
     fi
     log_info "Building Rust extension locally (maturin)..."
-    if ! command -v maturin >/dev/null 2>&1; then
+    local maturin_bin="maturin"
+    if [ "$USE_VENV" = true ]; then
+        if ! command -v maturin >/dev/null 2>&1 && [ ! -x "$INSTALL_DIR/venv/bin/maturin" ]; then
+            _venv_install "$pip_py" maturin || return 1
+        fi
+        # maturin develop installs into VIRTUAL_ENV, and venv/bin is never
+        # on PATH inside this script — call the venv's binary directly.
+        [ -x "$INSTALL_DIR/venv/bin/maturin" ] && maturin_bin="$INSTALL_DIR/venv/bin/maturin"
+        export VIRTUAL_ENV="$INSTALL_DIR/venv"
+    elif ! command -v maturin >/dev/null 2>&1; then
         "$pip_py" -m pip install -q maturin || return 1
     fi
-    if (cd "$INSTALL_DIR/rust-core" && maturin develop --release); then
+    if ! command -v "$maturin_bin" >/dev/null 2>&1; then
+        return 1
+    fi
+    if (cd "$INSTALL_DIR/rust-core" && "$maturin_bin" develop --release); then
         log_success "Built intellect_community_core via maturin"
         return 0
     fi
