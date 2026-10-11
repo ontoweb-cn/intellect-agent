@@ -10,6 +10,18 @@ import sqlite3
 import tempfile
 import threading
 
+import pytest
+
+from intellect_rust import HAS_BACKEND
+
+# Every test in this file exercises the native intellect_community_core
+# extension directly; without it each one just crashes on a None alias.
+# Skip with an actionable reason instead (CI and install.sh build it).
+pytestmark = pytest.mark.skipif(
+    not HAS_BACKEND,
+    reason="intellect_community_core not built (cd rust-core && maturin develop --release)",
+)
+
 
 def _fresh_db() -> tuple[sqlite3.Connection, str]:
     """Return a temp-file SQLite database with FTS5 enabled, plus its path.

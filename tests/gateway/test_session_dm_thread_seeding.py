@@ -18,6 +18,16 @@ import pytest
 
 from gateway.config import Platform, GatewayConfig
 from gateway.session import SessionSource, SessionStore
+from intellect_rust import HAS_BACKEND
+
+# The store fixture is premised on the SQLite-backed SessionStore (spec 002:
+# load_transcript reads from state.db only).  Without the native backend the
+# store degrades to JSONL, transcripts read back empty, and the seeding
+# assertions can't hold.
+pytestmark = pytest.mark.skipif(
+    not HAS_BACKEND,
+    reason="intellect_community_core not built (cd rust-core && maturin develop --release)",
+)
 
 
 @pytest.fixture()

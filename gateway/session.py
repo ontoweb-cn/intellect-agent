@@ -68,6 +68,103 @@ from .whatsapp_identity import (
 from intellect_rust import rust_build_session_key as _rust_build_key, rust_check_expiry_batch as _rust_check_expiry_batch
 
 
+# ── Python fallbacks for source checkouts without the Rust extension ────────
+# intellect_rust sets the rust_* aliases to None when
+# intellect_community_core is not built (plain `git clone` + `pip install -e .`
+# without `cd rust-core && maturin develop --release`).  These mirrors keep
+# gateway sessions working there; they must stay behaviour-identical to
+# rust-core/src/gateway.rs (build_session_key_rs / check_session_expiry_batch_rs)
+# or building the extension later would shard existing session histories.
+
+def _py_build_session_key(
+    platform: str,
+    chat_type: str,
+    chat_id: str,
+    thread_id: str,
+    user_id: str,
+    user_id_alt: str,
+    group_sessions_per_user: bool,
+    thread_sessions_per_user: bool,
+    member_id: str,
+    team_id: str,
+    project_id: str,
+) -> str:
+    participant_id = user_id_alt if user_id_alt else user_id
+
+    if chat_type == "dm":
+        key = f"agent:main:{platform}:dm"
+        if chat_id:
+            key += f":{chat_id}"
+        if thread_id:
+            key += f":{thread_id}"
+    else:
+        key = f"agent:main:{platform}:{chat_type}"
+        if chat_id:
+            key += f":{chat_id}"
+        if thread_id:
+            key += f":{thread_id}"
+        isolate_user = group_sessions_per_user
+        if thread_id and not thread_sessions_per_user:
+            isolate_user = False
+        if isolate_user and participant_id:
+            key += f":{participant_id}"
+
+    if member_id:
+        key += f":member:{member_id}"
+    if team_id:
+        key += f":team:{team_id}"
+    if project_id:
+        key += f":project:{project_id}"
+    return key
+
+
+def _py_is_daily_reset(updated_at: float, now: float, at_hour: int) -> bool:
+    # Mirror of gateway.rs is_daily_reset — epoch-day alignment approximation
+    # of "local midnight at at_hour".  Do not "fix" it to datetime arithmetic:
+    # the Rust path uses the same approximation and the two must agree.
+    seconds_per_day = 86400.0
+    days_since_epoch = now // seconds_per_day  # float floor — matches Rust .floor()
+    today_reset = days_since_epoch * seconds_per_day + at_hour * 3600.0
+    reset_deadline = today_reset - seconds_per_day if now < today_reset else today_reset
+    return updated_at < reset_deadline
+
+
+def _py_check_session_expiry_batch(
+    modes: list,
+    idle_minutes: list,
+    at_hours: list,
+    updated_ats: list,
+    now: float,
+) -> list:
+    def evaluate_reset_policy(mode: str, idle_min: float, at_hour: int,
+                              updated_at: float, now_ts: float):
+        if mode == "none":
+            return None
+        if mode == "idle" or mode == "both":
+            if now_ts > updated_at + idle_min * 60.0:
+                return "idle"
+            if mode == "idle":
+                return None
+        if mode in ("daily", "both") and _py_is_daily_reset(updated_at, now_ts, at_hour):
+            return "daily"
+        return None
+
+    length = min(len(modes), len(idle_minutes), len(at_hours), len(updated_ats))
+    expired = []
+    for i in range(length):
+        if evaluate_reset_policy(modes[i], idle_minutes[i], at_hours[i],
+                                 updated_ats[i], now) is not None:
+            expired.append(i)
+    return expired
+
+
+_build_session_key_impl = _rust_build_key if _rust_build_key is not None else _py_build_session_key
+_check_expiry_batch_impl = (
+    _rust_check_expiry_batch if _rust_check_expiry_batch is not None
+    else _py_check_session_expiry_batch
+)
+
+
 @dataclass
 class SessionSource:
     """
@@ -646,7 +743,7 @@ def build_session_key(
         if p and source.platform == Platform.WHATSAPP:
             p = canonical_whatsapp_identifier(str(p)) or p
         participant = str(p)
-    return _rust_build_key(
+    return _build_session_key_impl(
         source.platform.value, source.chat_type, chat_id,
         source.thread_id or "", source.user_id or "",
         source.user_id_alt or "" if source.chat_type == "dm" else participant,
@@ -943,7 +1040,7 @@ class SessionStore:
             at_hours.append(policy.at_hour)
             updated_ats.append(entry.updated_at.timestamp() if hasattr(entry.updated_at, 'timestamp') else 0.0)
 
-        expired_indices = _rust_check_expiry_batch(modes, idle_minutes, at_hours, updated_ats, now_ts)
+        expired_indices = _check_expiry_batch_impl(modes, idle_minutes, at_hours, updated_ats, now_ts)
         return [candidates[i][0] for i in expired_indices if i < len(candidates)]
 
     def _should_reset(self, entry: SessionEntry, source: SessionSource) -> Optional[str]:

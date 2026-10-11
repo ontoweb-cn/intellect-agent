@@ -13,6 +13,15 @@ from gateway.session import (
     build_session_key,
     canonical_whatsapp_identifier,
 )
+from intellect_rust import HAS_BACKEND
+
+# Tests that exercise the SQLite-backed SessionStore (state.db) require the
+# native SQLiteBackend; without intellect_community_core, SessionStore
+# degrades to JSONL at runtime and these DB assertions can't hold.
+_requires_community_core = pytest.mark.skipif(
+    not HAS_BACKEND,
+    reason="intellect_community_core not built (cd rust-core && maturin develop --release)",
+)
 
 # Legacy name preserved for these tests; product renamed the function to
 # canonical_whatsapp_identifier.  Keep the tests referencing the old name
@@ -500,6 +509,7 @@ class TestSenderPrefixWithBackfill:
         assert "[Alice] [Recent" not in result
 
 
+@_requires_community_core
 class TestSessionStoreRewriteTranscript:
     """Regression: /retry and /undo must persist truncated history to DB."""
 
@@ -556,6 +566,7 @@ class TestLoadTranscriptDBOnly:
         result = store.load_transcript("nonexistent")
         assert result == []
 
+    @_requires_community_core
     def test_db_only_returns_messages(self, tmp_path, monkeypatch):
         import intellect_state
         monkeypatch.setattr(intellect_state, "DEFAULT_DB_PATH", tmp_path / "state.db")
@@ -572,6 +583,7 @@ class TestLoadTranscriptDBOnly:
         assert result[1]["content"] == "db-a"
 
 
+@_requires_community_core
 class TestSessionStoreSwitchSession:
     """Regression coverage for gateway /resume session switching semantics."""
 
@@ -1152,6 +1164,7 @@ class TestLastPromptTokens:
         store.update_session("k1", last_prompt_tokens=0)
         assert entry.last_prompt_tokens == 0
 
+@_requires_community_core
 class TestRewriteTranscriptPreservesReasoning:
     """rewrite_transcript must not drop reasoning fields from SQLite."""
 
@@ -1240,6 +1253,7 @@ class TestRewriteTranscriptPreservesReasoning:
         ]
 
 
+@_requires_community_core
 class TestSessionStoreMemberStamp:
     """Multi-user member stamping is permanently absent (members are WONTFIX).
 
@@ -1291,6 +1305,7 @@ class TestSessionStoreMemberStamp:
         assert db.get_session("member-control").get("member_id") == "mem-abc"
 
 
+@_requires_community_core
 class TestSessionStoreSqlitePersistence:
     """The session_index INSERT must be executable and lossless.
 
@@ -1341,3 +1356,157 @@ class TestSessionStoreSqlitePersistence:
         assert got.chat_type == entry.chat_type
         assert got.suspended is True
         assert got.created_at.tzinfo is not None
+
+
+# ── Python fallback for the Rust session-key helpers ────────────────────────
+# intellect_rust aliases rust_build_session_key / rust_check_expiry_batch to
+# None when intellect_community_core isn't built (plain source checkout).  The
+# fallbacks in gateway/session.py mirror rust-core/src/gateway.rs; the cases
+# below are the Rust unit tests' fixtures, so both implementations satisfy
+# the same spec and building the extension later never shards session keys.
+
+from gateway import session as _gs
+
+
+def _raw_key(**kw):
+    return _gs._build_session_key_impl(
+        kw.get("platform", "cli"),
+        kw.get("chat_type", "dm"),
+        kw.get("chat_id", "c1"),
+        kw.get("thread_id", ""),
+        kw.get("user_id", "u1"),
+        kw.get("user_id_alt", ""),
+        kw.get("group_per_user", False),
+        kw.get("thread_per_user", False),
+        kw.get("member_id", ""),
+        kw.get("team_id", ""),
+        kw.get("project_id", ""),
+    )
+
+
+class TestSessionKeyFallbackAvailable:
+    def test_impl_is_never_none(self):
+        """The regression this guards: the impl used to be None and every
+        handle_message crashed with an unreadable 'NoneType' object is not
+        callable."""
+        assert callable(_gs._build_session_key_impl)
+        assert callable(_gs._check_expiry_batch_impl)
+
+
+class TestSessionKeyFallbackContract:
+    """Fixtures lifted from rust-core/src/gateway.rs unit tests."""
+
+    def test_dm_simple(self):
+        assert _raw_key(platform="telegram", chat_id="12345",
+                        group_per_user=True) == "agent:main:telegram:dm:12345"
+
+    def test_dm_with_thread(self):
+        assert _raw_key(platform="telegram", chat_id="12345", thread_id="67890",
+                        group_per_user=True) == "agent:main:telegram:dm:12345:67890"
+
+    def test_group_shared(self):
+        assert _raw_key(platform="telegram", chat_type="group", chat_id="chat_1",
+                        user_id="user_a", group_per_user=True) \
+            == "agent:main:telegram:group:chat_1:user_a"
+
+    def test_group_not_isolated(self):
+        assert _raw_key(platform="telegram", chat_type="group", chat_id="chat_1",
+                        user_id="user_a", group_per_user=False) \
+            == "agent:main:telegram:group:chat_1"
+
+    def test_thread_shared_default(self):
+        assert _raw_key(platform="discord", chat_type="thread", chat_id="chat_1",
+                        thread_id="thread_1", user_id="user_a",
+                        group_per_user=True) \
+            == "agent:main:discord:thread:chat_1:thread_1"
+
+    def test_thread_per_user(self):
+        assert _raw_key(platform="discord", chat_type="thread", chat_id="chat_1",
+                        thread_id="thread_1", user_id="user_a",
+                        group_per_user=True, thread_per_user=True) \
+            == "agent:main:discord:thread:chat_1:thread_1:user_a"
+
+    def test_multi_user_extensions(self):
+        key = _raw_key(platform="slack", chat_id="chat_x", user_id="user_a",
+                       member_id="mem_1", team_id="team_1", project_id="proj_1")
+        assert ":member:mem_1" in key
+        assert ":team:team_1" in key
+        assert ":project:proj_1" in key
+
+
+class TestExpiryBatchFallbackContract:
+    """Mirrors check_session_expiry_batch_rs via gateway.session."""
+
+    def test_empty(self):
+        assert _gs._check_expiry_batch_impl([], [], [], [], 1000.0) == []
+
+    def test_mixed_idle(self):
+        expired = _gs._check_expiry_batch_impl(
+            ["idle", "none", "idle"], [5.0, 5.0, 5.0], [0, 0, 0],
+            [0.0, 0.0, 900.0], 1500.0)
+        assert expired == [0, 2]
+
+    def test_daily_reset_fires_after_hour_boundary(self):
+        # Day boundary at hour 9: updated yesterday 08:00, now today 10:00.
+        now = 10 * 3600.0 + 30.0
+        expired = _gs._check_expiry_batch_impl(
+            ["daily"], [0.0], [9], [now - 26 * 3600.0], now)
+        assert expired == [0]
+
+    def test_daily_reset_kept_same_day(self):
+        now = 10 * 3600.0 + 30.0
+        expired = _gs._check_expiry_batch_impl(
+            ["daily"], [0.0], [9], [now - 3600.0], now)
+        assert expired == []
+
+    def test_unknown_mode_is_ignored(self):
+        assert _gs._check_expiry_batch_impl(
+            ["bogus"], [5.0], [0], [0.0], 1500.0) == []
+
+
+@pytest.mark.skipif(
+    _gs._rust_build_key is None,
+    reason="intellect_community_core not built (maturin develop)",
+)
+class TestFallbackRustParity:
+    """When the extension IS built, the Python fallback must agree with it on
+    every fixture — otherwise building the extension shards session keys."""
+
+    FIXTURES = [
+        dict(platform="telegram", chat_id="12345", group_per_user=True),
+        dict(platform="telegram", chat_id="12345", thread_id="67890", group_per_user=True),
+        dict(platform="telegram", chat_type="group", chat_id="chat_1",
+             user_id="user_a", group_per_user=True),
+        dict(platform="telegram", chat_type="group", chat_id="chat_1",
+             user_id="user_a", group_per_user=False),
+        dict(platform="discord", chat_type="thread", chat_id="chat_1",
+             thread_id="thread_1", user_id="user_a", group_per_user=True),
+        dict(platform="discord", chat_type="thread", chat_id="chat_1",
+             thread_id="thread_1", user_id="user_a",
+             group_per_user=True, thread_per_user=True),
+        dict(platform="slack", chat_id="chat_x", user_id="user_a",
+             member_id="mem_1", team_id="team_1", project_id="proj_1"),
+    ]
+
+    def test_build_session_key_parity(self):
+        for fx in self.FIXTURES:
+            assert _raw_key(**fx) == _gs._rust_build_key(
+                fx.get("platform", "cli"), fx.get("chat_type", "dm"),
+                fx.get("chat_id", "c1"), fx.get("thread_id", ""),
+                fx.get("user_id", "u1"), fx.get("user_id_alt", ""),
+                fx.get("group_per_user", False), fx.get("thread_per_user", False),
+                fx.get("member_id", ""), fx.get("team_id", ""),
+                fx.get("project_id", ""),
+            )
+
+    def test_expiry_batch_parity(self):
+        cases = [
+            ([], [], [], [], 1000.0),
+            (["idle", "none", "idle"], [5.0, 5.0, 5.0], [0, 0, 0],
+             [0.0, 0.0, 900.0], 1500.0),
+            (["daily", "both", "bogus"], [5.0, 5.0, 5.0], [9, 0, 9],
+             [10.0, 900.0, 100000.0], 1500.0),
+        ]
+        for modes, idle, hours, updated, now in cases:
+            assert _gs._py_check_session_expiry_batch(modes, idle, hours, updated, now) \
+                == _gs._rust_check_expiry_batch(modes, idle, hours, updated, now)
