@@ -435,7 +435,24 @@ $('btnAttach').onclick=e=>{if(e&&e.preventDefault)e.preventDefault();$('fileInpu
 (function(){
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   const _canRecordAudio=!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);
-  if(!SpeechRecognition&&!_canRecordAudio) return; // Browser unsupported — mic button stays hidden
+  // Modern browsers drop both APIs exactly when the page is an insecure
+  // context (HTTP + non-localhost) — say so instead of hiding the mic
+  // button silently. Rate-limited to once per 7 days per browser.
+  if(!SpeechRecognition&&!_canRecordAudio){
+    _hintMicInsecureContext();
+    return;
+  }
+
+  function _hintMicInsecureContext(){
+    if(window.isSecureContext!==false) return; // API-less browser, not an HTTP issue
+    const KEY='mic_insecure_hint_at';
+    try{
+      const last=parseInt(localStorage.getItem(KEY)||'0',10)||0;
+      if(Date.now()-last<7*86400000) return;
+      localStorage.setItem(KEY,String(Date.now()));
+    }catch(_){ /* storage unavailable — fall through and show */ }
+    if(typeof showToast==='function') showToast(t('mic_insecure_hint'),6000,'warning');
+  }
 
   // Persist SR failure across reloads (e.g. Tailscale/network error)
   const _micForceMediaRecorderKey='mic_force_mediarecorder';
@@ -462,7 +479,7 @@ $('btnAttach').onclick=e=>{if(e&&e.preventDefault)e.preventDefault();$('fileInpu
     // pressing the button will do (#1488).
     _setButtonTooltip(btn, on ? (typeof _rawAudioMode!=='undefined'&&_rawAudioMode ? t('voice_recording_active') : t('voice_dictate_active')) : t('voice_dictate'));
     status.style.display=on?'':'none';
-    if(statusText) statusText.textContent=on?'Listening':'Listening';
+    if(statusText) statusText.textContent=on?t('voice_listening'):'';
     if(!on){ _finalText=''; _prefix=''; }
   }
 
