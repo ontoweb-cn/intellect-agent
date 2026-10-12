@@ -150,7 +150,7 @@ msal = ["msal>=1.31,<2"]  # P3-2: Azure AD native auth (WAM broker, conditional 
 # tools/lazy_deps.py (stt.mistral / tts.mistral) at first use — deliberately
 # NOT re-added to [all] so a future quarantined release can't break fresh
 # installs (see [all] policy comment below).
-mistral = ["mistralai==2.10.1"]
+mistral = ["mistralai==3.1.0"]
 bedrock = ["boto3==1.43.97"]
 azure-identity = ["azure-identity==1.26.0"]
 termux = [
