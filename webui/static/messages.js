@@ -1482,6 +1482,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         if(data&&data.session&&S.session&&S.session.session_id===activeSid){
           S.session=data.session;
           S.messages=(data.session.messages||[]).filter(m=>m&&m.role);
+          // No msg_limit on this request → the full array (offset 0).
+          if(typeof _resetTranscriptBasis==='function') _resetTranscriptBasis();
           S.activeStreamId=data.session.active_stream_id||null;
           clearLiveToolCards();
           if(typeof finalizeThinkingCard==='function') finalizeThinkingCard();
@@ -1909,7 +1911,19 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           const _prevCost=(S.session&&S.session.estimated_cost)||0;
           const _prevCacheRead=(S.session&&S.session.cache_read_tokens)||0;
           const _prevCacheWrite=(S.session&&S.session.cache_write_tokens)||0;
-          S.session=d.session;S.messages=d.session.messages||[];if(typeof _messagesTruncated!=='undefined')_messagesTruncated=!!d.session._messages_truncated;
+          S.session=d.session;S.messages=d.session.messages||[];
+          // The `done` payload always carries the *full* message array
+          // (api/streaming.py builds it from s.messages, and never attaches
+          // _messages_offset/_messages_truncated — only GET /api/session does),
+          // while the pane may have been showing a paginated msg_limit window.
+          // Reset the pagination basis so _oldestIdx cannot survive as a stale
+          // absolute offset (forkFromMessage() would then keep far too many
+          // messages), and drop height-cache entries that were learned against
+          // the previous basis: the stale floor would otherwise be applied to
+          // whatever message now occupies that index and leave a blank gap.
+          if(typeof _resetTranscriptBasis==='function') _resetTranscriptBasis();
+          else if(typeof _messagesTruncated!=='undefined') _messagesTruncated=false;
+          if(typeof _clearMessageHeightCache==='function') _clearMessageHeightCache(completedSid);
           if(S.session&&S.session.session_id){
             try{if(typeof setSavedWebuiSessionId==='function')setSavedWebuiSessionId(S.session.session_id);else localStorage.setItem('intellect-webui-session',S.session.session_id);}catch(_){}
             if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(S.session.session_id);
@@ -2377,6 +2391,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           if(data&&data.session&&S.session&&S.session.session_id===activeSid){
             S.session=data.session;
             S.messages=(data.session.messages||[]).filter(m=>m&&m.role);
+            // No msg_limit on this request → the full array (offset 0).
+            if(typeof _resetTranscriptBasis==='function') _resetTranscriptBasis();
             clearLiveToolCards();if(!assistantText)removeThinking();
             _markSessionViewed(activeSid, data.session.message_count ?? S.messages.length);
             renderMessages({preserveScroll:true});
@@ -2429,6 +2445,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         S.activeStreamId=null;
         clearLiveToolCards();if(!assistantText)removeThinking();
         S.session=session;S.messages=(session.messages||[]).filter(m=>m&&m.role);
+        // Settled from a whole-session fetch (no msg_limit) → full array.
+        if(typeof _resetTranscriptBasis==='function') _resetTranscriptBasis();
         if(S.session&&S.session.session_id){
           try{if(typeof setSavedWebuiSessionId==='function')setSavedWebuiSessionId(S.session.session_id);else localStorage.setItem('intellect-webui-session',S.session.session_id);}catch(_){}
           if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(S.session.session_id);

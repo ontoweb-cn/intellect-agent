@@ -597,6 +597,9 @@ async function newSession(flash, options={}){
   if(_activeProject&&_activeProject!==NO_PROJECT_FILTER) reqBody.project_id=_activeProject;
   const data=await api('/api/session/new',{method:'POST',body:JSON.stringify(reqBody)});
   S.session=data.session;S.messages=data.session.messages||[];
+  // Fresh session: the full (usually single-message) array is loaded, so the
+  // pagination basis is pristine — never inherit the previous session's offset.
+  _resetTranscriptBasis();
   S.lastUsage={...(data.session.last_usage||{})};
   if(flash)S.session._flash=true;
   setSavedWebuiSessionId(S.session.session_id);
@@ -1420,6 +1423,10 @@ async function _ensureMessagesLoaded(sid) {
   clearLiveToolCards();
   _bumpMessagesGeneration();
   S.messages = msgs;
+  // Index basis changed (paginated window -> full/first page): learned row
+  // heights are keyed by local index and would otherwise be replayed onto a
+  // different message, leaving a large blank gap. See _clearMessageHeightCache.
+  if (typeof _clearMessageHeightCache === 'function') _clearMessageHeightCache(sid);
   if(S.session&&S.session.session_id===sid){
     S.session.message_count=Number(data.session.message_count || msgs.length);
     S.lastUsage={...(data.session.last_usage||S.lastUsage||{})};
@@ -1479,6 +1486,28 @@ let _loadingOlder = false;
 // oldest message currently loaded in S.messages. Starts at 0 when all
 // messages are loaded, or > 0 when truncated by msg_limit.
 let _oldestIdx = 0;
+
+/** Reset the pagination basis after S.messages is replaced with a FULL message
+ *  array — an `GET /api/session` response issued without `msg_limit` (the
+ *  backend returns the whole array with offset 0), the SSE `done` payload (which
+ *  always carries `s.messages` in full), or a brand-new session.
+ *
+ *  `_oldestIdx` must be zeroed together with `_messagesTruncated`. It is
+ *  documented above as "the index of the oldest loaded message in the server's
+ *  full array", and `forkFromMessage()` builds its backend `keep_count` as
+ *  `_oldestIdx + msgIdx`. The `done` payload never carries
+ *  `_messages_offset`/`_messages_truncated` (only GET /api/session injects
+ *  them), so without this reset the offset from the previous paginated window
+ *  survives the wholesale replace: `_messagesTruncated` correctly flips to false
+ *  but `_oldestIdx` stays stale, and "Fork from here" silently keeps hundreds of
+ *  extra messages. Callers must NOT use this after a merge/prepend that keeps the
+ *  existing head (e.g. the INFLIGHT tail merge) or after a paginated fetch that
+ *  sets the basis from the response. */
+function _resetTranscriptBasis() {
+  _messagesTruncated = false;
+  _oldestIdx = 0;
+}
+
 // Generation token bumped every time S.messages is wholesale-replaced
 // (rather than incrementally extended). _loadOlderMessages snapshots it
 // before its `await` and re-checks after, so a late-resolving prefetch
@@ -1575,6 +1604,9 @@ async function _loadOlderMessages() {
     const container = $('messages');
     const prevScrollH = container ? container.scrollHeight : 0;
     S.messages = nextMessages;
+    // Older messages were prepended, so every local index shifted: drop the
+    // per-index height cache rather than replaying it onto other messages.
+    if (typeof _clearMessageHeightCache === 'function') _clearMessageHeightCache();
     // renderMessages() windows long transcripts from the end. If we do not
     // expand that window before rendering, the newly prepended page stays
     // hidden and the "hidden" counter rises while the viewport appears stuck.
@@ -1664,8 +1696,11 @@ async function _ensureAllMessagesLoaded() {
     // acquisition) sees the new value and aborts.
     _bumpMessagesGeneration();
     S.messages = msgs;
-    _messagesTruncated = false;
-    _oldestIdx = 0;
+    // Wholesale replace with the full transcript: reset the pagination basis.
+    _resetTranscriptBasis();
+    // Basis change (paginated tail window -> full transcript) invalidates every
+    // index-keyed row height learned so far. See _clearMessageHeightCache.
+    if (typeof _clearMessageHeightCache === 'function') _clearMessageHeightCache(sid);
     if (S.session && S.session.session_id === sid) {
       S.session.message_count = Number(data.session.message_count || msgs.length);
     }

@@ -316,7 +316,7 @@ function _isTranscriptVirtualWindowActive(visCount){
 }
 
 function _estimateVisRowHeight(m, rawIdx){
-  const cached=_userMessageHeightByKey.get(_userMessageHeightKey(rawIdx));
+  const cached=_userMessageHeightByKey.get(_userMessageHeightKey(rawIdx, m&&m.role));
   if(cached&&cached>0) return cached;
   if(m&&m.role==='user'){
     return (typeof DEFAULT_USER_ROW_HEIGHT==='number')?DEFAULT_USER_ROW_HEIGHT:72;
@@ -358,14 +358,40 @@ function _wireMessageVirtualScroll(){
   },{passive:true});
 }
 
-function _userMessageHeightKey(rawIdx){
+function _userMessageHeightKey(rawIdx, role){
   const sid=S.session?S.session.session_id:'';
-  return sid+':'+String(rawIdx);
+  // Role-qualified: a user row must never inherit an assistant turn's entry
+  // (or the reverse) when local indices alias across transcript re-bases.
+  const r=role||((S.messages&&S.messages[rawIdx]&&S.messages[rawIdx].role)||'');
+  return sid+':'+r+':'+String(rawIdx);
+}
+
+/** Drop learned row heights for a session — call whenever S.messages is
+ *  re-based (paginated msg_limit window <-> full transcript, older-message
+ *  prepend). Indices are only meaningful within one basis: the same local
+ *  index can name a completely different message after a re-base, so a stale
+ *  entry replayed as an inline floor inflates an unrelated row and leaves a
+ *  large blank gap in the transcript. */
+function _clearMessageHeightCache(sid){
+  const prefix=(sid||(S.session&&S.session.session_id)||'')+':';
+  for(const key of [..._userMessageHeightByKey.keys()]){
+    if(key.startsWith(prefix)) _userMessageHeightByKey.delete(key);
+  }
 }
 
 function _applyCachedUserMessageHeight(row, rawIdx){
   if(!row) return;
-  const h=_userMessageHeightByKey.get(_userMessageHeightKey(rawIdx));
+  // The cached height is a scroll-anchor floor for the variable-height virtual
+  // window only (it keeps the ledger's spacer arithmetic stable while real
+  // heights are measured). Outside that mode — the default, the `virt` canary
+  // is off — a floor carries no benefit and only inflates rows whose rendered
+  // height legitimately differs from the measurement that produced the entry,
+  // which is exactly how the A1->Q2 blank gap appears.
+  if(!(_messageVirtState&&_messageVirtState.virtualized)){
+    row.style.minHeight='';
+    return;
+  }
+  const h=_userMessageHeightByKey.get(_userMessageHeightKey(rawIdx, row.dataset&&row.dataset.role));
   if(h&&h>0) row.style.minHeight=h+'px';
   else row.style.minHeight='';
 }
@@ -381,7 +407,12 @@ function _observeUserMessageHeight(row, rawIdx){
         if(idx===undefined||idx==='') continue;
         const height=Math.round(el.getBoundingClientRect().height||0);
         if(height<=0) continue;
-        const key=_userMessageHeightKey(idx);
+        // Never re-learn a height that is just our own inline floor: the
+        // ResizeObserver would otherwise re-store the inflated value and make
+        // the floor permanent (a self-reinforcing sticky gap).
+        const floor=parseInt(el.style&&el.style.minHeight,10)||0;
+        if(floor>0&&Math.abs(height-floor)<=1) continue;
+        const key=_userMessageHeightKey(idx, el.dataset.role);
         const prev=_userMessageHeightByKey.get(key);
         _userMessageHeightByKey.set(key, height);
         if(prev&&Math.abs(prev-height)>8){
@@ -5109,6 +5140,8 @@ async function refreshSession() {
     const data = await api(`/api/session?session_id=${encodeURIComponent(S.session.session_id)}`);
     S.session = data.session;
     S.messages = data.session.messages || [];
+    // No msg_limit on this request → the full array (offset 0).
+    if (typeof _resetTranscriptBasis === 'function') _resetTranscriptBasis();
     const pendingMsg=getPendingSessionMessage(data.session,S.messages);
     if(pendingMsg) S.messages.push(pendingMsg);
     S.activeStreamId=data.session.active_stream_id||null;
