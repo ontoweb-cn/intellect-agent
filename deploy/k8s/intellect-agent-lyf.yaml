@@ -59,7 +59,7 @@ spec:
         - name: harbor-regcred
       containers:
         - name: intellect-agent
-          image: hub.wust.edu.cn/intellect/intellect-agent:0.7.2-r1
+          image: hub.wust.edu.cn/intellect/intellect-agent:0.7.3
           imagePullPolicy: IfNotPresent
           # K8s 的 command: 会整体替换镜像 ENTRYPOINT（与 Compose 的追加语义不同）。
           # 必须保留 /init → main-wrapper.sh 完整链（stage2 初始化 + with-contenv 注入环境变量），
