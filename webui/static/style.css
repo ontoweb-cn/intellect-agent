@@ -418,7 +418,7 @@
   :root[data-skin="geist-contrast"] .rail-btn:hover,
   :root[data-skin="geist-contrast"] .icon-btn:hover,
   :root[data-skin="geist-contrast"] .panel-head-btn:hover,
-  :root[data-skin="geist-contrast"] .sm-btn:hover,
+  :root[data-skin="geist-contrast"] .sm-btn:hover:not(.primary),
   :root[data-skin="geist-contrast"] .project-chip:hover,
   :root[data-skin="geist-contrast"] .chip:hover,
   :root[data-skin="geist-contrast"] .profile-opt:hover,
@@ -464,6 +464,7 @@
   :root[data-skin="geist-contrast"] .new-chat-btn,
   :root[data-skin="geist-contrast"] button.send-btn:not(:disabled),
   :root[data-skin="geist-contrast"] .btn.primary,
+  :root[data-skin="geist-contrast"] #mainSettings .sm-btn.primary,
   :root[data-skin="geist-contrast"] .update-primary,
   :root[data-skin="geist-contrast"] .app-dialog-btn.confirm,
   :root[data-skin="geist-contrast"] .approval-btn.once,
@@ -3066,6 +3067,12 @@ main.main.showing-todos > #mainTodos{display:flex;}
 /* Secondary sm-btn fallback (Sign out / Disable auth) — neutral outline. */
 #mainSettings .sm-btn{border-radius:8px;padding:9px 16px;font-weight:600;font-size:13px;background:var(--surface);border:1px solid var(--border);color:var(--text);cursor:pointer;transition:background .15s,border-color .15s;}
 #mainSettings .sm-btn:hover{background:var(--accent-bg);border-color:var(--accent-bg-strong);}
+/* Primary action (accent-filled) — gateway pane "Save & restart", etc. */
+#mainSettings .sm-btn.primary{background:var(--accent,var(--link));border-color:transparent;color:#fff;}
+:root.dark #mainSettings .sm-btn.primary{color:#0A0908;}
+#mainSettings .sm-btn.primary:hover{background:var(--accent-hover,var(--accent,var(--link)));border-color:transparent;color:#fff;}
+:root.dark #mainSettings .sm-btn.primary:hover{color:#0A0908;}
+#mainSettings .sm-btn:disabled{opacity:.5;cursor:default;}
 /* Neutralise legacy inline accent tints so secondary buttons stay theme-safe */
 #mainSettings #btnDisableAuth[style],
 #mainSettings #btnSignOut[style]{color:var(--text)!important;border-color:var(--border)!important;}

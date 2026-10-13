@@ -8398,11 +8398,11 @@ function loadGatewayStatus(cardId){
   if(!card) return;
   api('/api/gateway/status').then(r=>{
     if(!r) return;
-    const scope=r.probe_scope?`<span style="font-size:11px;color:var(--muted)">probe: ${esc(String(r.probe_scope))}</span>`:'';
+    const scope=r.probe_scope?`<span style="font-size:11px;color:var(--muted)">${esc(t('gateway_probe_scope',esc(String(r.probe_scope))))}</span>`:'';
     const btns=`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-      <button type="button" class="panel-head-btn" data-gw-op="start">Start</button>
-      <button type="button" class="panel-head-btn" data-gw-op="stop">Stop</button>
-      <button type="button" class="panel-head-btn" data-gw-op="restart">Restart</button>
+      <button type="button" class="sm-btn" data-gw-op="start">${esc(t('gateway_btn_start')||'Start')}</button>
+      <button type="button" class="sm-btn" data-gw-op="stop">${esc(t('gateway_btn_stop')||'Stop')}</button>
+      <button type="button" class="sm-btn" data-gw-op="restart">${esc(t('gateway_btn_restart')||'Restart')}</button>
     </div>`;
     const bind=()=>{
       card.querySelectorAll('[data-gw-op]').forEach(btn=>{
@@ -8411,19 +8411,21 @@ function loadGatewayStatus(cardId){
           btn.disabled=true;
           try{
             const res=await api(`/api/gateway/${op}`,{method:'POST',body:JSON.stringify({wait:true})});
+            const opLabel=t(op==='start'?'gateway_btn_start':op==='stop'?'gateway_btn_stop':'gateway_btn_restart')||op;
             if(res&&res.ok===false){
-              showToast((res.message)||`Gateway ${op} failed`,'error');
+              showToast((res.message)||t('gateway_op_failed',opLabel),'error');
             }else if(res&&res.timed_out){
-              showToast((res.message)||`Gateway ${op} still running…`);
+              showToast((res.message)||t('gateway_restarting'));
             }else{
-              showToast(`Gateway ${op} ok`);
+              showToast(t('gateway_op_ok',opLabel));
             }
           }catch(e){
             const payload=e&&e.payload;
             if((e&&e.status===409)||(payload&&payload.status==='busy')){
-              showToast((payload&&payload.message)||e.message||'Gateway busy','error');
+              showToast((payload&&payload.message)||e.message||(t('gateway_busy')||'Gateway busy'),'error');
             }else{
-              showToast((payload&&payload.message)||(e&&e.message)||`Gateway ${op} failed`,'error');
+              const opLabel2=t(op==='start'?'gateway_btn_start':op==='stop'?'gateway_btn_stop':'gateway_btn_restart')||op;
+              showToast((payload&&payload.message)||(e&&e.message)||t('gateway_op_failed',opLabel2),'error');
             }
           }
           loadGatewayStatus();
@@ -8431,12 +8433,12 @@ function loadGatewayStatus(cardId){
       });
     };
     if(!r.configured){
-      card.innerHTML=`<div style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>Gateway not configured</div>${scope}${btns}`;
+      card.innerHTML=`<div style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>${esc(t('gateway_daemon_not_configured')||'Gateway not configured')}</div>${scope}${btns}`;
       bind();
       return;
     }
     if(!r.running){
-      card.innerHTML=`<div style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block"></span>Gateway not running</div>${scope}${btns}`;
+      card.innerHTML=`<div style="color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block"></span>${esc(t('gateway_daemon_not_running')||'Gateway not running')}</div>${scope}${btns}`;
       bind();
       return;
     }
@@ -8448,11 +8450,12 @@ function loadGatewayStatus(cardId){
         return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:var(--code-bg);border:1px solid var(--border2);border-radius:12px;font-size:12px;font-weight:500">${icon} ${esc(p.label)}</span>`;
       }).join(' ');
     }
-    const lastActive=r.last_active?`<span style="font-size:11px;color:var(--muted)">Last active: ${esc(new Date(r.last_active).toLocaleString())}</span>`:'';
-    const sessionInfo=r.session_count?`<span style="font-size:11px;color:var(--muted)">${r.session_count} session${r.session_count!==1?'s':''}</span>`:'';
-    card.innerHTML=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block"></span><span style="font-size:13px;font-weight:500;color:#22c55e">Running</span></div>${badges?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${badges}</div>`:''}<div style="display:flex;gap:12px;flex-wrap:wrap">${sessionInfo}${lastActive}${scope}</div>${btns}`;
+    const lastActive=r.last_active?`<span style="font-size:11px;color:var(--muted)">${esc(t('gateway_last_active',new Date(r.last_active).toLocaleString()))}</span>`:'';
+    const sessionInfo=r.session_count?`<span style="font-size:11px;color:var(--muted)">${esc(t('gateway_sessions',r.session_count))}</span>`:'';
+    const runningLabel=esc(t('gateway_daemon_running')||'Running');
+    card.innerHTML=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block"></span><span style="font-size:13px;font-weight:500;color:#22c55e">${runningLabel}</span></div>${badges?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${badges}</div>`:''}<div style="display:flex;gap:12px;flex-wrap:wrap">${sessionInfo}${lastActive}${scope}</div>${btns}`;
     bind();
-  }).catch(()=>{card.innerHTML=`<div style="color:#ef4444;font-size:12px">Failed to load gateway status</div>`});
+  }).catch(()=>{card.innerHTML=`<div style="color:#ef4444;font-size:12px">${esc(t('gateway_daemon_load_failed')||'Failed to load gateway status')}</div>`});
 }
 
 // ── Gateway platform config (Settings → Gateway) ────────────────────────────
@@ -8470,6 +8473,22 @@ async function loadGatewayPane(){
     _gatewayPlatformsData=null;
   }
   renderGatewayPlatforms();
+}
+
+// Brand logo for a platform card (vendored inline SVG from gateway-logos.js);
+// platforms without a logo get a neutral letter avatar so the grid stays even.
+function gwPlatformLogo(name,size){
+  const s=size||18;
+  const logo=(typeof GATEWAY_PLATFORM_LOGOS!=='undefined')?GATEWAY_PLATFORM_LOGOS[name]:null;
+  if(logo){
+    if(logo.multicolor){
+      // Paths carry their own brand fills — no currentColor override.
+      return `<svg viewBox="${esc(logo.viewBox)}" width="${s}" height="${s}" aria-hidden="true" style="flex:none">${logo.body}</svg>`;
+    }
+    return `<svg viewBox="${esc(logo.viewBox)}" width="${s}" height="${s}" fill="currentColor" aria-hidden="true" style="flex:none;color:${esc(logo.color||'var(--muted)')}">${logo.body}</svg>`;
+  }
+  const letter=String(name||'?').replace(/[_-]/g,' ').trim().charAt(0).toUpperCase();
+  return `<span aria-hidden="true" style="flex:none;width:${s}px;height:${s}px;border-radius:5px;background:var(--accent-bg,var(--surface));color:var(--accent-text,var(--muted));display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s*0.62)}px;font-weight:700">${esc(letter)}</span>`;
 }
 
 function _gwRuntimeDot(p){
@@ -8496,6 +8515,7 @@ function renderGatewayPlatforms(){
     return `<div class="gw-platform-card" data-gw-card="${esc(p.name)}" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--code-bg)">
       <div style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-wrap:wrap" onclick="toggleGatewayPlatform('${_jsAttr(p.name)}')">
         ${_gwRuntimeDot(p)}
+        ${gwPlatformLogo(p.name)}
         <span style="font-weight:600;font-size:13px">${esc(p.label)}</span>
         ${cfgBadge}
         <label style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer" onclick="event.stopPropagation()">
@@ -8530,7 +8550,8 @@ function _gwToggleClearSecret(btn){
   const form=btn.closest('[id^="gwForm-"]');
   if(!form) return;
   const key=btn.getAttribute('data-gw-clear');
-  const inp=form.querySelector('[data-gw-field="'+key.replace(/"/g,'\\"')+'"]');
+  const safeKey=key.replace(/\\/g,'\\\\').replace(/"/g,'\\"');
+  const inp=form.querySelector('[data-gw-field="'+safeKey+'"]');
   if(!inp) return;
   const clearing=inp.dataset.gwClear!=='1';
   inp.dataset.gwClear=clearing?'1':'0';
@@ -8549,14 +8570,20 @@ function renderGatewayPlatformForm(name){
   for(const f of (p.fields||[])){
     const label=_gwFieldLabel(name,f);
     const req=f.required?' <span style="color:#ef4444">*</span>':'';
-    const help=f.help?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(f.help)}</div>`:'';
+    let helpText=f.help||'';
+    if(helpText){
+      const hKey='gateway_help_'+name+'_'+f.key;
+      const hLocalized=t(hKey);
+      if(hLocalized&&hLocalized!==hKey) helpText=hLocalized;
+    }
+    const help=helpText?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(helpText)}</div>`:'';
     html+='<div style="margin:8px 0">';
     if(f.target==='env'){
       const setBadge=f.set
         ?`<span style="font-size:11px;color:#22c55e;margin-left:6px">● ${esc(t('gateway_cred_set')||'configured')}</span>`
         :'';
       const clearBtn=(f.set)
-        ?`<button type="button" class="btn-tiny" data-gw-clear="${esc(f.key)}" onclick="_gwToggleClearSecret(this)" style="margin-left:6px" title="${esc(t('gateway_cred_clear')||'clear stored value')}">✕ ${esc(t('gateway_cred_clear')||'clear')}</button>`
+        ?`<button type="button" data-gw-clear="${esc(f.key)}" onclick="_gwToggleClearSecret(this)" style="margin-left:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:6px" title="${esc(t('gateway_cred_clear')||'clear stored value')}">✕ ${esc(t('gateway_cred_clear')||'clear')}</button>`
         :'';
       html+=`<label style="display:block;font-size:12px;margin-bottom:4px">${esc(label)}${req}${setBadge}${clearBtn}</label>`;
       const ph=f.set
@@ -8581,10 +8608,10 @@ function renderGatewayPlatformForm(name){
     }
     html+=help+'</div>';
   }
-  const docs=p.docs_url?`<a class="panel-head-btn" style="text-decoration:none;align-self:center" href="${esc(p.docs_url)}" target="_blank" rel="noopener noreferrer">${esc(t('gateway_docs')||'Docs ↗')}</a>`:'';
+  const docs=p.docs_url?`<a class="sm-btn" style="text-decoration:none;display:inline-flex;align-items:center" href="${esc(p.docs_url)}" target="_blank" rel="noopener noreferrer">${esc(t('gateway_docs')||'Docs ↗')}</a>`:'';
   html+=`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-    <button type="button" class="btn-tiny" onclick="saveGatewayPlatform('${_jsAttr(name)}',false)">${esc(t('gateway_save')||'Save')}</button>
-    <button type="button" class="btn-tiny" onclick="saveGatewayPlatform('${_jsAttr(name)}',true)">${esc(t('gateway_save_restart')||'Save & restart gateway')}</button>
+    <button type="button" class="sm-btn" onclick="saveGatewayPlatform('${_jsAttr(name)}',false)">${esc(t('gateway_save')||'Save')}</button>
+    <button type="button" class="sm-btn primary" onclick="saveGatewayPlatform('${_jsAttr(name)}',true)">${esc(t('gateway_save_restart')||'Save & restart gateway')}</button>
     ${docs}
   </div>
   <div id="gwMsg-${esc(name)}" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>`;
@@ -8604,7 +8631,7 @@ function _gwExtraRowHtml(key,val){
   return `<div class="gw-extra-row" style="display:flex;gap:6px;margin:4px 0;align-items:center">
     <input type="text" class="gw-extra-key" value="${esc(key)}" placeholder="key" spellcheck="false" autocomplete="off" style="${inputStyle};flex:0 0 180px">
     <input type="text" class="gw-extra-val" value="${esc(val)}" placeholder="value (JSON or text)" spellcheck="false" autocomplete="off" style="${inputStyle};flex:1 1 auto">
-    <button type="button" class="btn-tiny" onclick="this.parentNode.remove()" title="remove" aria-label="remove">✕</button>
+    <button type="button" onclick="this.parentNode.remove()" title="remove" aria-label="remove" style="flex:none;border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;padding:4px 6px;border-radius:6px">✕</button>
   </div>`;
 }
 
@@ -8621,10 +8648,10 @@ function _renderGatewayGenericForm(p){
     .map(([k,v])=>_gwExtraRowHtml(k,_gwScalarToText(v))).join('');
   return `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">${esc(t('gateway_generic_hint')||'Values are parsed as JSON when possible (numbers, true/false, lists); anything else is stored as a string. Saved to platforms.'+p.name+'.extra.')}</div>
   <div id="gwExtraRows-${esc(p.name)}">${rows}</div>
-  <button type="button" class="btn-tiny" onclick="_gwAddExtraRow('${_jsAttr(p.name)}')">+ ${esc(t('gateway_add_row')||'Add key')}</button>
+  <button type="button" class="sm-btn" onclick="_gwAddExtraRow('${_jsAttr(p.name)}')">+ ${esc(t('gateway_add_row')||'Add key')}</button>
   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-    <button type="button" class="btn-tiny" onclick="saveGatewayPlatform('${_jsAttr(p.name)}',false)">${esc(t('gateway_save')||'Save')}</button>
-    <button type="button" class="btn-tiny" onclick="saveGatewayPlatform('${_jsAttr(p.name)}',true)">${esc(t('gateway_save_restart')||'Save & restart gateway')}</button>
+    <button type="button" class="sm-btn" onclick="saveGatewayPlatform('${_jsAttr(p.name)}',false)">${esc(t('gateway_save')||'Save')}</button>
+    <button type="button" class="sm-btn primary" onclick="saveGatewayPlatform('${_jsAttr(p.name)}',true)">${esc(t('gateway_save_restart')||'Save & restart gateway')}</button>
   </div>
   <div id="gwMsg-${esc(p.name)}" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>`;
 }

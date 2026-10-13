@@ -847,7 +847,7 @@ def _save_generic_platform(handler, name: str, body: dict) -> bool:
             env_vals = _collect_env_values()
             user_yaml = _load_user_yaml(_config_path())
             section, nested, nested_extra, _, _ = _merged_platform_blocks(
-                user_yaml, {}, name
+                user_yaml, _legacy_gateway_json_platforms(), name
             )
             if not _platform_connected(name, section, nested, nested_extra, env_vals):
                 warnings.append(

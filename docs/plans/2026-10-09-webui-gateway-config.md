@@ -315,3 +315,59 @@ generic 保存与 GET 之间的并发手改窗口（单用户可忽略）。
 
 至此三条已知边界只剩两条（均为可接受的近似）：generic 平台纯 env 配置显示偏关（runtime 点为准）；
 generic 保存与 GET 之间的并发手改窗口（单用户可忽略）。
+
+
+## 12. UI 优化轮（2026-10-09 第四轮）
+
+按用户要求对网关面板做三项优化（浏览器实测验证，截图确认）：
+
+1. **按钮样式统一**：`btn-tiny` 只在 `#checkUpdatesBlock` 作用域内有样式——网关表单按钮此前渲染
+   为浏览器裸样式。全部切换到设置面板规范按钮 `#mainSettings .sm-btn`（保存=次要、"保存并重启网关"=
+   新增 `.sm-btn.primary` accent 主按钮、文档=次要链接按钮）；daemon 的 Start/Stop/Restart 同步切换。
+2. **平台品牌 LOGO**：新增 `webui/static/gateway-logos.js`——11 个品牌 SVG 内联 vendor（无 CDN 依赖、
+   CSP 零影响）：telegram/slack/discord/whatsapp/weixin(wechat)/qqbot(tencentqq) 来自 simple-icons(CC0)，
+   dingtalk+email 来自 Remix Icon(Apache-2.0)，wecom/wecom_callback 来自 TDesign Icons(MIT)，
+   feishu 来自 IconPark(字节官方库, Apache-2.0)；均以 currentColor 绘制、品牌色着色。无 LOGO 的平台
+   （16 个 generic）渲染中性字母头像，保持网格观感一致。
+2b. **飞书 LOGO 升级为官方三色标**：原用 IconPark 单色描边纸飞机（小尺寸发糊、非彩标）。
+   从 Lark 官方生产 CDN（sf16-sg.larksuitecdn.com，larksuite.com 首页引用的生产资产）取到
+   飞书 2023 品牌升级后的现行三色层叠标（#3370FF/#14C0FF/#93E55E），vendor 进 gateway-logos.js
+   并新增 `multicolor: true` 渲染路径（自带填充，不覆盖 currentColor）。xml 层面校验过片段
+   well-formed；浏览器截图确认上卡效果。
+3. **i18n 补全**：面板键 23 + daemon 状态条键 12 覆盖全部 12 个 locale（en/zh/zh-Hant/it/ja/ru/es/
+   de/pt/ko/fr/tr，此前仅 3 个）；字段标签键 55 ×2（zh/zh-Hant，`gateway_field_*`，其余 locale 保持
+   英文技术术语惯例）；help 文案键 14 ×2（zh/zh-Hant，`gateway_help_*`，前端先查键再回退 schema
+   英文）。loadGatewayStatus 的 daemon 状态条硬编码英文（not configured/running/Start/Stop/Restart/
+   toast 等）全部改走 t()。已知细节：静态 data-i18n 需 `applyLocaleToDOM()` 配合 setLocale（既有
+   约定）；设置面板加载会以 settings.json 的 language 重设 locale（产品既有优先级）。
+
+验证：node --check 三件 JS；vm 加载 i18n+logos 断言 12 locale 面板键齐全、zh/zh-Hant 各 55 字段键、
+11 LOGO 注册；浏览器实测（临时 INTELLECT_HOME + 演示凭据）：卡片网格 27 平台、11 品牌 LOGO 正确
+着色、字母头像兜底、按钮统一、中文界面（含 daemon 状态条与字段 help）全部生效。
+
+
+## 13. 第四轮评审与修复（2026-10-10）
+
+对 §12 UI 优化轮（连带复审第三轮已提交、未经 agent 评审的后端改动）做质量安全评审。
+**无 P0；3 个 P1 + 7 个 P2，P1 全修、P2 大部分顺手落地**：
+
+| # | 问题 | 修复 |
+|---|---|---|
+| P1-1 | 暗色主题下 primary 按钮 `color:#fff` 落在金色 `--accent:#FFD700` 上，对比度 ≈1.4:1 | 照 `provider-card-btn-primary` 先例补 `:root.dark` 覆盖（`color:#0A0908`） |
+| P1-2 | geist-contrast 皮肤：`.sm-btn.primary` 未纳入 accent 覆盖组，且通用 `.sm-btn:hover` 覆盖会盖掉 primary hover | 覆盖组补 `#mainSettings .sm-btn.primary`；hover 选择器改 `.sm-btn:hover:not(.primary)` |
+| P1-3 | 清除 secret 按钮仍是 `btn-tiny`（该类在 checkUpdatesBlock 外无样式） | 改内联最小样式 |
+| P2 | 死键 `gateway_probe_scope` 接线；`_gwToggleClearSecret` selector 转义先反斜杠后引号；`gateway_last_active` 去掉冗余内层 esc；zh/zh-Hant `gateway_generic_hint` 补存储位置句；`_save_generic_platform` 写后校验补传 legacy 层；feishu viewBox 收紧为 `1 4 27 30`（内容域 27×30，与相邻 LOGO 视觉等大）；vendor 信任基线成文（feishu 素材源 URL + 抓取日期 + sha256 入文件头） | 全部落地 |
+
+**新增资产守卫测试** `tests/webui/test_gateway_panel_assets.py`（3 测）：平台-LOGO 对应完整、
+全部 body 为 path-only SVG 片段（禁 script/on*/javascript:/foreignObject/use/image/href 等
+活动内容）、feishu 保持 multicolor + 官方三色填充——防污染快照溜进后续 vendor。
+
+评审确认干净的面板：XSS/供应链信任模型（gateway-logos.js 与 panels.js 同信任级，innerHTML 注入
+不新增权限面；11 个 body 实测 path-only）、i18n 程序化校验（12 locale × 36 键 0 缺失、{0} 占位符
+全 locale 一致、法语撇号转义正确、无 mojibake、相对 HEAD 零新增重复键）、交互状态机（touched
+toggle / clear-secret 三边界全对）、连带复审（qqbot 块、gateway.platforms 层、checker 超时均过）。
+
+验证：51/51（14 D1 + 34 API/资产）全绿；浏览器 computed style 确认暗色主题 primary 按钮为
+金底深字，注入新版 feishu 条目截图确认 tightened viewBox 下与相邻 LOGO 视觉等大。
+剩余记录项：`gateway_generic_hint` 等动态渲染文本随 locale 切换不重渲染（既有约定）；存量 102 个
+i18n 重复键为 HEAD 既有（非本轮引入，JS last-wins 语义下无害）。
