@@ -8,6 +8,7 @@ import os
 import re
 import socket
 import sys
+import threading
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -126,6 +127,75 @@ except ImportError:  # pragma: no cover - resource is Unix-only
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+
+# ── Access logging (decoupled from stdout) ──────────────────────────────────
+# The 2026-10-12 outage: a thread in the embedded agent runtime left the
+# process-wide sys.stdout pointing at a closed devnull (see
+# agent/stream_guard.py). Every response logs an access record, and that log
+# call went through print() — so one broken stream turned into "every request
+# fails". Two defenses here:
+#   1. the durable sink is a logging FileHandler under logs/, independent of
+#      whatever sys.stdout currently is (fix 2);
+#   2. neither sink is allowed to raise into the response path (fix 1).
+_access_logger = logging.getLogger("webui.access")
+_access_logger.propagate = False
+_access_logger.setLevel(logging.INFO)
+_access_log_lock = threading.Lock()
+_access_log_ready = False
+
+
+def _ensure_access_log_handler() -> None:
+    """Attach the file handler for the structured access log (once)."""
+    global _access_log_ready
+    if _access_log_ready:
+        return
+    with _access_log_lock:
+        if _access_log_ready:
+            return
+        try:
+            from intellect_constants import get_intellect_home
+
+            log_dir = get_intellect_home() / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            handler = logging.FileHandler(
+                log_dir / "webui-access.log", encoding="utf-8"
+            )
+            handler.setFormatter(logging.Formatter("%(message)s"))
+            _access_logger.addHandler(handler)
+        except Exception:
+            # No durable file available — the stdout mirror below stays the
+            # only sink; never block request handling on log setup.
+            pass
+        _access_log_ready = True
+
+
+def emit_access_record(record: str) -> None:
+    """Write one structured access-log record. Never raises."""
+    _ensure_access_log_handler()
+    try:
+        _access_logger.info(record)
+    except Exception:
+        pass
+    try:
+        print(f"[webui] {record}", flush=True)
+    except Exception:
+        pass
+
+
+def _safe_print(msg: str) -> None:
+    """print() that must never raise into a request path.
+
+    sys.stdout can be swapped or closed underneath us by embedded agent
+    threads; server error handlers are exactly the wrong place to die on that.
+    """
+    try:
+        print(msg, flush=True)
+    except Exception:
+        try:
+            logger.warning("[webui] stdout unavailable, message follows:\n%s", msg)
+        except Exception:
+            pass
 
 _CSP_CONNECT_BASE = (
     "'self' http://127.0.0.1:* http://localhost:* "
@@ -312,7 +382,7 @@ class Handler(BaseHTTPRequestHandler):
         if forwarded_for:
             record_data['forwarded_for'] = forwarded_for
         record = _json.dumps(record_data)
-        print(f'[webui] {record}', flush=True)
+        emit_access_record(record)
 
     def _strip_base_path_prefix(self) -> bool:
         """Strip the configured mount prefix from self.path before routing.
@@ -377,7 +447,7 @@ class Handler(BaseHTTPRequestHandler):
             j(self, {'error': 'Session not found'}, status=404)
             return
         except Exception:
-            print(f'[webui] ERROR {self.command} {self.path}\n' + traceback.format_exc(), flush=True)
+            _safe_print(f'[webui] ERROR {self.command} {self.path}\n' + traceback.format_exc())
             try:
                 j(self, {'error': 'Internal server error'}, status=500)
             except _CLIENT_DISCONNECT_ERRORS:
@@ -443,7 +513,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             from api.helpers import drain_body
             drain_body(self)
-            print(f'[webui] ERROR {self.command} {self.path}\n' + traceback.format_exc(), flush=True)
+            _safe_print(f'[webui] ERROR {self.command} {self.path}\n' + traceback.format_exc())
             try:
                 j(self, {'error': 'Internal server error'}, status=500)
             except _CLIENT_DISCONNECT_ERRORS:
@@ -543,8 +613,110 @@ if _sys.platform == "win32":
     _patch_subprocess()
 
 
+# ── Liveness watchdog ────────────────────────────────────────────────────────
+# The 2026-10-12 outage failure mode: the process stayed alive holding the
+# listen socket while serving nothing, so every restart attempt died with
+# "Address already in use" and the UI stayed down until the port was freed by
+# hand. A wedged-but-bound process is worse than a dead one — exiting releases
+# the port so the next `intellect webui` (or any supervisor) can reclaim it.
+# The probe is a real loopback HTTP request, so it exercises accept + dispatch
+# + response, not just "is the thread alive".
+
+
+def _watchdog_probe_target():
+    """(scheme, host, port) the watchdog should self-probe."""
+    from api.config import TLS_ENABLED
+
+    host = HOST
+    if host in ("0.0.0.0", "::", ""):
+        host = "127.0.0.1"
+    scheme = "https" if TLS_ENABLED else "http"
+    return scheme, host, PORT
+
+
+def _probe_health_once(timeout: float) -> bool:
+    """One self-probe; True only when /health answered HTTP 200."""
+    import http.client
+
+    scheme, host, port = _watchdog_probe_target()
+    try:
+        if scheme == "https":
+            import ssl
+
+            conn = http.client.HTTPSConnection(
+                host, port, timeout=timeout,
+                context=ssl._create_unverified_context(),
+            )
+        else:
+            conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        try:
+            conn.request("GET", "/health")
+            resp = conn.getresponse()
+            resp.read()
+            return resp.status == 200
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
+def start_liveness_watchdog() -> None:
+    """Watchdog thread: exit the process when /health stops answering.
+
+    Disabled with INTELLECT_WEBUI_WATCHDOG=0. Interval (seconds), probe
+    timeout and consecutive-failure threshold are env-tunable; defaults are
+    30s / 10s / 3, i.e. ~90s of unresponsiveness before giving up.
+    """
+    if os.environ.get("INTELLECT_WEBUI_WATCHDOG", "").strip().lower() in (
+        "0", "false", "off", "no",
+    ):
+        return
+    interval = max(5.0, float(os.environ.get("INTELLECT_WEBUI_WATCHDOG_INTERVAL", "30")))
+    timeout = max(1.0, float(os.environ.get("INTELLECT_WEBUI_WATCHDOG_TIMEOUT", "10")))
+    max_failures = max(1, int(os.environ.get("INTELLECT_WEBUI_WATCHDOG_MAX_FAILURES", "3")))
+    scheme, host, port = _watchdog_probe_target()
+
+    def _loop() -> None:
+        failures = 0
+        while True:
+            time.sleep(interval)
+            if _probe_health_once(timeout):
+                failures = 0
+                continue
+            failures += 1
+            logger.warning(
+                "WebUI liveness watchdog: /health probe failed (%d/%d)",
+                failures, max_failures,
+            )
+            if failures >= max_failures:
+                _safe_print(
+                    f"[!!] WebUI liveness watchdog: {scheme}://{host}:{port}/health "
+                    f"unreachable {max_failures}x — exiting to release the port."
+                )
+                # _exit, not sys.exit: graceful teardown hooks may block on the
+                # same wedged state that wedged the server.
+                os._exit(1)
+
+    threading.Thread(
+        target=_loop, name="webui-liveness-watchdog", daemon=True
+    ).start()
+
+
 def main() -> None:
     from api.config import print_startup_config, verify_intellect_imports, _INTELLECT_FOUND
+
+    # Install the stdio guard before any agent threads exist. Agent internals
+    # (background review, execute_code RPC) historically swapped the global
+    # sys.stdout around tool dispatch; if those raced, the process was left
+    # with a closed stream and every request failed. The guard keeps sys.stdout
+    # a stable proxy and makes per-thread redirection race-free (fix 3b), and
+    # tolerates a dead underlying stream instead of raising through print().
+    try:
+        from agent.stream_guard import install_stream_guard
+
+        install_stream_guard()
+    except Exception:
+        logger.debug("stream guard install failed", exc_info=True)
 
     print_startup_config()
 
@@ -669,6 +841,9 @@ def main() -> None:
         logger.debug('non-critical operation failed', exc_info=True)
 
     httpd = QuietHTTPServer((HOST, PORT), Handler)
+
+    # Bound and serving — arm the liveness watchdog (fix 4).
+    start_liveness_watchdog()
 
     # ── TLS/HTTPS setup (optional) ─────────────────────────────────────────
     from api.config import TLS_ENABLED, TLS_CERT, TLS_KEY

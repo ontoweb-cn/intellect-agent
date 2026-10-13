@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set
 
 from intellect_constants import get_intellect_home
+from agent.stream_guard import NULL_STREAM, redirect_thread_output
 from tools import skill_usage
 
 logger = logging.getLogger(__name__)
@@ -1728,14 +1729,14 @@ def _run_llm_review(prompt: str) -> Dict[str, Any]:
         review_agent._memory_nudge_interval = 0
         review_agent._skill_nudge_interval = 0
 
-        # Redirect the forked agent's stdout/stderr to /dev/null while it
-        # runs so its tool-call chatter doesn't pollute the foreground
-        # terminal. The background-thread runner also hides it; this
-        # belt-and-suspenders path matters when a caller invokes
-        # run_curator_review(synchronous=True) from the CLI.
-        with open(os.devnull, "w", encoding="utf-8") as _devnull, \
-             contextlib.redirect_stdout(_devnull), \
-             contextlib.redirect_stderr(_devnull):
+        # Redirect the forked agent's stdout/stderr while it runs so its
+        # tool-call chatter doesn't pollute the foreground terminal. The
+        # background-thread runner also hides it; this belt-and-suspenders
+        # path matters when a caller invokes run_curator_review(synchronous=True)
+        # from the CLI. Thread-local (not contextlib.redirect_stdout): the
+        # global swap raced with other redirecting threads and could restore a
+        # closed devnull process-wide (2026-10-12 WebUI outage).
+        with redirect_thread_output(NULL_STREAM):
             conv_result = review_agent.run_conversation(user_message=prompt)
 
         final = ""

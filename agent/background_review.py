@@ -18,11 +18,12 @@ for invariants and PR review criteria.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import os
 from typing import Any, Dict, List, Optional
+
+from agent.stream_guard import NULL_STREAM, redirect_thread_output
 
 logger = logging.getLogger(__name__)
 
@@ -358,9 +359,12 @@ def _run_review_in_thread(
     review_agent = None
     review_messages: List[Dict] = []
     try:
-        with open(os.devnull, "w", encoding="utf-8") as _devnull, \
-             contextlib.redirect_stdout(_devnull), \
-             contextlib.redirect_stderr(_devnull):
+        # Thread-local silencing: the historic contextlib.redirect_stdout swap
+        # raced with other redirecting threads (execute_code RPC, curator) and
+        # could restore a *closed* devnull into sys.stdout process-wide — the
+        # 2026-10-12 WebUI outage where every response failed with
+        # "I/O operation on closed file".
+        with redirect_thread_output(NULL_STREAM):
             # Inherit the parent agent's live runtime (provider, model,
             # base_url, api_key, api_mode) so the fork uses the exact
             # same credentials the main turn is using.  Without this,
@@ -538,9 +542,7 @@ def _run_review_in_thread(
         # on the exception path where redirect_stdout already exited.
         if review_agent is not None:
             try:
-                with open(os.devnull, "w", encoding="utf-8") as _fn, \
-                     contextlib.redirect_stdout(_fn), \
-                     contextlib.redirect_stderr(_fn):
+                with redirect_thread_output(NULL_STREAM):
                     try:
                         review_agent.shutdown_memory_provider()
                     except Exception:

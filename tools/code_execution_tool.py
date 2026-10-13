@@ -47,6 +47,7 @@ _IS_WINDOWS = platform.system() == "Windows"
 from typing import Any, Dict, List, Optional
 
 from tools.thread_context import propagate_context_to_thread
+from agent.stream_guard import NULL_STREAM, redirect_thread_output
 
 # Availability gate.  On Windows we fall back to loopback TCP for the
 # sandbox RPC transport (AF_UNIX is unreliable on Windows Python) — see
@@ -544,18 +545,15 @@ def _rpc_server_loop(
                 # Dispatch through the standard tool handler.
                 # Suppress stdout/stderr from internal tool handlers so
                 # their status prints don't leak into the CLI spinner.
+                # Thread-local redirection — the historic process-global
+                # `sys.stdout = devnull` swap raced between concurrent RPC
+                # threads and could leave a closed stream installed process-
+                # wide (the 2026-10-12 WebUI outage).
                 try:
-                    _real_stdout, _real_stderr = sys.stdout, sys.stderr
-                    devnull = open(os.devnull, "w", encoding="utf-8")
-                    try:
-                        sys.stdout = devnull
-                        sys.stderr = devnull
+                    with redirect_thread_output(NULL_STREAM):
                         result = handle_function_call(
                             tool_name, tool_args, task_id=task_id
                         )
-                    finally:
-                        sys.stdout, sys.stderr = _real_stdout, _real_stderr
-                        devnull.close()
                 except Exception as exc:
                     logger.error("Tool call failed in sandbox: %s", exc, exc_info=True)
                     result = tool_error(str(exc))
@@ -817,18 +815,13 @@ def _rpc_poll_loop(
                             tool_args.pop(param, None)
 
                     # Dispatch through the standard tool handler
+                    # Thread-local redirection — see the UDS-path call site
+                    # above for why the global swap had to go.
                     try:
-                        _real_stdout, _real_stderr = sys.stdout, sys.stderr
-                        devnull = open(os.devnull, "w", encoding="utf-8")
-                        try:
-                            sys.stdout = devnull
-                            sys.stderr = devnull
+                        with redirect_thread_output(NULL_STREAM):
                             tool_result = handle_function_call(
                                 tool_name, tool_args, task_id=task_id
                             )
-                        finally:
-                            sys.stdout, sys.stderr = _real_stdout, _real_stderr
-                            devnull.close()
                     except Exception as exc:
                         logger.error("Tool call failed in remote sandbox: %s",
                                      exc, exc_info=True)
