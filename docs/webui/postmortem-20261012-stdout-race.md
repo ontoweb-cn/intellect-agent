@@ -112,12 +112,17 @@ WebUI 每个响应的第一步是写访问日志：`Handler.send_response()` →
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `INTELLECT_WEBUI_WATCHDOG` | 开 | `0`/`false`/`off`/`no` 关闭看门狗 |
-| `INTELLECT_WEBUI_WATCHDOG_INTERVAL` | 30s | 探测间隔（下限 5s） |
-| `INTELLECT_WEBUI_WATCHDOG_TIMEOUT` | 10s | 单次探测超时（下限 1s） |
+| `INTELLECT_WEBUI_WATCHDOG_INTERVAL` | 30s | 探测间隔（下限 5s）；非法值回退默认并告警 |
+| `INTELLECT_WEBUI_WATCHDOG_TIMEOUT` | 10s | 单次探测超时（下限 1s）；非法值回退默认并告警 |
 | `INTELLECT_WEBUI_WATCHDOG_MAX_FAILURES` | 3 | 连续失败阈值，达到即退出 |
 
-行为变化提示：访问日志新增持久文件 `~/.intellect/logs/webui-access.log`；
-`~/.intellect/webui.log`（stdout 重定向）仍保留镜像输出，`tail` 习惯不受影响。
+行为变化提示：
+- 访问日志新增持久文件 `~/.intellect/logs/webui-access.log`（`RotatingFileHandler`，
+  50MB × 5 份轮转）；`~/.intellect/webui.log`（stdout 重定向）仍保留镜像输出，
+  `tail` 习惯不受影响。
+- 已知取舍：工具内部再 spawn 的子线程的裸 `print` 不再被抑制（线程局部重定向
+  只静默发起调用的线程；旧的全局替换连子线程一起吞）。漏显仅影响 CLI spinner
+  观感，建议工具实现统一走 logger。
 
 ---
 
@@ -142,6 +147,7 @@ WebUI 每个响应的第一步是写访问日志：`Handler.send_response()` →
    - sqlite `disk I/O error` 突发（本次 13:25 / 14:06 两次出现）作为 fd/流异常的前兆指标，建议纳入告警。
 4. **运维建议**：
    - WebUI/gateway 建议由 supervisor（systemd 等）托管，配合本修复的 watchdog（退出即释放端口）实现秒级自愈；
+   - **重负载主机调优**：默认连续 3 次失败（~90s 完全无响应）即退出。CPU 严重超载或长 GC 停顿的机器上，健康但饥饿的进程理论上可能被误杀——建议将 `INTELLECT_WEBUI_WATCHDOG_MAX_FAILURES` 调至 4–6 或加大 `INTERVAL`；
    - 访问日志断流（`webui-access.log` 无新行而进程存活）本身就是强告警信号；
    - 长会话 + 高频工具调用是本类缺陷的放大器，容量规划时注意单进程会话数上限。
 

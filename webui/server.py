@@ -12,6 +12,7 @@ import threading
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from logging.handlers import RotatingFileHandler
 
 # ── Module path setup ─────────────────────────────────────────────────────
 # When running as `python -m webui.server` from the agent project root, the
@@ -158,8 +159,11 @@ def _ensure_access_log_handler() -> None:
 
             log_dir = get_intellect_home() / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
-            handler = logging.FileHandler(
-                log_dir / "webui-access.log", encoding="utf-8"
+            handler = RotatingFileHandler(
+                log_dir / "webui-access.log",
+                maxBytes=50 * 1024 * 1024,
+                backupCount=5,
+                encoding="utf-8",
             )
             handler.setFormatter(logging.Formatter("%(message)s"))
             _access_logger.addHandler(handler)
@@ -660,20 +664,50 @@ def _probe_health_once(timeout: float) -> bool:
         return False
 
 
+def _watchdog_env_float(name: str, default: float, minimum: float) -> float:
+    """Parse a float env knob; fall back to *default* on missing/invalid.
+
+    A typo like INTELLECT_WEBUI_WATCHDOG_INTERVAL=30s must degrade to the
+    default, never crash startup — the watchdog is an availability feature
+    and must not become a new way for the server to fail to boot.
+    """
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except ValueError:
+        logger.warning("Invalid %s=%r — using default %g", name, raw, default)
+        return default
+
+
+def _watchdog_env_int(name: str, default: int, minimum: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(minimum, int(raw))
+    except ValueError:
+        logger.warning("Invalid %s=%r — using default %d", name, raw, default)
+        return default
+
+
 def start_liveness_watchdog() -> None:
     """Watchdog thread: exit the process when /health stops answering.
 
     Disabled with INTELLECT_WEBUI_WATCHDOG=0. Interval (seconds), probe
     timeout and consecutive-failure threshold are env-tunable; defaults are
-    30s / 10s / 3, i.e. ~90s of unresponsiveness before giving up.
+    30s / 10s / 3, i.e. ~90s of unresponsiveness before giving up. On heavily
+    loaded hosts raise INTELLECT_WEBUI_WATCHDOG_MAX_FAILURES (4-6) so a slow
+    but healthy process is not killed during a load spike.
     """
     if os.environ.get("INTELLECT_WEBUI_WATCHDOG", "").strip().lower() in (
         "0", "false", "off", "no",
     ):
         return
-    interval = max(5.0, float(os.environ.get("INTELLECT_WEBUI_WATCHDOG_INTERVAL", "30")))
-    timeout = max(1.0, float(os.environ.get("INTELLECT_WEBUI_WATCHDOG_TIMEOUT", "10")))
-    max_failures = max(1, int(os.environ.get("INTELLECT_WEBUI_WATCHDOG_MAX_FAILURES", "3")))
+    interval = _watchdog_env_float("INTELLECT_WEBUI_WATCHDOG_INTERVAL", 30.0, 5.0)
+    timeout = _watchdog_env_float("INTELLECT_WEBUI_WATCHDOG_TIMEOUT", 10.0, 1.0)
+    max_failures = _watchdog_env_int("INTELLECT_WEBUI_WATCHDOG_MAX_FAILURES", 3, 1)
     scheme, host, port = _watchdog_probe_target()
 
     def _loop() -> None:

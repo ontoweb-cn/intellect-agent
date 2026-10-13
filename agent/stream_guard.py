@@ -138,6 +138,18 @@ class GuardedStream:
         for line in lines:
             self.write(line)
 
+    def fileno(self) -> int:
+        """Descriptor of the *underlying target*, regardless of override.
+
+        fd 1/2 belong to the process; the thread override only diverts
+        Python-level writes. Libraries probing fileno() inside a suppressed
+        window (tqdm, rich, ...) therefore keep getting the real descriptor,
+        matching the pre-guard behaviour where the override was an open
+        devnull file. Explicitly defined (not via __getattr__) so the
+        resolution never follows the override stream.
+        """
+        return self._target.fileno()
+
     # ── close semantics ───────────────────────────────────────────────
     def close(self) -> None:
         # Only the calling thread's override is closeable through the proxy.

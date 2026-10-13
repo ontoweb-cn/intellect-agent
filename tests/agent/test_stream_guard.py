@@ -106,30 +106,45 @@ class TestGuardedStream:
         assert guard.write("no raise") == len("no raise")
         guard.flush()
 
-    def test_passthrough_attributes(self):
+    def test_passthrough_attributes(self, monkeypatch):
         class Target(io.StringIO):
             encoding = "utf-8"
 
             def isatty(self):
                 return True
 
-        monkey_target = Target()
-        guard = GuardedStream(monkey_target, "stdout")
+        import agent.stream_guard as sg
+
+        guard = GuardedStream(Target(), "stdout")
         assert guard.encoding == "utf-8"
         assert guard.isatty() is True
         # attribute resolution follows the thread's current stream
+        monkeypatch.setattr(sys, "stdout", guard)
+        monkeypatch.setattr(sys, "stderr", guard)
+        monkeypatch.setattr(
+            sg, "_guard_installed", {"stdout": True, "stderr": True}
+        )
+        with redirect_thread_output(NULL_STREAM):
+            assert guard.writable() is True
+
+    def test_fileno_resolves_to_target_even_under_override(self, monkeypatch):
+        """Library compat: fileno() must return the process-level descriptor
+        even while this thread's writes are suppressed (the old devnull
+        override exposed a valid fd; the guard keeps that contract)."""
         import agent.stream_guard as sg
 
-        sg._guard_installed.update({"stdout": True, "stderr": True})
-        real_stdout, real_stderr = sys.stdout, sys.stderr
-        try:
-            sys.stdout = guard
-            sys.stderr = guard
-            with redirect_thread_output(NULL_STREAM):
-                assert guard.writable() is True
-        finally:
-            sys.stdout = real_stdout
-            sys.stderr = real_stderr
+        class Target(io.StringIO):
+            def fileno(self):
+                return 42
+
+        guard = GuardedStream(Target(), "stdout")
+        monkeypatch.setattr(sys, "stdout", guard)
+        monkeypatch.setattr(sys, "stderr", guard)
+        monkeypatch.setattr(
+            sg, "_guard_installed", {"stdout": True, "stderr": True}
+        )
+        with redirect_thread_output(NULL_STREAM):
+            assert guard.fileno() == 42
 
     def test_null_stream_discards(self):
         assert NULL_STREAM.write("x") == 1
