@@ -80,6 +80,43 @@ env 仅保留总开关。接线点：`gateway/run.py::start_gateway` 构造 `Gat
 
 ---
 
+### [TODO-014] openai SDK 3.x 迁移（dependabot 大版本 PR 暂缓）
+
+**状态**: 📋 已评估，暂缓迁移 (2026-10-15)
+**背景**: dependabot 每周会重开 openai 2.46.0 → 3.x 的大版本升级 PR（PR #174）。
+已实测评估 3.26.1，确认迁移为 HTTP 客户端层专项改造，非紧急；已在
+`.github/dependabot.yml` 对 pip 生态加 `ignore: openai >=3` 压制重开，本条目
+作为迁移立项跟踪。
+
+**评估结论**（openai 3.26.1 vs 2.46.0，uv 临时环境实测）:
+
+- ✅ **API 调用层零破坏**: `OpenAI` / `AsyncOpenAI` / `APIError` /
+  `APIConnectionError` / `APITimeoutError` 全部保留；
+  `chat.completions.create` 参数列表完全一致（41 个参数，
+  `reasoning_effort` / `service_tier` / `stream_options` 均在）；
+  `responses.create` 命名空间不变（codex_responses 模式唯一调用点不受影响）。
+- ✅ pydantic 约束 `>=1.10.13,<3`，与仓库 segfault 规避 pin `pydantic==2.13.5`
+  不冲突，无需动 pin。
+- ❌ **HTTP 层 breaking**: 依赖从 `httpx<1` 改为 **`httpx2>=2.12`**（SDK 内部
+  改用 httpx2），`OpenAI(http_client=...)` 参数类型变为 `httpx2.Client | None`。
+  仓库向 SDK 注入自建 `httpx.Client` 的路径必须改造：
+  - `run_agent.py:3113`（credential-pool / 代理路由客户端构造）
+  - `tests/run_agent/test_async_httpx_del_neuter.py` 覆盖的 del-neuter 补丁
+    （针对 httpx 的 workaround，需确认对 httpx2 是否仍需要/仍有效）
+  - `agent/azure_identity_adapter.py:537` 注入的是 Anthropic SDK（其仍用
+    httpx），可不动；全仓共 6 个文件含 `http_client=`/`httpx.Client(`，逐一排查
+- ⚠️ anyio 下限升至 `>=4.10.0`；`max_retries` 默认仍为 2，timeout 默认
+  `NOT_GIVEN` 语义待核对。
+
+**迁移清单**:
+1. run_agent.py / auxiliary_client 的自定义 client 构造改用 `httpx2.Client`
+   （或改走 env 代理 + 默认客户端）
+2. 全量跑 `tests/run_agent/`（streaming / lifecycle / fallback / codex 系列）
+   + 真实 API smoke
+3. 灰度验证 codex_responses 模式与代理场景（credential pool 路由）
+
+---
+
 ### [TODO-005] ~~把 v0.6.2 bug fix 提交到云端~~ ✅ 已提交
 
 **状态**: 已提交 (2026-06-13)

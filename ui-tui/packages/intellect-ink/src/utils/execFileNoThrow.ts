@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess, type StdioOptions } from 'child_process'
 type ExecFileOptions = {
   input?: string
   timeout?: number
@@ -32,15 +32,19 @@ export function execFileNoThrow(
     // doesn't inherit those pipe FDs — prevents handle leaks that can
     // keep the parent process alive. No output data is collected in
     // this mode; both stdout and stderr will be empty strings.
-    const stdioConfig = options.resolveOnExit
-      ? ['pipe', 'ignore', 'ignore'] as const
-      : 'pipe' as const
+    const stdioConfig: StdioOptions = options.resolveOnExit
+      ? ['pipe', 'ignore', 'ignore']
+      : 'pipe'
 
+    // The union stdio config makes TS intersect all spawn overloads down to
+    // never; every stream access below is `?.`-guarded for the
+    // resolveOnExit mode (stdout/stderr are null there), so the base
+    // ChildProcess shape is the accurate contract.
     const child = spawn(file, args, {
       cwd: options.useCwd ? process.cwd() : undefined,
       env: options.env,
       stdio: stdioConfig
-    })
+    }) as ChildProcess
 
     let stdout = ''
     let stderr = ''

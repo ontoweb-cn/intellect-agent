@@ -19,6 +19,12 @@ updates:
       python-minor:
         update-types:
           - "minor"
+    ignore:
+      # openai 3.x swaps httpx for httpx2 — every custom http_client= injection
+      # in run_agent.py must migrate with it. Deliberately deferred, tracked as
+      # TODO-014; remove this ignore when that migration lands.
+      - dependency-name: "openai"
+        versions: [">=3"]
 
   # Website (Quartz/React) dependencies
   - package-ecosystem: "npm"
@@ -62,6 +68,13 @@ updates:
       tui-patch:
         update-types:
           - "patch"
+    ignore:
+      # ink 8 is a double-major rendering-core bump (6 -> 8). Type surface is
+      # clean and the suite passes, but wrapping/measurement parity needs a
+      # manual TUI smoke pass before adoption (no automated visual gate).
+      # Revisit when someone can run `intellect --tui` against ink 8.
+      - dependency-name: "ink"
+        versions: [">=7"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
