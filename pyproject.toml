@@ -42,7 +42,7 @@ dependencies = [
   # user picks that backend. Smaller `dependencies` = smaller blast
   # radius for the next supply-chain attack.
   "openai==2.46.0",
-  "python-dotenv==1.2.3",
+  "python-dotenv==1.2.4",
   "fire==0.7.1",
   "httpx[socks]==0.28.1",
   "rich==14.3.3",
@@ -61,7 +61,7 @@ dependencies = [
   # Cron scheduler (built-in feature — scheduled cron/interval jobs use croniter).
   "croniter==6.2.4",
   # Skills Hub (GitHub App JWT auth — optional, only needed for bot identity)
-  "PyJWT[crypto]==2.15.0",  # CVE-2026-32597, CVE-2026-48526
+  "PyJWT[crypto]==2.15.1",  # CVE-2026-32597, CVE-2026-48526
   # Windows has no IANA tzdata shipped with the OS, so Python's ``zoneinfo``
   # (PEP 615) raises ``ZoneInfoNotFoundError`` for every non-UTC timezone
   # out of the box.  ``tzdata`` ships the Olson database as a data package
@@ -84,19 +84,19 @@ anthropic = ["anthropic==0.117.0"]
 # search provider (configured via `intellect tools` or config.yaml).
 exa = ["exa-py==2.25.0"]
 firecrawl = ["firecrawl-py==4.46.0"]
-parallel-web = ["parallel-web==1.3.3"]
+parallel-web = ["parallel-web==1.3.5"]
 # Image generation backends
-fal = ["fal-client==1.0.2"]
+fal = ["fal-client==1.0.3"]
 # Edge TTS — default TTS provider but still optional (users can pick
 # ElevenLabs / OpenAI / MiniMax instead).
 edge-tts = ["edge-tts==7.2.8"]
-modal = ["modal==1.6.0"]
+modal = ["modal==1.6.1"]
 daytona = ["daytona==0.220.0"]
-hindsight = ["hindsight-client==0.10.1"]
-dev = ["debugpy==1.8.22", "pytest==9.1.1", "pytest-asyncio==1.4.0", "pytest-timeout==2.4.0", "filelock==4.0.12", "mcp==2.2.0", "starlette==1.7.0", "ty==0.0.82", "ruff==0.16.8", "setuptools==84.0.0"]  # starlette: CVE-2026-48710; setuptools: GHSA-h35f-9h28-mq5c
-messaging = ["python-telegram-bot[webhooks]==22.8", "discord.py[voice]==2.7.1", "aiohttp==3.14.3", "brotlicffi==1.2.0.2", "slack-bolt==1.30.0", "slack-sdk==3.45.0", "qrcode==7.4.2"]
+hindsight = ["hindsight-client==0.10.3"]
+dev = ["debugpy==1.8.22", "pytest==9.1.1", "pytest-asyncio==1.4.0", "pytest-timeout==2.4.0", "filelock==4.0.12", "mcp==2.2.0", "starlette==1.7.0", "ty==0.0.86", "ruff==0.16.8", "setuptools==84.0.0"]  # starlette: CVE-2026-48710; setuptools: GHSA-h35f-9h28-mq5c
+messaging = ["python-telegram-bot[webhooks]==22.8", "discord.py[voice]==2.7.1", "aiohttp==3.14.5", "brotlicffi==1.2.0.2", "slack-bolt==1.30.0", "slack-sdk==3.45.0", "qrcode==7.4.2"]
 cron = []  # croniter is now a core dependency; this extra kept for back-compat
-slack = ["slack-bolt==1.30.0", "slack-sdk==3.45.0", "aiohttp==3.14.3"]
+slack = ["slack-bolt==1.30.0", "slack-sdk==3.45.0", "aiohttp==3.14.5"]
 matrix = ["mautrix[encryption]==0.21.1", "Markdown==3.11", "aiosqlite==0.22.1", "asyncpg==0.31.0", "aiohttp-socks==0.12.0"]
 high-performance = [
   "redis>=5.0.0,<9",
@@ -114,7 +114,7 @@ voice = [
   # so keep it out of the base install for source-build packagers like Homebrew.
   "faster-whisper==1.2.1",
   "sounddevice==0.5.6",
-  "numpy==2.5.3",
+  "numpy==2.5.4",
 ]
 pty = [
   "ptyprocess==0.7.0; sys_platform != 'win32'",
@@ -129,8 +129,8 @@ honcho = ["honcho-ai==2.5.1"]
 # extra that exposes a Starlette-backed server surface so pip/uv can't resolve
 # a vulnerable pre-1.0.1 transitive. Bump in lockstep with uv.lock.
 mcp = ["mcp==2.2.0", "starlette==1.7.0"]  # starlette: CVE-2026-48710
-homeassistant = ["aiohttp==3.14.3"]
-sms = ["aiohttp==3.14.3"]
+homeassistant = ["aiohttp==3.14.5"]
+sms = ["aiohttp==3.14.5"]
 # Computer use — macOS background desktop control via cua-driver (MCP stdio).
 # The cua-driver binary itself is installed via `intellect tools` post-setup
 # (curl install script); this extra just pins the MCP client used to talk
@@ -151,7 +151,7 @@ msal = ["msal>=1.31,<2"]  # P3-2: Azure AD native auth (WAM broker, conditional 
 # NOT re-added to [all] so a future quarantined release can't break fresh
 # installs (see [all] policy comment below).
 mistral = ["mistralai==3.1.0"]
-bedrock = ["boto3==1.43.97"]
+bedrock = ["boto3==1.43.111"]
 azure-identity = ["azure-identity==1.26.0"]
 termux = [
   # Baseline Android / Termux path for reliable fresh installs.
@@ -182,7 +182,7 @@ google = [
   # in environments without pip (e.g. Nix-managed Python).
   "google-api-python-client==2.201.0",
   "google-auth-oauthlib==1.5.0",
-  "google-auth-httplib2==0.4.2",
+  "google-auth-httplib2==0.4.4",
 ]
 youtube = [
   # Required by skills/media/youtube-content and
