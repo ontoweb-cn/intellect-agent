@@ -56,7 +56,10 @@ spec:
         app.kubernetes.io/name: intellect-agent-lyf
     spec:
       imagePullSecrets:
-        - name: harbor-regcred
+        # 专用拉取凭据：robot$intellect+lyf-intellect-agent-release（仅 pull 权限，
+        # Secret intellect-agent-lyf-pull）。2026-10 起 intellect 项目在 Harbor 上
+        # 为 private，共享的 harbor-regcred（ai-devops robot）无权拉取本项目。
+        - name: intellect-agent-lyf-pull
       containers:
         - name: intellect-agent
           image: hub.wust.edu.cn/intellect/intellect-agent:0.7.3
