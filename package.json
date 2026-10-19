@@ -1,6 +1,6 @@
 {
   "name": "intellect-agent",
-  "version": "0.5.0",
+  "version": "0.7.3",
   "description": "An AI agent with advanced tool-calling capabilities, featuring a flexible toolsets system for organizing and managing tools.",
   "private": true,
   "scripts": {
