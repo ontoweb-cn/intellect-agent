@@ -28,6 +28,7 @@ const config: QuartzConfig = {
     ignorePatterns: [
       "raw/**",
       "graphify-out/**",
+      "_archive/**",
       "log*.md",
       "SCHEMA.md",
       "templates/**",
