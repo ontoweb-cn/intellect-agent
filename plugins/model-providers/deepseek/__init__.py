@@ -28,10 +28,11 @@ from providers.base import ProviderProfile
 def _model_supports_thinking(model: str | None) -> bool:
     """DeepSeek thinking-capable model families.
 
-    Covers the V4 family (``deepseek-v4-pro``, ``deepseek-v4-flash``, and any
-    future ``deepseek-v4-*`` variants), its current default id
-    ``deepseek-flash``, and the legacy ``deepseek-reasoner`` (R1). The retired
-    V3 ``deepseek-chat`` had no thinking mode and stays excluded.
+    Covers the V4 family (``deepseek-v4-pro``, ``deepseek-v4-flash``,
+    ``deepseek-v4.1-flash``, and any future ``deepseek-v5-*`` variants), its
+    current default id ``deepseek-flash``, and the legacy
+    ``deepseek-reasoner`` (R1). The retired V3 ``deepseek-chat`` had no
+    thinking mode and stays excluded.
 
     ``deepseek-flash`` is listed by name because it does not match the
     ``deepseek-v<N>`` pattern yet is a thinking model: verified 2026-09-15
@@ -97,11 +98,14 @@ deepseek = DeepSeekProfile(
     display_name="DeepSeek",
     description="DeepSeek — native DeepSeek API",
     signup_url="https://platform.deepseek.com/",
-    # Verified against the live ``GET /v1/models`` 2026-09-15: these two are
-    # what DeepSeek serves. The retired ``deepseek-chat`` / ``deepseek-reasoner``
-    # ids still get a 200 but are canonicalised to ``deepseek-flash`` server-side.
+    # Static fallback for the live ``GET /v1/models`` catalog: the flash line
+    # (``deepseek-flash`` plus the versioned ``deepseek-v4.1-flash``) and the
+    # larger ``deepseek-v4-pro``. The retired ``deepseek-chat`` /
+    # ``deepseek-reasoner`` ids still get a 200 but are canonicalised to
+    # ``deepseek-flash`` server-side.
     fallback_models=(
         "deepseek-flash",
+        "deepseek-v4.1-flash",
         "deepseek-v4-pro",
     ),
     base_url="https://api.deepseek.com/v1",

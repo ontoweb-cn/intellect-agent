@@ -168,6 +168,7 @@ DEFAULT_CONTEXT_LENGTHS = {
     # below remains as a 128K fallback for older / unknown DeepSeek model
     # ids (e.g. via custom endpoints).
     # https://api-docs.deepseek.com/zh-cn/quick_start/pricing
+    "deepseek-v4.1-flash": 1_000_000,
     "deepseek-v4-pro": 1_000_000,
     "deepseek-v4-flash": 1_000_000,
     "deepseek-chat": 1_000_000,
@@ -214,7 +215,16 @@ DEFAULT_CONTEXT_LENGTHS = {
     "trinity": 262144,
     # OpenRouter
     "elephant": 262144,
-    # Hugging Face Inference Providers — model IDs use org/name format
+    # Hugging Face Inference Providers — model IDs use org/name format.
+    # Context windows per vendor docs (2026-10): GLM-5.3 / Kimi K3 /
+    # DeepSeek V4.1 Flash are 1M; Qwen3.8-27B is 262K native (1M only via
+    # YaRN); gpt-oss-120b is 128K.
+    "zai-org/GLM-5.3": 1_000_000,
+    "zai-org/GLM-5.3-Flash": 1_000_000,
+    "moonshotai/Kimi-K3": 1_000_000,
+    "deepseek-ai/DeepSeek-V4.1-Flash": 1_000_000,
+    "Qwen/Qwen3.8-27B": 262144,
+    "openai/gpt-oss-120b": 131072,
     "Qwen/Qwen3.5-397B-A17B": 131072,
     "Qwen/Qwen3.5-35B-A3B": 131072,
     "deepseek-ai/DeepSeek-V3.2": 65536,
@@ -1699,7 +1709,10 @@ def _estimate_message_chars(msg: Dict[str, Any]) -> int:
     """Char count for token estimation, excluding base64 image data.
 
     Base64 images are counted via ``_count_image_tokens`` instead; including
-    their raw chars here would massively overestimate token usage.
+    their raw chars here would massively overestimate token usage. For an
+    ordinary text message (no images, no stashed Anthropic blocks) the count
+    matches ``len(str(msg))`` — the contract the estimates were calibrated
+    against.
 
     Counts chars inline without building intermediate shadow dicts —
     ``len(str(shadow))`` was O(message_size) memory allocation per call.
@@ -1725,7 +1738,10 @@ def _estimate_message_chars(msg: Dict[str, Any]) -> int:
             if isinstance(v, dict) and v.get("_multimodal"):
                 total += len(str(v.get("text_summary", "")))
                 continue
-        total += len(str(v))
+        # ``repr`` (not ``str``) so string values include their quotes, which
+        # is how ``str(msg)`` renders them; the two agree for the other
+        # JSON-like value types (None/bool/int/float/list/dict).
+        total += len(repr(v))
     return total
 
 

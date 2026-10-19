@@ -113,6 +113,7 @@ class TestDeepSeekModelGating:
         [
             "deepseek-v4-pro",
             "deepseek-v4-flash",
+            "deepseek-v4.1-flash",
             "deepseek-v4-future-variant",
             "deepseek-reasoner",
             "DEEPSEEK-V4-PRO",  # case-insensitive

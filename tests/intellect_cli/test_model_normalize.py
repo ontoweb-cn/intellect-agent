@@ -198,21 +198,24 @@ class TestDetectVendor:
 class TestDeepseekVSeriesPassThrough:
     """DeepSeek's first-class V-series IDs are accepted by the API directly.
 
-    The shape is a version plus one name segment — ``deepseek-v4-pro``, and
-    future ``deepseek-v5-pro`` / ``deepseek-v10-ultra`` — so a new generation
-    needs no code change here. Earlier code folded every non-reasoner name
-    into the V3 default, which on aggregators (OntoWeb portal, OpenRouter via
-    DeepInfra) routes to V3, silently downgrading users who picked a newer
-    model.
+    The shape is a version (optionally with a dotted minor) plus one name
+    segment — ``deepseek-v4-pro``, ``deepseek-v4.1-flash``, and future
+    ``deepseek-v5-pro`` / ``deepseek-v10-ultra`` — so a new generation needs no
+    code change here. Earlier code folded every non-reasoner name into the V3
+    default, which on aggregators (OntoWeb portal, OpenRouter via DeepInfra)
+    routes to V3, silently downgrading users who picked a newer model.
 
     ``deepseek-v4-flash`` is deliberately *not* in this list: it was the
-    pre-rename id for what the API now calls ``deepseek-flash`` (verified
-    2026-09-15), so it folds like the other retired names.
+    pre-rename id for what the API now calls ``deepseek-flash``, so it folds
+    like the other retired names.
     """
 
     @pytest.mark.parametrize("model", [
         "deepseek-v4-pro",
-        "deepseek/deepseek-v4-pro",          # vendor-prefixed
+        "deepseek-v4.1-flash",                # dotted minor version
+        "deepseek/deepseek-v4.1-flash",       # vendor-prefixed
+        "DeepSeek-V4.1-Flash",                # case-insensitive
+        "deepseek/deepseek-v4-pro",           # vendor-prefixed
         "DeepSeek-V4-Pro",                    # case-insensitive
         "deepseek-v5-pro",                    # future V-series
         "deepseek-v10-ultra",                 # double-digit future
@@ -227,17 +230,22 @@ class TestDeepseekVSeriesPassThrough:
         result = normalize_model_for_provider("deepseek-v4-pro", "deepseek")
         assert result == "deepseek-v4-pro"
 
+    def test_deepseek_provider_preserves_v4_1_flash(self):
+        """V4.1 Flash is a served model — it must not fold to deepseek-flash."""
+        result = normalize_model_for_provider("deepseek-v4.1-flash", "deepseek")
+        assert result == "deepseek-v4.1-flash"
+
     @pytest.mark.parametrize("model", [
         "deepseek-v4-pro-0813",              # OpenRouter slug shape
+        "deepseek-v4.1-flash-20261001",      # dated catalogue shape
         "deepseek-v4-flash-20260423",        # dated catalogue shape
         "deepseek/deepseek-v4-pro-0813",     # vendor-prefixed
     ])
     def test_segmented_catalogue_names_fold(self, model):
         """Segmented names are aggregator slugs, not names this API serves.
 
-        Verified 2026-09-15: passing one returns "The supported API model names
-        are deepseek-flash, deepseek-v4-pro, but you passed …". Forwarding it
-        would guarantee a 400; folding at least produces a working request.
+        Forwarding one would guarantee a 400; folding at least produces a
+        working request against the default model.
         """
         assert _normalize_for_deepseek(model) == "deepseek-flash"
 
@@ -247,16 +255,15 @@ class TestDeepseekVSeriesPassThrough:
 class TestDeepseekCanonicalAndReasonerMapping:
     """Canonical pass-through, and retired names folding to the served model.
 
-    Verified against the live API 2026-09-15: it reports "The supported API
-    model names are deepseek-flash, deepseek-v4-pro". The V3-era default
-    (``deepseek-chat``), the R1-era ``deepseek-reasoner`` and the pre-rename
-    ``deepseek-v4-flash`` are all retired for the same underlying model, so
-    each must fold rather than be reported as reached.
+    The V3-era default (``deepseek-chat``), the R1-era ``deepseek-reasoner``
+    and the pre-rename ``deepseek-v4-flash`` are all retired for the same
+    underlying model, so each must fold rather than be reported as reached.
     """
 
     @pytest.mark.parametrize("model,expected", [
         ("deepseek-flash", "deepseek-flash"),
         ("DEEPSEEK-FLASH", "deepseek-flash"),
+        ("deepseek-v4.1-flash", "deepseek-v4.1-flash"),
         ("deepseek-v4-pro", "deepseek-v4-pro"),
     ])
     def test_canonical_models_pass_through(self, model, expected):

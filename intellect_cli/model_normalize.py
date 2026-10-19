@@ -12,9 +12,9 @@ Different LLM providers expect model identifiers in different formats:
   model IDs, but Claude still uses hyphenated native names like
   ``claude-sonnet-4-6``.
 - **OpenCode Go** preserves dots in model names: ``minimax-m2.7``.
-- **DeepSeek** accepts ``deepseek-chat`` (V3), ``deepseek-reasoner``
-  (R1-family), and the first-class V-series IDs (``deepseek-v4-pro``,
-  ``deepseek-v4-flash``, and any future ``deepseek-v<N>-*``).  Older
+- **DeepSeek** accepts the served flash line (``deepseek-flash`` and the
+  versioned ``deepseek-v4.1-flash``), the larger ``deepseek-v4-pro``, and
+  future first-class ``deepseek-v<N>[-<minor>]-*`` IDs.  Older
   Intellect revisions folded every non-reasoner input into
   ``deepseek-chat``, which on aggregators routes to V3 — so a user
   picking V4 Pro was silently downgraded.
@@ -123,24 +123,23 @@ _LOWERCASE_MODEL_PROVIDERS: frozenset[str] = frozenset({
 # ---------------------------------------------------------------------------
 # DeepSeek special handling
 # ---------------------------------------------------------------------------
-# Verified against the live API 2026-09-15, which states the supported set
-# outright: "The supported API model names are deepseek-flash,
-# deepseek-v4-pro". The V3-era names — ``deepseek-chat`` (the old default) and
-# ``deepseek-reasoner`` — are retired, as is the pre-rename ``deepseek-v4-flash``
-# for the same model. The endpoint still accepts the retired names for
-# compatibility but serves ``deepseek-flash`` for them, so a request naming one
-# must not be reported as reaching a model by that name. They stay accepted as
-# *inputs* (configs and aggregator slugs still contain them) and fold to what
-# the server actually serves. Anything unrecognised resolves the same way,
-# which is also what keeps a bare ``deepseek-r1``-style name working: the
-# default model reasons natively, so no separate reasoner id is needed.
+# The native API serves the flash line — ``deepseek-flash`` plus the versioned
+# ``deepseek-v4.1-flash`` — and the larger ``deepseek-v4-pro``. The V3-era
+# names — ``deepseek-chat`` (the old default) and ``deepseek-reasoner`` — are
+# retired, as is the pre-rename ``deepseek-v4-flash`` for the same model. The
+# endpoint still accepts the retired names for compatibility but serves
+# ``deepseek-flash`` for them, so a request naming one must not be reported as
+# reaching a model by that name. They stay accepted as *inputs* (configs and
+# aggregator slugs still contain them) and fold to what the server actually
+# serves. Anything unrecognised resolves the same way, which is also what keeps
+# a bare ``deepseek-r1``-style name working: the default model reasons
+# natively, so no separate reasoner id is needed.
 
-#: Retired V3-era identifiers, kept as accepted inputs. DeepSeek's API states
-#: the supported set outright — "The supported API model names are
-#: deepseek-flash, deepseek-v4-pro" — and serves ``deepseek-flash`` for the
-#: retired names rather than erroring. Folding them here keeps what the code
-#: says and what the API does in agreement: a request naming ``deepseek-chat``
-#: must not be reported as serving a model by that name.
+#: Retired V3-era identifiers, kept as accepted inputs. The API serves
+#: ``deepseek-flash`` for the retired names rather than erroring. Folding them
+#: here keeps what the code says and what the API does in agreement: a request
+#: naming ``deepseek-chat`` must not be reported as serving a model by that
+#: name.
 _DEEPSEEK_RETIRED_MODELS: frozenset[str] = frozenset({
     "deepseek-chat",       # V3 default; superseded by deepseek-flash
     "deepseek-reasoner",   # R1 era; flash reasons natively now
@@ -148,28 +147,29 @@ _DEEPSEEK_RETIRED_MODELS: frozenset[str] = frozenset({
 })
 
 _DEEPSEEK_CANONICAL_MODELS: frozenset[str] = frozenset({
-    "deepseek-flash",      # the default model
-    "deepseek-v4-pro",     # the distinct larger model
+    "deepseek-flash",       # the default model
+    "deepseek-v4.1-flash",  # versioned flash id, served alongside the default
+    "deepseek-v4-pro",      # the distinct larger model
 })
 
 #: What every unrecognised / retired DeepSeek name resolves to, so the
 #: reported model equals the one actually answering.
 _DEEPSEEK_DEFAULT_MODEL = "deepseek-flash"
 
-# First-class V-series IDs: a major version plus a single name segment
+# First-class V-series IDs: a major version, an optional dotted minor
+# (``deepseek-v4.1-flash``), plus a single name segment
 # (``deepseek-v4-pro``, and future ``deepseek-v5-pro`` / ``deepseek-v10-ultra``
 # without needing a code change).
 #
 # Deliberately *not* ``(...)?$``-permissive: that also matched segmented
 # catalogue shapes like ``deepseek-v4-pro-0813`` and
-# ``deepseek-v4-flash-20260423``, and those are not names this API serves. It
-# says so outright — passing one returns
-# "The supported API model names are deepseek-flash, deepseek-v4-pro, but you
-# passed …" (verified 2026-09-15). They are aggregator slugs (OpenRouter lists
+# ``deepseek-v4-flash-20260423``, and those are not names this API serves. The
+# server rejects them with an error naming the served models. They are
+# aggregator slugs (OpenRouter lists
 # ``deepseek/deepseek-v4-pro-0813``), i.e. copies from a different namespace,
 # so they fold like any other unknown input rather than being forwarded to a
 # guaranteed 400.
-_DEEPSEEK_V_SERIES_RE = re.compile(r"^deepseek-v\d+-[a-z][a-z0-9]*$")
+_DEEPSEEK_V_SERIES_RE = re.compile(r"^deepseek-v\d+(?:\.\d+)?-[a-z][a-z0-9]*$")
 
 
 def _normalize_for_deepseek(model_name: str) -> str:
@@ -179,11 +179,12 @@ def _normalize_for_deepseek(model_name: str) -> str:
     - A retired V3-era name (``deepseek-chat``/``deepseek-reasoner``/
       ``deepseek-v4-flash``) -> ``deepseek-flash``, which is what the server
       serves for them today.
-    - Already canonical (``deepseek-flash``/``deepseek-v4-pro``) -> pass through.
-    - A first-class V-series id — version plus one name segment
-      (``deepseek-v5-pro``) -> pass through, so a future model needs no code
-      change. Segmented catalogue shapes (``deepseek-v4-pro-0813``) do not
-      qualify; see the regex comment.
+    - Already canonical (``deepseek-flash``/``deepseek-v4.1-flash``/
+      ``deepseek-v4-pro``) -> pass through.
+    - A first-class V-series id — version plus one name segment, with an
+      optional dotted minor (``deepseek-v4.1-flash``, ``deepseek-v5-pro``) ->
+      pass through, so a future model needs no code change. Segmented catalogue
+      shapes (``deepseek-v4-pro-0813``) do not qualify; see the regex comment.
     - Contains a reasoner keyword (r1, think, reasoning, cot, reasoner)
       -> ``deepseek-reasoner`` when that is still served, else the default.
     - Everything else -> ``deepseek-flash``.
@@ -202,7 +203,7 @@ def _normalize_for_deepseek(model_name: str) -> str:
     if bare in _DEEPSEEK_RETIRED_MODELS:
         return _DEEPSEEK_DEFAULT_MODEL
 
-    # V-series first-class IDs (v4-pro, future v5-*, dated variants)
+    # V-series first-class IDs (v4-pro, v4.1-flash, future v5-*, dated variants)
     if _DEEPSEEK_V_SERIES_RE.match(bare):
         return bare
 
@@ -401,11 +402,11 @@ def normalize_model_for_provider(model_input: str, target_provider: str) -> str:
         >>> normalize_model_for_provider("minimax-m2.5-free", "opencode-zen")
         'minimax-m2.5-free'
 
-        >>> normalize_model_for_provider("deepseek-v3", "deepseek")
-        'deepseek-chat'
+        >>> normalize_model_for_provider("deepseek-v4.1-flash", "deepseek")
+        'deepseek-v4.1-flash'
 
         >>> normalize_model_for_provider("deepseek-r1", "deepseek")
-        'deepseek-reasoner'
+        'deepseek-flash'
 
         >>> normalize_model_for_provider("my-model", "custom")
         'my-model'

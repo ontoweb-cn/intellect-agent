@@ -335,8 +335,10 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
     "deepseek": [
         # deepseek-chat / deepseek-reasoner were retired 2026-07-24
         # (api-docs.deepseek.com/quick_start/pricing); deepseek-v4-flash is
-        # a compatible alias of deepseek-flash.
+        # a compatible alias of deepseek-flash.  deepseek-v4.1-flash is the
+        # newer first-class flash id served alongside the alias.
         "deepseek-flash",
+        "deepseek-v4.1-flash",
         "deepseek-v4-pro",
         "deepseek-v4-flash",
     ],
@@ -948,7 +950,7 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [
     ProviderEntry("huggingface",    "Hugging Face",             "Hugging Face Inference Providers (20+ open models)"),
     ProviderEntry("gemini",         "Google AI Studio",         "Google AI Studio (Gemini models — native Gemini API)"),
     ProviderEntry("google-gemini-cli", "Google Gemini (OAuth)",   "Google Gemini via OAuth + Code Assist (free tier supported; no API key needed)"),
-    ProviderEntry("deepseek",       "DeepSeek",                 "DeepSeek (DeepSeek-V3, R1, coder — direct API)"),
+    ProviderEntry("deepseek",       "DeepSeek",                 "DeepSeek (V4.1 Flash, V4 Pro — direct API)"),
     ProviderEntry("xai",            "xAI",                      "xAI (Grok models — direct API)"),
     ProviderEntry("zai",            "Z.AI / GLM",               "Z.AI / GLM (Zhipu AI direct API)"),
     ProviderEntry("kimi-coding",    "Kimi / Kimi Coding Plan",  "Kimi Coding Plan (api.kimi.com) & Moonshot API"),

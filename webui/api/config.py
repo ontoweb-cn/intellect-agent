@@ -1184,9 +1184,10 @@ _PROVIDER_MODELS = {
         {"id": "gemini-2.5-pro",          "label": "Gemini 2.5 Pro"},
     ],
     "deepseek": [
-        {"id": "deepseek-flash",   "label": "DeepSeek Flash"},
-        {"id": "deepseek-v4-pro",  "label": "DeepSeek V4 Pro"},
-        {"id": "deepseek-v4-flash","label": "DeepSeek V4 Flash (alias)"},
+        {"id": "deepseek-flash",      "label": "DeepSeek Flash"},
+        {"id": "deepseek-v4.1-flash", "label": "DeepSeek V4.1 Flash"},
+        {"id": "deepseek-v4-pro",     "label": "DeepSeek V4 Pro"},
+        {"id": "deepseek-v4-flash",   "label": "DeepSeek V4 Flash (alias)"},
     ],
     "zai": [
         {"id": "glm-5.3",       "label": "GLM-5.3"},
