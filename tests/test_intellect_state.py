@@ -3449,17 +3449,23 @@ class TestApplyWalProbe:
 
         assert not errors, f"disk I/O errors from concurrent connects: {errors}"
 
-        # Linux-only: no (deleted) WAL/SHM FDs should accumulate.
+        # Linux-only: no (deleted) WAL/SHM FDs should accumulate. Scope the
+        # scan to this test's tmp dir — other tests' lazily-GC'd connections
+        # can leave deleted WAL/SHM FDs behind, which is not a failure of the
+        # concurrent-connect path under test.
         if sys.platform == "linux":
             import os
 
             fd_dir = f"/proc/{os.getpid()}/fd"
+            db_prefix = str(tmp_path)
             deleted_fds = []
             for fd_name in os.listdir(fd_dir):
                 try:
                     target = os.readlink(os.path.join(fd_dir, fd_name))
-                    if "(deleted)" in target and (
-                        "wal" in target.lower() or "shm" in target.lower()
+                    if (
+                        "(deleted)" in target
+                        and db_prefix in target
+                        and ("wal" in target.lower() or "shm" in target.lower())
                     ):
                         deleted_fds.append(target)
                 except OSError:
