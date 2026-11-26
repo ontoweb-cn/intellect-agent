@@ -48,7 +48,9 @@ dependencies = [
   # Browser CDP supervisor + web/voice bridges import websockets at module
   # load; without it the browser tool module silently fails discovery.
   # Held at 15.x because lark-oapi (feishu extra) requires >=11,<16.
-  "websockets==15.0.1",
+  # Range (lock still pins 15.0.1) so 15.x security patches can land
+  # without a release; lark-oapi (feishu extra) requires <16.
+  "websockets>=15.0.1,<16",
   "rich==14.3.3",
   "tenacity==9.2.1",
   "pyyaml==6.0.3",
@@ -278,6 +280,7 @@ markers = [
     "ssh: marks tests requiring SSH access to remote hosts",
     "slow: marks tests known to take longer than average",
     "no_isolate: pure unit file — run_tests_parallel may batch with other no_isolate files (one subprocess)",
+    "no_default_gateway_provider: opt out of the autouse dummy provider key",
 ]
 # pytest-timeout: per-test 30s hard cap with signal method.
 # This is the fallback inside each per-file pytest subprocess (see

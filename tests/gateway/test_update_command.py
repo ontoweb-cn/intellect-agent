@@ -26,6 +26,12 @@ def _mock_update_spawn(monkeypatch):
     """
     mock = MagicMock()
     monkeypatch.setattr(subprocess, "Popen", mock)
+    # Defense in depth: never resolve the real `intellect` executable either.
+    monkeypatch.setattr(
+        "gateway.command_handlers._resolve_intellect_bin",
+        lambda: ["/bin/true"],
+        raising=False,
+    )
     return mock
 
 
@@ -111,10 +117,13 @@ class TestHandleUpdateCommand:
         assert "Not a git repository" in result
 
     @pytest.mark.asyncio
-    async def test_no_intellect_binary(self, tmp_path):
+    async def test_no_intellect_binary(self, tmp_path, monkeypatch):
         """Returns error when intellect is not on PATH and intellect_cli is not importable."""
         runner = _make_runner()
         event = _make_event()
+        monkeypatch.setattr(
+            "gateway.command_handlers._resolve_intellect_bin", lambda: None
+        )
 
         # Create project dir WITH .git
         fake_root = tmp_path / "project"

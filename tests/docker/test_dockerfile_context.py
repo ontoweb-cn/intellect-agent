@@ -1,5 +1,6 @@
 """验证官方 Docker 构建文件已经直接包含本项目所需的容器修复。"""
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -169,3 +170,12 @@ def test_official_environment_template_covers_single_container_required_values()
         "INTELLECT_WEBUI_DEFAULT_WORKSPACE=/workspace",
     ):
         assert key in env_example
+
+
+def test_rust_base_image_is_digest_pinned():
+    """Supply-chain invariant: mutable rust: tags must be digest-pinned."""
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    rust_lines = [line for line in dockerfile.splitlines() if "rust:" in line and line.startswith("FROM ")]
+    assert rust_lines, "expected a rust toolchain FROM line"
+    for line in rust_lines:
+        assert re.search(r"@sha256:[0-9a-f]{64}", line), f"unpinned rust base image: {line}"

@@ -842,6 +842,23 @@ MEDIA_DELIVERY_TRUST_RECENT_SECONDS_ENV = "intellect_MEDIA_TRUST_RECENT_SECONDS"
 # injection from one user could exfiltrate the host's secrets to that same
 # user should set this to true.
 MEDIA_DELIVERY_STRICT_ENV = "intellect_MEDIA_DELIVERY_STRICT"
+
+# Canonical env names use the legacy lowercase ``intellect_`` prefix, but
+# operators understandably set ``INTELLECT_*`` (and older docs used
+# ``HERMES_*``).  Accept all three with canonical-first precedence; a typo in
+# this security toggle must not silently disable strict mode.
+_MEDIA_ENV_PREFIXES = ("intellect_", "INTELLECT_", "HERMES_")
+_MEDIA_STRICT_MODE_LOGGED = False
+
+
+def _media_env(name: str, default: str = "") -> str:
+    for prefix in _MEDIA_ENV_PREFIXES:
+        value = os.environ.get(prefix + name)
+        if value is not None:
+            return value
+    return default
+
+
 MEDIA_DELIVERY_SAFE_ROOTS = (
     IMAGE_CACHE_DIR,
     AUDIO_CACHE_DIR,
@@ -908,7 +925,7 @@ _MEDIA_DELIVERY_DENIED_HOME_SUBPATHS = (
 def _media_delivery_allowed_roots() -> List[Path]:
     """Return roots from which model-emitted local media may be delivered."""
     roots = [Path(root) for root in MEDIA_DELIVERY_SAFE_ROOTS]
-    extra_roots = os.environ.get(MEDIA_DELIVERY_ALLOW_DIRS_ENV, "")
+    extra_roots = _media_env("MEDIA_ALLOW_DIRS")
     for chunk in extra_roots.split(os.pathsep):
         for raw_root in chunk.split(","):
             raw_root = raw_root.strip()
@@ -925,11 +942,11 @@ def _media_delivery_recency_seconds() -> float:
 
     0 disables recency-based trust entirely (pure-allowlist mode).
     """
-    raw = os.environ.get(MEDIA_DELIVERY_TRUST_RECENT_ENV, "1").strip().lower()
+    raw = _media_env("MEDIA_TRUST_RECENT_FILES", "1").strip().lower()
     if raw in ("0", "false", "no", "off", ""):
         return 0.0
     try:
-        custom = os.environ.get(MEDIA_DELIVERY_TRUST_RECENT_SECONDS_ENV, "").strip()
+        custom = _media_env("MEDIA_TRUST_RECENT_SECONDS").strip()
         if custom:
             seconds = float(custom)
             return max(0.0, seconds)
@@ -949,8 +966,17 @@ def _media_delivery_strict_mode() -> bool:
     gateways where prompt injection from one user shouldn't be able to
     exfiltrate the host's secrets to that same user.
     """
-    raw = os.environ.get(MEDIA_DELIVERY_STRICT_ENV, "0").strip().lower()
-    return raw in ("1", "true", "yes", "on")
+    global _MEDIA_STRICT_MODE_LOGGED
+    raw = _media_env("MEDIA_DELIVERY_STRICT", "0").strip().lower()
+    strict = raw in ("1", "true", "yes", "on")
+    if not _MEDIA_STRICT_MODE_LOGGED:
+        logger.info(
+            "Media delivery strict mode: %s (env value=%r)",
+            "on" if strict else "off",
+            raw,
+        )
+        _MEDIA_STRICT_MODE_LOGGED = True
+    return strict
 
 
 def _media_delivery_denied_paths() -> List[Path]:

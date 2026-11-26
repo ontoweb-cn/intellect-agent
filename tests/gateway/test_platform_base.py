@@ -1226,3 +1226,24 @@ class TestMediaDeliveryDiagnosability:
         assert any(r.endswith("cache/documents") for r in roots)
         # Legacy layout still present.
         assert any(r.endswith("image_cache") for r in roots)
+
+
+class TestMediaDeliveryEnvAliases:
+    def test_strict_mode_accepts_uppercase_intellect_alias(self, monkeypatch):
+        from gateway.platforms.base import _media_delivery_strict_mode
+
+        monkeypatch.setenv("INTELLECT_MEDIA_DELIVERY_STRICT", "true")
+        monkeypatch.delenv("intellect_MEDIA_DELIVERY_STRICT", raising=False)
+        monkeypatch.delenv("HERMES_MEDIA_DELIVERY_STRICT", raising=False)
+        assert _media_delivery_strict_mode() is True
+
+    def test_allow_dirs_accepts_uppercase_intellect_alias(self, tmp_path, monkeypatch):
+        from pathlib import Path
+
+        from gateway.platforms.base import _media_delivery_allowed_roots
+
+        monkeypatch.setenv("INTELLECT_MEDIA_ALLOW_DIRS", str(tmp_path))
+        monkeypatch.delenv("intellect_MEDIA_ALLOW_DIRS", raising=False)
+        monkeypatch.delenv("HERMES_MEDIA_ALLOW_DIRS", raising=False)
+        roots = [Path(r).resolve() for r in _media_delivery_allowed_roots()]
+        assert tmp_path.resolve() in roots

@@ -12,7 +12,9 @@ FROM m.daocloud.io/docker.io/library/node:22-bookworm-slim@sha256:7af03b14a13c8c
 # Rust toolchain for the native extension. Debian trixie's apt rustc is
 # 1.85, below rusqlite 0.43 / libsqlite3-sys 0.40's MSRV (1.89 / 1.88).
 # Use the official image as a toolchain source instead of apt.
-FROM m.daocloud.io/docker.io/library/rust:1.89-slim-bookworm AS rust_toolchain
+# Digest pinned 2026-11-26 for rust:1.89-slim-bookworm (multi-arch index);
+# see review finding on mutable Docker tags. Renovate/Dependabot owns bumps.
+FROM m.daocloud.io/docker.io/library/rust:1.89-slim-bookworm@sha256:d7fc7de78bb8c1469933aeecbf801314d30d7d6e9f0578bba4cfa285bfa37fe6 AS rust_toolchain
 FROM m.daocloud.io/docker.io/library/debian:13.4
 
 # Disable Python stdout buffering to ensure logs are printed immediately

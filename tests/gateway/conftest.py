@@ -40,7 +40,7 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _default_gateway_provider_credentials(monkeypatch):
+def _default_gateway_provider_credentials(request, monkeypatch):
     """Give gateway tests a resolvable provider.
 
     Most gateway tests inject fake agents and never call an LLM, but the
@@ -51,6 +51,8 @@ def _default_gateway_provider_credentials(monkeypatch):
     making no network calls.  Tests that assert missing-credential behavior
     override this with their own env patches.
     """
+    if request.node.get_closest_marker("no_default_gateway_provider"):
+        return
     monkeypatch.setenv("OPENROUTER_API_KEY", "gateway-test-key")
 
 
