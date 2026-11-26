@@ -1935,3 +1935,31 @@ def test_managed_gateway_access_token_uses_newer_shared_token(
     profile_state = auth_mod.get_provider_auth_state("ontoweb")
     assert profile_state is not None
     assert profile_state["refresh_token"] == "shared-fresh-refresh"
+
+
+def test_get_ontoweb_auth_status_rejects_non_http_pool_url(tmp_path, monkeypatch):
+    from intellect_cli.auth import get_ontoweb_auth_status
+
+    intellect_home = tmp_path / "intellect"
+    intellect_home.mkdir(parents=True, exist_ok=True)
+    (intellect_home / "auth.json").write_text(json.dumps({"version": 1, "providers": {}}))
+    monkeypatch.setenv("INTELLECT_HOME", str(intellect_home))
+
+    from agent.credential_pool import PooledCredential, load_pool
+
+    token = _invoke_jwt(seconds=3600)
+    pool = load_pool("ontoweb")
+    pool.add_entry(PooledCredential.from_dict("ontoweb", {
+        "access_token": token,
+        "agent_key": token,
+        "agent_key_expires_at": _future_iso(3600),
+        "auth_type": "oauth",
+        "source": "manual:dashboard_device_code",
+        "label": "x",
+        "portal_base_url": "javascript:alert(1)",
+        "inference_base_url": "file:///etc/passwd",
+    }))
+
+    status = get_ontoweb_auth_status()
+    assert status["portal_base_url"] == "https://portal.ontoweb.cn"
+    assert status["inference_base_url"] is None

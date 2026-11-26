@@ -48,6 +48,27 @@ def _extra_metadata_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in entry.items() if k not in known and v is not None}
 
 
+_POOL_TOKEN_META_KEYS = frozenset({"access_token", "refresh_token", "agent_key"})
+
+
+def _merge_pool_metadata(out: dict[str, Any], key: Any, value: Any) -> None:
+    """Merge untrusted metadata without overriding explicit credential fields.
+
+    The DB ``metadata`` column is auxiliary; tokens/base URLs must come from
+    the encrypted token columns / row, never from JSON metadata.
+    """
+    if not isinstance(key, str) or value is None:
+        return
+    if key in _POOL_TOKEN_META_KEYS:
+        return
+    if key == "base_url":
+        if out.get("base_url"):
+            return
+        out["base_url"] = value
+        return
+    out.setdefault(key, value)
+
+
 def pool_entry_to_credential_dict(row: dict[str, Any]) -> dict[str, Any]:
     from agent.oauth.storage import decrypt_token
 
@@ -58,7 +79,9 @@ def pool_entry_to_credential_dict(row: dict[str, Any]) -> dict[str, Any]:
 
     try:
         meta = json.loads(row.get("metadata") or "{}")
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
+    if not isinstance(meta, dict):
         meta = {}
 
     out: dict[str, Any] = {
@@ -83,9 +106,16 @@ def pool_entry_to_credential_dict(row: dict[str, Any]) -> dict[str, Any]:
     ):
         if key in meta and meta[key] is not None:
             out[key] = meta[key]
-    for key, val in meta.get("extra", {}).items():
-        if val is not None:
-            out[key] = val
+    encrypted_agent_key = meta.get("agent_key_encrypted")
+    if encrypted_agent_key:
+        try:
+            out["agent_key"] = decrypt_token(encrypted_agent_key)
+        except Exception:
+            pass
+    extra_meta = meta.get("extra")
+    if isinstance(extra_meta, dict):
+        for key, val in extra_meta.items():
+            _merge_pool_metadata(out, key, val)
     # Older writers stored extra pool metadata (portal_base_url, scope, ...)
     # at the top level of ``metadata`` rather than under "extra".  Merge the
     # leftover keys so a DB round-trip preserves them (e.g. OntoWeb portal URL).
@@ -93,12 +123,12 @@ def pool_entry_to_credential_dict(row: dict[str, Any]) -> dict[str, Any]:
         "auth_type", "last_status_at", "last_error_code", "last_error_reason",
         "last_error_message", "last_error_reset_at", "expires_at",
         "expires_at_ms", "last_refresh", "inference_base_url", "agent_key",
-        "agent_key_expires_at", "request_count", "extra",
+        "agent_key_expires_at", "request_count", "agent_key_encrypted", "extra",
     }
     for key, val in meta.items():
-        if key in _handled or val is None:
+        if key in _handled:
             continue
-        out.setdefault(key, val)
+        _merge_pool_metadata(out, key, val)
     return out
 
 
@@ -134,6 +164,11 @@ def credential_dict_to_pool_row(
     ):
         if key in entry and entry[key] is not None:
             meta[key] = entry[key]
+    # agent_key is a bearer credential; keep it out of plaintext metadata
+    # JSON (access/refresh already use encrypted columns).
+    agent_key = meta.pop("agent_key", None)
+    if agent_key:
+        meta["agent_key_encrypted"] = encrypt_token(str(agent_key))
 
     now = time.time()
     return {

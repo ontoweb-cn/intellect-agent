@@ -1690,3 +1690,32 @@ def test_auth_remove_codex_manual_device_code_suppresses_canonical(tmp_path, mon
 
     auth_remove_command(SimpleNamespace(provider="openai-codex", target="1"))
     assert is_source_suppressed("openai-codex", "device_code")
+
+
+def test_auth_add_api_key_writes_canonical_db_pool(tmp_path, monkeypatch):
+    """Canonical store is SQLite; auth.json is only a compatibility mirror."""
+    monkeypatch.setenv("INTELLECT_HOME", str(tmp_path / "intellect"))
+    monkeypatch.setenv("INTELLECT_OAUTH_WRITE_AUTH_JSON", "0")
+    monkeypatch.setenv("INTELLECT_OAUTH_READ_AUTH_JSON", "0")
+    from agent.oauth.runtime_settings import get_oauth_runtime_settings
+
+    get_oauth_runtime_settings.cache_clear()
+    _write_auth_store(tmp_path, {"version": 1, "providers": {}})
+
+    from intellect_cli.auth_commands import auth_add_command
+
+    class _Args:
+        provider = "openrouter"
+        auth_type = "api-key"
+        api_key = "sk-or-canonical-db"
+        label = "db-only"
+
+    auth_add_command(_Args())
+
+    from intellect_cli.auth import read_credential_pool
+
+    entries = read_credential_pool("openrouter")
+    assert any(e.get("access_token") == "sk-or-canonical-db" for e in entries)
+
+    payload = read_auth_json(tmp_path / "intellect" / "auth.json")
+    assert "openrouter" not in payload.get("credential_pool", {})

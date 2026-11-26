@@ -6106,6 +6106,22 @@ def _empty_ontoweb_auth_status() -> Dict[str, Any]:
     }
 
 
+def _valid_status_url(value: Any) -> Optional[str]:
+    """Return value only when it is an absolute http(s) URL (status display)."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    return value
+
+
 def _snapshot_ontoweb_pool_status() -> Dict[str, Any]:
     """Best-effort status from the credential pool.
 
@@ -6146,18 +6162,20 @@ def _snapshot_ontoweb_pool_status() -> Dict[str, Any]:
         portal_status_url = None
         if is_portal_oauth:
             portal_status_url = (
-                getattr(entry, "portal_base_url", None)
-                or entry_extra.get("portal_base_url")
+                _valid_status_url(getattr(entry, "portal_base_url", None))
+                or _valid_status_url(entry_extra.get("portal_base_url"))
                 or DEFAULT_ONTOWEB_PORTAL_URL
             )
 
         return {
             "logged_in": is_portal_oauth,
             "portal_base_url": portal_status_url,
-            "inference_base_url": getattr(entry, "inference_base_url", None)
-            or getattr(entry, "runtime_base_url", None)
-            or entry_extra.get("inference_base_url")
-            or getattr(entry, "base_url", None),
+            "inference_base_url": _valid_status_url(
+                getattr(entry, "inference_base_url", None)
+            )
+            or _valid_status_url(getattr(entry, "runtime_base_url", None))
+            or _valid_status_url(entry_extra.get("inference_base_url"))
+            or _valid_status_url(getattr(entry, "base_url", None)),
             "access_token": access_token if is_portal_oauth else None,
             "access_expires_at": getattr(entry, "expires_at", None),
             "agent_key_expires_at": getattr(entry, "agent_key_expires_at", None),
