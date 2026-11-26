@@ -81,6 +81,7 @@ from gateway.platforms.base import (
     ProcessingOutcome,
     SendResult,
 )
+from agent.secret_scope import get_secret
 
 logger = logging.getLogger(__name__)
 
@@ -165,21 +166,21 @@ def check_requirements() -> bool:
     if not HTTPX_AVAILABLE:
         return False
     server = os.getenv("TEAM_BRIDGE_SERVER_URL", "").strip()
-    token = os.getenv("TEAM_BRIDGE_API_TOKEN", "").strip()
+    token = (get_secret("TEAM_BRIDGE_API_TOKEN") or "").strip()
     return bool(server and token)
 
 
 def validate_config(config) -> bool:
     extra = getattr(config, "extra", {}) or {}
     server = extra.get("server_url") or os.getenv("TEAM_BRIDGE_SERVER_URL", "")
-    token = extra.get("api_token") or os.getenv("TEAM_BRIDGE_API_TOKEN", "")
+    token = extra.get("api_token") or (get_secret("TEAM_BRIDGE_API_TOKEN") or "")
     return bool(server and token)
 
 
 def is_connected(config) -> bool:
     extra = getattr(config, "extra", {}) or {}
     server = extra.get("server_url") or os.getenv("TEAM_BRIDGE_SERVER_URL", "")
-    token = extra.get("api_token") or os.getenv("TEAM_BRIDGE_API_TOKEN", "")
+    token = extra.get("api_token") or (get_secret("TEAM_BRIDGE_API_TOKEN") or "")
     return bool(server and token)
 
 
@@ -201,8 +202,10 @@ class TeamBridgeAdapter(BasePlatformAdapter):
         extra = config.extra or {}
 
         def _cfg(key: str, env: str, default: str = "") -> str:
-            # env wins over config.yaml extra (same precedence as ntfy).
-            value = os.getenv(env, "")
+            # secret scope/env wins over config.yaml extra (same precedence
+            # as ntfy).  get_secret() keeps profile-scoped credentials from
+            # leaking across profiles in multiplex mode.
+            value = get_secret(env) or ""
             if not value.strip():
                 value = extra.get(key)
             return str(value or "").strip()
@@ -788,7 +791,7 @@ def _env_enablement() -> Optional[dict]:
     """Seed ``PlatformConfig.extra`` from env for ``gateway status`` /
     auto-enable, before any adapter exists. ``None`` = not configured."""
     server = os.getenv("TEAM_BRIDGE_SERVER_URL", "").strip()
-    token = os.getenv("TEAM_BRIDGE_API_TOKEN", "").strip()
+    token = (get_secret("TEAM_BRIDGE_API_TOKEN") or "").strip()
     if not server or not token:
         return None
     seed: dict = {"server_url": server, "api_token": token}
@@ -798,7 +801,7 @@ def _env_enablement() -> Optional[dict]:
     worker_id = os.getenv("TEAM_BRIDGE_WORKER_ID", "").strip()
     if worker_id:
         seed["worker_id"] = worker_id
-    signing_key = os.getenv("TEAM_BRIDGE_TASK_SIGNING_KEY", "").strip()
+    signing_key = (get_secret("TEAM_BRIDGE_TASK_SIGNING_KEY") or "").strip()
     if signing_key:
         seed["task_signing_key"] = signing_key
     approval_mode = os.getenv("TEAM_BRIDGE_APPROVAL_MODE", "").strip().lower()
