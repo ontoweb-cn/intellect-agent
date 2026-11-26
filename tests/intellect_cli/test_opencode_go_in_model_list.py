@@ -11,14 +11,20 @@ from intellect_cli.model_switch import list_authenticated_providers
 # The curated list in intellect_cli/models.py defines the floor; models.dev only
 # ever adds names on top of it via _merge_with_models_dev.
 _OPENCODE_GO_REQUIRED = {
-    "kimi-k2.6",
-    "kimi-k2.5",
-    "glm-5.1",
-    "glm-5",
-    "mimo-v2-pro",
-    "mimo-v2-omni",
-    "minimax-m2.7",
-    "minimax-m2.5",
+    "grok-4.7",
+    "gpt-6-luna",
+    "claude-haiku-5-5",
+    "glm-5.3",
+    "glm-5.3-flash",
+    "kimi-k3",
+    "kimi-k2.7-code",
+    "deepseek-v4.1-flash",
+    "deepseek-v4-pro",
+    "mimo-v2.6-pro",
+    "mimo-v2.6-flash",
+    "minimax-m3",
+    "qwen3.8-max",
+    "qwen3.7-plus",
 }
 
 

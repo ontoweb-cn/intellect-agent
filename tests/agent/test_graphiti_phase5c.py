@@ -18,6 +18,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# graphiti-core is a lazy plugin dependency (plugins/memory/graphiti
+# plugin.yaml) and is not installed by CI's [all,dev] environment. Skip the
+# module instead of failing every test that patches graphiti_core.*.
+pytest.importorskip("graphiti_core", reason="graphiti-core not installed")
+
 
 # ---------------------------------------------------------------------------
 # 5c.1 — _build_llm_client

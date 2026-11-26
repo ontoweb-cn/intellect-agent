@@ -32,7 +32,7 @@ _OPENCODE_GO_LIVE = [
     "minimax-m2.7", "minimax-m2.5",
     "kimi-k2.6", "kimi-k2.5",
     "glm-5.1", "glm-5",
-    "deepseek-v4-pro", "deepseek-v4-flash",
+    "deepseek-v4-pro", "deepseek-v4.1-flash",
     "qwen3.6-plus", "qwen3.5-plus",
     "mimo-v2-pro", "mimo-v2-omni", "mimo-v2.5-pro", "mimo-v2.5",
 ]
@@ -133,16 +133,16 @@ def _run_switch(raw_input: str, **extra):
         return switch_model(raw_input=raw_input, **defaults)
 
 
-def test_deepseek_v4_flash_stays_on_opencode_go():
-    """Regression: ``/model deepseek-v4-flash`` while on opencode-go must
+def test_deepseek_v4_1_flash_stays_on_opencode_go():
+    """Regression: ``/model deepseek-v4.1-flash`` while on opencode-go must
     NOT switch to native deepseek just because deepseek's static catalog
     also contains that name."""
-    result = _run_switch("deepseek-v4-flash")
+    result = _run_switch("deepseek-v4.1-flash")
     assert result.target_provider == "opencode-go", (
         f"Expected to stay on opencode-go, got {result.target_provider}. "
         f"detect_provider_for_model hijacked the bare name."
     )
-    assert result.new_model == "deepseek-v4-flash"
+    assert result.new_model == "deepseek-v4.1-flash"
 
 
 def test_deepseek_v4_pro_stays_on_opencode_go():

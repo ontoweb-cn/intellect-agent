@@ -45,6 +45,10 @@ dependencies = [
   "python-dotenv==1.2.4",
   "fire==0.7.1",
   "httpx[socks]==0.28.1",
+  # Browser CDP supervisor + web/voice bridges import websockets at module
+  # load; without it the browser tool module silently fails discovery.
+  # Held at 15.x because lark-oapi (feishu extra) requires >=11,<16.
+  "websockets==15.0.1",
   "rich==14.3.3",
   "tenacity==9.2.1",
   "pyyaml==6.0.3",
@@ -200,6 +204,9 @@ webui = [
   # back to 49.x. Ceiling stays <51. alibabacloud-tea-openapi still
   # declares cryptography<47; that extra is not allowed to win resolution.
   "cryptography>=50.0.0,<51",
+  # Direct pin for CVE-2026-48710 (BadHost): the WebUI ASGI stack pulls
+  # starlette transitively (fastapi/mcp); keep the patched version explicit.
+  "starlette==1.10.0",
 ]
 all = [
   # Policy (2026-05-12): `[all]` includes only extras that genuinely

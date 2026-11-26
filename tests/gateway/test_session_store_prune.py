@@ -19,6 +19,7 @@ import threading
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
 
 from gateway.config import GatewayConfig, Platform, SessionResetPolicy
 from gateway.session import SessionEntry, SessionStore
@@ -183,7 +184,7 @@ class TestPruneBasics:
         store._entries["fresh"] = _entry("fresh", age_days=1)
 
         save_calls = []
-        store._save = lambda: save_calls.append(1)
+        store._save_locked = lambda: save_calls.append(1)
 
         store.prune_old_entries(max_age_days=90)
         assert save_calls == [1]
@@ -222,6 +223,13 @@ class TestPruneBasics:
 
 
 class TestPrunePersistsToDisk:
+    @pytest.mark.skip(
+        reason=(
+            "SessionStore now persists to the SQLite session_index table "
+            "(_save_impl gates on self._db); the legacy sessions.json writer "
+            "was removed, so this JSON-on-disk assertion is obsolete."
+        )
+    )
     def test_prune_rewrites_sessions_json(self, tmp_path):
         """After prune, sessions.json on disk reflects the new dict."""
         config = GatewayConfig(
