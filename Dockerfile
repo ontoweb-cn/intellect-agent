@@ -9,6 +9,10 @@
 # is a one-line ARG change; see #4977.
 # Node 与 Debian 使用 DaoCloud 的上游镜像前缀；Node 继续通过官方 SHA256 锁定内容。
 FROM m.daocloud.io/docker.io/library/node:22-bookworm-slim@sha256:7af03b14a13c8cdd38e45058fd957bf00a72bbe17feac43b1c15a689c029c732 AS node_source
+# Rust toolchain for the native extension. Debian trixie's apt rustc is
+# 1.85, below rusqlite 0.43 / libsqlite3-sys 0.40's MSRV (1.89 / 1.88).
+# Use the official image as a toolchain source instead of apt.
+FROM m.daocloud.io/docker.io/library/rust:1.89-slim-bookworm AS rust_toolchain
 FROM m.daocloud.io/docker.io/library/debian:13.4
 
 # Disable Python stdout buffering to ensure logs are printed immediately
@@ -52,10 +56,18 @@ RUN sed -i \
     apt-get install -y --no-install-recommends \
     ca-certificates curl iputils-ping python3 python3-pip python-is-python3 ripgrep ffmpeg \
     gcc python3-dev libffi-dev procps git openssh-client docker-cli xz-utils \
-    cargo rustc pkg-config && \
+    pkg-config && \
     sed -i 's|http://mirrors.aliyun.com|https://mirrors.aliyun.com|g' \
         /etc/apt/sources.list.d/debian.sources && \
     rm -rf /var/lib/apt/lists/*
+
+# Modern Rust toolchain (rustup + cargo + rustc) copied from the official
+# rust:1.89 image. Binaries built on bookworm (glibc 2.36) run on trixie.
+COPY --from=rust_toolchain /usr/local/cargo /usr/local/cargo
+COPY --from=rust_toolchain /usr/local/rustup /usr/local/rustup
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
 
 # ---------- s6-overlay install ----------
 # s6-overlay provides supervision for the main intellect process
