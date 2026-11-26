@@ -489,3 +489,30 @@ def test_open_dir_fd_rejects_escape_symlink(tmp_path: Path):
         pytest.skip("symlinks unavailable")
     with pytest.raises(ValueError, match="Path traversal blocked"):
         open_dir_fd_under_root(root, "escape")
+
+
+def test_mkdir_does_not_follow_swapped_symlink(tmp_path: Path, monkeypatch):
+    """A symlink swapped in after resolve must not redirect creation outside root."""
+    import api.workspace_io as ws_io
+
+    if not ws_io._SUPPORTS_DIR_FD:
+        pytest.skip("dir-fd O_NOFOLLOW unavailable")
+
+    root = tmp_path / "ws"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (root / "child").mkdir()
+
+    real_resolve = ws_io.resolve_under_root
+
+    def racing_resolve(root_arg, requested):
+        resolved = real_resolve(root_arg, requested)
+        (root / "child").rmdir()
+        (root / "child").symlink_to(outside)
+        return resolved
+
+    monkeypatch.setattr(ws_io, "resolve_under_root", racing_resolve)
+    with pytest.raises(OSError):
+        ws_io.mkdir_under_root(root, "child/new", parents=True)
+    assert not (outside / "new").exists()

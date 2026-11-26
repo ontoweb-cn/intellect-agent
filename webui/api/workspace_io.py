@@ -323,13 +323,46 @@ def mkdir_under_root(
 ) -> Path:
     """Create a directory under ``root``; raise on traversal or existing path.
 
+    POSIX: each component is created/opened via ``mkdirat``/``openat`` from
+    the workspace root fd with ``O_NOFOLLOW``, so a symlink swapped in after
+    the containment resolve cannot redirect creation outside ``root``.
     ``parents=True`` creates intermediate directories (pathlib semantics).
-    The resolved target must remain under ``root`` (``resolve_under_root``
-    rejects ``..``/symlink escapes).
+    Non-POSIX falls back to resolve + Path.mkdir (documented residual).
     """
+    root_r = Path(root).resolve()
     target = resolve_under_root(root, requested)
-    target.mkdir(parents=parents, exist_ok=False)
-    return target
+    try:
+        rel = target.relative_to(root_r)
+    except ValueError as exc:
+        raise ValueError(f"Path traversal blocked: {requested}") from exc
+    if not _SUPPORTS_DIR_FD:
+        target.mkdir(parents=parents, exist_ok=False)
+        return target
+
+    parts = rel.parts
+    if not parts:
+        raise FileExistsError(f"Directory exists: {requested}")
+    fd = open_root_dir_fd(root_r)
+    try:
+        for index, part in enumerate(parts):
+            is_leaf = index == len(parts) - 1
+            try:
+                os.mkdir(part, dir_fd=fd)
+            except FileExistsError:
+                if is_leaf:
+                    raise
+                # Existing intermediate directory is fine; non-directories
+                # are rejected by the O_DIRECTORY open below.
+            next_fd = os.open(
+                part,
+                os.O_RDONLY | _O_DIRECTORY | _OPEN_FLAGS_NOFOLLOW,
+                dir_fd=fd,
+            )
+            os.close(fd)
+            fd = next_fd
+    finally:
+        os.close(fd)
+    return root_r / rel
 
 
 def open_under_root(
