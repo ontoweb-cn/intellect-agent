@@ -787,6 +787,39 @@ class TestFindSkillInRepoTree:
         assert result is None
 
 
+@pytest.fixture(autouse=True)
+def _route_guarded_fetch_through_httpx_get(request, monkeypatch):
+    """Let the URL/well-known tests keep mocking ``httpx.get``.
+
+    ``_guarded_http_get`` now fetches through ``safe_httpx_client`` (SSRF
+    peer-IP validation), so patching ``httpx.get`` alone no longer intercepts
+    the request.  Route the safe client's ``.get`` through ``httpx.get`` for
+    these two classes; the real ``is_safe_url``/redirect checks still run.
+    """
+    cls = getattr(request.node, "cls", None)
+    if cls is None or cls.__name__ not in {
+        "TestWellKnownSkillSource",
+        "TestUrlSource",
+    }:
+        return
+
+    from tools import safe_http
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get(self, url, **kwargs):
+            return httpx.get(url, **kwargs)
+
+    monkeypatch.setattr(
+        safe_http, "safe_httpx_client", lambda **kwargs: _Client()
+    )
+
+
 class TestWellKnownSkillSource:
     @pytest.fixture(autouse=True)
     def _allow_public_skill_fetches(self, monkeypatch):
