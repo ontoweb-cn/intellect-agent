@@ -739,14 +739,14 @@ def build_session_key(
         chat_id = canonical_whatsapp_identifier(source.chat_id) or ""
     participant = ""
     if source.chat_type != "dm":
-        p = source.user_id_alt or source.user_id or ""
+        p = getattr(source, "user_id_alt", "") or source.user_id or ""
         if p and source.platform == Platform.WHATSAPP:
             p = canonical_whatsapp_identifier(str(p)) or p
         participant = str(p)
     return _build_session_key_impl(
         source.platform.value, source.chat_type, chat_id,
         source.thread_id or "", source.user_id or "",
-        source.user_id_alt or "" if source.chat_type == "dm" else participant,
+        (getattr(source, "user_id_alt", "") or "") if source.chat_type == "dm" else participant,
         group_sessions_per_user, thread_sessions_per_user,
         member_id or "", team_id or "", project_id or "",
     )
