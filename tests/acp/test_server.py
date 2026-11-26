@@ -1367,14 +1367,19 @@ class TestPrompt:
                 session_id=resp.session_id,
                 prompt=[TextContentBlock(type="text", text="fix zed titles")],
             )
-            await asyncio.sleep(0)
-            await asyncio.sleep(0)
 
-        updates = [
-            call.kwargs.get("update") or call.args[1]
-            for call in mock_conn.session_update.await_args_list
-        ]
-        info_updates = [u for u in updates if isinstance(u, SessionInfoUpdate)]
+        # The title callback may run on a background task; poll briefly
+        # instead of assuming two event-loop ticks are enough under load.
+        info_updates = []
+        for _ in range(100):
+            updates = [
+                call.kwargs.get("update") or call.args[1]
+                for call in mock_conn.session_update.await_args_list
+            ]
+            info_updates = [u for u in updates if isinstance(u, SessionInfoUpdate)]
+            if info_updates:
+                break
+            await asyncio.sleep(0.01)
         assert len(info_updates) == 1
         assert info_updates[0].session_update == "session_info_update"
         assert info_updates[0].title == "Fix Zed titles"
