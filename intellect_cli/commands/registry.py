@@ -1111,7 +1111,7 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
         if not _is_gateway_available(cmd, overrides):
             continue
         for alias in cmd.aliases:
-            if alias in {"btw", "bg"}:
+            if alias in {"btw", "bg", "reset", "q"}:
                 _add(alias, f"Alias for /{cmd.name} — {cmd.description}", cmd.args_hint or "")
 
     # First pass: canonical names (so they win slots if we hit the cap).
