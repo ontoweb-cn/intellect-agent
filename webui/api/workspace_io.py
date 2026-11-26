@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import sys
 from pathlib import Path
 from typing import BinaryIO, Optional, TextIO, Union
@@ -312,6 +313,23 @@ def list_names_under_root(root: Path, requested: str) -> list[str]:
     if not path.is_dir():
         raise FileNotFoundError(f"Not a directory: {requested}")
     return [p.name for p in path.iterdir()]
+
+
+def mkdir_under_root(
+    root: Path,
+    requested: str,
+    *,
+    parents: bool = False,
+) -> Path:
+    """Create a directory under ``root``; raise on traversal or existing path.
+
+    ``parents=True`` creates intermediate directories (pathlib semantics).
+    The resolved target must remain under ``root`` (``resolve_under_root``
+    rejects ``..``/symlink escapes).
+    """
+    target = resolve_under_root(root, requested)
+    target.mkdir(parents=parents, exist_ok=False)
+    return target
 
 
 def open_under_root(
