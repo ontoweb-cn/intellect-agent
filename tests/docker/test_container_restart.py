@@ -3,7 +3,7 @@
 The s6 dynamic scandir at /run/service/ lives on tmpfs and is wiped
 on every container restart. Phase 4 Task 4.0's container_boot module
 + cont-init.d/02-reconcile-profiles regenerate the service slots from
-$INTELLECT_HOME/profiles/<name>/gateway_state.json on every boot and
+$INTELLECT_HOME/agents/<name>/gateway_state.json (legacy profiles/ is also scanned) on every boot and
 auto-start only those whose last state was `running`.
 
 These tests stand up a container with a named volume, create profiles
@@ -102,7 +102,7 @@ def _wait_for_reconcile_log_mention(
 @pytest.fixture
 def restart_container(request, built_image: str):
     """A long-running container with a named volume so docker restart
-    preserves $INTELLECT_HOME/profiles/."""
+    preserves $INTELLECT_HOME/agents/."""
     safe = request.node.name.replace("[", "_").replace("]", "_")
     name = f"intellect-restart-{safe}"
     volume = f"intellect-restart-vol-{safe}"
@@ -174,7 +174,7 @@ def test_running_gateway_survives_container_restart(restart_container: str) -> N
     # exercise the reconciler's contract.
     write_state = (
         "import json, pathlib; "
-        "p = pathlib.Path('/opt/data/profiles/coder/gateway_state.json'); "
+        "p = pathlib.Path('/opt/data/agents/coder/gateway_state.json'); "
         "p.write_text(json.dumps({'gateway_state': 'running', 'timestamp': 1}))"
     )
     _exec(container, "python3", "-c", write_state, timeout=10).check_returncode()
@@ -210,7 +210,7 @@ def test_stopped_gateway_stays_stopped_after_restart(restart_container: str) -> 
     # gateway's own state writes.
     write_state = (
         "import json, pathlib; "
-        "p = pathlib.Path('/opt/data/profiles/writer/gateway_state.json'); "
+        "p = pathlib.Path('/opt/data/agents/writer/gateway_state.json'); "
         "p.write_text(json.dumps({'gateway_state': 'stopped', 'timestamp': 1}))"
     )
     _exec(container, "python3", "-c", write_state, timeout=10).check_returncode()
@@ -242,7 +242,7 @@ def test_stale_gateway_pid_cleaned_up_on_restart(restart_container: str) -> None
     # reconciler walks this profile.
     stamp = (
         "import json, pathlib; "
-        "p = pathlib.Path('/opt/data/profiles/ghost'); "
+        "p = pathlib.Path('/opt/data/agents/ghost'); "
         "(p / 'gateway_state.json').write_text(json.dumps({'gateway_state': 'stopped', 'timestamp': 1})); "
         "(p / 'gateway.pid').write_text(json.dumps({'pid': 99999, 'host': 'old'})); "
         "(p / 'processes.json').write_text('[]')"
@@ -253,7 +253,7 @@ def test_stale_gateway_pid_cleaned_up_on_restart(restart_container: str) -> None
     _wait_for_reconcile_log_mention(container, "ghost", deadline_s=30.0)
 
     # Stale runtime files swept.
-    r = _sh(container, "test -f /opt/data/profiles/ghost/gateway.pid")
+    r = _sh(container, "test -f /opt/data/agents/ghost/gateway.pid")
     assert r.returncode != 0, "stale gateway.pid survived restart"
-    r = _sh(container, "test -f /opt/data/profiles/ghost/processes.json")
+    r = _sh(container, "test -f /opt/data/agents/ghost/processes.json")
     assert r.returncode != 0, "stale processes.json survived restart"

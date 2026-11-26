@@ -143,7 +143,7 @@ if [ "$needs_chown" = true ]; then
     # Intellect-owned subdirs: recursive chown is safe here because these are
     # created and managed exclusively by intellect (see the s6-setuidgid mkdir
     # -p block below for the canonical list).
-    for sub in cron sessions logs hooks memories skills skins plans workspace home profiles; do
+    for sub in cron sessions logs hooks memories skills skins plans workspace home agents profiles; do
         if [ -e "$INTELLECT_HOME/$sub" ]; then
             chown -R intellect:intellect "$INTELLECT_HOME/$sub" 2>/dev/null || \
                 echo "[stage2] Warning: chown $INTELLECT_HOME/$sub failed (rootless container?) — continuing"
@@ -164,16 +164,18 @@ if [ "$uid_was_remapped" = true ]; then
         echo "[stage2] Warning: chown of build trees failed (rootless container?) — continuing"
 fi
 
-# Always reset ownership of $INTELLECT_HOME/profiles to intellect on every
-# boot. Profile dirs and files can land owned by root when commands
-# are invoked via `docker exec <container> intellect …` (which defaults
-# to root unless `-u` is passed), and that breaks the cont-init
-# reconciler (02-reconcile-profiles) which runs as intellect and walks
-# the profiles dir. Idempotent; skipped on rootless containers where
-# chown would fail.
-if [ -d "$INTELLECT_HOME/profiles" ]; then
-    chown -R intellect:intellect "$INTELLECT_HOME/profiles" 2>/dev/null || true
-fi
+# Always reset ownership of the named-agent trees to intellect on every
+# boot. Agent dirs and files can land owned by root when commands are
+# invoked via `docker exec <container> intellect …` (which defaults to
+# root unless `-u` is passed), and that breaks the cont-init reconciler
+# (02-reconcile-profiles) which runs as intellect and walks both the
+# canonical agents/ tree and the legacy profiles/ tree. Idempotent;
+# skipped on rootless containers where chown would fail.
+for sub in agents profiles; do
+    if [ -d "$INTELLECT_HOME/$sub" ]; then
+        chown -R intellect:intellect "$INTELLECT_HOME/$sub" 2>/dev/null || true
+    fi
+done
 
 # --- config.yaml permissions ---
 # Ensure config.yaml is readable by the intellect runtime user even if it
@@ -200,7 +202,8 @@ s6-setuidgid intellect mkdir -p \
     "$INTELLECT_HOME/skins" \
     "$INTELLECT_HOME/plans" \
     "$INTELLECT_HOME/workspace" \
-    "$INTELLECT_HOME/home"
+    "$INTELLECT_HOME/home" \
+    "$INTELLECT_HOME/agents"
 
 # --- Install-method stamp (read by detect_install_method() in intellect status) ---
 # Preserved from the tini-era entrypoint (PR #27843). Must be written as
