@@ -14,6 +14,10 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def test_m1_cache_regression_clean():
+    try:
+        import intellect_rust  # noqa: F401
+    except ImportError:
+        pytest.skip("intellect_rust extension not built in this environment")
     script = REPO / "scripts" / "verify" / "cache_regression_m1.py"
     if not script.exists():
         pytest.skip("regression script missing")
@@ -25,10 +29,15 @@ def test_m1_cache_regression_clean():
         subprocess.run(
             [git, "rev-parse", "HEAD"], cwd=REPO, check=True, capture_output=True
         )
+        # The verifier needs this historical blob; shallow CI checkouts lack it.
+        subprocess.run(
+            [git, "cat-file", "-e", "8511c09:agent/agent_runtime_helpers.py"],
+            cwd=REPO, check=True, capture_output=True,
+        )
     except FileNotFoundError:
         pytest.skip("git binary unavailable in sanitized test env")
     except subprocess.CalledProcessError:
-        pytest.skip("git history unavailable (wheel install)")
+        pytest.skip("git history unavailable (shallow clone/wheel install)")
     proc = subprocess.run(
         [sys.executable, str(script)], cwd=REPO, capture_output=True,
         text=True, timeout=300,

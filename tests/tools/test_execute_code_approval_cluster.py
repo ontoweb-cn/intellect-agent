@@ -144,7 +144,7 @@ def _register_resolver(session_key: str, result):
 
 def test_guard_isolated_backend_approved():
     # Container backends already sandbox the child — no-op approve.
-    assert A.check_execute_code_guard("import os", "docker")["approved"] is True
+    assert A.check_execute_code_guard("print('ok')", "docker")["approved"] is True
 
 
 def test_guard_headless_local_approved(monkeypatch):
@@ -154,7 +154,7 @@ def test_guard_headless_local_approved(monkeypatch):
     monkeypatch.delenv("intellect_CRON_SESSION", raising=False)
     monkeypatch.delenv("intellect_EXEC_ASK", raising=False)
     monkeypatch.setattr(A, "_get_approval_mode", lambda: "manual")
-    assert A.check_execute_code_guard("import os", "local")["approved"] is True
+    assert A.check_execute_code_guard("print('ok')", "local")["approved"] is True
 
 
 def test_guard_cron_deny_blocks(monkeypatch):
@@ -162,14 +162,14 @@ def test_guard_cron_deny_blocks(monkeypatch):
     monkeypatch.delenv("intellect_GATEWAY_SESSION", raising=False)
     monkeypatch.setattr(A, "_get_approval_mode", lambda: "manual")
     monkeypatch.setattr(A, "_get_cron_approval_mode", lambda: "deny")
-    res = A.check_execute_code_guard("import os", "local")
+    res = A.check_execute_code_guard("print('ok')", "local")
     assert res["approved"] is False
     assert res["outcome"] == "blocked"
 
 
 def test_guard_gateway_user_approves_is_one_shot(gw_session):
     _register_resolver(gw_session, "once")
-    res = A.check_execute_code_guard("import os; print(1)", "local")
+    res = A.check_execute_code_guard("print('ok')", "local")
     assert res["approved"] is True
     assert res.get("user_approved") is True
     # One-shot: approval must NOT persist to future scripts.
@@ -178,7 +178,7 @@ def test_guard_gateway_user_approves_is_one_shot(gw_session):
 
 def test_guard_gateway_user_denies_blocks(gw_session):
     _register_resolver(gw_session, "deny")
-    res = A.check_execute_code_guard("import os", "local")
+    res = A.check_execute_code_guard("print('ok')", "local")
     assert res["approved"] is False
     assert res["outcome"] == "denied"
     assert res["user_consent"] is False
@@ -189,14 +189,14 @@ def test_guard_gateway_timeout_blocks(gw_session, monkeypatch):
     with A._lock:
         A._gateway_notify_cbs[gw_session] = lambda _d: None
     monkeypatch.setattr(A, "_get_approval_config", lambda: {"gateway_timeout": 0})
-    res = A.check_execute_code_guard("import os", "local")
+    res = A.check_execute_code_guard("print('ok')", "local")
     assert res["approved"] is False
     assert res["outcome"] == "timeout"
 
 
 def test_guard_gateway_missing_notify_is_pending(gw_session):
     # No notify callback registered → backward-compat pending approval.
-    res = A.check_execute_code_guard("import os", "local")
+    res = A.check_execute_code_guard("print('ok')", "local")
     assert res["approved"] is False
     assert res["status"] == "pending_approval"
 
@@ -205,17 +205,17 @@ def test_guard_smart_mode(gw_session, monkeypatch):
     monkeypatch.setattr(A, "_get_approval_mode", lambda: "smart")
 
     monkeypatch.setattr(A, "_smart_approve", lambda c, d: "approve")
-    res = A.check_execute_code_guard("import os", "local")
+    res = A.check_execute_code_guard("print('ok')", "local")
     assert res["approved"] is True and res.get("smart_approved") is True
 
     monkeypatch.setattr(A, "_smart_approve", lambda c, d: "deny")
-    res = A.check_execute_code_guard("import os", "local")
+    res = A.check_execute_code_guard("print('ok')", "local")
     assert res["approved"] is False and res.get("smart_denied") is True
 
     # escalate → falls through to manual gateway approval
     monkeypatch.setattr(A, "_smart_approve", lambda c, d: "escalate")
     _register_resolver(gw_session, "once")
-    res = A.check_execute_code_guard("import os", "local")
+    res = A.check_execute_code_guard("print('ok')", "local")
     assert res["approved"] is True
 
 
@@ -224,7 +224,7 @@ def test_guard_session_yolo_bypasses(gw_session):
     try:
         # Even with a denier registered, yolo short-circuits before the prompt.
         _register_resolver(gw_session, "deny")
-        assert A.check_execute_code_guard("import os", "local")["approved"] is True
+        assert A.check_execute_code_guard("print('ok')", "local")["approved"] is True
     finally:
         A.disable_session_yolo(gw_session)
 

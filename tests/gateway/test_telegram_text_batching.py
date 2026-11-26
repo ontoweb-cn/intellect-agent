@@ -150,6 +150,8 @@ class TestTextBatching:
                     chat_id="12345",
                     chat_type="dm",
                     thread_id=thread_id,
+                    user_id="user-1",
+                    user_id_alt="",
                 ),
                 group_sessions_per_user=True,
                 thread_sessions_per_user=False,

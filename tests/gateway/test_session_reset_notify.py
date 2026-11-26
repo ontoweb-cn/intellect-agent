@@ -139,6 +139,7 @@ class TestSessionEntryReason:
         # No tokens used — session was idle with no conversation
         entry1.updated_at = datetime.now() - timedelta(minutes=5)
         store._save()
+        store._flush()
 
         entry2 = store.get_or_create_session(source)
         assert entry2.was_auto_reset is True
@@ -157,6 +158,7 @@ class TestSessionEntryReason:
         entry1.total_tokens = 5000
         entry1.updated_at = datetime.now() - timedelta(minutes=5)
         store._save()
+        store._flush()
 
         entry2 = store.get_or_create_session(source)
         assert entry2.was_auto_reset is True
@@ -220,11 +222,13 @@ class TestSessionEntryAutoResetRoundtrip:
         entry = store.get_or_create_session(source)
         entry.updated_at = datetime.now() - timedelta(minutes=5)
         store._save()
+        store._flush()
 
         entry2 = store.get_or_create_session(source)
         assert entry2.was_auto_reset is True
         assert entry2.auto_reset_reason == "idle"
         assert entry2.session_id != entry.session_id
+        store._flush()
 
         # Simulate gateway restart: reload from disk
         store._loaded = False
@@ -248,9 +252,11 @@ class TestSessionEntryAutoResetRoundtrip:
         entry.total_tokens = 1000
         entry.updated_at = datetime.now() - timedelta(minutes=5)
         store._save()
+        store._flush()
 
         entry2 = store.get_or_create_session(source)
         assert entry2.reset_had_activity is True
+        store._flush()
 
         store._loaded = False
         store._entries.clear()
@@ -267,6 +273,7 @@ class TestSessionEntryAutoResetRoundtrip:
 
         entry = store.get_or_create_session(source)
         assert entry.was_auto_reset is False
+        store._flush()
 
         store._loaded = False
         store._entries.clear()

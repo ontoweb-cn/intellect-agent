@@ -14,6 +14,7 @@ import os
 import re
 import shlex
 import sqlite3
+import tempfile
 import time
 from collections import OrderedDict
 from contextvars import copy_context
@@ -32,6 +33,18 @@ from gateway.session import SessionSource, build_session_key
 from utils import is_truthy_value
 
 logger = logging.getLogger(__name__)
+
+
+def _expand_whatsapp_auth_aliases(identifier: str):
+    """Compatibility wrapper for the WhatsApp LID/phone alias expander."""
+    from gateway.whatsapp_identity import expand_whatsapp_aliases
+    return expand_whatsapp_aliases(identifier)
+
+
+def _normalize_whatsapp_identifier(identifier: str) -> str:
+    """Compatibility wrapper for WhatsApp JID normalization."""
+    from gateway.whatsapp_identity import normalize_whatsapp_identifier
+    return normalize_whatsapp_identifier(identifier)
 
 # Lazy accessors — avoid circular import while preserving test monkeypatch-ability
 # (no caching — each call reads the live value from run.py).

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import httpx
 import unittest
 from unittest.mock import patch
 
@@ -24,10 +25,27 @@ class TestClawHubSource(unittest.TestCase):
         self._policy_patcher = patch("tools.skills_hub.check_website_access", return_value=None)
         self._safe_patcher.start()
         self._policy_patcher.start()
+        import tools.safe_http as safe_http
+
+        class _SafeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def get(self, url, **kwargs):
+                return httpx.get(url, **kwargs)
+
+        self._guarded_patcher = patch.object(
+            safe_http, "safe_httpx_client", lambda **kwargs: _SafeClient()
+        )
+        self._guarded_patcher.start()
 
     def tearDown(self):
         self._policy_patcher.stop()
         self._safe_patcher.stop()
+        self._guarded_patcher.stop()
 
     @patch("tools.skills_hub._write_index_cache")
     @patch("tools.skills_hub._read_index_cache", return_value=None)

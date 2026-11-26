@@ -244,3 +244,17 @@ async def test_different_platform_bypasses_dedup(tmp_path, monkeypatch):
 
     assert "Restarting gateway" in result
     runner.request_restart.assert_called_once()
+
+@pytest.fixture(autouse=True)
+def _restart_home_isolation(monkeypatch, tmp_path):
+    """Restart helpers live in mixins with their own module globals."""
+    monkeypatch.setattr(
+        "gateway.command_handlers._intellect_home", tmp_path, raising=False
+    )
+    monkeypatch.setattr(
+        "gateway.infrastructure_handlers._intellect_home", tmp_path, raising=False
+    )
+    monkeypatch.setattr(
+        "gateway.infrastructure_handlers._get_intellect_home",
+        lambda: tmp_path,
+    )

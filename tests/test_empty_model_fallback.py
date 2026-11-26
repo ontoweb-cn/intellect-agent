@@ -49,6 +49,13 @@ class TestGatewayEmptyModelFallback:
                  "api_key": "test-key",
                  "base_url": "https://chatgpt.com/backend-api/codex",
                  "api_mode": "codex_responses",
+             }), \
+             patch("gateway.agent_runner._resolve_gateway_model", return_value=""), \
+             patch("gateway.agent_runner._resolve_runtime_agent_kwargs", return_value={
+                 "provider": "openai-codex",
+                 "api_key": "test-key",
+                 "base_url": "https://chatgpt.com/backend-api/codex",
+                 "api_mode": "codex_responses",
              }):
             model, kwargs = runner._resolve_session_agent_runtime()
 
@@ -70,6 +77,13 @@ class TestGatewayEmptyModelFallback:
                  "api_key": "test-key",
                  "base_url": "https://chatgpt.com/backend-api/codex",
                  "api_mode": "codex_responses",
+             }), \
+             patch("gateway.agent_runner._resolve_gateway_model", return_value="gpt-5.4"), \
+             patch("gateway.agent_runner._resolve_runtime_agent_kwargs", return_value={
+                 "provider": "openai-codex",
+                 "api_key": "test-key",
+                 "base_url": "https://chatgpt.com/backend-api/codex",
+                 "api_mode": "codex_responses",
              }):
             model, kwargs = runner._resolve_session_agent_runtime()
 
@@ -84,6 +98,13 @@ class TestGatewayEmptyModelFallback:
 
         with patch("gateway.run._resolve_gateway_model", return_value=""), \
              patch("gateway.run._resolve_runtime_agent_kwargs", return_value={
+                 "provider": "",
+                 "api_key": "test-key",
+                 "base_url": "https://example.com",
+                 "api_mode": "chat_completions",
+             }), \
+             patch("gateway.agent_runner._resolve_gateway_model", return_value=""), \
+             patch("gateway.agent_runner._resolve_runtime_agent_kwargs", return_value={
                  "provider": "",
                  "api_key": "test-key",
                  "base_url": "https://example.com",

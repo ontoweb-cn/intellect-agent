@@ -36,4 +36,6 @@ def jittered_backoff(
 
     Delegates to the Rust extension (mandatory since v0.6.2).
     """
+    # Rust takes u32; clamp invalid/non-positive attempts to the first retry.
+    attempt = max(1, int(attempt))
     return _rust_jittered_backoff(attempt, base_delay, max_delay, jitter_ratio)

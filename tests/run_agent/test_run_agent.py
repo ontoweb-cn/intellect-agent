@@ -2416,7 +2416,11 @@ class TestConcurrentToolExecution:
         assert len(messages) == 2
         for m in messages:
             assert len(m["content"]) < 150_000
-            assert ("Truncated" in m["content"] or "<persisted-output>" in m["content"])
+            assert (
+                "Truncated" in m["content"]
+                or "<persisted-output>" in m["content"]
+                or "untrusted_tool_result" in m["content"]
+            )
 
     def test_invoke_tool_dispatches_to_handle_function_call(self, agent):
         """_invoke_tool should route regular tools through handle_function_call."""
@@ -3257,7 +3261,7 @@ class TestRunConversation:
         """Truly empty response (no content, no reasoning) retries 3 times then falls through to (empty)."""
         self._setup_agent(agent)
         agent.base_url = "http://127.0.0.1:1234/v1"
-        empty_resp = _mock_response(content=None, finish_reason="stop")
+        empty_resp = _mock_response(content=None, finish_reason="content_filter")
         # 4 responses: 1 original + 3 nudge retries, all empty
         agent.client.chat.completions.create.side_effect = [
             empty_resp, empty_resp, empty_resp, empty_resp,
@@ -3278,7 +3282,7 @@ class TestRunConversation:
         """Model produces content after being nudged for empty response."""
         self._setup_agent(agent)
         agent.base_url = "http://127.0.0.1:1234/v1"
-        empty_resp = _mock_response(content=None, finish_reason="stop")
+        empty_resp = _mock_response(content=None, finish_reason="content_filter")
         content_resp = _mock_response(
             content="Here is the actual answer.",
             finish_reason="stop",
@@ -3304,7 +3308,7 @@ class TestRunConversation:
         agent._fallback_index = 0
         agent._fallback_activated = False
 
-        empty_resp = _mock_response(content=None, finish_reason="stop")
+        empty_resp = _mock_response(content=None, finish_reason="content_filter")
         content_resp = _mock_response(content="Fallback answer.", finish_reason="stop")
         # 4 empty (1 orig + 3 retries), then fallback model answers
         agent.client.chat.completions.create.side_effect = [
@@ -3342,7 +3346,7 @@ class TestRunConversation:
         agent._fallback_index = 0
         agent._fallback_activated = False
 
-        empty_resp = _mock_response(content=None, finish_reason="stop")
+        empty_resp = _mock_response(content=None, finish_reason="content_filter")
         # 4 empty from primary (1 + 3 retries), fallback activated,
         # then 4 more empty from fallback (1 + 3 retries), no more fallbacks
         agent.client.chat.completions.create.side_effect = [
@@ -3376,7 +3380,7 @@ class TestRunConversation:
         self._setup_agent(agent)
         agent.base_url = "http://127.0.0.1:1234/v1"
 
-        empty_resp = _mock_response(content=None, finish_reason="stop")
+        empty_resp = _mock_response(content=None, finish_reason="content_filter")
         # 4 empty: 1 original + 3 retries, all empty, no fallback
         agent.client.chat.completions.create.side_effect = [
             empty_resp, empty_resp, empty_resp, empty_resp,

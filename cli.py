@@ -1769,14 +1769,14 @@ def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, 
     return inner + 2
 
 
-def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list[str]:
+def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "", break_long_words: bool = False) -> list[str]:
     """Wrap text to fit inside a panel border."""
     wrapped = textwrap.wrap(
         text,
         width=max(8, width),
         replace_whitespace=False,
         drop_whitespace=False,
-        break_long_words=False,
+        break_long_words=break_long_words,
         break_on_hyphens=False,
         subsequent_indent=subsequent_indent,
     )
@@ -8348,6 +8348,56 @@ class IntellectCLI:
         _cmd_def = _resolve_cmd(_base_word)
         canonical = _cmd_def.name if _cmd_def else _base_word
 
+        # Prefix matching (exact match still wins): a unique shortest
+        # candidate resolves to the full command; a tie stays ambiguous.
+        # Candidates include built-ins and installed skill commands.
+        if _cmd_def is None and _base_word:
+            try:
+                from intellect_cli.commands.registry import COMMAND_REGISTRY
+                candidates = set()
+                for _c in COMMAND_REGISTRY:
+                    if _c.gateway_only:
+                        continue
+                    candidates.add(_c.name)
+                    # Very short aliases (e.g. "rev") are exact-use shortcuts;
+                    # letting them win prefix matching hijacks broader prefixes.
+                    candidates.update(
+                        str(a) for a in _c.aliases if len(str(a)) >= 4
+                    )
+                try:
+                    candidates |= {
+                        str(k).lstrip("/")
+                        for k in get_skill_commands()
+                    }
+                except Exception:
+                    pass
+                matches = sorted(
+                    name for name in candidates
+                    if name.startswith(_base_word)
+                )
+                if matches:
+                    shortest_len = min(len(name) for name in matches)
+                    shortest = [n for n in matches if len(n) == shortest_len]
+                    if len(shortest) == 1:
+                        expanded = shortest[0]
+                        rest = cmd_original.split(None, 1)
+                        cmd_original = "/" + expanded
+                        if len(rest) > 1:
+                            cmd_original += " " + rest[1]
+                        cmd_lower = cmd_original.lower()
+                        _base_word = expanded
+                        _cmd_def = _resolve_cmd(expanded)
+                        canonical = _cmd_def.name if _cmd_def else expanded
+                    else:
+                        options = ", ".join("/" + n for n in shortest[:6])
+                        _cprint(
+                            f"  {_DIM}Ambiguous command '/{_base_word}'. "
+                            f"Did you mean: {options}?{_RST}"
+                        )
+                        return True
+            except Exception:
+                logger.debug("CLI prefix resolution failed", exc_info=True)
+
         # A bare `/resume` prompt is one-shot: any command other than the
         # resume/sessions handlers (which manage the pending state themselves)
         # disarms it so a later number isn't swallowed as a stale selection.
@@ -11437,10 +11487,14 @@ class IntellectCLI:
             ))
 
         box_width = _panel_box_width(title, preview_lines)
+        _term_cols = shutil.get_terminal_size((100, 24)).columns
+        box_width = min(box_width, max(20, _term_cols - 2))
         inner_text_width = max(8, box_width - 2)
 
         # Pre-wrap the mandatory content — command + choices must always render.
-        cmd_wrapped = _wrap_panel_text(cmd_display, inner_text_width)
+        cmd_wrapped = _wrap_panel_text(
+            cmd_display, inner_text_width, break_long_words=True
+        )
 
         # (choice_index, wrapped_line) so we can re-apply selected styling below
         choice_wrapped: list[tuple[int, str]] = []

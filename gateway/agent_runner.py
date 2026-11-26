@@ -21,6 +21,23 @@ from gateway.helpers import _get_pending_sentinel
 
 # Lazy accessors — avoid circular import with gateway.run at module level
 # while preserving test monkeypatch-ability (no caching, reads live value).
+def _live_resolve_runtime_agent_kwargs():
+    """Resolve through the live callable, honoring test monkeypatches.
+
+    The mixin normally receives config_helpers._resolve_runtime_agent_kwargs
+    via run.py's bootstrap; tests may patch either run or this module.
+    """
+    import gateway.run as _run
+
+    local_fn = globals().get("_resolve_runtime_agent_kwargs")
+    if (
+        local_fn is not None
+        and getattr(local_fn, "__module__", "") != "gateway.config_helpers"
+    ):
+        return local_fn()
+    return _run._resolve_runtime_agent_kwargs()
+
+
 def _get_agent_cache_max_size():
     import gateway.run as _run
     return _run._AGENT_CACHE_MAX_SIZE
@@ -111,7 +128,7 @@ class GatewayAgentRunner:
                 list(self._session_model_overrides.keys())[:5] if self._session_model_overrides else "[]",
             )
 
-        runtime_kwargs = _resolve_runtime_agent_kwargs()
+        runtime_kwargs = _live_resolve_runtime_agent_kwargs()
         runtime_model = runtime_kwargs.pop("model", None)
         if runtime_model:
             logger.info(

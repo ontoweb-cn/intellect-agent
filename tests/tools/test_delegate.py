@@ -43,6 +43,7 @@ def _make_mock_parent(depth=0):
     parent.api_mode = "chat_completions"
     parent.model = "anthropic/claude-sonnet-4"
     parent.platform = "cli"
+    parent.session_id = "parent-session"
     parent.providers_allowed = None
     parent.providers_ignored = None
     parent.providers_order = None
@@ -1978,6 +1979,7 @@ class TestDispatchDelegateTask(unittest.TestCase):
             mock_child.session_prompt_tokens = 0
             mock_child.session_completion_tokens = 0
             mock_child.model = "test"
+            mock_child.session_id = "child-session"
             mock_build.return_value = mock_child
 
             delegate_task(

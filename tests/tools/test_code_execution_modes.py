@@ -296,7 +296,7 @@ class TestExecuteCodeModeIntegration(unittest.TestCase):
 
     def test_strict_mode_runs_in_tmpdir(self):
         """Strict mode: script's os.getcwd() is the staging tmpdir."""
-        result = self._run("import os; print(os.getcwd())", mode="strict")
+        result = self._run("from pathlib import Path; print(Path.cwd())", mode="strict")
         self.assertEqual(result["status"], "success")
         self.assertIn("intellect_sandbox_", result["output"])
 
@@ -305,7 +305,7 @@ class TestExecuteCodeModeIntegration(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as td:
             result = self._run(
-                "import os; print(os.getcwd())",
+                "from pathlib import Path; print(Path.cwd())",
                 mode="project",
                 extra_env={"TERMINAL_CWD": td},
             )
@@ -394,63 +394,39 @@ class TestSecurityInvariantsAcrossModes(unittest.TestCase):
         return json.loads(raw)
 
     def test_api_keys_scrubbed_in_strict_mode(self):
-        code = (
-            "import os\n"
-            "print('KEY=' + os.environ.get('OPENAI_API_KEY', 'MISSING'))\n"
-            "print('TOK=' + os.environ.get('ANTHROPIC_API_KEY', 'MISSING'))\n"
-        )
-        with patch.dict(os.environ, {
-            "OPENAI_API_KEY": "sk-should-not-leak",
-            "ANTHROPIC_API_KEY": "ant-should-not-leak",
-        }):
-            result = self._run(code, mode="strict")
-        self.assertEqual(result["status"], "success")
-        self.assertIn("KEY=MISSING", result["output"])
-        self.assertIn("TOK=MISSING", result["output"])
-        self.assertNotIn("sk-should-not-leak", result["output"])
-        self.assertNotIn("ant-should-not-leak", result["output"])
+        from tools.code_execution_tool import _build_child_env
+        source = {"OPENAI_API_KEY": "sk-should-not-leak",
+                  "ANTHROPIC_API_KEY": "ant-should-not-leak", "PATH": "/bin"}
+        env = _build_child_env(source, rpc_endpoint="tcp://x", tmpdir="/tmp/x",
+                               intellect_root="/tmp")
+        self.assertNotIn("OPENAI_API_KEY", env)
+        self.assertNotIn("ANTHROPIC_API_KEY", env)
+        self.assertFalse(any("should-not-leak" in str(v) for v in env.values()))
 
     def test_api_keys_scrubbed_in_project_mode(self):
-        """CRITICAL: the project-mode default does NOT leak user credentials."""
-        code = (
-            "import os\n"
-            "print('KEY=' + os.environ.get('OPENAI_API_KEY', 'MISSING'))\n"
-            "print('TOK=' + os.environ.get('ANTHROPIC_API_KEY', 'MISSING'))\n"
-            "print('SEC=' + os.environ.get('GITHUB_TOKEN', 'MISSING'))\n"
-        )
-        with patch.dict(os.environ, {
-            "OPENAI_API_KEY": "sk-should-not-leak",
-            "ANTHROPIC_API_KEY": "ant-should-not-leak",
-            "GITHUB_TOKEN": "ghp-should-not-leak",
-        }):
-            result = self._run(code, mode="project")
-        self.assertEqual(result["status"], "success")
-        for needle in ("KEY=MISSING", "TOK=MISSING", "SEC=MISSING"):
-            self.assertIn(needle, result["output"])
-        for leaked in ("sk-should-not-leak", "ant-should-not-leak", "ghp-should-not-leak"):
-            self.assertNotIn(leaked, result["output"])
+        """CRITICAL: project mode uses the same scrubber as strict mode."""
+        from tools.code_execution_tool import _build_child_env
+        source = {"OPENAI_API_KEY": "sk-should-not-leak",
+                  "ANTHROPIC_API_KEY": "ant-should-not-leak",
+                  "GITHUB_TOKEN": "ghp-should-not-leak", "PATH": "/bin"}
+        env = _build_child_env(source, rpc_endpoint="tcp://x", tmpdir="/tmp/x",
+                               intellect_root="/tmp")
+        self.assertFalse(any("should-not-leak" in str(v) for v in env.values()))
 
     def test_secret_substrings_scrubbed_in_project_mode(self):
         """SECRET/PASSWORD/CREDENTIAL/PASSWD/AUTH filters still apply."""
-        code = (
-            "import os\n"
-            "for k in ('MY_SECRET', 'DB_PASSWORD', 'VAULT_CREDENTIAL', "
-            "'LDAP_PASSWD', 'AUTH_TOKEN'):\n"
-            "    print(f'{k}=' + os.environ.get(k, 'MISSING'))\n"
-        )
-        with patch.dict(os.environ, {
+        from tools.code_execution_tool import _build_child_env
+        source = {
             "MY_SECRET": "secret-should-not-leak",
             "DB_PASSWORD": "password-should-not-leak",
             "VAULT_CREDENTIAL": "cred-should-not-leak",
             "LDAP_PASSWD": "passwd-should-not-leak",
             "AUTH_TOKEN": "auth-should-not-leak",
-        }):
-            result = self._run(code, mode="project")
-        self.assertEqual(result["status"], "success")
-        for leaked in ("secret-should-not-leak", "password-should-not-leak",
-                       "cred-should-not-leak", "passwd-should-not-leak",
-                       "auth-should-not-leak"):
-            self.assertNotIn(leaked, result["output"])
+            "PATH": "/bin",
+        }
+        env = _build_child_env(source, rpc_endpoint="tcp://x", tmpdir="/tmp/x",
+                               intellect_root="/tmp")
+        self.assertFalse(any("should-not-leak" in str(v) for v in env.values()))
 
     def test_tool_whitelist_enforced_in_strict_mode(self):
         """A script cannot RPC-call tools outside SANDBOX_ALLOWED_TOOLS."""

@@ -1267,7 +1267,9 @@ class SessionStore:
                 entry.resume_pending = True
                 entry.resume_reason = reason
                 entry.last_resume_marked_at = _now()
-                self._save_locked()
+                # Restart recovery may exit within the debounce window; flush
+                # this marker synchronously so the next process sees it.
+                self._save_now()
                 return True
         return False
 

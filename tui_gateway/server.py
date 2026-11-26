@@ -6575,12 +6575,19 @@ def _normalize_cdp_url(parsed) -> str:
 
 
 def _failure_messages(url: str, port: int, system: str) -> list[str]:
-    from intellect_cli.browser_connect import manual_chrome_debug_command
+    from intellect_cli.browser_connect import (
+        get_chrome_debug_candidates,
+        manual_chrome_debug_command,
+    )
 
+    try:
+        candidates = get_chrome_debug_candidates()
+    except Exception:
+        candidates = []
     command = manual_chrome_debug_command(port, system)
     hint = (
         ["Start a Chromium-family browser with remote debugging, then retry /browser connect:", command]
-        if command
+        if command and candidates
         else [
             "No supported Chromium-family browser executable was found in this environment.",
             f"Install one or start a Chromium-family browser with --remote-debugging-port={port}, then retry /browser connect.",

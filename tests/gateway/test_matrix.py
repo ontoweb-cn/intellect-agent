@@ -2367,7 +2367,7 @@ class TestMatrixClockSkewWarning:
         # Server events are dated 2h before startup_ts (skewed clock).
         skewed_event_ts_ms = int((self.adapter._startup_ts - 7200) * 1000)
 
-        with caplog.at_level(logging.WARNING, logger="gateway.platforms.matrix"):
+        with caplog.at_level(logging.WARNING, logger="plugins.platforms.matrix.adapter"):
             for i in range(5):
                 ev = self._mk_event(
                     sender=f"@alice{i}:example.org", ts_ms=skewed_event_ts_ms
@@ -2381,7 +2381,7 @@ class TestMatrixClockSkewWarning:
         # assertion.
         skew_warnings = [
             r for r in caplog.records
-            if r.name == "gateway.platforms.matrix"
+            if r.name == "plugins.platforms.matrix.adapter"
             and r.levelname == "WARNING"
             and "set-ntp" in r.getMessage()
         ]
@@ -2406,7 +2406,7 @@ class TestMatrixClockSkewWarning:
         self.adapter._startup_ts = now - 1
         old_ts_ms = int((self.adapter._startup_ts - 3600) * 1000)
 
-        with caplog.at_level(logging.WARNING, logger="gateway.platforms.matrix"):
+        with caplog.at_level(logging.WARNING, logger="plugins.platforms.matrix.adapter"):
             for i in range(5):
                 ev = self._mk_event(
                     sender=f"@alice{i}:example.org", ts_ms=old_ts_ms
@@ -2417,7 +2417,7 @@ class TestMatrixClockSkewWarning:
         assert self.adapter._clock_skew_warned is False
         skew_warnings = [
             r for r in caplog.records
-            if r.name == "gateway.platforms.matrix"
+            if r.name == "plugins.platforms.matrix.adapter"
             and "set-ntp" in r.getMessage()
         ]
         assert skew_warnings == []
@@ -2432,7 +2432,7 @@ class TestMatrixClockSkewWarning:
         self.adapter._startup_ts = now - 120  # extra slack vs the 30s gate
         old_ts_ms = int((self.adapter._startup_ts - 3600) * 1000)
 
-        with caplog.at_level(logging.WARNING, logger="gateway.platforms.matrix"):
+        with caplog.at_level(logging.WARNING, logger="plugins.platforms.matrix.adapter"):
             for i in range(2):  # only 2 late drops — under the threshold
                 ev = self._mk_event(
                     sender=f"@alice{i}:example.org", ts_ms=old_ts_ms
@@ -2458,7 +2458,7 @@ class TestMatrixClockSkewWarning:
         self.adapter._startup_ts = now - 120
         # Each event has a different age, ranging from 1h to 30d ago.
         ages_in_hours = [1, 24, 168, 720, 4]  # 1h, 1d, 1w, 30d, 4h
-        with caplog.at_level(logging.WARNING, logger="gateway.platforms.matrix"):
+        with caplog.at_level(logging.WARNING, logger="plugins.platforms.matrix.adapter"):
             for i, hrs in enumerate(ages_in_hours):
                 ts_ms = int((self.adapter._startup_ts - hrs * 3600) * 1000)
                 ev = self._mk_event(
@@ -2471,7 +2471,7 @@ class TestMatrixClockSkewWarning:
         assert self.adapter._clock_skew_warned is False
         skew_warnings = [
             r for r in caplog.records
-            if r.name == "gateway.platforms.matrix"
+            if r.name == "plugins.platforms.matrix.adapter"
             and "set-ntp" in r.getMessage()
         ]
         assert skew_warnings == []
@@ -2495,7 +2495,7 @@ class TestMatrixClockSkewWarning:
         self.adapter._startup_ts = now - 60
         skewed_ms = int((self.adapter._startup_ts - 7200) * 1000)
 
-        with caplog.at_level(logging.WARNING, logger="gateway.platforms.matrix"):
+        with caplog.at_level(logging.WARNING, logger="plugins.platforms.matrix.adapter"):
             for i in range(3):
                 ev = self._mk_event(
                     sender=f"@alice{i}:example.org", ts_ms=skewed_ms,
@@ -2521,7 +2521,7 @@ class TestMatrixClockSkewWarning:
 
         skew_warnings = [
             r for r in caplog.records
-            if r.name == "gateway.platforms.matrix"
+            if r.name == "plugins.platforms.matrix.adapter"
             and "set-ntp" in r.getMessage()
         ]
         assert len(skew_warnings) == 2, (

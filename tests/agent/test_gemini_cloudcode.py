@@ -32,6 +32,8 @@ def _isolate_env(monkeypatch, tmp_path):
     home.mkdir(parents=True)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("INTELLECT_HOME", str(home))
+    # Gemini credential tests exercise the legacy 0o600 disk mirror; enable it.
+    monkeypatch.setenv("INTELLECT_OAUTH_WRITE_AUTH_JSON", "1")
     for key in (
         "intellect_GEMINI_CLIENT_ID",
         "intellect_GEMINI_CLIENT_SECRET",

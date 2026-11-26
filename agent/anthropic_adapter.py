@@ -474,7 +474,8 @@ def _is_deepseek_anthropic_endpoint(base_url: str | None) -> bool:
     if not normalized:
         return False
     parsed = urlparse(normalized)
-    return (parsed.path or "").rstrip("/").lower() == "/anthropic"
+    path = (parsed.path or "").rstrip("/").lower()
+    return path == "/anthropic" or path.startswith("/anthropic/")
 
 
 def _requires_bearer_auth(base_url: str | None) -> bool:

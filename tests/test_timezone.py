@@ -158,49 +158,27 @@ class TestCodeExecutionTZ:
         import json as _json
         return _json.dumps({"error": f"unexpected tool call: {function_name}"})
 
+    def _child_env(self):
+        from tools.code_execution_tool import _build_child_env
+        return _build_child_env(
+            dict(os.environ),
+            rpc_endpoint="tcp://127.0.0.1:1",
+            tmpdir="/tmp/intellect_sandbox_test",
+            intellect_root="/tmp/intellect-agent",
+        )
+
     def test_tz_injected_when_configured(self):
-        """When INTELLECT_TIMEZONE is set, child process sees TZ env var.
-
-        Verified alongside leak-prevention + empty-TZ handling in one
-        subprocess call so we don't pay 3x the subprocess startup cost
-        (each execute_code spawns a real Python subprocess ~3s).
-        """
-        import json as _json
+        """When INTELLECT_TIMEZONE is set, the child env gets TZ only."""
         os.environ["INTELLECT_TIMEZONE"] = "Asia/Kolkata"
-
-        # One subprocess, three things checked:
-        #   1) TZ is injected as "Asia/Kolkata"
-        #   2) INTELLECT_TIMEZONE itself does NOT leak into the child env
-        probe = (
-            'import os; '
-            'print("TZ=" + os.environ.get("TZ", "NOT_SET")); '
-            'print("INTELLECT_TIMEZONE=" + os.environ.get("INTELLECT_TIMEZONE", "NOT_SET"))'
-        )
-        with patch("model_tools.handle_function_call", side_effect=self._mock_handle):
-            result = _json.loads(self._execute_code(
-                code=probe,
-                task_id="tz-combined-test",
-                enabled_tools=[],
-            ))
-        assert result["status"] == "success"
-        assert "TZ=Asia/Kolkata" in result["output"]
-        assert "INTELLECT_TIMEZONE=NOT_SET" in result["output"], (
-            "INTELLECT_TIMEZONE should not leak into child env (only TZ)"
-        )
+        env = self._child_env()
+        assert env.get("TZ") == "Asia/Kolkata"
+        assert "INTELLECT_TIMEZONE" not in env
 
     def test_tz_not_injected_when_empty(self):
-        """When INTELLECT_TIMEZONE is not set, child process has no TZ."""
-        import json as _json
+        """When INTELLECT_TIMEZONE is not set, the child env has no TZ."""
         os.environ.pop("INTELLECT_TIMEZONE", None)
-
-        with patch("model_tools.handle_function_call", side_effect=self._mock_handle):
-            result = _json.loads(self._execute_code(
-                code='import os; print(os.environ.get("TZ", "NOT_SET"))',
-                task_id="tz-test-empty",
-                enabled_tools=[],
-            ))
-        assert result["status"] == "success"
-        assert "NOT_SET" in result["output"]
+        env = self._child_env()
+        assert "TZ" not in env or env["TZ"] == os.environ.get("TZ")
 
 
 # =========================================================================

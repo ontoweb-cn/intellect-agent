@@ -9,6 +9,11 @@ import pytest
 
 from intellect_state import SessionDB
 
+pytest.importorskip(
+    "agent.storage.migrate_sqlite_to_pg",
+    reason="SQLite→PG migration modules were removed with the single-user storage refactor",
+)
+
 
 @pytest.fixture()
 def sqlite_state_db(tmp_path):

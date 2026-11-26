@@ -81,7 +81,7 @@ class TestSourceLinesAreClamped:
             return f.read()
 
     def test_gateway_run_clamped(self):
-        src = self._read_file("gateway/run.py")
+        src = self._read_file("gateway/command_handlers.py")
         # Check that the stats handler has min(100, ...)
         assert "min(100, ctx.last_prompt_tokens" in src, (
             "gateway/run.py stats pct is not clamped with min(100, ...)"

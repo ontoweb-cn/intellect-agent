@@ -18,6 +18,7 @@ re-exports from ``run_agent`` remain in place so existing imports
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -39,9 +40,12 @@ def _sanitize_surrogates(text: str) -> str:
     """Replace lone surrogate code points with U+FFFD (replacement character).
 
     Surrogates are invalid in UTF-8 and will crash ``json.dumps()`` inside the
-    OpenAI SDK.  Delegates to the Rust extension (mandatory since v0.6.2).
-    This is a fast no-op when the text contains no surrogates.
+    OpenAI SDK.  PyO3 cannot convert a Python str containing lone surrogates
+    to Rust ``&str`` (UnicodeEncodeError), so handle dirty strings in Python
+    before delegating clean strings to the Rust extension.
     """
+    if _SURROGATE_RE.search(text):
+        return _SURROGATE_RE.sub('\ufffd', text)
     return _rs_sanitize_surrogates(text)
 
 
@@ -154,15 +158,63 @@ def _escape_invalid_chars_in_json_strings(raw: str) -> str:
     return _rs_escape_json_chars(raw)
 
 
+def _python_repair_tool_args(raw_args: str) -> str:
+    """Fallback repair when the Rust path cannot recover the payload."""
+    if not isinstance(raw_args, str):
+        raw_args = "" if raw_args is None else str(raw_args)
+    text = raw_args.strip()
+    if not text or text.lower() == "none":
+        return "{}"
+    # Escape control characters inside JSON strings, then strip trailing
+    # commas and close unclosed containers (old Python pipeline).
+    out = []
+    in_string = False
+    escaping = False
+    for ch in text:
+        if escaping:
+            out.append(ch)
+            escaping = False
+            continue
+        if ch == '"':
+            in_string = not in_string
+            out.append(ch)
+        elif ch == "\\" and in_string:
+            out.append(ch)
+            escaping = True
+        elif in_string and ord(ch) < 0x20:
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    fixed = "".join(out)
+    while True:
+        cleaned = re.sub(r',\s*([}\]])', r'\1', fixed)
+        if cleaned == fixed:
+            break
+        fixed = cleaned
+    opens = fixed.count("{") - fixed.count("}")
+    brackets = fixed.count("[") - fixed.count("]")
+    fixed += "]" * max(0, brackets) + "}" * max(0, opens)
+    try:
+        return json.dumps(json.loads(fixed), ensure_ascii=False)
+    except Exception:
+        return "{}"
+
+
 def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
     """Attempt to repair malformed tool_call argument JSON.
 
-    Delegates to the Rust extension (mandatory since v0.6.2). The Rust
-    implementation handles: empty/None, strict=False pass, trailing comma
-    stripping, unclosed brace/bracket repair, excess closer removal,
-    control char escaping, and a final ``"{}"`` fallback.
+    Delegates to the Rust extension; falls back to the Python pipeline when
+    the payload mixes control characters with other malformed syntax (the
+    Rust pass only retries a subset of combinations).
     """
-    return _rs_repair_tool_args(raw_args, tool_name)
+    if raw_args is None or not isinstance(raw_args, str):
+        return "{}"
+    result = _rs_repair_tool_args(raw_args, tool_name)
+    if result == "{}" and raw_args.strip() and raw_args.strip().lower() != "none":
+        fallback = _python_repair_tool_args(raw_args)
+        if fallback != "{}":
+            return fallback
+    return result
 
 
 def _strip_non_ascii(text: str) -> str:

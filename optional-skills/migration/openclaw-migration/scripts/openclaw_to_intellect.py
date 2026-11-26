@@ -405,9 +405,9 @@ def backup_existing(path: Path, backup_root: Path) -> Optional[Path]:
 # like ``openclaw`` → ``intellect`` (so filesystem paths like ``~/.openclaw``
 # become ``~/.intellect`` — the real Intellect home — not the broken ``~/.intellect``).
 _REBRAND_PATTERNS: List[Tuple[re.Pattern, str]] = [
-    (re.compile(r'\bOpen[\s-]?Claw\b', re.IGNORECASE), 'intellect'),
-    (re.compile(r'\bClawdBot\b', re.IGNORECASE), 'intellect'),
-    (re.compile(r'\bMoltBot\b', re.IGNORECASE), 'intellect'),
+    (re.compile(r'\bOpen[\s-]?Claw\b', re.IGNORECASE), 'Intellect'),
+    (re.compile(r'\bClawdBot\b', re.IGNORECASE), 'Intellect'),
+    (re.compile(r'\bMoltBot\b', re.IGNORECASE), 'Intellect'),
 ]
 
 

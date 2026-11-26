@@ -41,6 +41,7 @@ def _make_cli_stub():
         enabled_toolsets=[],
         _pending_title=None,
         _session_db=None,
+        _COMMAND_DISPATCH=IntellectCLI._COMMAND_DISPATCH,
     )
     # Bind the methods we need under test.
     self_._split_destructive_skip = IntellectCLI._split_destructive_skip
@@ -109,6 +110,7 @@ def test_new_without_skip_token_still_consults_modal():
         enabled_toolsets=[],
         _pending_title=None,
         _session_db=None,
+        _COMMAND_DISPATCH=IntellectCLI._COMMAND_DISPATCH,
     )
     self_._split_destructive_skip = IntellectCLI._split_destructive_skip
     self_._normalize_slash_confirm_choice = IntellectCLI._normalize_slash_confirm_choice.__get__(

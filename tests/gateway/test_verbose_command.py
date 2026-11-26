@@ -4,11 +4,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import yaml
+from pathlib import Path
 
 import gateway.run as gateway_run
 from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
+
+
+@pytest.fixture(autouse=True)
+def _patch_verbose_home(monkeypatch):
+    """The handler lives in command_handlers; patch its globals."""
+    monkeypatch.setattr(
+        "gateway.command_handlers._intellect_home", Path("__unset__"), raising=False
+    )
 
 
 def _make_event(text="/verbose", platform=Platform.TELEGRAM, user_id="12345", chat_id="67890"):
@@ -52,7 +61,11 @@ class TestVerboseCommand:
         config_path = intellect_home / "config.yaml"
         config_path.write_text("display:\n  tool_progress: all\n", encoding="utf-8")
 
-        monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
+        monkeypatch.setattr(
+            "gateway.command_handlers._load_gateway_config",
+            lambda: yaml.safe_load(config_path.read_text(encoding="utf-8")),
+        )
 
         runner = _make_runner()
         result = await runner._handle_verbose_command(_make_event())
@@ -71,7 +84,11 @@ class TestVerboseCommand:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
+        monkeypatch.setattr(
+            "gateway.command_handlers._load_gateway_config",
+            lambda: yaml.safe_load(config_path.read_text(encoding="utf-8")),
+        )
 
         runner = _make_runner()
         result = await runner._handle_verbose_command(_make_event())
@@ -95,7 +112,11 @@ class TestVerboseCommand:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
+        monkeypatch.setattr(
+            "gateway.command_handlers._load_gateway_config",
+            lambda: yaml.safe_load(config_path.read_text(encoding="utf-8")),
+        )
 
         runner = _make_runner()
         result = await runner._handle_verbose_command(_make_event())
@@ -114,7 +135,11 @@ class TestVerboseCommand:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
+        monkeypatch.setattr(
+            "gateway.command_handlers._load_gateway_config",
+            lambda: yaml.safe_load(config_path.read_text(encoding="utf-8")),
+        )
         runner = _make_runner()
 
         # off -> new -> all -> verbose -> off
@@ -143,7 +168,11 @@ class TestVerboseCommand:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
+        monkeypatch.setattr(
+            "gateway.command_handlers._load_gateway_config",
+            lambda: yaml.safe_load(config_path.read_text(encoding="utf-8")),
+        )
 
         runner = _make_runner()
         result = await runner._handle_verbose_command(_make_event())
@@ -170,7 +199,11 @@ class TestVerboseCommand:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
+        monkeypatch.setattr(
+            "gateway.command_handlers._load_gateway_config",
+            lambda: yaml.safe_load(config_path.read_text(encoding="utf-8")),
+        )
         runner = _make_runner()
 
         # Cycle on Telegram
@@ -196,7 +229,11 @@ class TestVerboseCommand:
         intellect_home.mkdir()
         # No config.yaml
 
-        monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
+        monkeypatch.setattr(
+            "gateway.command_handlers._load_gateway_config",
+            lambda: yaml.safe_load(config_path.read_text(encoding="utf-8")),
+        )
 
         runner = _make_runner()
         result = await runner._handle_verbose_command(_make_event())

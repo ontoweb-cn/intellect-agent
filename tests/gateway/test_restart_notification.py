@@ -138,7 +138,9 @@ async def test_restart_command_uses_atomic_json_writes_for_marker_files(tmp_path
     def _fake_atomic_json_write(path, payload, **kwargs):
         calls.append((Path(path).name, payload, kwargs))
 
-    monkeypatch.setattr(gateway_run, "atomic_json_write", _fake_atomic_json_write)
+    monkeypatch.setattr(
+        "gateway.command_handlers.atomic_json_write", _fake_atomic_json_write
+    )
 
     runner, _adapter = make_restart_runner()
     runner.request_restart = MagicMock(return_value=True)
@@ -169,7 +171,7 @@ async def test_sethome_updates_running_config_for_same_process_restart(tmp_path,
     def _fake_save_env_value(key, value):
         saved[key] = value
 
-    monkeypatch.setattr("hermes_cli.config.save_env_value", _fake_save_env_value)
+    monkeypatch.setattr("intellect_cli.config.save_env_value", _fake_save_env_value)
 
     runner, _adapter = make_restart_runner()
     source = make_restart_source(chat_id="home-42")
@@ -201,7 +203,7 @@ async def test_sethome_preserves_thread_target_for_same_process_restart(tmp_path
     def _fake_save_env_value(key, value):
         saved[key] = value
 
-    monkeypatch.setattr("hermes_cli.config.save_env_value", _fake_save_env_value)
+    monkeypatch.setattr("intellect_cli.config.save_env_value", _fake_save_env_value)
 
     runner, _adapter = make_restart_runner()
     source = make_restart_source(chat_id="parent-42", thread_id="topic-7")
@@ -244,7 +246,7 @@ async def test_send_home_channel_startup_notification_to_configured_home(tmp_pat
     assert delivered == {("telegram", "home-42", None)}
     adapter.send.assert_called_once_with(
         "home-42",
-        "♻️ Gateway online — Hermes is back and ready.",
+        "♻️ Gateway online — Intellect is back and ready.",
     )
 
 
@@ -278,7 +280,7 @@ async def test_send_home_channel_startup_notification_preserves_thread_metadata(
     assert delivered == {("telegram", "parent-42", "777")}
     adapter.send.assert_called_once_with(
         "parent-42",
-        "♻️ Gateway online — Hermes is back and ready.",
+        "♻️ Gateway online — Intellect is back and ready.",
         metadata={
             "thread_id": "777",
             "telegram_dm_topic_reply_fallback": True,
@@ -489,7 +491,7 @@ async def test_send_restart_notification_logs_warning_on_sendresult_failure(
         return_value=SendResult(success=False, error="Chat not found"),
     )
 
-    with caplog.at_level("DEBUG", logger="gateway.run"):
+    with caplog.at_level("DEBUG", logger="gateway.infrastructure_handlers"):
         delivered_target = await runner._send_restart_notification()
 
     success_lines = [
@@ -609,7 +611,7 @@ async def test_send_restart_notification_logs_info_on_sendresult_success(
     runner, adapter = make_restart_runner()
     adapter.send = AsyncMock(return_value=SendResult(success=True, message_id="m-1"))
 
-    with caplog.at_level("DEBUG", logger="gateway.run"):
+    with caplog.at_level("DEBUG", logger="gateway.infrastructure_handlers"):
         delivered_target = await runner._send_restart_notification()
 
     success_lines = [
@@ -641,4 +643,18 @@ async def test_shutdown_notifications_use_cached_live_thread_source_when_origin_
         "parent-42",
         "⚠️ Gateway shutting down — Your current task will be interrupted.",
         metadata={"thread_id": "topic-7"},
+    )
+
+@pytest.fixture(autouse=True)
+def _restart_home_isolation(monkeypatch, tmp_path):
+    """Restart helpers live in mixins with their own module globals."""
+    monkeypatch.setattr(
+        "gateway.command_handlers._intellect_home", tmp_path, raising=False
+    )
+    monkeypatch.setattr(
+        "gateway.infrastructure_handlers._intellect_home", tmp_path, raising=False
+    )
+    monkeypatch.setattr(
+        "gateway.infrastructure_handlers._get_intellect_home",
+        lambda: tmp_path,
     )

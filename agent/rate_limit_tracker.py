@@ -192,7 +192,7 @@ def format_rate_limit_display(state: RateLimitState) -> str:
     else:
         freshness = f"{_fmt_seconds(age)} ago"
 
-    provider_label = state.provider.title() if state.provider else "Provider"
+    provider_label = {"ontoweb": "OntoWeb"}.get(state.provider, state.provider.title()) if state.provider else "Provider"
 
     lines = [
         f"{provider_label} Rate Limits (captured {freshness}):",

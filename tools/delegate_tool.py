@@ -1644,7 +1644,14 @@ def _run_single_child(
                 "tool_count": 0,
                 "agent": child,
                 "accepting_steer": True,
-                "live_transcript": getattr(child, "_live_transcript_path", None),
+                "live_transcript": (
+                _live_transcript
+                if isinstance(
+                    (_live_transcript := getattr(child, "_live_transcript_path", None)),
+                    str,
+                )
+                else None
+            ),
             }
         )
 
@@ -1784,7 +1791,11 @@ def _run_single_child(
                 "exit_reason": "timeout" if is_timeout else "error",
                 "api_calls": child_api_calls,
                 "duration_seconds": duration,
-                "_child_role": getattr(child, "_delegate_role", None),
+                "_child_role": (
+                _child_role
+                if isinstance((_child_role := getattr(child, "_delegate_role", None)), str)
+                else None
+            ),
                 "diagnostic_path": diagnostic_path,
             }
         finally:
@@ -2632,6 +2643,7 @@ def _delegate_task_execute(
             "total_duration_seconds": total_duration,
         },
         ensure_ascii=False,
+        default=str,
     )
 
 

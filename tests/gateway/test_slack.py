@@ -1983,6 +1983,7 @@ class TestThreadReplyHandling:
         store._ensure_loaded = MagicMock()
         store.config = MagicMock()
         store.config.group_sessions_per_user = True
+        store.config.thread_sessions_per_user = True
         return store
 
     @pytest.fixture()

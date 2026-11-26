@@ -13,6 +13,9 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+# Script directory is sys.path[0]; add repo root so agent.* / intellect_rust resolve.
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 MAIN_COMMIT = "8511c09"
 OLD_PATH = "agent/agent_runtime_helpers.py"
 

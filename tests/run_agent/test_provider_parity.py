@@ -158,6 +158,7 @@ class TestBuildApiKwargsOpenRouter:
         assert "codex_reasoning_items" in messages[1]
 
     def test_gemini_native_passes_base_url_for_top_level_thinking_config(self, monkeypatch):
+        monkeypatch.setattr("agent.model_metadata._query_ollama_api_show", lambda *a, **k: None)
         agent = _make_agent(
             monkeypatch,
             "gemini",
@@ -173,6 +174,7 @@ class TestBuildApiKwargsOpenRouter:
         assert "extra_body" not in kwargs["extra_body"]
 
     def test_gemini_openai_compat_passes_base_url_for_nested_google_thinking_config(self, monkeypatch):
+        monkeypatch.setattr("agent.model_metadata._query_ollama_api_show", lambda *a, **k: None)
         agent = _make_agent(
             monkeypatch,
             "gemini",
@@ -932,7 +934,7 @@ class TestAuxiliaryClientProviderPriority:
         from agent.auxiliary_client import get_text_auxiliary_client
         with patch("agent.auxiliary_client.OpenAI") as mock:
             client, model = get_text_auxiliary_client()
-        assert model == "google/gemini-3-flash-preview"
+        assert model == "google/gemini-3.5-flash"
         assert "openrouter" in str(mock.call_args.kwargs["base_url"]).lower()
 
     def test_nous_when_no_openrouter(self, monkeypatch):
@@ -946,7 +948,7 @@ class TestAuxiliaryClientProviderPriority:
              patch("agent.auxiliary_client.OpenAI") as mock, \
              patch("intellect_cli.models.get_ontoweb_recommended_aux_model", return_value=None):
             client, model = get_text_auxiliary_client()
-        assert model == "google/gemini-3-flash-preview"
+        assert model == "google/gemini-3.5-flash"
 
     def test_custom_endpoint_when_no_nous(self, monkeypatch):
         """Custom endpoint is used when no OpenRouter/OntoWeb keys are available.

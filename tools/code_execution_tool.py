@@ -1056,6 +1056,34 @@ def _execute_remote(
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def _build_child_env(
+    source_env,
+    *,
+    rpc_endpoint: str,
+    tmpdir: str,
+    intellect_root: str,
+    profile_home: str | None = None,
+) -> dict:
+    """Build the sandbox child env (pure helper, testable without spawning)."""
+    env = _scrub_child_env(source_env)
+    env["intellect_RPC_SOCKET"] = rpc_endpoint
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    existing_pp = env.get("PYTHONPATH", "")
+    pp_parts = [tmpdir, intellect_root]
+    if existing_pp:
+        pp_parts.append(existing_pp)
+    env["PYTHONPATH"] = os.pathsep.join(pp_parts)
+    tz_name = str(source_env.get("INTELLECT_TIMEZONE", "") or "").strip()
+    if tz_name:
+        env["TZ"] = tz_name
+    env.pop("INTELLECT_TIMEZONE", None)
+    if profile_home:
+        env["HOME"] = profile_home
+    return env
+
+
 def execute_code(
     code: str,
     task_id: Optional[str] = None,
@@ -1213,53 +1241,15 @@ def execute_code(
         # OS-essential allowlist (SYSTEMROOT, WINDIR, COMSPEC, ...) is also
         # passed through — without those, the child can't create a socket
         # or spawn a subprocess.  See ``_scrub_child_env`` for the rules.
-        child_env = _scrub_child_env(os.environ)
-        child_env["intellect_RPC_SOCKET"] = rpc_endpoint
-        child_env["PYTHONDONTWRITEBYTECODE"] = "1"
-        # Force UTF-8 for the child's stdio and default file encoding.
-        #
-        # Without this, on Windows sys.stdout is bound to the console code
-        # page (cp1252 on US-locale installs), and any script that does
-        # ``print("café")`` or ``print("→")`` crashes with:
-        #
-        #   UnicodeEncodeError: 'charmap' codec can't encode character
-        #   '\u2192' in position N: character maps to <undefined>
-        #
-        # PYTHONIOENCODING fixes sys.stdin/stdout/stderr.
-        # PYTHONUTF8=1 enables "UTF-8 mode" (PEP 540) which additionally
-        # makes ``open()``'s default encoding UTF-8, so user scripts that
-        # write files without specifying encoding= also work correctly.
-        #
-        # On POSIX both values usually match the locale default already,
-        # so setting them is harmless belt-and-suspenders for environments
-        # with a C/POSIX locale (containers, minimal base images).
-        child_env["PYTHONIOENCODING"] = "utf-8"
-        child_env["PYTHONUTF8"] = "1"
-        # Ensure the intellect-agent root is importable in the sandbox so
-        # repo-root modules are available to child scripts.  We also prepend
-        # the staging tmpdir so ``from intellect_tools import ...`` resolves even
-        # when the subprocess CWD is not tmpdir (project mode).
-        _intellect_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        _existing_pp = child_env.get("PYTHONPATH", "")
-        _pp_parts = [tmpdir, _intellect_root]
-        if _existing_pp:
-            _pp_parts.append(_existing_pp)
-        child_env["PYTHONPATH"] = os.pathsep.join(_pp_parts)
-        # Inject user's configured timezone so datetime.now() in sandboxed
-        # code reflects the correct wall-clock time.  Only TZ is set —
-        # INTELLECT_TIMEZONE is an internal Intellect setting and must not leak
-        # into child processes.
-        _tz_name = os.getenv("INTELLECT_TIMEZONE", "").strip()
-        if _tz_name:
-            child_env["TZ"] = _tz_name
-        child_env.pop("INTELLECT_TIMEZONE", None)
+        from intellect_constants import get_subprocess_home as _get_subprocess_home
 
-        # Per-profile HOME isolation: redirect system tool configs into
-        # {INTELLECT_HOME}/home/ when that directory exists.
-        from intellect_constants import get_subprocess_home
-        _profile_home = get_subprocess_home()
-        if _profile_home:
-            child_env["HOME"] = _profile_home
+        child_env = _build_child_env(
+            os.environ,
+            rpc_endpoint=rpc_endpoint,
+            tmpdir=tmpdir,
+            intellect_root=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            profile_home=_get_subprocess_home(),
+        )
 
         # Resolve interpreter + CWD based on execute_code mode.
         #   - strict : today's behavior (sys.executable + tmpdir CWD).

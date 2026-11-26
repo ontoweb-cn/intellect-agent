@@ -5,6 +5,14 @@
 
 from __future__ import annotations
 
+import logging
+from typing import Any, Optional
+
+from agent.model_metadata import MINIMUM_CONTEXT_LENGTH
+
+logger = logging.getLogger(__name__)
+
+
 def _ollama_context_limit_error(agent: Any, request_tokens: int) -> Optional[str]:
     """Return a user-facing error when Ollama is loaded with too little context."""
     if not getattr(agent, "tools", None):

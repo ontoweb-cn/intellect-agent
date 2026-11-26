@@ -85,7 +85,7 @@ class TestSteerInjection:
         # The LAST tool result is modified; earlier ones are untouched.
         assert messages[2]["content"] == "ls output A"
         assert "ls output B" in messages[3]["content"]
-        assert "User guidance:" in messages[3]["content"]
+        assert "OUT-OF-BAND USER MESSAGE" in messages[3]["content"]
         assert "please also check auth.log" in messages[3]["content"]
         # And pending_steer is consumed.
         assert agent._pending_steer is None
@@ -118,7 +118,7 @@ class TestSteerInjection:
         messages = [{"role": "tool", "content": "x", "tool_call_id": "1"}]
         agent._apply_pending_steer_to_tool_results(messages, num_tool_msgs=1)
         content = messages[-1]["content"]
-        assert "User guidance:" in content
+        assert "OUT-OF-BAND USER MESSAGE" in content
         assert "stop after next step" in content
 
     def test_multimodal_content_list_preserved(self):

@@ -50,6 +50,7 @@ class _FakeGateway:
         self._pending_messages = {}
         self._pending_approvals = {}
         self._busy_ack_ts = {}
+        self._watchdog = None
 
     def _running_agent_count(self):
         return len(self._running_agents)

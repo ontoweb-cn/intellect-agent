@@ -1191,7 +1191,7 @@ class TestStuckLoopEscalation:
         counts_file = tmp_path / ".restart_failure_counts"
         counts_file.write_text(json.dumps({entry.session_key: 3}))
 
-        monkeypatch.setattr("gateway.run._intellect_home", tmp_path)
+        monkeypatch.setattr("gateway.infrastructure_handlers._intellect_home", tmp_path)
         runner = object.__new__(GatewayRunner)
         runner.session_store = store
 
@@ -1221,7 +1221,7 @@ class TestStuckLoopEscalation:
         counts_file = tmp_path / ".restart_failure_counts"
         counts_file.write_text(json.dumps({entry.session_key: 2}))
 
-        monkeypatch.setattr("gateway.run._intellect_home", tmp_path)
+        monkeypatch.setattr("gateway.infrastructure_handlers._intellect_home", tmp_path)
         runner = object.__new__(GatewayRunner)
         runner.session_store = store
 
@@ -1239,13 +1239,13 @@ class TestStuckLoopEscalation:
         source = _make_source()
         session_key = _make_store(tmp_path).get_or_create_session(source).session_key
 
-        monkeypatch.setattr("gateway.run._intellect_home", tmp_path)
+        monkeypatch.setattr("gateway.infrastructure_handlers._intellect_home", tmp_path)
         calls = []
 
         def _fake_atomic_json_write(path, payload, **kwargs):
             calls.append((path, payload, kwargs))
 
-        monkeypatch.setattr("gateway.run.atomic_json_write", _fake_atomic_json_write)
+        monkeypatch.setattr("gateway.infrastructure_handlers.atomic_json_write", _fake_atomic_json_write)
 
         runner = object.__new__(GatewayRunner)
         runner._increment_restart_failure_counts({session_key})
@@ -1274,13 +1274,13 @@ class TestStuckLoopEscalation:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr("gateway.run._intellect_home", tmp_path)
+        monkeypatch.setattr("gateway.infrastructure_handlers._intellect_home", tmp_path)
         calls = []
 
         def _fake_atomic_json_write(path, payload, **kwargs):
             calls.append((path, payload, kwargs))
 
-        monkeypatch.setattr("gateway.run.atomic_json_write", _fake_atomic_json_write)
+        monkeypatch.setattr("gateway.infrastructure_handlers.atomic_json_write", _fake_atomic_json_write)
 
         runner = object.__new__(GatewayRunner)
         runner._clear_restart_failure_count(session_key)
@@ -1292,3 +1292,17 @@ class TestStuckLoopEscalation:
                 {"indent": None},
             )
         ]
+
+@pytest.fixture(autouse=True)
+def _restart_home_isolation(monkeypatch, tmp_path):
+    """Restart helpers live in mixins with their own module globals."""
+    monkeypatch.setattr(
+        "gateway.command_handlers._intellect_home", tmp_path, raising=False
+    )
+    monkeypatch.setattr(
+        "gateway.infrastructure_handlers._intellect_home", tmp_path, raising=False
+    )
+    monkeypatch.setattr(
+        "gateway.infrastructure_handlers._get_intellect_home",
+        lambda: tmp_path,
+    )

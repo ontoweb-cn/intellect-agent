@@ -567,8 +567,13 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
     """
     # Check cache: invalidate when SKILLS_DIR mtime changes
     try:
+        from agent.skill_utils import sys as _skill_sys
+
         _mtime = SKILLS_DIR.stat().st_mtime if SKILLS_DIR.exists() else 0.0
-        if _SKILLS_CACHE["mtime"] == _mtime:
+        if (
+            _SKILLS_CACHE["mtime"] == _mtime
+            and _SKILLS_CACHE.get("platform") == _skill_sys.platform
+        ):
             _key = "data_all" if skip_disabled else "data"
             if _SKILLS_CACHE[_key] is not None:
                 return list(_SKILLS_CACHE[_key])  # shallow copy for safety
@@ -662,6 +667,8 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
     try:
         if SKILLS_DIR.exists():
             _SKILLS_CACHE["mtime"] = SKILLS_DIR.stat().st_mtime
+        from agent.skill_utils import sys as _skill_sys
+        _SKILLS_CACHE["platform"] = _skill_sys.platform
         if skip_disabled:
             _SKILLS_CACHE["data_all"] = list(skills)
         else:

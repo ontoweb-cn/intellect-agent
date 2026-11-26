@@ -127,15 +127,15 @@ def test_gateway_run_agent_codex_path_handles_internal_401_refresh(monkeypatch):
     _patch_agent_bootstrap(monkeypatch)
     monkeypatch.setattr(run_agent, "OpenAI", _FakeOpenAI)
     monkeypatch.setattr(run_agent, "AIAgent", _Codex401ThenSuccessAgent)
+    _runtime = {
+        "provider": "openai-codex",
+        "api_mode": "codex_responses",
+        "base_url": "https://chatgpt.com/backend-api/codex",
+        "api_key": "codex-token",
+    }
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: _runtime)
     monkeypatch.setattr(
-        gateway_run,
-        "_resolve_runtime_agent_kwargs",
-        lambda: {
-            "provider": "openai-codex",
-            "api_mode": "codex_responses",
-            "base_url": "https://chatgpt.com/backend-api/codex",
-            "api_key": "codex-token",
-        },
+        "gateway.agent_runner._resolve_runtime_agent_kwargs", lambda: _runtime
     )
     monkeypatch.setenv("intellect_TOOL_PROGRESS", "false")
     monkeypatch.setenv("intellect_MODEL", "gpt-5.3-codex")

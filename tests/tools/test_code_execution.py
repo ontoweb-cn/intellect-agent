@@ -676,27 +676,18 @@ class TestEnvVarFiltering(unittest.TestCase):
     """
 
     def _get_child_env(self, extra_env=None):
-        """Run a script that dumps its environment and return the env dict."""
-        code = (
-            "import os, json\n"
-            "print(json.dumps(dict(os.environ)))\n"
-        )
-        env_backup = os.environ.copy()
-        try:
-            if extra_env:
-                os.environ.update(extra_env)
-            with patch("model_tools.handle_function_call", return_value='{}'), \
-                 patch("tools.code_execution_tool._load_config",
-                       return_value={"timeout": 10, "max_tool_calls": 50}):
-                raw = execute_code(code, task_id="test-env",
-                                   enabled_tools=list(SANDBOX_ALLOWED_TOOLS))
-        finally:
-            os.environ.clear()
-            os.environ.update(env_backup)
+        """Build the child env through the pure helper (no subprocess/AST)."""
+        from tools.code_execution_tool import _build_child_env
 
-        result = json.loads(raw)
-        self.assertEqual(result["status"], "success", result.get("error", ""))
-        return json.loads(result["output"].strip())
+        source = os.environ.copy()
+        if extra_env:
+            source.update(extra_env)
+        return _build_child_env(
+            source,
+            rpc_endpoint="tcp://127.0.0.1:1",
+            tmpdir="/tmp/intellect_sandbox_test",
+            intellect_root="/tmp/intellect-agent",
+        )
 
     def test_api_keys_excluded(self):
         child_env = self._get_child_env({

@@ -180,6 +180,7 @@ def _install_fakes(monkeypatch, agent_cls, *, cleanup_on: bool):
         }
     } if cleanup_on else {}
     monkeypatch.setattr(gateway_run, "_load_gateway_config", lambda: cfg)
+    monkeypatch.setattr("gateway.agent_runner._load_gateway_config", lambda: cfg)
     return gateway_run
 
 

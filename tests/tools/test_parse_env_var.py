@@ -37,7 +37,8 @@ class TestParseEnvVar:
             "TERMINAL_DOCKER_FORWARD_ENV": '["GITHUB_TOKEN", "NPM_TOKEN"]',
         }, clear=False):
             config = _tt_mod._get_env_config()
-            assert config["docker_forward_env"] == ["GITHUB_TOKEN", "NPM_TOKEN"]
+            expected = ["GITHUB_TOKEN", "NPM_TOKEN"] + list(_tt_mod._WIKI_DOCKER_FORWARD_ENV)
+            assert config["docker_forward_env"] == expected
 
     def test_create_environment_passes_docker_forward_env(self):
         fake_env = object()

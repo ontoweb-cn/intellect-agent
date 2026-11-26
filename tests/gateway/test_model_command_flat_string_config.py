@@ -67,6 +67,11 @@ def _setup_isolated_home(tmp_path, monkeypatch, model_yaml_value):
     )
 
     monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+    monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
+    monkeypatch.setattr(
+        "gateway.command_handlers._load_gateway_config",
+        lambda: yaml.safe_load(cfg_path.read_text(encoding="utf-8")),
+    )
     monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
     monkeypatch.setattr(
         "intellect_cli.model_switch.switch_model",
@@ -118,6 +123,11 @@ async def test_model_global_persists_when_config_has_missing_model(tmp_path, mon
     cfg_path.write_text(yaml.safe_dump({"providers": {}}), encoding="utf-8")
 
     monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+    monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
+    monkeypatch.setattr(
+        "gateway.command_handlers._load_gateway_config",
+        lambda: yaml.safe_load(cfg_path.read_text(encoding="utf-8")),
+    )
     monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
     monkeypatch.setattr(
         "intellect_cli.model_switch.switch_model",

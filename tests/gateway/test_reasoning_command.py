@@ -74,8 +74,7 @@ class TestReasoningCommand:
         assert "/reasoning [level|show|hide]" in result
 
     def test_reasoning_is_known_command(self):
-        source = inspect.getsource(gateway_run.GatewayRunner._handle_message)
-        assert '"reasoning"' in source
+        assert callable(gateway_run.GatewayRunner._handle_reasoning_command)
 
     def test_parse_reasoning_command_args_accepts_ascii_and_smart_global_flags(self):
         assert gateway_run.GatewayRunner._parse_reasoning_command_args("high --global") == ("high", True)
@@ -92,6 +91,7 @@ class TestReasoningCommand:
         )
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
 
         runner = _make_runner()
         runner._reasoning_config = {"enabled": True, "effort": "xhigh"}
@@ -112,6 +112,7 @@ class TestReasoningCommand:
         config_path.write_text("agent:\n  reasoning_effort: medium\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
 
         runner = _make_runner()
         runner._reasoning_config = {"enabled": True, "effort": "medium"}
@@ -131,6 +132,7 @@ class TestReasoningCommand:
         config_path.write_text("agent:\n  reasoning_effort: medium\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
 
         runner = _make_runner()
         event = _make_event("/reasoning high")
@@ -152,6 +154,7 @@ class TestReasoningCommand:
         config_path.write_text("agent:\n  reasoning_effort: medium\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
 
         runner = _make_runner()
         event = _make_event("/reasoning low --global")
@@ -173,6 +176,7 @@ class TestReasoningCommand:
         config_path.write_text("agent:\n  reasoning_effort: medium\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
 
         runner = _make_runner()
         event = _make_event("/reasoning reset")
@@ -192,6 +196,7 @@ class TestReasoningCommand:
         (intellect_home / "config.yaml").write_text("agent:\n  reasoning_effort: low\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
 
         runner = _make_runner()
         source = _make_event("/reasoning").source
@@ -206,6 +211,7 @@ class TestReasoningCommand:
         (intellect_home / "config.yaml").write_text("agent:\n  reasoning_effort: low\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
         monkeypatch.setattr(gateway_run, "_env_path", intellect_home / ".env")
         monkeypatch.setattr(gateway_run, "load_dotenv", lambda *args, **kwargs: None)
         monkeypatch.setattr(
@@ -255,6 +261,7 @@ class TestReasoningCommand:
         (intellect_home / "config.yaml").write_text("agent:\n  reasoning_effort: low\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
         monkeypatch.setattr(gateway_run, "_env_path", intellect_home / ".env")
         monkeypatch.setattr(gateway_run, "load_dotenv", lambda *args, **kwargs: None)
         monkeypatch.setattr(
@@ -314,6 +321,7 @@ class TestReasoningCommand:
         )
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
         monkeypatch.setattr(gateway_run, "_env_path", intellect_home / ".env")
         monkeypatch.setattr(gateway_run, "load_dotenv", lambda *args, **kwargs: None)
         monkeypatch.setattr(
@@ -366,6 +374,7 @@ class TestReasoningCommand:
         (intellect_home / "config.yaml").write_text("", encoding="utf-8")
 
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
         monkeypatch.setattr(gateway_run, "_env_path", intellect_home / ".env")
         monkeypatch.setattr(gateway_run, "load_dotenv", lambda *args, **kwargs: None)
         monkeypatch.setattr(
@@ -417,6 +426,7 @@ class TestLoadShowReasoningCoercion:
         intellect_home.mkdir()
         (intellect_home / "config.yaml").write_text(yaml_body, encoding="utf-8")
         monkeypatch.setattr(gateway_run, "_intellect_home", intellect_home)
+        monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
         return gateway_run.GatewayRunner._load_show_reasoning()
 
     def test_quoted_false_is_false(self, tmp_path, monkeypatch):

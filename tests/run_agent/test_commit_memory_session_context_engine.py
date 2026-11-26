@@ -24,6 +24,7 @@ def _make_minimal_agent(memory_manager, context_compressor, session_id="abc"):
 
     obj = SimpleNamespace(
         _memory_manager=memory_manager,
+        _rag_manager=None,
         context_compressor=context_compressor,
         session_id=session_id,
     )

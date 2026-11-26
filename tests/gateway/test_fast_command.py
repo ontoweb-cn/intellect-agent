@@ -125,9 +125,11 @@ def test_turn_route_skips_priority_processing_for_unsupported_models():
 async def test_handle_fast_command_persists_config(monkeypatch, tmp_path):
     runner = _make_runner()
 
-    monkeypatch.setattr(gateway_run, "_intellect_home", tmp_path)
-    monkeypatch.setattr(gateway_run, "_load_gateway_config", lambda: {})
-    monkeypatch.setattr(gateway_run, "_resolve_gateway_model", lambda config=None: "gpt-5.4")
+    monkeypatch.setattr("gateway.command_handlers._intellect_home", tmp_path)
+    monkeypatch.setattr("gateway.command_handlers._load_gateway_config", lambda: {})
+    monkeypatch.setattr(
+        "gateway.command_handlers._resolve_gateway_model", lambda config=None: "gpt-5.4"
+    )
 
     response = await runner._handle_fast_command(_make_event("/fast fast"))
 
@@ -144,10 +146,10 @@ async def test_run_agent_passes_priority_processing_to_gateway_agent(monkeypatch
     runner = _make_runner()
 
     (tmp_path / "config.yaml").write_text("agent:\n  service_tier: fast\n", encoding="utf-8")
-    monkeypatch.setattr(gateway_run, "_intellect_home", tmp_path)
-    monkeypatch.setattr(gateway_run, "_env_path", tmp_path / ".env")
-    monkeypatch.setattr(gateway_run, "load_dotenv", lambda *args, **kwargs: None)
-    monkeypatch.setattr(gateway_run, "_load_gateway_config", lambda: {})
+    monkeypatch.setattr("gateway.agent_runner._intellect_home", tmp_path)
+    monkeypatch.setattr("gateway.agent_runner._env_path", tmp_path / ".env")
+    monkeypatch.setattr("gateway.agent_runner.load_dotenv", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gateway.agent_runner._load_gateway_config", lambda: {})
     # ``_load_service_tier`` was refactored to call ``_load_gateway_runtime_config``
     # (which wraps ``_load_gateway_config`` plus env-expansion).  Since the test
     # stubs ``_load_gateway_config`` to ``{}``, also stub the runtime wrapper
@@ -157,17 +159,17 @@ async def test_run_agent_passes_priority_processing_to_gateway_agent(monkeypatch
         "_load_gateway_runtime_config",
         lambda: {"agent": {"service_tier": "fast"}},
     )
-    monkeypatch.setattr(gateway_run, "_resolve_gateway_model", lambda config=None: "gpt-5.4")
     monkeypatch.setattr(
-        gateway_run,
-        "_resolve_runtime_agent_kwargs",
-        lambda: {
-            "provider": "openrouter",
-            "api_mode": "chat_completions",
-            "base_url": "https://openrouter.ai/api/v1",
-            "api_key": "***",
-        },
+        "gateway.agent_runner._resolve_gateway_model", lambda config=None: "gpt-5.4"
     )
+    _runtime = {
+        "provider": "openrouter",
+        "api_mode": "chat_completions",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "***",
+    }
+    monkeypatch.setattr("gateway.agent_runner._resolve_runtime_agent_kwargs", lambda: _runtime)
+    monkeypatch.setattr("gateway.run._resolve_runtime_agent_kwargs", lambda: _runtime)
 
     import intellect_cli.tools_config as tools_config
     monkeypatch.setattr(tools_config, "_get_platform_tools", lambda user_config, platform_key: {"core"})

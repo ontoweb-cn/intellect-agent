@@ -219,15 +219,14 @@ def _validate_frontmatter(content: str) -> Optional[str]:
     Validate that SKILL.md content has proper frontmatter with required fields.
     Returns error message or None if valid.
     """
+    rust_err = None
     try:
         from intellect_rust import rust_validate_skill_frontmatter
 
         if rust_validate_skill_frontmatter is not None:
-            err = rust_validate_skill_frontmatter(content)
-            if err:
-                return err
+            rust_err = rust_validate_skill_frontmatter(content)
     except Exception:
-        pass
+        rust_err = None
 
     if not content.strip():
         return "Content cannot be empty."
@@ -260,7 +259,7 @@ def _validate_frontmatter(content: str) -> Optional[str]:
     if not body:
         return "SKILL.md must have content after the frontmatter (instructions, procedures, etc.)."
 
-    return None
+    return rust_err
 
 
 def _validate_content_size(content: str, label: str = "SKILL.md") -> Optional[str]:

@@ -5189,7 +5189,7 @@ def save_config(config: Dict[str, Any], *, only_keys: list[str] | None = None):
             for key in only_keys:
                 if key in config:
                     existing[key] = config[key]
-            atomic_yaml_write(existing, config_path)
+            atomic_yaml_write(config_path, existing)
             return
         current_normalized = _normalize_root_model_keys(_normalize_max_turns_config(config))
         normalized = current_normalized

@@ -39,6 +39,7 @@ class TestToolResolution:
         tools = get_tool_definitions(
             enabled_toolsets=["terminal", "file"],
             quiet_mode=True,
+            skip_tool_search_assembly=True,
         )
         names = {t["function"]["name"] for t in tools}
         expected = {"terminal", "process", "read_file", "write_file", "search_files", "patch"}
@@ -50,6 +51,7 @@ class TestToolResolution:
         tools = get_tool_definitions(
             enabled_toolsets=["terminal", "file"],
             quiet_mode=True,
+            skip_tool_search_assembly=True,
         )
         names = [t["function"]["name"] for t in tools]
         assert "terminal" in names, f"terminal tool missing! Only got: {names}."

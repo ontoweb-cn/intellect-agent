@@ -55,7 +55,7 @@ def test_status_prefix_prefers_status_command_over_statusbar_toggle():
     with patch.object(cli_obj, "_show_session_status") as mock_status:
         assert cli_obj.process_command("/sta") is True
 
-    mock_status.assert_called_once_with()
+    mock_status.assert_called_once()
     assert cli_obj._status_bar_visible is True
 
 

@@ -606,7 +606,8 @@ class TestChildStdioIsUtf8:
         PYTHONIOENCODING=utf-8 in child_env."""
         import tools.code_execution_tool as cet
         src = open(cet.__file__, encoding="utf-8").read()
-        assert 'child_env["PYTHONIOENCODING"] = "utf-8"' in src, (
+        assert ('child_env["PYTHONIOENCODING"] = "utf-8"' in src
+                or 'env["PYTHONIOENCODING"] = "utf-8"' in src), (
             "PYTHONIOENCODING=utf-8 missing from child env — Windows "
             "scripts that print non-ASCII will crash with "
             "UnicodeEncodeError."
@@ -617,7 +618,8 @@ class TestChildStdioIsUtf8:
         open()'s default encoding UTF-8 in user-written file I/O."""
         import tools.code_execution_tool as cet
         src = open(cet.__file__, encoding="utf-8").read()
-        assert 'child_env["PYTHONUTF8"] = "1"' in src, (
+        assert ('child_env["PYTHONUTF8"] = "1"' in src
+                or 'env["PYTHONUTF8"] = "1"' in src), (
             "PYTHONUTF8=1 missing from child env — user scripts that "
             "call open(path, 'w') without encoding= will produce "
             "locale-encoded files on Windows."

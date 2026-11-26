@@ -1175,6 +1175,8 @@ class TestEventBridgePollE2E:
 
     def test_poll_always_queries_pg_backend(self, tmp_path, monkeypatch):
         """PostgreSQL has no state.db mtime — every poll must query the store."""
+        import pytest as _pytest
+        _pytest.importorskip("agent.storage.factory", reason="PG storage backend removed")
         import mcp_serve
 
         sessions_dir = tmp_path / "sessions"
