@@ -156,7 +156,11 @@ async def test_connect_only_requests_members_intent_when_needed(monkeypatch, all
     monkeypatch.setattr("gateway.status.release_scoped_lock", lambda scope, identity: None)
 
     intents = SimpleNamespace(message_content=False, dm_messages=False, guild_messages=False, members=False, voice_states=False)
-    monkeypatch.setattr(discord_platform.Intents, "default", lambda: intents)
+    # Patch the adapter module attribute rather than an attribute on the
+    # MagicMock `Intents`.  pytest 9.2's monkeypatch records virtual mock
+    # attributes as absent and deletes them on undo, which corrupts the
+    # shared mock for later tests in the same process.
+    monkeypatch.setattr(discord_platform, "Intents", SimpleNamespace(default=lambda: intents))
 
     created = {}
 
@@ -199,7 +203,11 @@ async def test_reconnect_closes_previous_client_to_prevent_zombie_websocket(monk
         message_content=False, dm_messages=False, guild_messages=False,
         members=False, voice_states=False,
     )
-    monkeypatch.setattr(discord_platform.Intents, "default", lambda: intents)
+    # Patch the adapter module attribute rather than an attribute on the
+    # MagicMock `Intents`.  pytest 9.2's monkeypatch records virtual mock
+    # attributes as absent and deletes them on undo, which corrupts the
+    # shared mock for later tests in the same process.
+    monkeypatch.setattr(discord_platform, "Intents", SimpleNamespace(default=lambda: intents))
 
     class TrackedBot(FakeBot):
         """FakeBot that records close() calls and reports open/closed state."""
@@ -254,7 +262,11 @@ async def test_connect_releases_token_lock_on_timeout(monkeypatch):
     monkeypatch.setattr("gateway.status.release_scoped_lock", lambda scope, identity: released.append((scope, identity)))
 
     intents = SimpleNamespace(message_content=False, dm_messages=False, guild_messages=False, members=False, voice_states=False)
-    monkeypatch.setattr(discord_platform.Intents, "default", lambda: intents)
+    # Patch the adapter module attribute rather than an attribute on the
+    # MagicMock `Intents`.  pytest 9.2's monkeypatch records virtual mock
+    # attributes as absent and deletes them on undo, which corrupts the
+    # shared mock for later tests in the same process.
+    monkeypatch.setattr(discord_platform, "Intents", SimpleNamespace(default=lambda: intents))
 
     monkeypatch.setattr(
         discord_platform.commands,
@@ -288,7 +300,11 @@ async def test_connect_does_not_wait_for_slash_sync(monkeypatch):
     monkeypatch.setattr("gateway.status.release_scoped_lock", lambda scope, identity: None)
 
     intents = SimpleNamespace(message_content=False, dm_messages=False, guild_messages=False, members=False, voice_states=False)
-    monkeypatch.setattr(discord_platform.Intents, "default", lambda: intents)
+    # Patch the adapter module attribute rather than an attribute on the
+    # MagicMock `Intents`.  pytest 9.2's monkeypatch records virtual mock
+    # attributes as absent and deletes them on undo, which corrupts the
+    # shared mock for later tests in the same process.
+    monkeypatch.setattr(discord_platform, "Intents", SimpleNamespace(default=lambda: intents))
 
     created = {}
 
@@ -324,7 +340,11 @@ async def test_connect_respects_slash_commands_opt_out(monkeypatch):
     monkeypatch.setattr("gateway.status.release_scoped_lock", lambda scope, identity: None)
 
     intents = SimpleNamespace(message_content=False, dm_messages=False, guild_messages=False, members=False, voice_states=False)
-    monkeypatch.setattr(discord_platform.Intents, "default", lambda: intents)
+    # Patch the adapter module attribute rather than an attribute on the
+    # MagicMock `Intents`.  pytest 9.2's monkeypatch records virtual mock
+    # attributes as absent and deletes them on undo, which corrupts the
+    # shared mock for later tests in the same process.
+    monkeypatch.setattr(discord_platform, "Intents", SimpleNamespace(default=lambda: intents))
     monkeypatch.setattr(
         discord_platform.commands,
         "Bot",
