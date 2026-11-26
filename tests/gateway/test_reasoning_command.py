@@ -1,7 +1,6 @@
 """Tests for gateway /reasoning command and hot reload behavior."""
 
 import asyncio
-import inspect
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock

@@ -102,6 +102,7 @@ _AUTH_MIRROR_TEST_FILES = frozenset({
 def _auth_json_mirror_for_auth_tests(request, monkeypatch):
     name = Path(str(request.path)).name
     if not (name.startswith("test_auth") or name in _AUTH_MIRROR_TEST_FILES):
+        yield
         return
     monkeypatch.setenv("INTELLECT_OAUTH_WRITE_AUTH_JSON", "1")
     monkeypatch.setenv("INTELLECT_OAUTH_READ_AUTH_JSON", "1")

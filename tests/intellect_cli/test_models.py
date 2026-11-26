@@ -246,7 +246,11 @@ class TestDetectProviderForModel:
 
     def test_deepseek_model_detected(self):
         """deepseek-chat should resolve to deepseek provider."""
-        result = detect_provider_for_model("deepseek-chat", "openai-codex")
+        with patch(
+            "intellect_cli.models.fetch_openrouter_models",
+            return_value=[("deepseek/deepseek-chat", "")],
+        ):
+            result = detect_provider_for_model("deepseek-chat", "openai-codex")
         assert result is not None
         # Provider is deepseek (direct) or openrouter (fallback) depending on creds
         assert result[0] in {"deepseek", "openrouter"}

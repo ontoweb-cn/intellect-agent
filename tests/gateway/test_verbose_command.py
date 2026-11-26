@@ -230,10 +230,7 @@ class TestVerboseCommand:
         # No config.yaml
 
         monkeypatch.setattr("gateway.command_handlers._intellect_home", intellect_home)
-        monkeypatch.setattr(
-            "gateway.command_handlers._load_gateway_config",
-            lambda: yaml.safe_load(config_path.read_text(encoding="utf-8")),
-        )
+        monkeypatch.setattr("gateway.command_handlers._load_gateway_config", lambda: {})
 
         runner = _make_runner()
         result = await runner._handle_verbose_command(_make_event())
