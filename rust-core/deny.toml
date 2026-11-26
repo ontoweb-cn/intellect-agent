@@ -20,7 +20,14 @@
 # unmaintained crates wherever they appeared in the graph, including
 # transitive deps.  "workspace" would only check this crate itself.
 unmaintained = "all"
-ignore = []
+ignore = [
+    # RUSTSEC-2024-0449: unsafe-libyaml is unmaintained (repo archived), but
+    # it is not a vulnerability and no safe upgrade exists — serde_yaml_ng
+    # still depends on it, and the pure-Rust replacements need a parser API
+    # migration. Only used to parse local blueprint YAML in src/blueprints.rs.
+    # Revisit when serde_yaml is replaced with serde-saphyr (or equivalent).
+    "RUSTSEC-2024-0449",
+]
 
 [licenses]
 allow = [

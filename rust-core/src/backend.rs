@@ -436,7 +436,7 @@ impl SQLiteBackend {
             }
         };
 
-        let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
+        let columns: Vec<String> = stmt.column_names().map(|c| c.to_string()).collect();
         let mut stmt = stmt;
 
         // Convert Python params to rusqlite values
@@ -956,7 +956,7 @@ impl SQLiteBackend {
             Err(e) => return Err(_map_rusqlite_err(e)),
         };
 
-        let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
+        let columns: Vec<String> = stmt.column_names().map(|c| c.to_string()).collect();
 
         let sql_params: Vec<rusqlite::types::Value> = params
             .unwrap_or_default()
@@ -1068,7 +1068,7 @@ impl SQLiteBackend {
         };
 
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
+        let columns: Vec<String> = stmt.column_names().map(|c| c.to_string()).collect();
 
         let rows = match stmt.query_map(
             rusqlite::params_from_iter(param_refs),
@@ -1178,7 +1178,7 @@ impl SQLiteBackend {
         };
 
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
+        let columns: Vec<String> = stmt.column_names().map(|c| c.to_string()).collect();
 
         let rows = match stmt.query_map(
             rusqlite::params_from_iter(param_refs),

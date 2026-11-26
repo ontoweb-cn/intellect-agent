@@ -211,7 +211,7 @@ impl RustConnection {
         let conn = self.conn.lock().unwrap();
 
         let stmt = conn.prepare(sql).map_err(_map_err)?;
-        let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
+        let columns: Vec<String> = stmt.column_names().map(|c| c.to_string()).collect();
         let mut stmt = stmt;
 
         // If the statement returns columns, it's a query (SELECT/PRAGMA).

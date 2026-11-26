@@ -35,7 +35,7 @@ pub fn fts_trigger_count_impl(conn: &Connection) -> Result<usize, rusqlite::Erro
     conn.query_row(
         &sql,
         rusqlite::params_from_iter(schema::FTS_TRIGGERS.iter()),
-        |row| row.get(0),
+        |row| row.get::<_, i64>(0).map(|n| n as usize),
     )
 }
 
@@ -164,7 +164,7 @@ mod tests {
         rebuild_fts_indexes_impl(&conn).unwrap();
 
         let count: usize = conn
-            .query_row("SELECT COUNT(*) FROM messages_fts", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM messages_fts", [], |row| row.get::<_, i64>(0).map(|n| n as usize))
             .unwrap();
         assert_eq!(count, 2);
     }
@@ -182,7 +182,7 @@ mod tests {
         rebuild_fts_indexes_impl(&conn).unwrap();
 
         let count: usize = conn
-            .query_row("SELECT COUNT(*) FROM messages_fts", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM messages_fts", [], |row| row.get::<_, i64>(0).map(|n| n as usize))
             .unwrap();
         assert_eq!(count, 1);
     }
