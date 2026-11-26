@@ -5,6 +5,7 @@ the _send_update_notification startup hook (sends results after restart).
 """
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 
@@ -13,6 +14,19 @@ import pytest
 from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
+
+
+@pytest.fixture(autouse=True)
+def _mock_update_spawn(monkeypatch):
+    """Never execute a real `intellect update` from a unit test.
+
+    The handler spawns `intellect update --gateway`, which runs the real
+    installer (git stash/reset).  Patch Popen so a test bug cannot mutate
+    the developer checkout.
+    """
+    mock = MagicMock()
+    monkeypatch.setattr(subprocess, "Popen", mock)
+    return mock
 
 
 def _make_event(text="/update", platform=Platform.TELEGRAM,
@@ -64,7 +78,7 @@ class TestHandleUpdateCommand:
         # Point _intellect_home to tmp_path and project_root to a dir without .git
         fake_root = tmp_path / "project"
         fake_root.mkdir()
-        with patch("gateway.run._intellect_home", tmp_path), \
+        with patch("gateway.command_handlers._intellect_home", tmp_path), \
              patch("gateway.run.Path") as MockPath:
             # Path(__file__).parent.parent.resolve() -> fake_root
             MockPath.return_value = MagicMock()
@@ -75,7 +89,7 @@ class TestHandleUpdateCommand:
         # Simpler approach — mock at method level using a wrapper
         runner = _make_runner()
 
-        with patch("gateway.run._intellect_home", tmp_path):
+        with patch("gateway.command_handlers._intellect_home", tmp_path):
             # The handler does Path(__file__).parent.parent.resolve()
             # We need to make project_root / '.git' not exist.
             # Since Path(__file__) resolves to the real gateway/run.py,
@@ -91,7 +105,7 @@ class TestHandleUpdateCommand:
             (fake_root / "gateway").mkdir(parents=True)
             (fake_root / "gateway" / "run.py").touch()
 
-            with patch("gateway.run.__file__", fake_file):
+            with patch("gateway.command_handlers.__file__", fake_file):
                 result = await runner._handle_update_command(event)
 
         assert "Not a git repository" in result
@@ -110,8 +124,8 @@ class TestHandleUpdateCommand:
         (fake_root / "gateway" / "run.py").touch()
         fake_file = str(fake_root / "gateway" / "run.py")
 
-        with patch("gateway.run._intellect_home", tmp_path), \
-             patch("gateway.run.__file__", fake_file), \
+        with patch("gateway.command_handlers._intellect_home", tmp_path), \
+             patch("gateway.command_handlers.__file__", fake_file), \
              patch("shutil.which", return_value=None), \
              patch("importlib.util.find_spec", return_value=None):
             result = await runner._handle_update_command(event)
@@ -137,8 +151,8 @@ class TestHandleUpdateCommand:
         mock_popen = MagicMock()
         fake_spec = MagicMock()
 
-        with patch("gateway.run._intellect_home", intellect_home), \
-             patch("gateway.run.__file__", fake_file), \
+        with patch("gateway.command_handlers._intellect_home", intellect_home), \
+             patch("gateway.command_handlers.__file__", fake_file), \
              patch("shutil.which", return_value=None), \
              patch("importlib.util.find_spec", return_value=fake_spec), \
              patch("subprocess.Popen", mock_popen):
@@ -199,8 +213,8 @@ class TestHandleUpdateCommand:
         intellect_home = tmp_path / "intellect"
         intellect_home.mkdir()
 
-        with patch("gateway.run._intellect_home", intellect_home), \
-             patch("gateway.run.__file__", fake_file), \
+        with patch("gateway.command_handlers._intellect_home", intellect_home), \
+             patch("gateway.command_handlers.__file__", fake_file), \
              patch("shutil.which", side_effect=lambda x: "/usr/bin/intellect" if x == "intellect" else "/usr/bin/setsid"), \
              patch("subprocess.Popen"):
             result = await runner._handle_update_command(event)
@@ -233,8 +247,8 @@ class TestHandleUpdateCommand:
         intellect_home = tmp_path / "intellect"
         intellect_home.mkdir()
 
-        with patch("gateway.run._intellect_home", intellect_home), \
-             patch("gateway.run.__file__", fake_file), \
+        with patch("gateway.command_handlers._intellect_home", intellect_home), \
+             patch("gateway.command_handlers.__file__", fake_file), \
              patch("shutil.which", side_effect=lambda x: "/usr/bin/intellect" if x == "intellect" else "/usr/bin/setsid"), \
              patch("subprocess.Popen"):
             await runner._handle_update_command(event)
@@ -258,8 +272,8 @@ class TestHandleUpdateCommand:
         intellect_home.mkdir()
 
         mock_popen = MagicMock()
-        with patch("gateway.run._intellect_home", intellect_home), \
-             patch("gateway.run.__file__", fake_file), \
+        with patch("gateway.command_handlers._intellect_home", intellect_home), \
+             patch("gateway.command_handlers.__file__", fake_file), \
              patch("shutil.which", side_effect=lambda x: f"/usr/bin/{x}"), \
              patch("subprocess.Popen", mock_popen):
             result = await runner._handle_update_command(event)
@@ -295,8 +309,8 @@ class TestHandleUpdateCommand:
                 return None
             return None
 
-        with patch("gateway.run._intellect_home", intellect_home), \
-             patch("gateway.run.__file__", fake_file), \
+        with patch("gateway.command_handlers._intellect_home", intellect_home), \
+             patch("gateway.command_handlers.__file__", fake_file), \
              patch("shutil.which", side_effect=which_no_setsid), \
              patch("subprocess.Popen", mock_popen):
             result = await runner._handle_update_command(event)
@@ -326,8 +340,8 @@ class TestHandleUpdateCommand:
         intellect_home = tmp_path / "intellect"
         intellect_home.mkdir()
 
-        with patch("gateway.run._intellect_home", intellect_home), \
-             patch("gateway.run.__file__", fake_file), \
+        with patch("gateway.command_handlers._intellect_home", intellect_home), \
+             patch("gateway.command_handlers.__file__", fake_file), \
              patch("shutil.which", side_effect=lambda x: f"/usr/bin/{x}"), \
              patch("subprocess.Popen", side_effect=OSError("spawn failed")):
             result = await runner._handle_update_command(event)
@@ -352,8 +366,8 @@ class TestHandleUpdateCommand:
         intellect_home = tmp_path / "intellect"
         intellect_home.mkdir()
 
-        with patch("gateway.run._intellect_home", intellect_home), \
-             patch("gateway.run.__file__", fake_file), \
+        with patch("gateway.command_handlers._intellect_home", intellect_home), \
+             patch("gateway.command_handlers.__file__", fake_file), \
              patch("shutil.which", side_effect=lambda x: f"/usr/bin/{x}"), \
              patch("subprocess.Popen"):
             result = await runner._handle_update_command(event)
