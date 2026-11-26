@@ -188,11 +188,11 @@ class TestUsageAccountSection:
         event = MagicMock()
 
         monkeypatch.setattr(
-            "gateway.run.fetch_account_usage",
+            "agent.account_usage.fetch_account_usage",
             lambda provider, base_url=None, api_key=None: object(),
         )
         monkeypatch.setattr(
-            "gateway.run.render_account_usage_lines",
+            "agent.account_usage.render_account_usage_lines",
             lambda snapshot, markdown=False: [
                 "📈 **Account limits**",
                 "Provider: openai-codex (Pro)",
@@ -232,11 +232,11 @@ class TestUsageAccountSection:
 
         monkeypatch.setattr("gateway.run.asyncio.to_thread", _fake_to_thread)
         monkeypatch.setattr(
-            "gateway.run.fetch_account_usage",
+            "agent.account_usage.fetch_account_usage",
             lambda provider, base_url=None, api_key=None: object(),
         )
         monkeypatch.setattr(
-            "gateway.run.render_account_usage_lines",
+            "agent.account_usage.render_account_usage_lines",
             lambda snapshot, markdown=False: [
                 "📈 **Account limits**",
                 "Provider: openai-codex (Pro)",

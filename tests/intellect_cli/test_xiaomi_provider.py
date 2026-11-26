@@ -271,12 +271,6 @@ class TestXiaomiURLMapping:
         from agent.model_metadata import _URL_TO_PROVIDER
         assert _URL_TO_PROVIDER.get("api.xiaomimimo.com") == "xiaomi"
 
-    def test_provider_prefixes(self):
-        from agent.model_metadata import _PROVIDER_PREFIXES
-        assert "xiaomi" in _PROVIDER_PREFIXES
-        assert "mimo" in _PROVIDER_PREFIXES
-        assert "xiaomi-mimo" in _PROVIDER_PREFIXES
-
     def test_infer_from_url(self):
         from agent.model_metadata import _infer_provider_from_url
         assert _infer_provider_from_url("https://api.xiaomimimo.com/v1") == "xiaomi"

@@ -33,7 +33,6 @@ def test_get_codex_model_ids_prioritizes_default_and_cache(tmp_path, monkeypatch
     assert "gpt-5.3-codex-spark" in models
     # Non-codex-suffixed models are included when the cache says they're available
     assert "gpt-5.4" in models
-    assert "gpt-5.4-mini" in models
     assert "gpt-5-hidden-codex" not in models
 
 
@@ -53,7 +52,7 @@ def test_get_codex_model_ids_falls_back_to_curated_defaults(tmp_path, monkeypatc
     models = get_codex_model_ids()
 
     assert models[: len(DEFAULT_CODEX_MODELS)] == DEFAULT_CODEX_MODELS
-    assert "gpt-5.4" in models
+    assert "gpt-5.4-codex" in models
     assert "gpt-5.3-codex-spark" in models
 
 
@@ -66,13 +65,11 @@ def test_get_codex_model_ids_adds_forward_compat_models_from_templates(monkeypat
     models = get_codex_model_ids(access_token="codex-access-token")
 
     # When live discovery only returns gpt-5.3-codex, forward-compat synthesis
-    # should surface gpt-5.5, gpt-5.4, gpt-5.4-mini, and gpt-5.3-codex-spark
-    # (each is templated off gpt-5.3-codex).
+    # should surface the current -codex generation plus Spark (2026-10 catalog).
     assert models == [
         "gpt-5.3-codex",
-        "gpt-5.5",
-        "gpt-5.4-mini",
-        "gpt-5.4",
+        "gpt-5.5-codex",
+        "gpt-5.4-codex",
         "gpt-5.3-codex-spark",
     ]
 

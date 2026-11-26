@@ -56,20 +56,17 @@ class TestMiniMaxModelValidation:
         assert result["recognized"] is True
 
     # -------------------------------------------------------------------------
-    # Test 2: A near-match model on minimax-cn triggers a suggestion (not auto-correct)
+    # Test 2: A near-match model on minimax-cn is auto-corrected
     # -------------------------------------------------------------------------
-    def test_near_match_minimax_cn_suggests_similar(self):
-        # "MiniMax-M2.7-highspeed" is somewhat similar to "MiniMax-M2.7" (ratio ~0.71)
-        # but below the 0.9 auto-correct cutoff. It should be accepted with a
-        # recognized=False and a similar-models suggestion (ratio > 0.5).
-        result = validate_requested_model("MiniMax-M2.7-highspeed", "minimax-cn")
+    def test_near_match_minimax_cn_auto_corrects(self):
+        # The curated minimax-cn catalog now includes MiniMax-M2.7-highspeed,
+        # so a typo lands above the auto-correct ratio and is rewritten to it.
+        result = validate_requested_model("MiniMax-M2.7-highspeeed", "minimax-cn")
         assert result["accepted"] is True
         assert result["persist"] is True
-        assert result["recognized"] is False
-        # Should NOT auto-correct (ratio 0.71 < 0.9)
-        assert "corrected_model" not in result
-        # But should suggest similar models (ratio 0.71 > 0.5)
-        assert "MiniMax-M2.7" in result["message"]
+        assert result["recognized"] is True
+        assert result["corrected_model"] == "MiniMax-M2.7-highspeed"
+        assert "Auto-corrected" in result["message"]
 
     # -------------------------------------------------------------------------
     # Test 3: A completely unknown model is accepted (not rejected) with a warning
