@@ -320,7 +320,10 @@ def seed_builtin_oauth_providers_db(db, *, force_metadata: bool = False) -> dict
     the catalog seed works for both backends.
     """
     db_path = getattr(db, "db_path", None)
-    if db_path is not None:
+    # SessionDB exposes a Path; MembershipDB's dynamic __getattr__ stub returns
+    # a callable, which must NOT be treated as a filesystem path (sqlite3 would
+    # create a stray database and then fail with "no such table").
+    if isinstance(db_path, (str, Path)) and str(db_path) not in ("", ":memory:"):
         conn = sqlite3.connect(str(db_path), timeout=30)
         try:
             stats = seed_builtin_oauth_providers(
@@ -336,7 +339,9 @@ def seed_builtin_oauth_providers_db(db, *, force_metadata: bool = False) -> dict
             nonlocal stats
             stats = seed_builtin_oauth_providers(cursor, force_metadata=force_metadata)
 
-        db._execute_write(_run)
+        execute_write = getattr(db, "_execute_write", None)
+        if callable(execute_write):
+            execute_write(_run)
     if stats.get("catalog_id"):
         write_catalog_marker(stats["catalog_id"])
     return stats

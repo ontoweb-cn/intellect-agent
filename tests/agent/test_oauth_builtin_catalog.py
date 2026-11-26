@@ -42,15 +42,13 @@ class TestBuiltinCatalogSeed:
 
     def test_seed_idempotent(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
-        from agent.oauth.builtin_catalog import seed_builtin_oauth_providers
+        from agent.oauth.builtin_catalog import seed_builtin_oauth_providers_db
         from intellect_state import SessionDB
 
         db = SessionDB(tmp_path / "state.db")
         try:
-            cur = db._conn.cursor()
-            seed_builtin_oauth_providers(cur)
-            db._conn.commit()
-            second = seed_builtin_oauth_providers(cur)
+            seed_builtin_oauth_providers_db(db)
+            second = seed_builtin_oauth_providers_db(db)
             assert second["inserted"] == 0
             count = db._conn.execute(
                 "SELECT COUNT(*) AS n FROM oauth_providers WHERE is_builtin=1"
@@ -62,7 +60,7 @@ class TestBuiltinCatalogSeed:
     def test_seed_preserves_enabled_on_existing(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
         import time
-        from agent.oauth.builtin_catalog import seed_builtin_oauth_providers
+        from agent.oauth.builtin_catalog import seed_builtin_oauth_providers_db
         from intellect_state import SessionDB
 
         db = SessionDB(tmp_path / "state.db")
@@ -72,8 +70,7 @@ class TestBuiltinCatalogSeed:
                 "UPDATE oauth_providers SET enabled=0, client_id='keep-me' WHERE id='github'"
             )
             db._conn.commit()
-            seed_builtin_oauth_providers(db._conn.cursor())
-            db._conn.commit()
+            seed_builtin_oauth_providers_db(db)
             row = db._conn.execute(
                 "SELECT enabled, client_id FROM oauth_providers WHERE id='github'"
             ).fetchone()
@@ -84,7 +81,7 @@ class TestBuiltinCatalogSeed:
 
     def test_refresh_metadata_updates_urls(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
-        from agent.oauth.builtin_catalog import seed_builtin_oauth_providers
+        from agent.oauth.builtin_catalog import seed_builtin_oauth_providers_db
         from intellect_state import SessionDB
 
         db = SessionDB(tmp_path / "state.db")
@@ -93,10 +90,7 @@ class TestBuiltinCatalogSeed:
                 "UPDATE oauth_providers SET authorize_url='http://stale' WHERE id='github'"
             )
             db._conn.commit()
-            seed_builtin_oauth_providers(
-                db._conn.cursor(), force_metadata=True
-            )
-            db._conn.commit()
+            seed_builtin_oauth_providers_db(db, force_metadata=True)
             row = db._conn.execute(
                 "SELECT authorize_url FROM oauth_providers WHERE id='github'"
             ).fetchone()
@@ -117,3 +111,27 @@ class TestBuiltinCatalogSeed:
             assert "<path" in (row["logo_svg"] or "")
         finally:
             db.close()
+
+
+class TestSeedDbWrapper:
+    def test_seed_db_wrapper_works_with_rust_sessiondb(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+        from agent.oauth.builtin_catalog import seed_builtin_oauth_providers_db
+        from intellect_state import SessionDB
+
+        db = SessionDB(tmp_path / "state.db")
+        try:
+            stats = seed_builtin_oauth_providers_db(db)
+        finally:
+            db.close()
+        assert stats.get("total", 0) >= 15
+
+    def test_seed_db_wrapper_rejects_stub_db_path(self, tmp_path, monkeypatch):
+        """MembershipDB.__getattr__ returns a callable for db_path; never connect to it."""
+        monkeypatch.setenv("INTELLECT_HOME", str(tmp_path))
+        monkeypatch.chdir(tmp_path)
+        from agent.membership import MembershipDB
+        from agent.oauth.builtin_catalog import seed_builtin_oauth_providers_db
+
+        assert seed_builtin_oauth_providers_db(MembershipDB()) == {}
+        assert not [p for p in tmp_path.iterdir() if p.name.startswith("<function")]

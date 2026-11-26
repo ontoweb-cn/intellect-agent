@@ -6552,9 +6552,16 @@ def cmd_oauth(args):
 
     elif sub == "seed-builtin":
         from agent.oauth.builtin_catalog import seed_builtin_oauth_providers_db
+        from intellect_state import SessionDB
 
         force = bool(getattr(args, "refresh_metadata", False))
-        stats = seed_builtin_oauth_providers_db(db, force_metadata=force)
+        # ``db`` is the MembershipDB compatibility shim (no real DB); seed the
+        # catalog into the actual state.db via SessionDB.
+        seed_db = SessionDB()
+        try:
+            stats = seed_builtin_oauth_providers_db(seed_db, force_metadata=force)
+        finally:
+            seed_db.close()
         print(
             f"Catalog {stats.get('catalog_id') or '(unknown)'}: "
             f"{stats.get('total', 0)} providers, "
