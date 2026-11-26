@@ -356,20 +356,12 @@ def _prompt_api_key(var: dict):
 def _seed_oauth_builtin_catalog() -> dict:
     """Load built-in OAuth providers into state.db (idempotent)."""
     try:
-        from agent.oauth.builtin_catalog import (
-            seed_builtin_oauth_providers,
-            write_catalog_marker,
-        )
+        from agent.oauth.builtin_catalog import seed_builtin_oauth_providers_db
         from intellect_state import SessionDB
 
         db = SessionDB()
         try:
-            stats = seed_builtin_oauth_providers(db._conn.cursor())
-            db._conn.commit()
-            catalog_id = stats.get("catalog_id") or ""
-            if catalog_id:
-                write_catalog_marker(catalog_id)
-            return stats
+            return seed_builtin_oauth_providers_db(db)
         finally:
             db.close()
     except Exception as exc:

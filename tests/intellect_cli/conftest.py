@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
@@ -47,7 +49,7 @@ def _suppress_concurrent_intellect_gate(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _offline_model_discovery(monkeypatch):
+def _offline_model_discovery(request, monkeypatch):
     """Stub the remote model-discovery pulls the picker pipeline makes.
 
     ``list_authenticated_providers()`` unconditionally fetches the remote
@@ -69,6 +71,9 @@ def _offline_model_discovery(monkeypatch):
         lambda *a, **k: [],
         raising=False,
     )
+    # This module tests the real token exchange and mocks HTTP itself.
+    if Path(str(request.path)).name == "test_copilot_token_exchange.py":
+        return
     # The credential pool's singleton seeding exchanges the local `gh` CLI
     # token for a Copilot API token on every load — a real GitHub API call
     # that is irrelevant to every picker/pool test here. Identity stub keeps
@@ -78,3 +83,38 @@ def _offline_model_discovery(monkeypatch):
         lambda raw_token, *a, **k: raw_token,
         raising=False,
     )
+
+
+# Auth-store tests still assert the auth.json credential-pool mirror while
+# production defaults to the SQLite pool (oauth_pool_entries).  Enable the
+# documented dual-write/read migration flags for those files only, so tests
+# keep exercising the mirror without changing runtime defaults.  Canonical
+# pool reads remain DB-first; the auth.json fallback is read-only.
+_AUTH_MIRROR_TEST_FILES = frozenset({
+    "test_proxy.py",
+    "test_copilot_token_exchange.py",
+    "test_spotify_auth.py",
+    "test_setup_oauth_seed.py",
+})
+
+
+@pytest.fixture(autouse=True)
+def _auth_json_mirror_for_auth_tests(request, monkeypatch):
+    name = Path(str(request.path)).name
+    if not (name.startswith("test_auth") or name in _AUTH_MIRROR_TEST_FILES):
+        return
+    monkeypatch.setenv("INTELLECT_OAUTH_WRITE_AUTH_JSON", "1")
+    monkeypatch.setenv("INTELLECT_OAUTH_READ_AUTH_JSON", "1")
+    try:
+        from agent.oauth.runtime_settings import get_oauth_runtime_settings
+
+        get_oauth_runtime_settings.cache_clear()
+    except Exception:
+        pass
+    yield
+    try:
+        from agent.oauth.runtime_settings import get_oauth_runtime_settings
+
+        get_oauth_runtime_settings.cache_clear()
+    except Exception:
+        pass

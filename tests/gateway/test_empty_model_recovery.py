@@ -15,6 +15,7 @@ These tests pin two fixes:
 
 import threading
 
+import gateway.agent_runner as agent_runner
 import gateway.run as gateway_run
 
 
@@ -30,17 +31,19 @@ def _make_runner():
 
 def _patch_resolution(monkeypatch, *, model_from_config: str, provider: str = "openrouter"):
     """Stub gateway model + runtime resolution to a known state."""
-    monkeypatch.setattr(gateway_run, "_resolve_gateway_model", lambda cfg=None: model_from_config)
-    monkeypatch.setattr(
-        gateway_run,
-        "_resolve_runtime_agent_kwargs",
-        lambda: {
-            "provider": provider,
-            "api_key": "x",
-            "base_url": "https://openrouter.ai/api/v1",
-            "api_mode": "chat_completions",
-        },
-    )
+    resolve_model = lambda cfg=None: model_from_config  # noqa: E731
+    resolve_runtime = lambda: {  # noqa: E731
+        "provider": provider,
+        "api_key": "x",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_mode": "chat_completions",
+    }
+    # The extracted mixin module holds its own bindings (injected by
+    # gateway.run at import); patch both so the call under test sees them.
+    monkeypatch.setattr(gateway_run, "_resolve_gateway_model", resolve_model)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", resolve_runtime)
+    monkeypatch.setattr(agent_runner, "_resolve_gateway_model", resolve_model)
+    monkeypatch.setattr(agent_runner, "_resolve_runtime_agent_kwargs", resolve_runtime)
 
 
 def test_normal_turn_caches_last_resolved_model(monkeypatch):

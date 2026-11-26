@@ -284,7 +284,7 @@ def test_resolve_nous_runtime_credentials_invoke_jwt_is_idempotent(
     assert auth_path.read_text() == before_content
     assert auth_path.stat().st_mtime_ns == before_mtime
     assert sync_calls == []
-    payload = json.loads(auth_path.read_text())
+    payload = read_auth_json(auth_path)
     assert (
         payload["providers"]["ontoweb"]["agent_key_obtained_at"]
         == original_obtained_at
@@ -1014,6 +1014,13 @@ class TestLoginNousSkipKeepsCurrent:
             lambda *a, **kw: prompt_returns,
         )
         monkeypatch.setattr(models_mod, "get_pricing_for_provider", lambda p: {})
+        # The conftest offline-model fixture stubs the curated list; this
+        # login flow needs a model to select so it takes the switch path.
+        monkeypatch.setattr(
+            models_mod,
+            "get_curated_ontoweb_model_ids",
+            lambda: ["xiaomi/mimo-v2-pro"],
+        )
         free_tier_calls = []
 
         def _check_nous_free_tier(**kwargs):
@@ -1052,7 +1059,7 @@ class TestLoginNousSkipKeepsCurrent:
         assert "base_url" not in cfg_after["model"]
 
         # auth.json: active_provider restored to openrouter, but OntoWeb creds saved
-        auth_after = json.loads(auth_path.read_text())
+        auth_after = read_auth_json(auth_path)
         assert auth_after["active_provider"] == "openrouter"
         assert "ontoweb" in auth_after["providers"]
         assert auth_after["providers"]["ontoweb"]["access_token"] == "fake-ontoweb-token"
@@ -1083,7 +1090,7 @@ class TestLoginNousSkipKeepsCurrent:
         assert cfg_after["model"]["default"] == "xiaomi/mimo-v2-pro"
         assert free_tier_calls == [{"force_fresh": True}]
 
-        auth_after = json.loads(auth_path.read_text())
+        auth_after = read_auth_json(auth_path)
         assert auth_after["active_provider"] == "ontoweb"
 
     def test_skip_with_no_prior_active_provider_clears_it(self, tmp_path, monkeypatch):
@@ -1110,7 +1117,7 @@ class TestLoginNousSkipKeepsCurrent:
         _login_ontoweb(args, PROVIDER_REGISTRY["ontoweb"])
 
         auth_path = intellect_home / "auth.json"
-        auth_after = json.loads(auth_path.read_text())
+        auth_after = read_auth_json(auth_path)
         # active_provider should NOT be set to "ontoweb" after Skip
         assert auth_after.get("active_provider") in {None, ""}
         # But OntoWeb creds are still saved

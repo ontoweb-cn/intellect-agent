@@ -86,6 +86,19 @@ def pool_entry_to_credential_dict(row: dict[str, Any]) -> dict[str, Any]:
     for key, val in meta.get("extra", {}).items():
         if val is not None:
             out[key] = val
+    # Older writers stored extra pool metadata (portal_base_url, scope, ...)
+    # at the top level of ``metadata`` rather than under "extra".  Merge the
+    # leftover keys so a DB round-trip preserves them (e.g. OntoWeb portal URL).
+    _handled = {
+        "auth_type", "last_status_at", "last_error_code", "last_error_reason",
+        "last_error_message", "last_error_reset_at", "expires_at",
+        "expires_at_ms", "last_refresh", "inference_base_url", "agent_key",
+        "agent_key_expires_at", "request_count", "extra",
+    }
+    for key, val in meta.items():
+        if key in _handled or val is None:
+            continue
+        out.setdefault(key, val)
     return out
 
 

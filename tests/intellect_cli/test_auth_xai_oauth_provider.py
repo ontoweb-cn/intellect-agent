@@ -1339,7 +1339,7 @@ def test_pool_sync_back_writes_to_singleton(tmp_path, monkeypatch):
     # Singleton must reflect refreshed tokens — otherwise the next process
     # to load credentials would re-seed the consumed refresh token.
     auth_path = intellect_home / "auth.json"
-    raw = json.loads(auth_path.read_text())
+    raw = read_auth_json(auth_path)
     state = raw["providers"]["xai-oauth"]
     assert state["tokens"]["access_token"] == new_access
     assert state["tokens"]["refresh_token"] == "rt-new"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -312,14 +313,30 @@ def write_catalog_marker(catalog_id: str) -> None:
 
 
 def seed_builtin_oauth_providers_db(db, *, force_metadata: bool = False) -> dict[str, Any]:
-    """Seed using a SessionDB / MembershipDB instance."""
-    stats: dict[str, Any] = {}
+    """Seed using a SessionDB / MembershipDB instance.
 
-    def _run(cursor):
-        nonlocal stats
-        stats = seed_builtin_oauth_providers(cursor, force_metadata=force_metadata)
+    SessionDB may use the Rust sqlite backend whose cursor has no
+    ``execute`` method; use a plain sqlite3 connection against its path so
+    the catalog seed works for both backends.
+    """
+    db_path = getattr(db, "db_path", None)
+    if db_path is not None:
+        conn = sqlite3.connect(str(db_path), timeout=30)
+        try:
+            stats = seed_builtin_oauth_providers(
+                conn.cursor(), force_metadata=force_metadata
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    else:
+        stats = {}
 
-    db._execute_write(_run)
+        def _run(cursor):
+            nonlocal stats
+            stats = seed_builtin_oauth_providers(cursor, force_metadata=force_metadata)
+
+        db._execute_write(_run)
     if stats.get("catalog_id"):
         write_catalog_marker(stats["catalog_id"])
     return stats

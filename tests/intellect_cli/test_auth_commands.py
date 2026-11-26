@@ -545,7 +545,7 @@ def test_clear_provider_auth_removes_provider_pool_entries(tmp_path, monkeypatch
     assert clear_provider_auth("anthropic") is True
 
     payload = read_auth_json(tmp_path / "intellect" / "auth.json")
-    assert payload["active_provider"] is None
+    assert payload.get("active_provider") is None
     assert "anthropic" not in payload.get("providers", {})
     assert "anthropic" not in payload.get("credential_pool", {})
     assert "openrouter" in payload.get("credential_pool", {})

@@ -39,6 +39,21 @@ from unittest.mock import MagicMock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _default_gateway_provider_credentials(monkeypatch):
+    """Give gateway tests a resolvable provider.
+
+    Most gateway tests inject fake agents and never call an LLM, but the
+    runner resolves provider credentials before dispatching.  With no
+    config/env credentials that resolution fails with "No inference provider
+    configured" and the handler returns that warning instead of exercising
+    the code under test.  A dummy key keeps the resolution path real while
+    making no network calls.  Tests that assert missing-credential behavior
+    override this with their own env patches.
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "gateway-test-key")
+
+
 def _ensure_telegram_mock() -> None:
     """Install a comprehensive telegram mock in sys.modules.
 

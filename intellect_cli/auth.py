@@ -6140,10 +6140,14 @@ def _snapshot_ontoweb_pool_status() -> Dict[str, Any]:
             auth_type.startswith("oauth") or bool(refresh_token)
         )
         label = getattr(entry, "label", "unknown")
+        # PooledCredential stores portal/inference base URLs in ``extra``
+        # (they are not dataclass fields), so read both places.
+        entry_extra = getattr(entry, "extra", {}) or {}
         portal_status_url = None
         if is_portal_oauth:
             portal_status_url = (
                 getattr(entry, "portal_base_url", None)
+                or entry_extra.get("portal_base_url")
                 or DEFAULT_ONTOWEB_PORTAL_URL
             )
 
@@ -6152,6 +6156,7 @@ def _snapshot_ontoweb_pool_status() -> Dict[str, Any]:
             "portal_base_url": portal_status_url,
             "inference_base_url": getattr(entry, "inference_base_url", None)
             or getattr(entry, "runtime_base_url", None)
+            or entry_extra.get("inference_base_url")
             or getattr(entry, "base_url", None),
             "access_token": access_token if is_portal_oauth else None,
             "access_expires_at": getattr(entry, "expires_at", None),
