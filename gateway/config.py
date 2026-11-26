@@ -482,6 +482,7 @@ class WatchdogConfig:
         )
 
 
+@dataclass
 class ScaleToZeroConfig:
     """Gateway idle self-stop + socket-activation wake (HP-406).
 
