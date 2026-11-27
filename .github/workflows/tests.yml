@@ -297,7 +297,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]" pytest-cov
+          # [all] provides the ACP adapter + aiohttp/messaging deps the full
+          # suite imports during collection; [dev] alone aborts collection.
+          pip install -e ".[all,dev]" pytest-cov
           # Same mandatory-native-extension gap as the test/e2e jobs: without
           # this the whole suite reports ~1900 spurious NoneType failures.
           pip install rust-wheel/*.whl
