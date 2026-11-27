@@ -1,6 +1,5 @@
 """Diagnostic probe for _find_all_skills cache invalidation (R6: no browser UI)."""
 import tempfile
-from pathlib import Path
 
 import tools.skills_tool as st
 
