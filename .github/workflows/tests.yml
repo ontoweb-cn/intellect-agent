@@ -1,6 +1,7 @@
 name: Tests
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
@@ -272,10 +273,8 @@ jobs:
   #
   # The feature it was meant to cover is gone by policy, not by accident:
   # PostgreSQL storage is gated on ``members.enabled``, and multi-user
-  # (members/teams/projects) is permanent WONTFIX — ``validate_config_structure``
-  # actively *rejects* ``storage.backend: postgresql`` in single-user mode
-  # (see tests/intellect_cli/test_config_validation.py::TestStorageBackendValidation).
-  # Re-introduce this job only alongside an actual PostgreSQL storage backend.
+  # (members/teams/projects) is permanent WONTFIX.  Re-introduce this job only
+  # alongside an actual PostgreSQL storage backend.
 
   coverage:
     # Advisory only, and manual-only: the six isolated shards above are the

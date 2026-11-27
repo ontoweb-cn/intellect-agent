@@ -25,6 +25,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Per-stream activity-scene emitters, registered by the worker before its
+# event loop.  cancel_stream() uses this so a user Stop still emits the
+# required scene before the terminal cancel event.
+STREAM_ACTIVITY_EMITTERS: dict[str, object] = {}
+
 from api.config import (
     get_config,
     STREAMS, STREAMS_LOCK, CANCEL_FLAGS, AGENT_INSTANCES, STREAM_PARTIAL_TEXT,
@@ -3894,7 +3899,7 @@ def _run_agent_streaming(
                     from api.run_journal import read_run_events
 
                     journal_events = (
-                        read_run_events(session_id, stream_id).get("events") or []
+                        read_run_events(session_id, stream_id, max_events=2000).get("events") or []
                     )
                 except Exception:
                     logger.debug(
@@ -3933,6 +3938,8 @@ def _run_agent_streaming(
                 stream_id,
                 exc_info=True,
             )
+
+    STREAM_ACTIVITY_EMITTERS[stream_id] = _build_and_put_activity_scene
 
     def put(event, data):
         # If cancelled, drop all further events except cancel/error and the
@@ -6356,6 +6363,7 @@ def _run_agent_streaming(
             STREAM_LIVE_TOOL_CALLS.pop(stream_id, None)  # Clean up tool calls (#1361 §B)
             STREAM_GOAL_RELATED.pop(stream_id, None)  # Clean up goal-related flag (#1932)
             STREAM_LAST_EVENT_ID.pop(stream_id, None)  # Clean up event_id pointer (stage-364)
+            STREAM_ACTIVITY_EMITTERS.pop(stream_id, None)
             unregister_active_run(stream_id)
             # NOTE: do NOT discard PENDING_GOAL_CONTINUATION here. The marker
             # is set by goal_continue (line ~3328) inside the SAME function
@@ -6756,6 +6764,19 @@ def cancel_stream(stream_id: str) -> bool:
                 logger.debug("Failed to clear session state on cancel for %s", _cancel_session_id)
 
     if _emit_cancel_event and q:
+        # Emit the required pre-terminal scene through the worker's own
+        # emitter (it has journal/display state).  Directly enqueueing the
+        # cancel below would otherwise violate the activity_scene ordering.
+        _activity_emitter = STREAM_ACTIVITY_EMITTERS.get(stream_id)
+        if _activity_emitter is not None:
+            try:
+                _activity_emitter('cancel', {'message': 'Cancelled by user'})
+            except Exception:
+                logger.debug(
+                    "Failed to emit pre-cancel activity_scene for %s",
+                    stream_id,
+                    exc_info=True,
+                )
         try:
             q.put_nowait(('cancel', {'message': 'Cancelled by user'}))
         except Exception:

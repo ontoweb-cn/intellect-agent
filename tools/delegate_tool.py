@@ -41,6 +41,11 @@ from tools.terminal_tool import set_approval_callback as _set_subagent_approval_
 from utils import base_url_hostname, is_truthy_value
 
 
+def _optional_str(value):
+    """Return *value* only when it is a real string; never leak reprs to the model."""
+    return value if isinstance(value, str) else None
+
+
 # Tools that children must never have access to
 DELEGATE_BLOCKED_TOOLS = frozenset(
     [
@@ -1644,14 +1649,9 @@ def _run_single_child(
                 "tool_count": 0,
                 "agent": child,
                 "accepting_steer": True,
-                "live_transcript": (
-                _live_transcript
-                if isinstance(
-                    (_live_transcript := getattr(child, "_live_transcript_path", None)),
-                    str,
-                )
-                else None
-            ),
+                "live_transcript": _optional_str(
+                    getattr(child, "_live_transcript_path", None)
+                ),
             }
         )
 
@@ -1791,11 +1791,7 @@ def _run_single_child(
                 "exit_reason": "timeout" if is_timeout else "error",
                 "api_calls": child_api_calls,
                 "duration_seconds": duration,
-                "_child_role": (
-                _child_role
-                if isinstance((_child_role := getattr(child, "_delegate_role", None)), str)
-                else None
-            ),
+                "_child_role": _optional_str(getattr(child, "_delegate_role", None)),
                 "diagnostic_path": diagnostic_path,
             }
         finally:
@@ -1886,7 +1882,7 @@ def _run_single_child(
         entry: Dict[str, Any] = {
             "task_index": task_index,
             "status": status,
-            "live_transcript": getattr(child, "_live_transcript_path", None),
+            "live_transcript": _optional_str(getattr(child, "_live_transcript_path", None)),
             "summary": summary,
             "api_calls": api_calls,
             "duration_seconds": duration,
@@ -1904,7 +1900,7 @@ def _run_single_child(
             # Captured before the finally block calls child.close() so the
             # parent thread can fire subagent_stop with the correct role.
             # Stripped before the dict is serialised back to the model.
-            "_child_role": getattr(child, "_delegate_role", None),
+            "_child_role": _optional_str(getattr(child, "_delegate_role", None)),
             # Captured before child.close() so the parent aggregator can fold
             # the child's total spend into the parent's session cost.  Port of
             # Kilo-Org/kilocode#9448 — previously the footer only reflected the
@@ -2039,7 +2035,7 @@ def _run_single_child(
             "error": str(exc),
             "api_calls": 0,
             "duration_seconds": duration,
-            "_child_role": getattr(child, "_delegate_role", None),
+            "_child_role": _optional_str(getattr(child, "_delegate_role", None)),
         }
 
     finally:
@@ -2643,7 +2639,6 @@ def _delegate_task_execute(
             "total_duration_seconds": total_duration,
         },
         ensure_ascii=False,
-        default=str,
     )
 
 

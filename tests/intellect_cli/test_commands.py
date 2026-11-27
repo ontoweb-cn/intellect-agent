@@ -368,26 +368,29 @@ class TestSlackNativeSlashes:
             _is_gateway_available,
             _resolve_config_gates,
         )
+        from intellect_cli.commands.registry import _SLACK_RESERVED_COMMANDS, _sanitize_slack_name
         overrides = _resolve_config_gates()
         n_canonical = sum(
             1 for cmd in COMMAND_REGISTRY
             if _is_gateway_available(cmd, overrides)
         )
         names = {n for n, _d, _h in slack_native_slashes()}
-        if n_canonical <= 50:
-            # Room for aliases — verify they are present.
+        # Canonical commands must always survive the clamp.  Aliases only
+        # get remaining slots; at exactly 50 there are none left.
+        canonical_names = {
+            cmd.name for cmd in COMMAND_REGISTRY
+            if _is_gateway_available(cmd, overrides)
+        }
+        missing = {
+            _sanitize_slack_name(n) for n in canonical_names
+        } - names - set(_SLACK_RESERVED_COMMANDS)
+        assert not missing, f"canonical Slack commands dropped: {sorted(missing)}"
+        # /intellect occupies one slot; aliases only fit after canonical.
+        if n_canonical + 1 < 50:
             assert "btw" in names
             assert "bg" in names
             assert "reset" in names
             assert "q" in names
-        else:
-            # Cap overflow — aliases may be dropped.  Verify at least
-            # the most important short aliases made it (they are added
-            # after canonical names, so they fill remaining slots).
-            # Document the overflow for curation.
-            assert n_canonical > 50, (
-                f"Expected cap overflow but got {n_canonical} canonical commands"
-            )
 
     def test_telegram_parity(self):
         """Every Telegram bot command must be registerable on Slack too.

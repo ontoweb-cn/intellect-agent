@@ -12,6 +12,7 @@ This module provides:
 - intellect config wizard   - Re-run setup wizard
 """
 
+import contextlib
 import copy
 import logging
 import os
@@ -27,6 +28,11 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 
 from intellect_cli.secret_prompt import masked_secret_prompt
+
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +180,33 @@ _RAW_CONFIG_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
 # calls read_raw_config. Also covers mutation of the module-level cache
 # dicts above.
 _CONFIG_LOCK = threading.RLock()
+
+
+@contextlib.contextmanager
+def _config_file_lock(config_path: Path):
+    """Serialize read-merge-write across CLI/gateway processes.
+
+    The in-process RLock above cannot protect against a gateway and a CLI
+    process saving different keys at the same time.  POSIX gets an advisory
+    flock; platforms without fcntl retain the previous behavior.
+    """
+    lock_path = config_path.with_name(config_path.name + ".lock")
+    try:
+        lock_file = open(lock_path, "a+", encoding="utf-8")
+    except OSError:
+        yield
+        return
+    try:
+        if fcntl is not None:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        lock_file.close()
 # Env var names written to .env that aren't in OPTIONAL_ENV_VARS
 # (managed by setup/provider flows directly).
 _EXTRA_ENV_KEYS = frozenset({
@@ -5184,13 +5217,36 @@ def save_config(config: Dict[str, Any], *, only_keys: list[str] | None = None):
         config_path = get_config_path()
 
         if only_keys is not None:
-            # Fast path: merge delta into existing config, write directly.
-            existing = read_raw_config()
-            for key in only_keys:
-                if key in config:
+            # Fast path: merge delta into existing config, preserving comments
+            # and formatting for unrelated sections.  The file lock makes the
+            # read-merge-write atomic across CLI/gateway processes.
+            with _config_file_lock(config_path):
+                existing = read_raw_config()
+                changed_keys = [key for key in only_keys if key in config]
+                for key in changed_keys:
                     existing[key] = config[key]
-            atomic_yaml_write(config_path, existing)
-            return
+                if changed_keys:
+                    from utils import atomic_roundtrip_yaml_update
+
+                    try:
+                        for key in changed_keys:
+                            atomic_roundtrip_yaml_update(
+                                config_path, key, config[key]
+                            )
+                    except Exception:
+                        # ruamel unavailable / parse failure: fall back to the
+                        # full-file atomic writer, still under the file lock.
+                        atomic_yaml_write(config_path, existing)
+                    _secure_file(config_path)
+                    try:
+                        from intellect_cli.api_key_secrets import (
+                            warn_if_plaintext_api_keys_in_config,
+                        )
+
+                        warn_if_plaintext_api_keys_in_config(existing)
+                    except Exception:
+                        pass
+                return
         current_normalized = _normalize_root_model_keys(_normalize_max_turns_config(config))
         normalized = current_normalized
         raw_existing = _normalize_root_model_keys(_normalize_max_turns_config(read_raw_config()))

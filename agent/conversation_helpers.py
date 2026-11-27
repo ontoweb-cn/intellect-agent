@@ -9,6 +9,7 @@ import logging
 from typing import Any, Optional
 
 from agent.model_metadata import MINIMUM_CONTEXT_LENGTH
+from utils import base_url_host_matches
 
 logger = logging.getLogger(__name__)
 

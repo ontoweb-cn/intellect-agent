@@ -420,9 +420,10 @@ class TestSendVoiceReply:
         event = _make_event()
         runner.adapters[event.source.platform] = mock_adapter
 
-        tts_result = json.dumps({"success": True, "file_path": "/tmp/test.ogg"})
+        def _fake_tts(*, output_path, **_kwargs):
+            return json.dumps({"success": True, "file_path": output_path})
 
-        with patch("tools.tts_tool.text_to_speech_tool", return_value=tts_result), \
+        with patch("tools.tts_tool.text_to_speech_tool", side_effect=_fake_tts), \
              patch("tools.tts_tool._strip_markdown_for_tts", side_effect=lambda t: t), \
              patch("os.path.isfile", return_value=True), \
              patch("os.unlink"), \
@@ -446,9 +447,10 @@ class TestSendVoiceReply:
         event.message_id = "462"
         runner.adapters[event.source.platform] = mock_adapter
 
-        tts_result = json.dumps({"success": True, "file_path": "/tmp/test.ogg"})
+        def _fake_tts(*, output_path, **_kwargs):
+            return json.dumps({"success": True, "file_path": output_path})
 
-        with patch("tools.tts_tool.text_to_speech_tool", return_value=tts_result), \
+        with patch("tools.tts_tool.text_to_speech_tool", side_effect=_fake_tts), \
              patch("tools.tts_tool._strip_markdown_for_tts", side_effect=lambda t: t), \
              patch("os.path.isfile", return_value=True), \
              patch("os.unlink"), \

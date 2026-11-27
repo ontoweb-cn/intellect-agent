@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import sqlite3
 import tempfile
 import time
@@ -3553,6 +3554,7 @@ class GatewayInfrastructureHandlers:
         import uuid as _uuid
         audio_path = None
         actual_path = None
+        temp_dir = None
         try:
             from tools.tts_tool import text_to_speech_tool, _strip_markdown_for_tts
 
@@ -3560,13 +3562,13 @@ class GatewayInfrastructureHandlers:
             if not tts_text:
                 return
 
-            # Use .mp3 extension so edge-tts conversion to opus works correctly.
-            # The TTS tool may convert to .ogg — use file_path from result.
+            # Use a private per-reply directory.  The old shared
+            # <tmp>/intellect_voice path was world-readable and honored a
+            # pre-created symlink; voice replies can contain private text.
+            temp_dir = tempfile.mkdtemp(prefix="intellect_voice_", dir=tempfile.gettempdir())
             audio_path = os.path.join(
-                tempfile.gettempdir(), "intellect_voice",
-                f"tts_reply_{_uuid.uuid4().hex[:12]}.mp3",
+                temp_dir, f"tts_reply_{_uuid.uuid4().hex[:12]}.mp3"
             )
-            os.makedirs(os.path.dirname(audio_path), exist_ok=True)
 
             result_json = await asyncio.to_thread(
                 text_to_speech_tool, text=tts_text, output_path=audio_path
@@ -3579,6 +3581,14 @@ class GatewayInfrastructureHandlers:
 
             # Use the actual file path from result (may differ after opus conversion)
             actual_path = result.get("file_path", audio_path)
+            try:
+                Path(actual_path).resolve().relative_to(Path(temp_dir).resolve())
+            except (OSError, ValueError):
+                logger.warning(
+                    "Auto voice reply TTS returned a path outside its private temp dir: %s",
+                    actual_path,
+                )
+                return
             if not result.get("success") or not os.path.isfile(actual_path):
                 logger.warning("Auto voice reply TTS failed: %s", result.get("error"))
                 return
@@ -3622,6 +3632,8 @@ class GatewayInfrastructureHandlers:
                     os.unlink(p)
                 except OSError:
                     pass
+            if temp_dir:
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     async def _execute_mcp_reload(self, event: MessageEvent) -> str:
         """Actually disconnect, reconnect, and notify MCP tool changes.

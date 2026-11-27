@@ -643,10 +643,10 @@ class SlackAdapter(BasePlatformAdapter):
             # routes the command event through the socket regardless of the
             # manifest's request URL, but it will not deliver an event for
             # a slash command the manifest doesn't declare.
-            from intellect_cli.commands import slack_native_slashes
+            from intellect_cli.commands import slack_gateway_slash_names
             import re as _re
 
-            _slash_names = [name for name, _d, _h in slack_native_slashes()]
+            _slash_names = slack_gateway_slash_names()
             if _slash_names:
                 _slash_pattern = _re.compile(
                     r"^/(?:" + "|".join(_re.escape(n) for n in _slash_names) + r")$"

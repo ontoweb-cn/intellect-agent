@@ -1761,6 +1761,17 @@ def _build_model_picker_display(state: dict) -> list:
 
 # ── Panel layout helpers (used by clarify, model-picker, approval, etc.) ──
 
+def _display_safe_text(text: str) -> str:
+    """Render control bytes visibly so approval text cannot inject terminal escapes."""
+    out = []
+    for ch in str(text or ""):
+        if ch in "\n\t" or ord(ch) >= 0x20:
+            out.append(ch)
+        else:
+            out.append(f"\\x{ord(ch):02x}")
+    return "".join(out)
+
+
 def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, max_width: int = 76) -> int:
     """Choose a stable panel width wide enough for the title and content."""
     term_cols = shutil.get_terminal_size((100, 20)).columns
@@ -8351,7 +8362,13 @@ class IntellectCLI:
         # Prefix matching (exact match still wins): a unique shortest
         # candidate resolves to the full command; a tie stays ambiguous.
         # Candidates include built-ins and installed skill commands.
-        if _cmd_def is None and _base_word:
+        _quick_cfg = (
+            self.config.get("quick_commands", {})
+            if isinstance(getattr(self, "config", None), dict)
+            else {}
+        )
+        _is_quick_command = isinstance(_quick_cfg, dict) and _base_word in _quick_cfg
+        if _cmd_def is None and _base_word and not _is_quick_command:
             try:
                 from intellect_cli.commands.registry import COMMAND_REGISTRY
                 candidates = set()
@@ -8376,20 +8393,40 @@ class IntellectCLI:
                     if name.startswith(_base_word)
                 )
                 if matches:
-                    shortest_len = min(len(name) for name in matches)
-                    shortest = [n for n in matches if len(n) == shortest_len]
-                    if len(shortest) == 1:
-                        expanded = shortest[0]
-                        rest = cmd_original.split(None, 1)
-                        cmd_original = "/" + expanded
-                        if len(rest) > 1:
-                            cmd_original += " " + rest[1]
-                        cmd_lower = cmd_original.lower()
-                        _base_word = expanded
-                        _cmd_def = _resolve_cmd(expanded)
-                        canonical = _cmd_def.name if _cmd_def else expanded
+                    rest = cmd_original.split(None, 1)
+                    has_args = len(rest) > 1
+                    # Prefix expansion is a convenience, never an implicit
+                    # authorization to run a different command.  Only a
+                    # single read-only exact candidate with no arguments may
+                    # auto-expand; destructive/safety commands and skill
+                    # commands always require the full name.
+                    safe_auto = {
+                        "help", "config", "status", "version", "usage",
+                        "sessions", "logs",
+                    }
+                    if len(matches) == 1:
+                        candidate = matches[0]
+                        if candidate == _base_word:
+                            # Exact skill command: let the normal skill
+                            # dispatch below handle it.
+                            pass
+                        elif candidate in safe_auto and not has_args:
+                            expanded = candidate
+                            cmd_original = "/" + expanded
+                            if has_args:
+                                cmd_original += " " + rest[1]
+                            cmd_lower = cmd_original.lower()
+                            _base_word = expanded
+                            _cmd_def = _resolve_cmd(expanded)
+                            canonical = _cmd_def.name if _cmd_def else expanded
+                        else:
+                            _cprint(
+                                f"  {_DIM}Did you mean /{candidate}? "
+                                f"Re-run with the full command name.{_RST}"
+                            )
+                            return True
                     else:
-                        options = ", ".join("/" + n for n in shortest[:6])
+                        options = ", ".join("/" + n for n in matches[:6])
                         _cprint(
                             f"  {_DIM}Ambiguous command '/{_base_word}'. "
                             f"Did you mean: {options}?{_RST}"
@@ -11358,11 +11395,23 @@ class IntellectCLI:
             timeout = int(CLI_CONFIG.get("approvals", {}).get("timeout", 60))
             response_queue = queue.Queue()
 
+            requires_full_review = self._approval_requires_full_review(command)
+            approval_choices = self._approval_choices(
+                command, allow_permanent=allow_permanent
+            )
+            # Never default to "allow once" when the command will not be
+            # fully visible; a stray Enter must deny instead of approving
+            # unseen text.
+            initial_selected = 0
+            if requires_full_review and "deny" in approval_choices:
+                initial_selected = approval_choices.index("deny")
             self._approval_state = {
                 "command": command,
                 "description": description,
-                "choices": self._approval_choices(command, allow_permanent=allow_permanent),
-                "selected": 0,
+                "choices": approval_choices,
+                "selected": initial_selected,
+                "requires_full_review": requires_full_review,
+                "viewed_full": False,
                 "response_queue": response_queue,
             }
             self._approval_deadline = _time.monotonic() + timeout
@@ -11392,10 +11441,19 @@ class IntellectCLI:
             _cprint(f"\n{_DIM}  ⏱ Timeout — denying command{_RST}")
             return "deny"
 
+    @staticmethod
+    def _approval_requires_full_review(command: str) -> bool:
+        """True when the command cannot be fully shown in the compact panel."""
+        return (
+            len(command) > 70
+            or "\n" in command
+            or "\r" in command
+        )
+
     def _approval_choices(self, command: str, *, allow_permanent: bool = True) -> list[str]:
         """Return approval choices for a dangerous command prompt."""
         choices = ["once", "session", "always", "deny"] if allow_permanent else ["once", "session", "deny"]
-        if len(command) > 70:
+        if self._approval_requires_full_review(command):
             choices.append("view")
         return choices
 
@@ -11436,10 +11494,31 @@ class IntellectCLI:
         chosen = choices[selected]
         if chosen == "view":
             state["show_full"] = True
+            state["viewed_full"] = True
+            # The panel itself is height-budgeted, so print the complete
+            # command to scrollback before approving.  This is the only path
+            # that unlocks approval for long/multiline commands.
+            _cprint(
+                f"\n{_DIM}Full command:{_RST}\n"
+                f"{_display_safe_text(state['command'])}\n"
+            )
             state["choices"] = [choice for choice in choices if choice != "view"]
-            if state["selected"] >= len(state["choices"]):
+            if "deny" in state["choices"]:
+                state["selected"] = state["choices"].index("deny")
+            elif state["selected"] >= len(state["choices"]):
                 state["selected"] = max(0, len(state["choices"]) - 1)
             self._invalidate()
+            return
+
+        if (
+            chosen in {"once", "session", "always"}
+            and state.get("requires_full_review")
+            and not state.get("viewed_full")
+        ):
+            _cprint(
+                f"\n{_DIM}  Review the full command first: select "
+                f"'Show full command' before approving.{_RST}"
+            )
             return
 
         state["response_queue"].put(chosen)
@@ -11467,7 +11546,15 @@ class IntellectCLI:
         show_full = state.get("show_full", False)
 
         title = "⚠️  Dangerous Command"
-        cmd_display = command if show_full or len(command) <= 70 else command[:70] + '...'
+        if show_full:
+            cmd_display = command
+        elif "\n" in command or "\r" in command:
+            # Multi-line commands: only the first logical line is safe to
+            # show compactly; later lines may contain the actual payload.
+            first_line = command.replace("\r\n", "\n").replace("\r", "\n").split("\n", 1)[0]
+            cmd_display = first_line[:70] + ('...' if len(first_line) > 70 or "\n" in command else '')
+        else:
+            cmd_display = command if len(command) <= 70 else command[:70] + '...'
         choice_labels = {
             "once": "Allow once",
             "session": "Allow for this session",
@@ -11476,8 +11563,28 @@ class IntellectCLI:
             "view": "Show full command",
         }
 
-        preview_lines = _wrap_panel_text(description, 60)
-        preview_lines.extend(_wrap_panel_text(cmd_display, 60))
+        def _wrap_panel_lines(text, width, **kwargs):
+            """Wrap logical lines separately so embedded newlines are rows."""
+            normalized = _display_safe_text(
+                str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+            )
+            out = []
+            for logical in normalized.split("\n"):
+                out.extend(_wrap_panel_text(logical, width, **kwargs))
+            return out or [""]
+
+        needs_review = bool(state.get("requires_full_review")) and not bool(
+            state.get("viewed_full")
+        )
+        preview_lines = _wrap_panel_lines(description, 60)
+        preview_lines.extend(_wrap_panel_lines(cmd_display, 60))
+        if needs_review:
+            preview_lines.extend(
+                _wrap_panel_lines(
+                    "⚠ Full command hidden — select Show full command before approving",
+                    60,
+                )
+            )
         for i, choice in enumerate(choices):
             prefix = '❯ ' if i == selected else '  '
             preview_lines.extend(_wrap_panel_text(
@@ -11492,7 +11599,7 @@ class IntellectCLI:
         inner_text_width = max(8, box_width - 2)
 
         # Pre-wrap the mandatory content — command + choices must always render.
-        cmd_wrapped = _wrap_panel_text(
+        cmd_wrapped = _wrap_panel_lines(
             cmd_display, inner_text_width, break_long_words=True
         )
 
@@ -11568,6 +11675,14 @@ class IntellectCLI:
         lines = []
         lines.append(('class:approval-border', '╭' + ('─' * box_width) + '╮\n'))
         _append_panel_line(lines, 'class:approval-border', 'class:approval-title', title, box_width)
+        if needs_review:
+            _append_panel_line(
+                lines,
+                'class:approval-border',
+                'class:approval-desc',
+                "⚠ Full command hidden — select Show full command before approving",
+                box_width,
+            )
         if not use_compact_chrome:
             _append_blank_panel_line(lines, 'class:approval-border', box_width)
 

@@ -1105,16 +1105,9 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
         entries.append((slack_name, desc[:140], hint[:100]))
         seen.add(slack_name)
 
-    # Prioritize the /btw style aliases explicitly documented for Slack;
-    # the 50-command clamp would otherwise drop them after all canonical names.
-    for cmd in COMMAND_REGISTRY:
-        if not _is_gateway_available(cmd, overrides):
-            continue
-        for alias in cmd.aliases:
-            if alias in {"btw", "bg", "reset", "q"}:
-                _add(alias, f"Alias for /{cmd.name} — {cmd.description}", cmd.args_hint or "")
-
-    # First pass: canonical names (so they win slots if we hit the cap).
+    # First pass: canonical names.  Canonical commands always win slots over
+    # aliases; dropping /status or /update for a convenience alias is worse
+    # than not registering the alias on a full 50-command Slack list.
     for cmd in COMMAND_REGISTRY:
         if not _is_gateway_available(cmd, overrides):
             continue
@@ -1132,6 +1125,36 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
         _add(name, description, args_hint or "")
 
     return entries
+
+
+def slack_gateway_slash_names() -> list[str]:
+    """Return every slash name the gateway should accept from Slack.
+
+    This is intentionally broader than :func:`slack_native_slashes`: Slack's
+    manifest is capped at 50 commands, but aliases such as ``/btw`` and
+    ``/bg`` still need to be recognized if Slack delivers them (and the
+    manifest for a smaller install can include them).  Canonical commands
+    always take manifest priority; alias recognition is independent.
+    """
+    overrides = _resolve_config_gates()
+    names: list[str] = ["intellect"]
+    seen: set[str] = {"intellect"}
+
+    def _add(name: str) -> None:
+        slack_name = _sanitize_slack_name(name)
+        if slack_name and slack_name not in seen:
+            seen.add(slack_name)
+            names.append(slack_name)
+
+    for cmd in COMMAND_REGISTRY:
+        if not _is_gateway_available(cmd, overrides):
+            continue
+        _add(cmd.name)
+        for alias in cmd.aliases:
+            _add(alias)
+    for name, _description, _hint in _iter_plugin_command_entries():
+        _add(name)
+    return names
 
 
 def slack_app_manifest(request_url: str = "https://intellect-agent.local/slack/commands") -> dict[str, Any]:

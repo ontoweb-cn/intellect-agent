@@ -92,20 +92,20 @@ class TestSlashCommandPrefixMatching:
             cli_obj.process_command("/help")
         mock_help.assert_called_once()
 
-    def test_skill_command_prefix_matches(self):
-        """A prefix that uniquely matches a skill command should dispatch it."""
+    def test_skill_command_prefix_shows_suggestion_without_executing(self):
+        """A skill prefix must never auto-execute; show the full name instead."""
         cli_obj = _make_cli()
         fake_skill = {"/test-skill-xyz": {"name": "Test Skill", "description": "test"}}
         printed = []
         cli_obj.console.print = lambda *a, **kw: printed.append(str(a))
 
         import cli as cli_mod
-        with patch.object(cli_mod, '_skill_commands', fake_skill):
+        with patch.object(cli_mod, '_skill_commands', fake_skill),              patch("cli._cprint", side_effect=lambda text: printed.append(str(text))):
             cli_obj.process_command("/test-skill-xy")
 
-        # Should NOT show "Unknown command" — should have dispatched or attempted skill
-        unknown = any("Unknown command" in p for p in printed)
-        assert not unknown, f"Expected skill prefix to match, got: {printed}"
+        combined = " ".join(printed)
+        assert "Did you mean /test-skill-xyz" in combined
+        assert "Unknown command" not in combined
 
     def test_ambiguous_between_builtin_and_skill(self):
         """Ambiguous prefix spanning builtin + skill commands shows suggestions."""
@@ -122,20 +122,41 @@ class TestSlashCommandPrefixMatching:
         printed = " ".join(str(c) for c in cli_obj.console.print.call_args_list)
         assert "Ambiguous" not in printed
 
-    def test_shortest_match_preferred_over_longer_skill(self):
-        """/qui should dispatch to /quit (5 chars) not report ambiguous with /quint-pipeline (15 chars)."""
+    def test_single_unsafe_prefix_requires_full_name(self):
+        """/st must not auto-dispatch /stop; print a full-name suggestion."""
         cli_obj = _make_cli()
-        fake_skill = {"/quint-pipeline": {"name": "Quint Pipeline", "description": "test"}}
-
+        printed = []
         import cli as cli_mod
-        with patch.object(cli_mod, '_skill_commands', fake_skill):
-            # /quit is caught by the exact "/quit" branch → process_command returns False
-            result = cli_obj.process_command("/qui")
+        with patch.object(cli_mod, '_cprint', side_effect=lambda text: printed.append(str(text))):
+            result = cli_obj.process_command("/st")
 
-        # Returns False because /quit was dispatched (exits chat loop)
-        assert result is False
-        printed = " ".join(str(c) for c in cli_obj.console.print.call_args_list)
-        assert "Ambiguous" not in printed
+        combined = " ".join(printed)
+        assert result is True
+        assert "Ambiguous" in combined
+        assert "/stop" in combined
+        assert "/status" in combined
+
+    def test_short_safety_prefix_requires_full_name(self):
+        """/y must not auto-dispatch /yolo and disable approvals."""
+        cli_obj = _make_cli()
+        printed = []
+        import cli as cli_mod
+        with patch.object(cli_mod, '_cprint', side_effect=lambda text: printed.append(str(text))):
+            cli_obj.process_command("/y")
+
+        assert "Did you mean /yolo" in " ".join(printed)
+
+    def test_multi_candidate_never_uses_shortest_match(self):
+        """/m matches model and moa; it must remain ambiguous, not pick moa."""
+        cli_obj = _make_cli()
+        printed = []
+        import cli as cli_mod
+        with patch.object(cli_mod, '_cprint', side_effect=lambda text: printed.append(str(text))):
+            cli_obj.process_command("/m")
+
+        combined = " ".join(printed)
+        assert "Ambiguous" in combined
+        assert "Did you mean" in combined
 
     def test_tied_shortest_matches_still_ambiguous(self):
         """/re matches /reset and /retry (both 6 chars) — no unique shortest, stays ambiguous."""

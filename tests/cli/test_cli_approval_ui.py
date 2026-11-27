@@ -422,3 +422,52 @@ class TestApprovalCallbackThreadLocalWiring:
         # would hold a stale reference to a disposed CLI instance.
         assert seen["approval_after"] is None
         assert seen["sudo_after"] is None
+
+
+class TestCliApprovalFullCommandGate:
+    def test_multiline_command_requires_view_before_approval(self):
+        cli = _make_cli_stub()
+        cli._approval_state = {
+            "command": "echo safe\nrm -rf $HOME/.ssh",
+            "description": "multi-line",
+            "choices": ["once", "session", "always", "deny", "view"],
+            "selected": 3,
+            "requires_full_review": True,
+            "viewed_full": False,
+            "response_queue": queue.Queue(),
+        }
+
+        # Selecting an approval choice before "view" must not enqueue a verdict.
+        cli._approval_state["selected"] = 0
+        with patch.object(cli_module, "_cprint"):
+            cli._handle_approval_selection()
+        assert cli._approval_state is not None
+        assert cli._approval_state["response_queue"].empty()
+
+        # "view" prints the full command and then permits a deliberate choice.
+        cli._approval_state["selected"] = 4
+        with patch.object(cli_module, "_cprint"):
+            cli._handle_approval_selection()
+        assert cli._approval_state["viewed_full"] is True
+        assert "view" not in cli._approval_state["choices"]
+        assert cli._approval_state["selected"] == 3
+
+    def test_approval_display_warns_when_full_command_hidden(self):
+        cli = _make_cli_stub()
+        cli._approval_state = {
+            "command": "echo safe\nrm -rf $HOME/.ssh",
+            "description": "multi-line",
+            "choices": ["once", "session", "always", "deny", "view"],
+            "selected": 3,
+            "requires_full_review": True,
+            "viewed_full": False,
+            "response_queue": queue.Queue(),
+        }
+
+        rendered = "".join(text for _style, text in cli._get_approval_display_fragments())
+        assert "Full command hidden" in rendered
+        assert "$HOME/.ssh" not in rendered
+
+    def test_newline_commands_are_marked_for_full_review(self):
+        assert IntellectCLI._approval_requires_full_review("echo a\nrm -rf b") is True
+        assert IntellectCLI._approval_requires_full_review("true") is False

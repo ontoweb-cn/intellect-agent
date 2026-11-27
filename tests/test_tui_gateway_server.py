@@ -4284,6 +4284,20 @@ def test_browser_manage_connect_defaults_to_loopback(monkeypatch):
     assert urls[0] == "http://127.0.0.1:9222/json/version"
 
 
+def test_browser_failure_messages_show_launch_command_when_browser_exists(monkeypatch):
+    monkeypatch.setattr(
+        "intellect_cli.browser_connect.get_chrome_debug_candidates",
+        lambda system: ["/usr/bin/google-chrome"],
+    )
+    monkeypatch.setattr(
+        "intellect_cli.browser_connect.manual_chrome_debug_command",
+        lambda port, system: f"/usr/bin/google-chrome --remote-debugging-port={port}",
+    )
+    lines = server._failure_messages("http://127.0.0.1:9222", 9222, "Linux")
+    assert any("--remote-debugging-port=9222" in line for line in lines)
+    assert not any("No supported Chromium-family browser executable" in line for line in lines)
+
+
 def test_browser_manage_connect_default_local_reports_launch_hint(monkeypatch):
     monkeypatch.delenv("BROWSER_CDP_URL", raising=False)
     emitted: list[tuple[str, dict]] = []

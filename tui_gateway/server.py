@@ -6581,7 +6581,7 @@ def _failure_messages(url: str, port: int, system: str) -> list[str]:
     )
 
     try:
-        candidates = get_chrome_debug_candidates()
+        candidates = get_chrome_debug_candidates(system)
     except Exception:
         candidates = []
     command = manual_chrome_debug_command(port, system)

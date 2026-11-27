@@ -260,3 +260,24 @@ def test_wire_data_is_scene_at_root(scene_mod):
         "segments",
         "elapsed_ms",
     }
+
+
+def test_wire_bound_shrinks_oversized_disclosure():
+    from api.activity_scene import (
+        ACTIVITY_SCENE_MAX_EVENT_BYTES,
+        bound_activity_scene_for_wire,
+        build_activity_scene_v1,
+    )
+
+    scene = build_activity_scene_v1(
+        stream_id="s1",
+        session_id="sess",
+        mode="settled",
+        disclosure={"user_intent": "x" * (3 * 1024 * 1024)},
+    )
+    bounded = bound_activity_scene_for_wire(scene)
+    import json
+
+    size = len(json.dumps(bounded, separators=(",", ":")).encode("utf-8"))
+    assert size <= ACTIVITY_SCENE_MAX_EVENT_BYTES
+    assert bounded["segments"] == []

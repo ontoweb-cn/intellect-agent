@@ -198,7 +198,7 @@ def _preview_from_args(args: Any, limit: int = 500) -> str:
                 return val.strip()[:limit]
         try:
             return json.dumps(args, ensure_ascii=False, separators=(",", ":"))[:limit]
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             return str(args)[:limit]
     if args is None:
         return ""
@@ -209,13 +209,15 @@ def segments_from_journal_events(events: Iterable[dict[str, Any]] | None) -> lis
     """Build A3 segments from already-journaled tool/thinking/text rows (A3a)."""
     segments: list[dict[str, Any]] = []
     thinking_parts: list[str] = []
+    thinking_chars = 0
     text_anchor_idx = 0
     open_tools: list[dict[str, Any]] = []
 
     def _flush_thinking() -> None:
-        nonlocal thinking_parts
+        nonlocal thinking_parts, thinking_chars
         text = "".join(thinking_parts).strip()
         thinking_parts = []
+        thinking_chars = 0
         if text and text != "Thinking…":
             segments.append({"kind": "thinking", "text": text[:4000]})
 
@@ -230,8 +232,10 @@ def segments_from_journal_events(events: Iterable[dict[str, Any]] | None) -> lis
             continue
         if name == "reasoning":
             delta = payload.get("text")
-            if isinstance(delta, str) and delta:
-                thinking_parts.append(delta)
+            if isinstance(delta, str) and delta and thinking_chars < 4000:
+                chunk = delta[: 4000 - thinking_chars]
+                thinking_parts.append(chunk)
+                thinking_chars += len(chunk)
             continue
         if name == "tool":
             _flush_thinking()
@@ -409,6 +413,31 @@ def bound_activity_scene_for_wire(
     # Leave headroom for event envelope overhead on the channel tuple.
     target = max(512, limit - 256)
 
+    # Trust boundary: a scene is assembled from several live stores.  Bound
+    # top-level strings/disclosure here even when they did not come from the
+    # journal path, then keep only the frozen A3 fields.
+    for _key in ("turn_id", "stream_id", "session_id", "mode", "display"):
+        _val = out.get(_key)
+        if isinstance(_val, str) and len(_val) > 512:
+            out[_key] = _val[:512]
+    _disc = out.get("disclosure")
+    if isinstance(_disc, dict):
+        out["disclosure"] = {
+            "expanded": bool(_disc.get("expanded", False)),
+            "user_intent": (
+                str(_disc.get("user_intent"))[:2000]
+                if _disc.get("user_intent") is not None
+                else None
+            ),
+        }
+    else:
+        out["disclosure"] = {"expanded": False, "user_intent": None}
+    _allowed_keys = {
+        "v", "turn_id", "stream_id", "session_id", "mode", "display",
+        "disclosure", "segments", "elapsed_ms",
+    }
+    out = {k: v for k, v in out.items() if k in _allowed_keys}
+
     def _shrink_text_fields(max_len: int) -> None:
         for seg in out.get("segments") or []:
             if not isinstance(seg, dict):
@@ -432,6 +461,11 @@ def bound_activity_scene_for_wire(
         out = compact_activity_scene_v1(out, max_segments=max(1, len(out["segments"]) - 1))
 
     if _scene_wire_bytes(out) > target:
-        # Last resort: empty segments but keep the seq row shape.
+        # Last resort: empty segments + no user intent, but keep the frozen
+        # A3 shape so consumers can still parse the row.
         out["segments"] = []
+        out["disclosure"] = {"expanded": False, "user_intent": None}
+        out["turn_id"] = str(out.get("turn_id") or "")[:128]
+        out["stream_id"] = str(out.get("stream_id") or "")[:128]
+        out["session_id"] = str(out.get("session_id") or "")[:128]
     return out

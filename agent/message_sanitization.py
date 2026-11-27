@@ -158,12 +158,21 @@ def _escape_invalid_chars_in_json_strings(raw: str) -> str:
     return _rs_escape_json_chars(raw)
 
 
+_MAX_TOOL_ARGS_REPAIR_CHARS = 64 * 1024
+
+
 def _python_repair_tool_args(raw_args: str) -> str:
-    """Fallback repair when the Rust path cannot recover the payload."""
+    """Fallback repair when the Rust path cannot recover the payload.
+
+    Bounded and linear: malformed arguments are attacker/model-controlled and
+    must not permit a comma-flood quadratic scan.
+    """
     if not isinstance(raw_args, str):
         raw_args = "" if raw_args is None else str(raw_args)
     text = raw_args.strip()
     if not text or text.lower() == "none":
+        return "{}"
+    if len(text) > _MAX_TOOL_ARGS_REPAIR_CHARS:
         return "{}"
     # Escape control characters inside JSON strings, then strip trailing
     # commas and close unclosed containers (old Python pipeline).
@@ -186,11 +195,10 @@ def _python_repair_tool_args(raw_args: str) -> str:
         else:
             out.append(ch)
     fixed = "".join(out)
-    while True:
-        cleaned = re.sub(r',\s*([}\]])', r'\1', fixed)
-        if cleaned == fixed:
-            break
-        fixed = cleaned
+    # Remove every trailing-comma run in one linear pass.  The old
+    # ``while True`` re.sub removed at most one comma per full-string scan,
+    # which is O(n²) for inputs like ``',,,,,...'``.
+    fixed = re.sub(r"(?:,\s*)+(?=[}\]])", "", fixed)
     opens = fixed.count("{") - fixed.count("}")
     brackets = fixed.count("[") - fixed.count("]")
     fixed += "]" * max(0, brackets) + "}" * max(0, opens)
@@ -209,6 +217,13 @@ def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
     """
     if raw_args is None or not isinstance(raw_args, str):
         return "{}"
+    if len(raw_args) > _MAX_TOOL_ARGS_REPAIR_CHARS:
+        # Valid large JSON is preserved without repair; malformed large input
+        # is rejected rather than spending unbounded CPU in either backend.
+        try:
+            return json.dumps(json.loads(raw_args), ensure_ascii=False)
+        except Exception:
+            return "{}"
     result = _rs_repair_tool_args(raw_args, tool_name)
     if result == "{}" and raw_args.strip() and raw_args.strip().lower() != "none":
         fallback = _python_repair_tool_args(raw_args)

@@ -49,14 +49,18 @@ def test_statusbar_still_toggles_visibility():
     assert cli_obj._status_bar_visible is False
 
 
-def test_status_prefix_prefers_status_command_over_statusbar_toggle():
+def test_status_prefix_is_ambiguous_with_statusbar_toggle():
     cli_obj = _make_cli()
 
-    with patch.object(cli_obj, "_show_session_status") as mock_status:
+    with patch("cli._cprint") as mock_cprint, \
+         patch.object(cli_obj, "_show_session_status") as mock_status:
         assert cli_obj.process_command("/sta") is True
 
-    mock_status.assert_called_once()
-    assert cli_obj._status_bar_visible is True
+    mock_status.assert_not_called()
+    printed = " ".join(str(c) for c in mock_cprint.call_args_list)
+    assert "Ambiguous" in printed
+    assert "/status" in printed
+    assert "/statusbar" in printed
 
 
 def test_show_session_status_prints_gateway_style_summary():
