@@ -11,7 +11,7 @@ Docker 镜像使用**多层标签**，与 Gitee Release 的 SemVer / CalVer 对�
 |------|------|----------|------|
 | **`latest`** | `ontoweb/intellect-agent:latest` | `main` 分支每次成功构建 | 开发/尝鲜；生产不推荐 |
 | **`main`** | `ontoweb/intellect-agent:main` | 同 `latest` | 明确表示跟踪 main |
-| **SemVer 精确** | `ontoweb/intellect-agent:0.7.2` | Gitee Release 发版 | **生产推荐** |
+| **SemVer 精确** | `ontoweb/intellect-agent:0.7.4` | Gitee Release 发版 | **生产推荐** |
 | **SemVer minor** | `ontoweb/intellect-agent:0.7` | 同 Release（可选） | 自动获得 patch 更新 |
 | **CalVer** | `ontoweb/intellect-agent:v2026.6.16` | Git tag 名 | 与 Release 页一一对应 |
 | **Git SHA** | `ontoweb/intellect-agent:sha-abc1234` | 每次构建（可选） | 审计、回滚 |
@@ -21,9 +21,9 @@ Docker 镜像使用**多层标签**，与 Gitee Release 的 SemVer / CalVer 对�
 
 ```
 Gitee tag v2026.6.16
-    ├── pyproject.toml version → 0.7.2
+    ├── pyproject.toml version → 0.7.4
     ├── Docker tags:
-    │     ontoweb/intellect-agent:0.7.2
+    │     ontoweb/intellect-agent:0.7.4
     │     ontoweb/intellect-agent:v2026.6.16
     │     ontoweb/intellect-agent:0.7      (可选)
     └── Gitee Release 附件 + Native bundles
@@ -49,7 +49,7 @@ Gitee tag v2026.6.16
 
 ```bash
 docker buildx imagetools create \
-  -t ontoweb/intellect-agent:0.7.2 \
+  -t ontoweb/intellect-agent:0.7.4 \
   -t ontoweb/intellect-agent:v2026.6.16 \
   -t ontoweb/intellect-agent:latest \
   ontoweb/intellect-agent@sha256:{amd64_digest} \
@@ -75,15 +75,15 @@ docker buildx imagetools create \
 验证：
 
 ```bash
-docker run --rm ontoweb/intellect-agent:0.7.2 intellect version
-docker inspect ontoweb/intellect-agent:0.7.2 --format '{{index .Config.Labels "org.opencontainers.image.version"}}'
+docker run --rm ontoweb/intellect-agent:0.7.4 intellect version
+docker inspect ontoweb/intellect-agent:0.7.4 --format '{{index .Config.Labels "org.opencontainers.image.version"}}'
 ```
 
 **实际 OCI Labels（build-arg 注入）：**
 
 ```dockerfile
-ARG INTELLECT_VERSION=0.7.2
-ARG INTELLECT_RUST_VERSION=0.7.2
+ARG INTELLECT_VERSION=0.7.4
+ARG INTELLECT_RUST_VERSION=0.7.4
 LABEL org.opencontainers.image.version="${INTELLECT_VERSION}"
 LABEL io.intellect.release.tag="${INTELLECT_RELEASE_TAG}"
 LABEL io.intellect.rust.version="${INTELLECT_RUST_VERSION}"
@@ -114,7 +114,7 @@ multi-arch：各架构 runner 本地编译，无需 cross-compile。
 
 ```bash
 # SemVer — 生产环境
-docker pull ontoweb/intellect-agent:0.7.2
+docker pull ontoweb/intellect-agent:0.7.4
 
 # CalVer — 与 Gitee Release 页面对应
 docker pull ontoweb/intellect-agent:v2026.6.16
@@ -130,7 +130,7 @@ docker pull ontoweb/intellect-agent@sha256:...
 ```bash
 docker run -it --rm \
   -v ~/.intellect:/opt/data \
-  ontoweb/intellect-agent:0.7.2 \
+  ontoweb/intellect-agent:0.7.4 \
   intellect chat
 ```
 
@@ -141,7 +141,7 @@ docker run -d \
   --name intellect-gateway \
   -v ~/.intellect:/opt/data \
   -p 8080:8080 \
-  ontoweb/intellect-agent:0.7.2 \
+  ontoweb/intellect-agent:0.7.4 \
   intellect gateway run
 ```
 
@@ -152,7 +152,7 @@ docker run -d \
 ### 升级
 
 ```bash
-docker pull ontoweb/intellect-agent:0.7.3
+docker pull ontoweb/intellect-agent:0.7.4
 # 更新 compose / systemd unit 中的镜像 tag
 docker stop intellect-gateway && docker rm intellect-gateway
 # 用新 tag 重新 run
@@ -200,7 +200,7 @@ v* tag push / GitHub release published
 国内用户可从阿里云 ACR 个人实例拉取（与 Docker Hub 相同 tag 命名）：
 
 ```
-crpi-okdl7kgk1p2exqcm.cn-hangzhou.personal.cr.aliyuncs.com/ontoweb/intellect-agent:0.7.2
+crpi-okdl7kgk1p2exqcm.cn-hangzhou.personal.cr.aliyuncs.com/ontoweb/intellect-agent:0.7.4
 ```
 
 当前为**手动同步**（从 Release 构建后 push）；CI 自动同步需要 ACR 凭据接入
@@ -216,7 +216,7 @@ docker-publish 的 merge job（`docker buildx imagetools create` 多加一个 `-
 ```yaml
 services:
   intellect-gateway:
-    image: ontoweb/intellect-agent:0.7.2
+    image: ontoweb/intellect-agent:0.7.4
     volumes:
       - intellect-data:/opt/data
     command: ["intellect", "gateway", "run"]
@@ -224,7 +224,7 @@ services:
 
   # Interactive CLI (one-shot)
   intellect-chat:
-    image: ontoweb/intellect-agent:0.7.2
+    image: ontoweb/intellect-agent:0.7.4
     profiles: ["cli"]
     stdin_open: true
     tty: true
@@ -248,4 +248,4 @@ WebUI，双端口 + healthcheck），默认引用 Docker Hub 的 CI 镜像，`.e
 
 **`:latest` 行为与文档不一致** — 检查 `docker inspect` 的 `Created` 时间与 Gitee main 最新 commit。
 
-**arm64 上 pull 慢** — 确认 manifest 含 `linux/arm64`：`docker buildx imagetools inspect ontoweb/intellect-agent:0.7.2`.
+**arm64 上 pull 慢** — 确认 manifest 含 `linux/arm64`：`docker buildx imagetools inspect ontoweb/intellect-agent:0.7.4`.

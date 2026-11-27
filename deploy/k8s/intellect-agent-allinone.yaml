@@ -1,6 +1,6 @@
 # Intellect Agent 单容器（Agent + Gateway + API Server + WebUI）K8s 部署清单
 # 目标集群：ai.wust.edu.cn（10.99.24.15 prod master，全 aarch64 节点，K8s v1.28）
-# 镜像：hub.wust.edu.cn/intellect/intellect-agent:0.7.2（linux/arm64）
+# 镜像：hub.wust.edu.cn/intellect/intellect-agent:0.7.4（linux/arm64）
 #
 # 应用方式：
 #   1. 先创建 Secret（见下方 intellect-agent-auth，替换为真实密钥后 kubectl apply）
@@ -55,7 +55,7 @@ spec:
         - name: harbor-regcred
       containers:
         - name: intellect-agent
-          image: hub.wust.edu.cn/intellect/intellect-agent:0.7.2
+          image: hub.wust.edu.cn/intellect/intellect-agent:0.7.4
           imagePullPolicy: IfNotPresent
           # K8s 的 command: 会整体替换镜像 ENTRYPOINT（与 Compose 的追加语义不同）。
           # 必须保留 /init → main-wrapper.sh 完整链：s6 stage2 做 UID 重映射/卷 chown，

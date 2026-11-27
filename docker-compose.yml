@@ -3,9 +3,9 @@ name: intellect-agent
 services:
   intellect-agent:
     # 默认引用 CI 发布的多架构镜像（版本与 pyproject 一致，由 bump-version.sh 联动）。
-    # 本地手动构建场景：在 .env 中设 INTELLECT_IMAGE=intellect-agent:0.7.3，
-    # 并 docker build -t intellect-agent:0.7.3 --build-arg INTELLECT_VERSION=0.7.3 .
-    image: ${INTELLECT_IMAGE:-ontoweb/intellect-agent:0.7.3}
+    # 本地手动构建场景：在 .env 中设 INTELLECT_IMAGE=intellect-agent:0.7.4，
+    # 并 docker build -t intellect-agent:0.7.4 --build-arg INTELLECT_VERSION=0.7.4 .
+    image: ${INTELLECT_IMAGE:-ontoweb/intellect-agent:0.7.4}
     container_name: intellect-agent
     restart: unless-stopped
 

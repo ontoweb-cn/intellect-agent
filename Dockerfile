@@ -294,9 +294,9 @@ RUN if [ -n "${INTELLECT_GIT_SHA}" ]; then \
 # INTELLECT_RELEASE_TAG）。下方默认值仅兜底无参数的本地 docker build；
 # packaging/scripts/bump-version.sh 在每次发版时与 pyproject/rust-core 联动更新。
 # （此前硬编码在此处，曾与版本树漂移三个发布周期——0.6.7 标签配 0.7.2 源码树。）
-ARG INTELLECT_VERSION=0.7.3
+ARG INTELLECT_VERSION=0.7.4
 ARG INTELLECT_RELEASE_TAG=
-ARG INTELLECT_RUST_VERSION=0.7.3
+ARG INTELLECT_RUST_VERSION=0.7.4
 LABEL org.opencontainers.image.version="${INTELLECT_VERSION}"
 LABEL io.intellect.release.tag="${INTELLECT_RELEASE_TAG}"
 LABEL io.intellect.rust.version="${INTELLECT_RUST_VERSION}"
