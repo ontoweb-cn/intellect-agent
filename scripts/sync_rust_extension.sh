@@ -8,7 +8,8 @@ cd "$ROOT"
 
 find_venv_so() {
   local venv_dir="$1"
-  find "$venv_dir/lib" -path "*/site-packages/intellect_community_core/*.so" 2>/dev/null | head -1
+  # Linux/macOS layouts differ; search the whole env, not just ``lib``.
+  find "$venv_dir" -path "*/intellect_community_core/*.so" 2>/dev/null | head -1
 }
 
 VENV_SO=""
@@ -21,6 +22,17 @@ for candidate in "$ROOT/.venv" "$ROOT/venv" "$HOME/.intellect/intellect-agent/ve
     fi
   fi
 done
+
+# CI jobs (actions/setup-python + bare ``pip install``) install into the
+# interpreter's site-packages, not a checkout-local venv. Resolve that
+# location through Python so the coverage/e2e jobs can still sync the wheel.
+if [[ -z "$VENV_SO" ]]; then
+  PYTHON_BIN="${PYTHON:-python3}"
+  SITE_PACKAGES="$("$PYTHON_BIN" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])' 2>/dev/null || true)"
+  if [[ -n "$SITE_PACKAGES" && -d "$SITE_PACKAGES/intellect_community_core" ]]; then
+    VENV_SO="$(find "$SITE_PACKAGES/intellect_community_core" -maxdepth 1 -name '*.so' 2>/dev/null | head -1)"
+  fi
+fi
 
 if [[ -z "$VENV_SO" ]]; then
   echo "No intellect_community_core .so in venv — run: cd rust-core && maturin develop --release" >&2
