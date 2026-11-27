@@ -75,8 +75,17 @@ class TestCronJobCleanup:
 
     def test_keyboard_interrupt_in_close_does_not_propagate(self):
         """If close() raises KeyboardInterrupt, it must not escape run_job."""
-        mock_db = MagicMock()
-        mock_db.close.side_effect = KeyboardInterrupt
+        cron_db = MagicMock()
+        cron_db.close.side_effect = KeyboardInterrupt
+        made_dbs: list = []
+
+        def _mk_session_db(*_a, **_kw):
+            # Credential-pool resolution opens the state DB again; only the
+            # first (cron) DB gets the KeyboardInterrupt side effect.
+            if not made_dbs:
+                made_dbs.append(cron_db)
+                return cron_db
+            return MagicMock()
 
         from cron import scheduler
 
@@ -88,7 +97,7 @@ class TestCronJobCleanup:
             "model": "test/model",
         }
 
-        with patch("intellect_state.SessionDB", return_value=mock_db), \
+        with patch("intellect_state.SessionDB", side_effect=_mk_session_db), \
              patch.object(scheduler, "_build_job_prompt", return_value="hello"), \
              patch.object(scheduler, "_resolve_origin", return_value=None), \
              patch.object(scheduler, "_resolve_delivery_target", return_value=None), \
@@ -98,5 +107,5 @@ class TestCronJobCleanup:
             # Must not raise
             scheduler.run_job(job)
 
-        mock_db.end_session.assert_called_once()
-        mock_db.close.assert_called_once()
+        cron_db.end_session.assert_called_once()
+        cron_db.close.assert_called_once()
