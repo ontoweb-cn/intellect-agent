@@ -61,6 +61,8 @@ def _offline_model_discovery(request, monkeypatch):
     internals); tests that need specific catalog data patch the fetchers
     themselves, which overrides this default.
     """
+    if Path(str(request.path)).name == "test_model_catalog.py":
+        return
     monkeypatch.setattr(
         "intellect_cli.models.get_curated_ontoweb_model_ids",
         lambda: [],

@@ -76,9 +76,9 @@ def test_show_status_reports_ontoweb_auth_error(monkeypatch, capsys, tmp_path):
 
     status_mod.show_status(SimpleNamespace(all=False, deep=False))
 
-    output = capsys.readouterr().out
-    assert "ONTOWEB Portal   ✗ not logged in (run: intellect auth add ontoweb --type oauth)" in output
-    assert "Error:      Refresh session has been revoked" in output
+    output = " ".join(capsys.readouterr().out.split())
+    assert "ONTOWEB Portal ✗ not logged in (run: intellect auth add ontoweb --type oauth)" in output
+    assert "Error: Refresh session has been revoked" in output
     assert "Access exp:" in output
     assert "Key exp:" in output
 
@@ -127,9 +127,9 @@ def test_show_status_reports_nous_inference_key_without_portal_login(monkeypatch
 
     status_mod.show_status(SimpleNamespace(all=False, deep=False))
 
-    output = capsys.readouterr().out
-    assert "ONTOWEB Portal   ✗ not logged in (OntoWeb inference key configured)" in output
-    assert "Inference:  https://inference.example.com/v1" in output
+    output = " ".join(capsys.readouterr().out.split())
+    assert "ONTOWEB Portal ✗ not logged in (OntoWeb inference key configured)" in output
+    assert "Inference: https://inference.example.com/v1" in output
     assert "OntoWeb inference credentials are configured" in output
 
 

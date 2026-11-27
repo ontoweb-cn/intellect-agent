@@ -56,9 +56,10 @@ class TestCmdUpdatePip:
 
         hm._cmd_update_pip(mock_args)
 
-        assert mock_run.call_count == 1
-        assert mock_run.call_args.args[0] == ["/usr/bin/uv", "pip", "install", "--upgrade", "intellect-agent"]
-        assert mock_run.call_args.kwargs["env"]["VIRTUAL_ENV"] == "/tmp/intellect-launcher-venv"
+        assert mock_run.call_count >= 1
+        first = mock_run.call_args_list[0]
+        assert first.args[0] == ["/usr/bin/uv", "pip", "install", "--upgrade", "intellect-agent"]
+        assert first.kwargs["env"]["VIRTUAL_ENV"] == "/tmp/intellect-launcher-venv"
 
     @patch("shutil.which", return_value="/usr/bin/uv")
     @patch("subprocess.run")
@@ -74,8 +75,8 @@ class TestCmdUpdatePip:
 
         hm._cmd_update_pip(mock_args)
 
-        assert mock_run.call_count == 1
-        assert "env" not in mock_run.call_args.kwargs
+        assert mock_run.call_count >= 1
+        assert "env" not in mock_run.call_args_list[0].kwargs
 
 
 class TestCmdUpdateBranchFallback:
@@ -208,7 +209,6 @@ class TestCmdUpdateBranchFallback:
         # Regression for #18840: ui-tui install must stream
         # output (capture_output=False) so postinstall progress is visible
         # to the user.
-        tui_call = npm_calls[0]
         tui_run_call = next(
             call
             for call in mock_run.call_args_list

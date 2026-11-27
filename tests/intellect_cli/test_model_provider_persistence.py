@@ -6,7 +6,7 @@ isinstance(model, dict)) to silently fail — leaving the provider unset and
 falling back to auto-detection.
 """
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -85,7 +85,10 @@ class TestProviderPersistsAfterModelSave:
             assert kwargs["sort_keys"] is False
             raise OSError("simulated atomic write failure")
 
-        with patch("intellect_cli.auth.atomic_yaml_write", side_effect=_boom) as mock_write:
+        with (
+            patch("intellect_cli.auth._set_active_provider_id"),
+            patch("intellect_cli.auth.atomic_yaml_write", side_effect=_boom) as mock_write,
+        ):
             with pytest.raises(OSError, match="simulated atomic write failure"):
                 _update_config_for_provider(
                     "ontoweb",

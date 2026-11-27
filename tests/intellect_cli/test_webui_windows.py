@@ -1,7 +1,5 @@
 """Tests for Windows webui daemon launch configuration."""
 
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -54,10 +52,7 @@ def test_webui_start_puts_project_root_on_pythonpath(monkeypatch, tmp_path, plat
     monkeypatch.setattr(webui, "_get_running_pid", lambda: None)
     monkeypatch.setattr(webui, "_is_pid_alive", lambda _pid: True)
     monkeypatch.setattr(webui.subprocess, "Popen", _fake_popen)
-    monkeypatch.setattr(
-        "intellect_cli.config.get_project_root",
-        lambda: project,
-    )
+    monkeypatch.setattr(webui, "get_project_root", lambda: project)
     monkeypatch.setattr(
         "intellect_cli.config.get_intellect_home",
         lambda: str(intellect_home),

@@ -158,7 +158,7 @@ class TestCmdUpdatePipUsesUvTool:
              patch("intellect_cli.config.is_uv_tool_install", return_value=True):
             _cmd_update_pip(SimpleNamespace())
 
-        assert mock_run.call_args[0][0] == ["/usr/local/bin/uv", "tool", "upgrade", "intellect-agent"]
+        assert mock_run.call_args_list[0][0][0] == ["/usr/local/bin/uv", "tool", "upgrade", "intellect-agent"]
 
     @patch("subprocess.run")
     def test_runs_uv_pip_install_when_not_uv_tool(self, mock_run):
@@ -170,7 +170,7 @@ class TestCmdUpdatePipUsesUvTool:
              patch("intellect_cli.config.is_uv_tool_install", return_value=False):
             _cmd_update_pip(SimpleNamespace())
 
-        assert mock_run.call_args[0][0] == [
+        assert mock_run.call_args_list[0][0][0] == [
             "/usr/local/bin/uv",
             "pip",
             "install",
@@ -187,7 +187,7 @@ class TestCmdUpdatePipUsesUvTool:
              patch("intellect_cli.config.is_uv_tool_install", return_value=False):
             _cmd_update_pip(SimpleNamespace())
 
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_run.call_args_list[0][0][0]
         assert cmd[1:] == ["-m", "pip", "install", "--upgrade", "intellect-agent"]
 
     @patch("subprocess.run")
@@ -246,9 +246,9 @@ class TestCmdUpdatePipInstallLayouts:
              patch("intellect_cli.config.is_uv_tool_install", return_value=False):
             hm._cmd_update_pip(SimpleNamespace())
 
-        assert mock_run.call_args[0][0] == ["/usr/bin/pipx", "upgrade", "intellect-agent"]
+        assert mock_run.call_args_list[0][0][0] == ["/usr/bin/pipx", "upgrade", "intellect-agent"]
         # pipx upgrade ignores VIRTUAL_ENV; we must not set it.
-        assert "env" not in mock_run.call_args.kwargs
+        assert "env" not in mock_run.call_args_list[0].kwargs
 
     @patch("subprocess.run")
     def test_pipx_layout_without_pipx_binary_treated_as_venv(
@@ -269,10 +269,10 @@ class TestCmdUpdatePipInstallLayouts:
             hm._cmd_update_pip(SimpleNamespace())
 
         # prefix != base_prefix, so this is treated as a venv -> overlay, no --system.
-        assert mock_run.call_args[0][0] == [
+        assert mock_run.call_args_list[0][0][0] == [
             "/usr/bin/uv", "pip", "install", "--upgrade", "intellect-agent",
         ]
-        assert mock_run.call_args.kwargs["env"]["VIRTUAL_ENV"].endswith("intellect-agent")
+        assert mock_run.call_args_list[0].kwargs["env"]["VIRTUAL_ENV"].endswith("intellect-agent")
 
     @patch("subprocess.run")
     def test_bare_pip_outside_venv_adds_system(self, mock_run, monkeypatch):
@@ -287,10 +287,10 @@ class TestCmdUpdatePipInstallLayouts:
              patch("intellect_cli.config.is_uv_tool_install", return_value=False):
             hm._cmd_update_pip(SimpleNamespace())
 
-        assert mock_run.call_args[0][0] == [
+        assert mock_run.call_args_list[0][0][0] == [
             "/usr/bin/uv", "pip", "install", "--system", "--upgrade", "intellect-agent",
         ]
-        assert "env" not in mock_run.call_args.kwargs
+        assert "env" not in mock_run.call_args_list[0].kwargs
 
     @patch("subprocess.run")
     def test_venv_exports_virtualenv_and_omits_system(self, mock_run, monkeypatch):
@@ -305,7 +305,7 @@ class TestCmdUpdatePipInstallLayouts:
              patch("intellect_cli.config.is_uv_tool_install", return_value=False):
             hm._cmd_update_pip(SimpleNamespace())
 
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_run.call_args_list[0][0][0]
         assert "--system" not in cmd
         assert cmd == ["/usr/bin/uv", "pip", "install", "--upgrade", "intellect-agent"]
-        assert mock_run.call_args.kwargs["env"]["VIRTUAL_ENV"] == "/home/u/.intellect/intellect-agent/venv"
+        assert mock_run.call_args_list[0].kwargs["env"]["VIRTUAL_ENV"] == "/home/u/.intellect/intellect-agent/venv"

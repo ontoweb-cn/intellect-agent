@@ -11269,16 +11269,17 @@ def cmd_analytics(args):
 # to parse.
 _BUILTIN_SUBCOMMANDS = frozenset(
     {
-        "acp", "analytics", "auth", "backup", "bundles", "checkpoints", "claw",
-        "completion", "computer-use",
+        "acp", "analytics", "auth", "backup", "blueprint", "bots", "bundles",
+        "checkpoints", "claw", "completion", "computer-use", "db", "journey",
         "config", "cron", "curator", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "lsp", "mcp", "members", "memory", "migrate",
-        "model", "pairing", "plugins", "portal", "postinstall", "agent", "profile", "proxy",
+        "model", "moa", "oauth", "pairing", "pets", "plugins", "portal",
+        "postinstall", "agent", "profile", "proxy",
         "prompt-size",
         "send", "sessions", "setup",
         "skills", "slack", "status", "tools", "uninstall", "update",
-        "vault", "version", "webhook", "whatsapp", "chat", "secrets", "security",
+        "vault", "version", "webhook", "webui", "whatsapp", "chat", "secrets", "security",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
         # expensive eager import of every bundled plugin module.

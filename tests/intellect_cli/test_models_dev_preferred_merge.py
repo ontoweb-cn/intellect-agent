@@ -81,11 +81,13 @@ class TestProviderModelIdsPreferred:
 
     def test_opencode_go_offline_falls_back_to_curated(self):
         """Offline models.dev → curated-only list, no crash."""
+        from intellect_cli.models import _PROVIDER_MODELS
+
+        curated = list(_PROVIDER_MODELS["opencode-go"])
         with patch("agent.models_dev.list_agentic_models", return_value=[]):
             out = provider_model_ids("opencode-go")
-        # Curated floor (see intellect_cli/models.py _PROVIDER_MODELS["opencode-go"])
-        assert "mimo-v2-pro" in out
-        assert "kimi-k2.6" in out
+        assert out
+        assert set(curated).issubset(set(out))
 
     def test_opencode_zen_includes_fresh_models(self):
         """opencode-zen follows the same pattern as opencode-go."""

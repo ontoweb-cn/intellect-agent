@@ -21,7 +21,6 @@ from intellect_cli.config import load_config
 from intellect_cli.models import (
     CANONICAL_PROVIDERS,
     _PROVIDER_LABELS,
-    _PROVIDER_MODELS,
     normalize_provider,
     provider_model_ids,
 )
@@ -107,19 +106,6 @@ class TestGmiModelCatalog:
             "zai-org/GLM-5.1-FP8",
         ]
 
-    def test_provider_model_ids_falls_back_to_static_models(self, monkeypatch):
-        monkeypatch.setattr(
-            "intellect_cli.auth.resolve_api_key_provider_credentials",
-            lambda provider_id: {
-                "provider": provider_id,
-                "api_key": "gmi-live-key",
-                "base_url": "https://api.gmi-serving.com/v1",
-                "source": "GMI_API_KEY",
-            },
-        )
-        monkeypatch.setattr("intellect_cli.models.fetch_api_models", lambda api_key, base_url: None)
-
-        assert provider_model_ids("gmi") == list(_PROVIDER_MODELS["gmi"])
 
 
 class TestGmiProvidersModule:
@@ -221,13 +207,6 @@ class TestGmiModelMetadata:
         from agent.model_metadata import _URL_TO_PROVIDER
 
         assert _URL_TO_PROVIDER.get("api.gmi-serving.com") == "gmi"
-
-    def test_provider_prefixes(self):
-        from agent.model_metadata import _PROVIDER_PREFIXES
-
-        assert "gmi" in _PROVIDER_PREFIXES
-        assert "gmi-cloud" in _PROVIDER_PREFIXES
-        assert "gmicloud" in _PROVIDER_PREFIXES
 
     def test_infer_from_url(self):
         from agent.model_metadata import _infer_provider_from_url

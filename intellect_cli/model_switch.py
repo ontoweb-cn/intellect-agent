@@ -69,7 +69,7 @@ _intellect_MODEL_WARNING = (
 # Negative examples it must NOT match:
 #   intellect-brain:qwen3-14b-ctx16k, qwen3:14b, claude-opus-4-6
 _NOUS_intellect_NON_AGENTIC_RE = re.compile(
-    r"(?:^|[/:])intellect[-_ ]?[34](?:[-_.:]|$)",
+    r"(?:^|[/:])(?:intellect[-_ ]?[34]|hermes[-_ ]?3(?:\.1)?)(?:[-_.:]|$)",
     re.IGNORECASE,
 )
 

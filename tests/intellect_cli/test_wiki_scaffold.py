@@ -100,18 +100,20 @@ def test_global_wiki_target(tmp_path: Path) -> None:
     assert target.path == global_wiki_dir(tmp_path)
 
 
-def test_members_scoping_skips_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_single_user_keeps_profile_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # members/teams are permanently WONTFIX: a legacy members.enabled flag
+    # must not activate tenant scoping or override the profile WIKI_PATH.
     monkeypatch.setenv("WIKI_PATH", "/tmp/legacy-wiki")
     config = {"members": {"enabled": True}}
-    assert members_scoping_active(config, "m1") is True
+    assert members_scoping_active(config, "m1") is False
     target = resolve_wiki_target(
         intellect_home=tmp_path,
         member_id="m1",
         env_wiki_path=None,
         config=config,
     )
-    assert target.scope == "member"
-    assert target.path == tmp_path / "members" / "m1" / "wiki"
+    assert target.scope == "global"
+    assert target.path == Path("/tmp/legacy-wiki")
 
 
 def test_wiki_write_mode_global_rbac() -> None:

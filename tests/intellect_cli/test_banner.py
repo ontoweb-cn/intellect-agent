@@ -43,6 +43,7 @@ def test_build_welcome_banner_uses_normalized_toolset_names():
         patch.object(banner, "get_available_skills", return_value={}),
         patch.object(banner, "get_update_result", return_value=None),
         patch.object(tools.mcp_tool, "get_mcp_status", return_value=[]),
+        patch.object(banner, "INTELLECT_HIDE_TOOLS_BANNER", False),
     ):
         console = Console(
             record=True, force_terminal=False, color_system=None, width=160

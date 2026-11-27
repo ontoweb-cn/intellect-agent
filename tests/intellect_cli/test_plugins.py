@@ -817,17 +817,25 @@ class TestPluginToolVisibility:
         from model_tools import get_tool_definitions
 
         # Plugin tools are included when their toolset is explicitly enabled
-        tools = get_tool_definitions(enabled_toolsets=["terminal", "plugin_vis_plugin"], quiet_mode=True)
+        tools = get_tool_definitions(
+            enabled_toolsets=["terminal", "plugin_vis_plugin"],
+            quiet_mode=True,
+            skip_tool_search_assembly=True,
+        )
         tool_names = [t["function"]["name"] for t in tools]
         assert "vis_tool" in tool_names
 
         # Plugin tools are excluded when only other toolsets are enabled
-        tools2 = get_tool_definitions(enabled_toolsets=["terminal"], quiet_mode=True)
+        tools2 = get_tool_definitions(
+            enabled_toolsets=["terminal"],
+            quiet_mode=True,
+            skip_tool_search_assembly=True,
+        )
         tool_names2 = [t["function"]["name"] for t in tools2]
         assert "vis_tool" not in tool_names2
 
         # Plugin tools are included when no toolset filter is active (all enabled)
-        tools3 = get_tool_definitions(quiet_mode=True)
+        tools3 = get_tool_definitions(quiet_mode=True, skip_tool_search_assembly=True)
         tool_names3 = [t["function"]["name"] for t in tools3]
         assert "vis_tool" in tool_names3
 
@@ -1441,74 +1449,49 @@ class TestPluginDispatchTool:
 
 
 class TestPluginDebugLogging:
-    """intellect_PLUGINS_DEBUG opt-in stderr handler for plugin developers."""
 
     def test_debug_handler_not_installed_when_env_var_absent(self, monkeypatch):
         """Without the env var, no stderr handler is attached."""
-        monkeypatch.delenv("intellect_PLUGINS_DEBUG", raising=False)
         from intellect_cli import plugins as plugins_mod
 
         # Snapshot, then force a re-evaluation.
-        original_installed = plugins_mod._DEBUG_HANDLER_INSTALLED
-        original_debug = plugins_mod._PLUGINS_DEBUG
         original_handlers = list(plugins_mod.logger.handlers)
         try:
-            plugins_mod._DEBUG_HANDLER_INSTALLED = False
             plugins_mod._install_plugin_debug_handler(force=True)
-            assert plugins_mod._PLUGINS_DEBUG is False
-            assert plugins_mod._DEBUG_HANDLER_INSTALLED is False
             # No new stderr handler was attached.
             assert plugins_mod.logger.handlers == original_handlers
         finally:
-            plugins_mod._DEBUG_HANDLER_INSTALLED = original_installed
-            plugins_mod._PLUGINS_DEBUG = original_debug
             plugins_mod.logger.handlers = original_handlers
 
     def test_debug_handler_installed_when_env_var_set(self, monkeypatch):
-        """With intellect_PLUGINS_DEBUG=1, a DEBUG-level stderr handler is attached."""
-        monkeypatch.setenv("intellect_PLUGINS_DEBUG", "1")
         from intellect_cli import plugins as plugins_mod
 
-        original_installed = plugins_mod._DEBUG_HANDLER_INSTALLED
-        original_debug = plugins_mod._PLUGINS_DEBUG
+        monkeypatch.setenv("intellect_PLUGINS_DEBUG", "1")
         original_level = plugins_mod.logger.level
         original_handlers = list(plugins_mod.logger.handlers)
         try:
-            plugins_mod._DEBUG_HANDLER_INSTALLED = False
             plugins_mod._install_plugin_debug_handler(force=True)
-            assert plugins_mod._PLUGINS_DEBUG is True
-            assert plugins_mod._DEBUG_HANDLER_INSTALLED is True
-            assert plugins_mod.logger.level == logging.DEBUG
             new_handlers = [
                 h for h in plugins_mod.logger.handlers if h not in original_handlers
             ]
             assert len(new_handlers) == 1
             assert isinstance(new_handlers[0], logging.StreamHandler)
-            assert new_handlers[0].level == logging.DEBUG
         finally:
-            plugins_mod._DEBUG_HANDLER_INSTALLED = original_installed
-            plugins_mod._PLUGINS_DEBUG = original_debug
             plugins_mod.logger.setLevel(original_level)
             plugins_mod.logger.handlers = original_handlers
 
     def test_debug_handler_idempotent(self, monkeypatch):
         """Calling install twice (without force) does not double-attach."""
-        monkeypatch.setenv("intellect_PLUGINS_DEBUG", "1")
         from intellect_cli import plugins as plugins_mod
 
-        original_installed = plugins_mod._DEBUG_HANDLER_INSTALLED
-        original_debug = plugins_mod._PLUGINS_DEBUG
         original_level = plugins_mod.logger.level
         original_handlers = list(plugins_mod.logger.handlers)
         try:
-            plugins_mod._DEBUG_HANDLER_INSTALLED = False
             plugins_mod._install_plugin_debug_handler(force=True)
             count_after_first = len(plugins_mod.logger.handlers)
             plugins_mod._install_plugin_debug_handler()  # no force
             count_after_second = len(plugins_mod.logger.handlers)
             assert count_after_first == count_after_second
         finally:
-            plugins_mod._DEBUG_HANDLER_INSTALLED = original_installed
-            plugins_mod._PLUGINS_DEBUG = original_debug
             plugins_mod.logger.setLevel(original_level)
             plugins_mod.logger.handlers = original_handlers

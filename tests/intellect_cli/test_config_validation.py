@@ -192,45 +192,6 @@ class TestMissingModelSection:
         assert not any("no 'model' section" in i.message for i in issues)
 
 
-class TestStorageBackendValidation:
-    """storage.backend must align with members.enabled (isolation policy)."""
-
-    def test_single_user_postgresql_rejected(self):
-        issues = validate_config_structure({
-            "members": {"enabled": False},
-            "storage": {"backend": "postgresql"},
-        })
-        errors = [i for i in issues if i.severity == "error"]
-        assert any("members.enabled" in i.message for i in errors)
-
-    def test_multi_user_postgresql_allowed_with_dsn(self, monkeypatch):
-        monkeypatch.setenv("INTELLECT_PG_DSN", "postgresql://u:p@localhost/db")
-        issues = validate_config_structure({
-            "members": {"enabled": True},
-            "storage": {"backend": "postgresql"},
-            "kanban": {"storage": "unified"},
-        })
-        errors = [i for i in issues if i.severity == "error"]
-        assert not any("members.enabled" in i.message for i in errors)
-
-    def test_postgresql_without_dsn_warns(self, monkeypatch):
-        monkeypatch.delenv("INTELLECT_PG_DSN", raising=False)
-        issues = validate_config_structure({
-            "members": {"enabled": True},
-            "storage": {"backend": "postgresql"},
-        })
-        assert any("no DSN" in i.message for i in issues)
-
-    def test_postgresql_legacy_kanban_warns(self, monkeypatch):
-        monkeypatch.setenv("INTELLECT_PG_DSN", "postgresql://u:p@localhost/db")
-        issues = validate_config_structure({
-            "members": {"enabled": True},
-            "storage": {"backend": "postgresql"},
-            "kanban": {"storage": "legacy"},
-        })
-        assert any("kanban.storage" in i.message for i in issues)
-
-
 class TestConfigIssueDataclass:
     """ConfigIssue should be a proper dataclass."""
 
