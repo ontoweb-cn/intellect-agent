@@ -30,12 +30,30 @@ def _isolate_intellect_home(tmp_path, monkeypatch):
 
 
 def _pgid_still_alive(pgid: int) -> bool:
-    """Return True if any process in the given process group is still alive."""
+    """Return True if any non-zombie process in the process group is alive.
+
+    ``killpg(pgid, 0)`` also succeeds for zombies, which can linger in the
+    group until the container's init reaps them.  That is not an orphan bug;
+    treating it as one made this test time out under CI load.
+    """
     try:
         os.killpg(pgid, 0)  # signal 0 = existence check
-        return True
     except ProcessLookupError:
         return False
+    try:
+        ps = subprocess.run(
+            ["ps", "-o", "stat=", "-g", str(pgid)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+        stats = [line.strip() for line in ps.stdout.splitlines() if line.strip()]
+        if stats and all(stat.upper().startswith("Z") for stat in stats):
+            return False
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return True
 
 
 def _process_group_snapshot(pgid: int) -> str:
