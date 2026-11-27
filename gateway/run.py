@@ -3108,11 +3108,9 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
                 try:
 
                     self.session_store.mark_resume_pending(
-
                         _sk,
-
                         "restart_timeout" if self._restart_requested else "shutdown_timeout",
-
+                        flush=False,
                     )
 
                     _pre_drain_keys.append(_sk)
@@ -3120,6 +3118,10 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
                 except Exception as _e:
 
                     logger.debug("pre-drain mark_resume_pending failed for %s: %s", _sk, _e)
+            try:
+                self.session_store.flush()
+            except Exception as _e:
+                logger.debug("pre-drain session flush failed: %s", _e)
 
             _drain_started_at = time.monotonic()
 
@@ -3237,7 +3239,9 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
 
                     try:
 
-                        self.session_store.mark_resume_pending(_sk, _resume_reason)
+                        self.session_store.mark_resume_pending(
+                            _sk, _resume_reason, flush=False
+                        )
 
                     except Exception as _e:
 
@@ -3248,6 +3252,10 @@ class GatewayRunner(GatewayCommandHandlers, GatewayAgentRunner, GatewayPlatformH
                             _sk, _e,
 
                         )
+                try:
+                    self.session_store.flush()
+                except Exception as _e:
+                    logger.debug("shutdown session flush failed: %s", _e)
 
                 self._interrupt_running_agents(
 

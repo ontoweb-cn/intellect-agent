@@ -255,6 +255,20 @@ class TestFindAllSkills:
             skills = _find_all_skills()
         assert len(skills[0]["description"]) <= MAX_DESCRIPTION_LENGTH
 
+    def test_cache_invalidates_on_in_place_skill_edit(self, tmp_path):
+        """Editing SKILL.md without touching the parent dir must refresh cache."""
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            _make_skill(tmp_path, "editable-skill")
+            first = _find_all_skills()
+            skill_md = tmp_path / "editable-skill" / "SKILL.md"
+            skill_md.write_text(
+                "---\nname: editable-skill\ndescription: Updated in place.\n---\n\nBody.\n",
+                encoding="utf-8",
+            )
+            second = _find_all_skills()
+        assert first[0]["description"] != second[0]["description"]
+        assert second[0]["description"] == "Updated in place."
+
     def test_skips_git_directories(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
             _make_skill(tmp_path, "real-skill")

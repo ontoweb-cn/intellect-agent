@@ -551,7 +551,53 @@ def _is_skill_disabled(name: str, platform: str = None) -> bool:
 # ── Skills scan cache ────────────────────────────────────────────────────
 # Skills change rarely at runtime; a full scan is ~50+ file reads + YAML
 # parses. Cache per process with mtime-based invalidation.
-_SKILLS_CACHE: dict[str, Any] = {"mtime": 0.0, "data": None, "data_all": None}
+_SKILLS_CACHE: dict[str, Any] = {
+    "signature": None,
+    "data": None,
+    "data_all": None,
+}
+
+
+def _skills_cache_signature():
+    """Metadata fingerprint for every discoverable SKILL.md.
+
+    Directory mtime alone misses in-place edits (editing a file does not
+    update its parent directory).  Include each file's mtime+size so a
+    content edit invalidates the process cache.
+    """
+    try:
+        from agent.skill_utils import (
+            get_external_skills_dirs,
+            iter_skill_index_files,
+            sys as _skill_sys,
+        )
+
+        parts = [("platform", _skill_sys.platform)]
+        dirs = []
+        if SKILLS_DIR.exists():
+            dirs.append(SKILLS_DIR)
+        _home = SKILLS_DIR.parent
+        for _pattern in ("teams/*/skills", "projects/*/skills", "members/*/skills"):
+            try:
+                dirs.extend(p for p in sorted(_home.glob(_pattern)) if p.is_dir())
+            except Exception:
+                pass
+        try:
+            dirs.extend(get_external_skills_dirs())
+        except Exception:
+            pass
+        for scan_dir in dirs:
+            for skill_md in iter_skill_index_files(scan_dir, "SKILL.md"):
+                if any(part in _EXCLUDED_SKILL_DIRS for part in skill_md.parts):
+                    continue
+                try:
+                    st = skill_md.stat()
+                except OSError:
+                    continue
+                parts.append((str(skill_md), st.st_mtime_ns, st.st_size))
+        return tuple(sorted(parts))
+    except Exception:
+        return None
 
 
 def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
@@ -565,20 +611,12 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
     Returns:
         List of skill metadata dicts (name, description, category).
     """
-    # Check cache: invalidate when SKILLS_DIR mtime changes
-    try:
-        from agent.skill_utils import sys as _skill_sys
-
-        _mtime = SKILLS_DIR.stat().st_mtime if SKILLS_DIR.exists() else 0.0
-        if (
-            _SKILLS_CACHE["mtime"] == _mtime
-            and _SKILLS_CACHE.get("platform") == _skill_sys.platform
-        ):
-            _key = "data_all" if skip_disabled else "data"
-            if _SKILLS_CACHE[_key] is not None:
-                return list(_SKILLS_CACHE[_key])  # shallow copy for safety
-    except OSError:
-        pass
+    # Check cache: invalidate on platform or any SKILL.md mtime/size change.
+    _signature = _skills_cache_signature()
+    if _signature is not None and _SKILLS_CACHE.get("signature") == _signature:
+        _key = "data_all" if skip_disabled else "data"
+        if _SKILLS_CACHE[_key] is not None:
+            return list(_SKILLS_CACHE[_key])  # shallow copy for safety
 
     from agent.skill_utils import get_external_skills_dirs, iter_skill_index_files
 
@@ -663,17 +701,15 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
                 )
                 continue
 
-    # Populate cache
+    # Populate cache.  Recompute the signature after scanning so a file
+    # changed mid-scan cannot leave a result paired with an older signature.
     try:
-        if SKILLS_DIR.exists():
-            _SKILLS_CACHE["mtime"] = SKILLS_DIR.stat().st_mtime
-        from agent.skill_utils import sys as _skill_sys
-        _SKILLS_CACHE["platform"] = _skill_sys.platform
+        _SKILLS_CACHE["signature"] = _skills_cache_signature()
         if skip_disabled:
             _SKILLS_CACHE["data_all"] = list(skills)
         else:
             _SKILLS_CACHE["data"] = list(skills)
-    except OSError:
+    except Exception:
         pass
 
     return skills

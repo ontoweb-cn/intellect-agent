@@ -1,0 +1,7 @@
+              Installed Skills               
+┏━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━━┓
+┃ Name ┃ Category ┃ Source ┃ Trust ┃ Status ┃
+┡━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━━┩
+└──────┴──────────┴────────┴───────┴────────┘
+0 hub-installed, 0 builtin, 0 local — 0 enabled, 0 disabled
+

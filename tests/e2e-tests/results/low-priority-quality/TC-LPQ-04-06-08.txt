@@ -1,0 +1,17 @@
+▶ running per-file parallel test suite via run_tests_parallel.py
+  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)
+Discovered 2 test files (96 tests) under ['tests/tools/test_skills_tool.py', 'tests/agent/test_prompt_caching.py']; running with -j 16
+[  9.4% |     9/96 | ✓9 | ✗0] ✓ tests/agent/test_prompt_caching.py (9✓, 1.9s)
+[100.0% |    96/96 | ✓96 | ✗ 0] ✓ tests/tools/test_skills_tool.py (87✓, 2.9s)
+
+=== Summary: 2 files, 96 tests passed, 0 failed (100% complete) in 2.9s (16 workers) ===
+  Durations cached to test_durations.json (2 files)
+
+=== Per-file subprocess time distribution ===
+  Files:   2
+  Total subprocess CPU-wall: 4.9s  (runner wall: 2.9s, parallelism: 16x)
+  P50: 2.94s  P90: 2.94s  P95: 2.94s  P99: 2.94s  Max: 2.94s
+  <1s: 0 files (0%)  <2s: 1 files (50%)
+  Top 10 slowest:
+      2.94s  tests/tools/test_skills_tool.py
+      1.95s  tests/agent/test_prompt_caching.py

@@ -1,0 +1,8 @@
+                        Installed Skills                        
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━━━┓
+┃ Name                   ┃ Category ┃ Source ┃ Trust ┃ Status  ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━━━┩
+│ e2e-low-priority-skill │          │ local  │ local │ enabled │
+└────────────────────────┴──────────┴────────┴───────┴─────────┘
+0 hub-installed, 0 builtin, 1 local — 1 enabled, 0 disabled
+

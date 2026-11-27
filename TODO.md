@@ -517,3 +517,15 @@ run_conversation() — 4,546 行
 **结论**: 两层互补已验证 — Regex 擅长通用模式匹配（`.rmdir(`），AST 擅长结构化分析（importlib 链 + import 语句检测）。两者缺一不可。
 
 **Penetration test (2026-06-14)**: 18 adversarial payloads, 0 bypasses. NFKC normalization handles Unicode tricks, AST catches importlib chains, regex catches generic method calls. Fullwidth exec correctly blocked after normalization.
+
+---
+
+## 九步交付 — 低优先级质量项 (2026-11-27)
+
+- ✅ **Session resume 批量 flush**: shutdown 两处改 `mark_resume_pending(..., flush=False)` + 一次 `session_store.flush()`；单次调用仍立即持久化。
+- ✅ **Skills cache 失效**: 新增 `_skills_cache_signature()`（platform + 每个 SKILL.md mtime_ns/size，含 external/team/project/member），原地编辑可刷新。
+- ✅ **测试补强**: prompt caching tool/native、审批多行安全门禁、session batch、skills 原地编辑。
+- ✅ **CI**: coverage workflow 增加 weekly schedule + workflow_dispatch，仍为 advisory；六 shard 权威。
+- 📄 报告/用例/手册: `tests/e2e-tests/reports/REPORT-low-priority-quality-2026-11-27.md`
+- 🔁 回归: `scripts/run_tests.sh tests/gateway/test_restart_*.py tests/tools/test_skills_tool.py tests/agent/test_prompt_caching.py ...`
+- R6 遗留: 无浏览器 UI 可观测；approval AST 测试与 run_agent 截断断言未在本模块扩大改造。

@@ -1,0 +1,2 @@
+blocked_before_view True
+viewed_full True

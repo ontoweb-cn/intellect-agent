@@ -20,6 +20,22 @@ class TestApplyAnthropicCacheControl:
         # Original should be unmodified
         assert "cache_control" not in msgs[0].get("content", "")
 
+    def test_native_anthropic_tool_message_gets_top_level_marker(self):
+        msgs = [
+            {"role": "system", "content": "System"},
+            {"role": "tool", "content": "result"},
+        ]
+        result = apply_anthropic_cache_control(msgs, native_anthropic=True)
+        assert result[1]["cache_control"] == {"type": "ephemeral"}
+
+    def test_openrouter_tool_message_skips_top_level_marker(self):
+        msgs = [
+            {"role": "system", "content": "System"},
+            {"role": "tool", "content": "result"},
+        ]
+        result = apply_anthropic_cache_control(msgs, native_anthropic=False)
+        assert "cache_control" not in result[1]
+
     def test_system_message_gets_marker(self):
         msgs = [
             {"role": "system", "content": "You are helpful"},

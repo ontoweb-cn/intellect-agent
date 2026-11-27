@@ -1,0 +1,5 @@
+Intellect Agent v0.7.3 (2026.11.26)
+Project: /Users/simon/workspace/intellect-agent
+Python: 3.12.13
+OpenAI SDK: 2.54.0
+Up to date

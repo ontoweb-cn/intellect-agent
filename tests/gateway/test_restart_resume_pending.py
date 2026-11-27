@@ -280,6 +280,29 @@ class TestMarkResumePending:
         assert e.suspended is True
         assert e.resume_pending is False
 
+    def test_flush_false_defers_durability_until_explicit_flush(self, tmp_path):
+        """Shutdown batches marks, then flushes once before process exit."""
+        store = _make_store(tmp_path)
+        source = _make_source(chat_id="batch-flush")
+        entry = store.get_or_create_session(source)
+
+        with patch.object(store, "_save_impl") as save_mock:
+            assert store.mark_resume_pending(entry.session_key, flush=False) is True
+            save_mock.assert_not_called()
+            store.flush()
+            save_mock.assert_called_once()
+        before = _make_store(tmp_path)
+        before._ensure_loaded()
+        assert (
+            entry.session_key not in before._entries
+            or before._entries[entry.session_key].resume_pending is False
+        )
+
+        store.flush()
+        after = _make_store(tmp_path)
+        after._ensure_loaded()
+        assert after._entries[entry.session_key].resume_pending is True
+
     def test_survives_roundtrip_through_json(self, tmp_path):
         store = _make_store(tmp_path)
         source = _make_source()

@@ -1,0 +1,4 @@
+workflow_dispatch True
+schedule True
+coverage_advisory True
+six_test_shards True

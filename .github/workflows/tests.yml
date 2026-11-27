@@ -2,6 +2,9 @@ name: Tests
 
 on:
   workflow_dispatch:
+  schedule:
+    # Weekly advisory full-suite coverage; the six shards remain the gate.
+    - cron: '0 4 * * 1'
   push:
     branches: [main]
     paths-ignore:
@@ -282,7 +285,7 @@ jobs:
     # workflow budget (it was cancelled at 20m even with xdist), so keep it
     # available for a deliberate workflow_dispatch but never let it make a
     # normal push/PR run red.
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     needs: [test, build-rust-ext]
     continue-on-error: true

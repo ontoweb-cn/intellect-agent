@@ -909,6 +909,10 @@ class SessionStore:
             if self._db is not None:
                 self._save_impl()
 
+    def flush(self) -> None:
+        """Flush all pending session-index changes immediately."""
+        self._flush()
+
     def close(self) -> None:
         """Flush pending writes and release resources."""
         self._flush()
@@ -1246,6 +1250,8 @@ class SessionStore:
         self,
         session_key: str,
         reason: str = "restart_timeout",
+        *,
+        flush: bool = True,
     ) -> bool:
         """Mark a session as resumable after a restart interruption.
 
@@ -1269,7 +1275,10 @@ class SessionStore:
                 entry.last_resume_marked_at = _now()
                 # Restart recovery may exit within the debounce window; flush
                 # this marker synchronously so the next process sees it.
-                self._save_now()
+                # Batch callers (shutdown loops) pass flush=False and call
+                # flush() once after marking all sessions.
+                if flush:
+                    self._save_now()
                 return True
         return False
 
