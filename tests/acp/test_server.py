@@ -40,6 +40,17 @@ from acp_adapter.session import SessionManager
 from intellect_state import SessionDB
 
 
+@pytest.fixture(autouse=True)
+def _no_real_auto_title(monkeypatch):
+    """Never let ACP tests spawn the real auto-title network thread.
+
+    A real thread outliving the test can call SessionDB during interpreter
+    shutdown (segfault in CI) and makes the suite non-hermetic.  The two
+    auto-title tests below patch this function themselves to assert calls.
+    """
+    monkeypatch.setattr("agent.title_generator.maybe_auto_title", lambda *a, **k: None)
+
+
 @pytest.fixture()
 def mock_manager():
     """SessionManager with a mock agent factory."""
